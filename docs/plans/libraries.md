@@ -22,7 +22,7 @@ first-party (owned by the team) and MIT-licensed, so there is no copyleft constr
 | Need | Library | Plan |
 | --- | --- | --- |
 | Projection/IPC data cache + invalidation (server-state) | `@tanstack/react-query` | 04 |
-| Shared UI / session state (theme, route, palette, sync) | `zustand` | 06 / 08 |
+| Shared UI / session state (theme, route, palette, sync) | React context + hooks; `zustand` *available if a slice earns it* | 06 / 08 |
 | Frontmatter YAML (tolerant, round-trippable) | `yaml` (eemeli) | 03 |
 | Note IDs (ULID) | `ulidx` | 02 |
 | Routing (typed product routes + history) | **custom, no dependency** | 06 |

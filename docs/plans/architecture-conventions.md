@@ -145,9 +145,11 @@ shape of the data:
 - **Editor / document state** → owned by **meowdown/ProseMirror**; the `<Editor>` is
   uncontrolled, so this is never mirrored into a store.
 - **Shared UI / session state** (theme, active graph, route model, command palette,
-  sidebar + AI-context toggles, sync status) → **Zustand**, one small store per concern.
-  Keep a React **provider** only where context semantics genuinely apply (e.g. the graph
-  lifecycle / open flow); reach for Zustand for new cross-cutting UI slices from the start.
+  sidebar + AI-context toggles, sync status) → **React context + hooks by default**
+  (what `ThemeProvider`/`GraphProvider` already are). **Zustand** is in the toolbox for when
+  a slice outgrows context — frequent updates that re-render too widely, or state needed far
+  from where it's provided — but that's a per-slice judgement call, not a mandate. Reach for
+  it when it earns its place; otherwise context suffices. Tradeoffs, as always.
 - **Strictly-local ephemeral state** → plain React (`useState` / `useReducer`).
 
 This composes with the actions pattern (§3): getters back query functions, setters invalidate.
