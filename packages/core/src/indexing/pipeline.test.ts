@@ -37,21 +37,22 @@ beforeEach(() => {
 })
 
 describe('indexNote', () => {
-  it('reads, parses, and applies a built index payload', async () => {
-    await indexNote('notes/a.md', { mtime: 5 })
+  it('reads, parses, and applies a built index payload with its generation', async () => {
+    await indexNote('notes/a.md', { generation: 7, mtime: 5 })
     const apply = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_apply')
     expect(apply).toBeDefined()
-    const note = (apply![1] as { note: Record<string, unknown> }).note
-    expect(note.path).toBe('notes/a.md')
-    expect(note.title).toBe('Hello')
-    expect(note.fileHash).toMatch(/^[0-9a-f]{64}$/)
-    expect((note.links as { targetKey: string }[]).map((l) => l.targetKey)).toContain('world')
+    const args = apply![1] as { note: Record<string, unknown>; generation: number }
+    expect(args.generation).toBe(7)
+    expect(args.note.path).toBe('notes/a.md')
+    expect(args.note.title).toBe('Hello')
+    expect(args.note.fileHash).toMatch(/^[0-9a-f]{64}$/)
+    expect((args.note.links as { targetKey: string }[]).map((link) => link.targetKey)).toContain('world')
   })
 })
 
 describe('rebuildIndex', () => {
   it('clears, lists, then applies every file', async () => {
-    await rebuildIndex()
+    await rebuildIndex({ generation: 1 })
     const commands = mockInvoke.mock.calls.map(([cmd]) => cmd)
     expect(commands[0]).toBe('index_clear')
     expect(commands).toContain('list_files')

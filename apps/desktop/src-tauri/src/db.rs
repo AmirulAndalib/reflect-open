@@ -9,6 +9,7 @@
 
 use std::ffi::{c_char, c_int};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex, OnceLock};
 
 use rusqlite::ffi::{sqlite3, sqlite3_api_routines};
@@ -72,9 +73,17 @@ pub fn open_in_memory() -> AppResult<Connection> {
     Ok(Connection::open_in_memory()?)
 }
 
-/// The open index connection for the active graph (`None` until `index_open`).
+/// The open index connection for the active graph (`None` until `index_open`),
+/// plus a monotonic generation bumped on every open. Write commands carry the
+/// generation they were issued for and **no-op if it's stale**, so a reconcile
+/// pass from a previous graph can never mutate a newly-opened index — making
+/// cancellation correct regardless of caller timing (needed once the watcher in
+/// Plan 04b indexes outside the serialized open flow).
 #[derive(Default)]
-pub struct IndexState(pub Mutex<Option<Connection>>);
+pub struct IndexState {
+    conn: Mutex<Option<Connection>>,
+    generation: AtomicU64,
+}
 
 /// Bring the connection up to the latest schema version (no-op if current).
 fn migrate(conn: &mut Connection) -> AppResult<()> {
@@ -287,34 +296,47 @@ fn lock_index<'a>(
     index: &'a State<IndexState>,
 ) -> AppResult<std::sync::MutexGuard<'a, Option<Connection>>> {
     index
-        .0
+        .conn
         .lock()
         .map_err(|_| AppError::io("index state lock poisoned"))
 }
 
 // ---- commands --------------------------------------------------------------
 
+/// True when `generation` is the current index generation. Callers check this
+/// while holding the connection lock so the check and the write are consistent.
+fn generation_is_current(index: &State<IndexState>, generation: u64) -> bool {
+    index.generation.load(Ordering::SeqCst) == generation
+}
+
 /// Open + migrate the index for the active graph (reads the root from state).
+/// Returns the new generation, which write commands must echo back.
 #[tauri::command]
-pub fn index_open(graph: State<GraphState>, index: State<IndexState>) -> AppResult<()> {
+pub fn index_open(graph: State<GraphState>, index: State<IndexState>) -> AppResult<u64> {
     let root = graph
         .0
         .lock()
         .map_err(|_| AppError::io("graph state lock poisoned"))?
         .clone()
         .ok_or_else(AppError::no_graph)?;
-    // Drop the previous graph's connection first, so a failed open can't leave a
-    // stale connection that later reads would hit (wrong graph's data).
+    // Bump the generation first (invalidating any in-flight prior-graph pass),
+    // then drop the old connection so a failed open can't leave a stale one that
+    // later reads would hit (wrong graph's data).
+    let generation = index.generation.fetch_add(1, Ordering::SeqCst) + 1;
     *lock_index(&index)? = None;
     let conn = open_index_at(&root)?;
     *lock_index(&index)? = Some(conn);
-    Ok(())
+    Ok(generation)
 }
 
-/// Apply one note's extracted projection in a single transaction.
+/// Apply one note's extracted projection in a single transaction (no-op if the
+/// generation is stale — a superseded pass must not write the new graph's index).
 #[tauri::command]
-pub fn index_apply(note: IndexedNote, index: State<IndexState>) -> AppResult<()> {
+pub fn index_apply(note: IndexedNote, generation: u64, index: State<IndexState>) -> AppResult<()> {
     let mut guard = lock_index(&index)?;
+    if !generation_is_current(&index, generation) {
+        return Ok(());
+    }
     let conn = guard.as_mut().ok_or_else(AppError::no_graph)?;
     let tx = conn.transaction()?;
     apply_note(&tx, &note)?;
@@ -322,18 +344,24 @@ pub fn index_apply(note: IndexedNote, index: State<IndexState>) -> AppResult<()>
     Ok(())
 }
 
-/// Remove a note (e.g. deleted on disk) from the index.
+/// Remove a note (e.g. deleted on disk) from the index (no-op if stale).
 #[tauri::command]
-pub fn index_remove(path: String, index: State<IndexState>) -> AppResult<()> {
+pub fn index_remove(path: String, generation: u64, index: State<IndexState>) -> AppResult<()> {
     let guard = lock_index(&index)?;
+    if !generation_is_current(&index, generation) {
+        return Ok(());
+    }
     let conn = guard.as_ref().ok_or_else(AppError::no_graph)?;
     remove_note(conn, &path)
 }
 
-/// Wipe all derived tables (the TS layer then re-applies every note).
+/// Wipe all derived tables (the TS layer then re-applies every note; no-op if stale).
 #[tauri::command]
-pub fn index_clear(index: State<IndexState>) -> AppResult<()> {
+pub fn index_clear(generation: u64, index: State<IndexState>) -> AppResult<()> {
     let guard = lock_index(&index)?;
+    if !generation_is_current(&index, generation) {
+        return Ok(());
+    }
     let conn = guard.as_ref().ok_or_else(AppError::no_graph)?;
     clear_index(conn)
 }

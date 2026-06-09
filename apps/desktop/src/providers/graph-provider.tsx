@@ -107,10 +107,9 @@ export function GraphProvider({ children }: { children: ReactNode }) {
           await reconcileDone.current.catch(() => {})
           // Open the index *before* 'ready' so reads can't hit the previous
           // graph's index. Best-effort: an index failure doesn't block editing.
-          let indexReady = false
+          let generation: number | null = null
           try {
-            await openIndex()
-            indexReady = true
+            generation = await openIndex()
           } catch (err) {
             console.error('index open failed:', messageOf(err))
           }
@@ -119,10 +118,13 @@ export function GraphProvider({ children }: { children: ReactNode }) {
           }
           setGraph(info)
           setStatus('ready')
-          if (indexReady) {
+          if (generation !== null) {
             const controller = new AbortController()
             indexAbort.current = controller
-            reconcileDone.current = reconcileIndex({ signal: controller.signal }).catch((err) => {
+            reconcileDone.current = reconcileIndex({
+              generation,
+              signal: controller.signal,
+            }).catch((err) => {
               console.error('index reconcile failed:', messageOf(err))
             })
           }
