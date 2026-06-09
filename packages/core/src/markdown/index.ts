@@ -23,6 +23,7 @@ export {
 } from './frontmatter'
 export { parseBody, reflectMarkdownParser, wikiLinkExtension } from './grammar'
 export { parseNote } from './extract'
+export { scanInlineWikiLinks, type InlineWikiLink } from './scan'
 export { appendUnderHeading, renameWikiLink } from './edit'
 export { foldKey } from './keys'
 export {

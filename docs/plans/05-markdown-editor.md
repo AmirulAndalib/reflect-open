@@ -77,6 +77,17 @@ Gaps are met by writing local ProseKit/Lezer extensions and, where it makes sens
 upstreaming to meowdown (same author as ProseKit). Wiki-links are the priority because
 they are Reflect's organizing primitive.
 
+## Delivery split (decided 2026-06-09)
+
+- **05a** — steps 1–6 plus the keymap registry seed from step 9: the composed editor
+  (meowdown + Reflect extensions), wiki-link chips, the save pipeline + external-change
+  reconciliation (`useNoteDocument`), DS-token styling, and the workspace bound to a real
+  persistent note (`notes/welcome.md`, created on first open) until Plan 06 brings
+  navigation.
+- **05b** — step 7 (images/assets, incl. a Rust binary asset-write command), step 8
+  (task checkboxes), the rest of step 9 (ergonomics: indent/outdent, move line, zen),
+  step 10 (perf/a11y), and the tight-list serializer fix from Risks.
+
 ## Steps
 
 1. **Add deps + wrap.** Install `@meowdown/react`, `@meowdown/core`, and their ProseKit/
@@ -104,11 +115,19 @@ they are Reflect's organizing primitive.
    non-destructive choice (keep mine / load theirs / review), reusing the conflict
    vocabulary Plan 12 formalizes. Never silently clobber unsaved edits.
 
-6. **Wiki-link extension (foundation for Plan 07).** Add `[[ ]]` to the editor: a
-   `@lezer/markdown` inline rule + a ProseMirror node/mark + `md↔pm` converter support so
-   `[[Note]]` and `[[Note|alias]]` parse, render as link chips, and serialize back
-   verbatim. Resolution uses Plan 03's shared resolver. The `[[` autocomplete UI is
-   Plan 07; this step gives it a real node to attach to.
+6. **Wiki-link extension (foundation for Plan 07).** Add `[[ ]]` to the editor so
+   `[[Note]]` and `[[Note|alias]]` render as link chips and serialize back verbatim.
+   **Mechanism (revised 2026-06-09, implemented in 05a): view *decorations* over the
+   literal text, not a PM node/mark.** Reading meowdown's inline pass settled this: it
+   recomputes each block's marks from its own Lezer parse on every text change and
+   *strips any mark not in its computed set*, so a custom mark would be removed (or
+   fight the engine with ping-ponging appendTransactions). Decorations never touch the
+   document — serialization is byte-identical by construction. Detection reuses the
+   canonical grammar via `scanInlineWikiLinks` (`@reflect/core`), and the syntax spans
+   follow meowdown's own MarkMode reveal contract (`.show` near the caret). If Plan 07
+   needs a real inline node, the path is upstreaming `WikiLink` into meowdown itself
+   (first-party), not fighting it from outside. Resolution uses Plan 03's shared
+   resolver; the `[[` autocomplete UI is Plan 07.
 
 7. **Images & assets.** Add a PM `image` node + converter (meowdown's Lezer already emits
    `Image`). Paste/drop an image → write to `assets/` (Plan 02) → insert a relative
