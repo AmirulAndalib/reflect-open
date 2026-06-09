@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { hasBridge, readNote, subscribeFileChanges, writeNote } from '@reflect/core'
+import { registerFlush } from './flush-registry'
 import type { NoteEditorHandle } from './note-editor'
 import {
   createNoteSession,
@@ -124,14 +125,21 @@ export function useNoteDocument(
     }
   }, [path])
 
-  // Flush pending edits when the window loses focus.
+  // Flush pending edits when the window loses focus, and register with the
+  // app-global registry so quit-time teardown (window close, ⌘Q — paths where
+  // unmount effects never run) can flush this buffer too. The session's flush
+  // resolves once the write has landed, which is what makes quit wait.
   useEffect(() => {
     if (!path) {
       return
     }
-    const flush = (): void => sessionRef.current?.flush()
+    const flush = (): void => void sessionRef.current?.flush()
+    const unregister = registerFlush(async () => {
+      await sessionRef.current?.flush()
+    })
     window.addEventListener('blur', flush)
     return () => {
+      unregister()
       window.removeEventListener('blur', flush)
     }
   }, [path])

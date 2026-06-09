@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '@reflect/core'
+import { flushAllNotes } from './flush-registry'
 import type { NoteEditorHandle } from './note-editor'
 import { useNoteDocument } from './use-note-document'
 
@@ -82,6 +83,37 @@ describe('useNoteDocument', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('flushAllNotes persists a pending edit without waiting out the debounce (quit path)', async () => {
+    vi.useFakeTimers()
+    try {
+      const hook = renderHook(() => useNoteDocument('notes/a.md', 1))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(hook.result.current.status).toBe('ready')
+
+      act(() => hook.result.current.onEditorChange('# Quitting\n'))
+      expect(writes).toEqual([]) // still inside the 800ms debounce window
+
+      // The quit path: the registry flush settles only once the write has
+      // landed — no timer advance, the way a ⌘Q teardown would run it.
+      await act(() => flushAllNotes())
+      expect(writes).toEqual(['# Quitting\n'])
+      expect(hook.result.current.dirty).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('unmounting unregisters the buffer from the quit-flush registry', async () => {
+    const hook = await readyHook()
+    act(() => hook.result.current.onEditorChange('# Edited\n'))
+    hook.unmount() // unmount itself flushes once (the existing final-flush path)
+    await act(async () => {})
+    const writesAfterUnmount = writes.length
+
+    await flushAllNotes() // the unmounted buffer must no longer be registered
+    expect(writes.length).toBe(writesAfterUnmount)
   })
 
   it('ignores the watcher echo of its own save', async () => {
