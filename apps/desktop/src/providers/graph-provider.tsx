@@ -16,7 +16,9 @@ import {
   openIndex,
   reconcileIndex,
   recentGraphs,
+  subscribeIndexChanges,
   toAppError,
+  watchStart,
   type GraphInfo,
   type RecentGraph,
 } from '@reflect/core'
@@ -65,6 +67,8 @@ export function GraphProvider({ children }: { children: ReactNode }) {
   // switch can stop the prior pass before the Rust index connection is swapped.
   const indexAbort = useRef<AbortController | null>(null)
   const reconcileDone = useRef<Promise<void>>(Promise.resolve())
+  // Unlistens the live `index:changed` subscription for the previous graph.
+  const indexUnlisten = useRef<(() => void) | null>(null)
 
   const loadRecents = useCallback(
     async (options?: { surfaceErrors?: boolean }): Promise<RecentGraph[]> => {
@@ -127,6 +131,19 @@ export function GraphProvider({ children }: { children: ReactNode }) {
             }).catch((err) => {
               console.error('index reconcile failed:', messageOf(err))
             })
+            // Start the live watcher and (re)subscribe with this generation, so
+            // ongoing edits re-index incrementally. Stale events from a previous
+            // graph carry the old generation and are dropped by Rust.
+            indexUnlisten.current?.()
+            indexUnlisten.current = null
+            void (async () => {
+              try {
+                await watchStart()
+                indexUnlisten.current = await subscribeIndexChanges(generation)
+              } catch (err) {
+                console.error('index watcher start failed:', messageOf(err))
+              }
+            })()
           }
         } catch (err) {
           if (seq !== openSeq.current) {

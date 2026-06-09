@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getBacklinks, resolveWikiTarget, searchNotes } from './queries'
 import { indexNote, rebuildIndex } from './indexer'
+import { applyIndexChanges } from './watch'
 
 // Mock the Tauri bridge so both core's `call` and @reflect/db's dialect resolve
 // against an in-test fake — exercises the pipeline + the Kysely→db_query bridge.
@@ -57,6 +58,23 @@ describe('rebuildIndex', () => {
     expect(commands[0]).toBe('index_clear')
     expect(commands).toContain('list_files')
     expect(commands.filter((c) => c === 'index_apply')).toHaveLength(1)
+  })
+})
+
+describe('applyIndexChanges (watcher dispatch)', () => {
+  it('re-indexes upserts and removes deletes at the given generation', async () => {
+    await applyIndexChanges(
+      [
+        { path: 'notes/a.md', kind: 'upsert' },
+        { path: 'notes/gone.md', kind: 'remove' },
+      ],
+      9,
+    )
+    const apply = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_apply')
+    const remove = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_remove')
+    expect((apply![1] as { note: { path: string }; generation: number }).generation).toBe(9)
+    expect((apply![1] as { note: { path: string } }).note.path).toBe('notes/a.md')
+    expect(remove![1]).toMatchObject({ path: 'notes/gone.md', generation: 9 })
   })
 })
 

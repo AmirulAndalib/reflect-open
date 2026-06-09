@@ -29,3 +29,13 @@ export async function removeFromIndex(path: string, generation: number): Promise
 export async function clearIndex(generation: number): Promise<void> {
   await call('index_clear', { generation }, voidSchema)
 }
+
+/** Start (or restart) the filesystem watcher for the active graph (Plan 04b). */
+export async function watchStart(): Promise<void> {
+  await call('watch_start', {}, voidSchema)
+}
+
+/** Stop the filesystem watcher. */
+export async function watchStop(): Promise<void> {
+  await call('watch_stop', {}, voidSchema)
+}
