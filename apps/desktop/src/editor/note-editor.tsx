@@ -1,4 +1,4 @@
-import { useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react'
+import { useImperativeHandle, useMemo, useRef, useState, type ReactElement, type Ref } from 'react'
 import {
   defineEditorExtension,
   defineMarkMode,
@@ -70,7 +70,7 @@ export function NoteEditor({
   markMode = 'focus',
   images,
   handleRef,
-}: NoteEditorProps) {
+}: NoteEditorProps): ReactElement {
   // Extensions are created once (uncontrolled editor), so the image options are
   // read through a ref that tracks the latest props.
   const imagesRef = useRef<ImageOptions | undefined>(images)

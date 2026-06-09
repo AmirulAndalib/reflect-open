@@ -71,17 +71,20 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps) {
       try {
         await readNote(WELCOME_PATH)
       } catch (err) {
-        if (!isAppError(err) || err.kind !== 'notFound') {
-          return // surfaced by NotePane when the open is attempted
+        if (isAppError(err) && err.kind === 'notFound') {
+          try {
+            await writeNote(WELCOME_PATH, WELCOME_NOTE)
+          } catch {
+            // fall through — NotePane surfaces the open error
+          }
         }
-        try {
-          await writeNote(WELCOME_PATH, WELCOME_NOTE)
-        } catch {
-          return
+        // Any other failure also falls through: always mount NotePane so its
+        // own read attempt can show the real error instead of an endless
+        // "Opening note…".
+      } finally {
+        if (active) {
+          setOpenPath(WELCOME_PATH)
         }
-      }
-      if (active) {
-        setOpenPath(WELCOME_PATH)
       }
     })()
     return () => {

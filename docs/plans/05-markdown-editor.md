@@ -69,7 +69,7 @@ either **remount** with `key={notePath}` or drive the instance imperatively
 
 | Provided by meowdown today | Reflect must add (this plan / Plan 07) |
 |---|---|
-| paragraph, heading, blockquote, list, code block (highlight TBD), table, horizontal rule | **`[[wiki links]]`** node/mark + Lezer rule + converter (→ Plan 07 autocomplete) |
+| paragraph, heading, blockquote, list, code block (highlight TBD), table, horizontal rule | **`[[wiki links]]`** view decorations + the shared Lezer scanner (→ Plan 07 autocomplete) |
 | marks: strong, em, code, strikethrough, link | **images** — Lezer parses `Image`, but there is no PM `image` node yet |
 | `MarkMode` live-preview + clean clipboard copy | **task checkboxes** — Lezer parses `Task`/`TaskMarker`, no interactive PM node yet |
 

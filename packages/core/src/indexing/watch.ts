@@ -47,6 +47,10 @@ export function subscribeFileChanges(
     const parsed = fileChangesSchema.safeParse(event.payload)
     if (parsed.success) {
       handler(parsed.data)
+    } else {
+      // A malformed payload means the Rust↔TS event contract drifted — loud
+      // beats silently-stale indexes and editors.
+      console.error('invalid index:changed payload:', parsed.error)
     }
   })
 }

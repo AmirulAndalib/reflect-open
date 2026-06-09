@@ -15,13 +15,20 @@ export type KeymapScope = 'editor' | 'app'
 
 const registeredBindings = new Map<string, KeymapScope>()
 
-/** Register `bindings` under `scope`, throwing on any already-taken key. */
+/**
+ * Register `bindings` under `scope`, throwing on any already-taken key.
+ * All-or-nothing: validation happens before any key is committed, so a
+ * colliding batch never leaves the registry partially mutated.
+ */
 export function registerKeymap<T>(scope: KeymapScope, bindings: Record<string, T>): Record<string, T> {
-  for (const key of Object.keys(bindings)) {
+  const keys = Object.keys(bindings)
+  for (const key of keys) {
     const existing = registeredBindings.get(key)
     if (existing) {
       throw new Error(`duplicate keybinding "${key}": already registered by the ${existing} scope`)
     }
+  }
+  for (const key of keys) {
     registeredBindings.set(key, scope)
   }
   return bindings

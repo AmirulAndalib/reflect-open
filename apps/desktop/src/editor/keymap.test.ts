@@ -24,6 +24,14 @@ describe('keymap registry', () => {
     expect(() => registerKeymap('app', { 'Mod-b': 'collides' })).toThrow(/duplicate keybinding/)
   })
 
+  it('registers all-or-nothing: a colliding batch commits no keys', () => {
+    expect(() =>
+      registerKeymap('app', { 'Mod-zz-unique': 'fine', 'Mod-b': 'collides' }),
+    ).toThrow(/duplicate keybinding/)
+    expect(listRegisteredBindings().has('Mod-zz-unique')).toBe(false)
+    expect(listRegisteredBindings().get('Mod-b')).toBe('editor') // untouched
+  })
+
   it('holds the editor bindings exactly once', () => {
     const bindings = listRegisteredBindings()
     expect(bindings.get('Mod-b')).toBe('editor')

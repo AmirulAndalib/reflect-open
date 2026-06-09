@@ -145,6 +145,76 @@ describe('useNoteDocument', () => {
     }
   })
 
+  it('pauses saves while a conflict is parked (no clobbering theirs)', async () => {
+    vi.useFakeTimers()
+    try {
+      const hook = renderHook(() => useNoteDocument('notes/a.md'))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+
+      // An edit schedules a save, then an external change parks a conflict
+      // before the debounce fires.
+      act(() => hook.result.current.onEditorChange('# Mine\n'))
+      disk = '# Theirs\n'
+      act(() => emitChange?.([{ path: 'notes/a.md', kind: 'upsert' }]))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(hook.result.current.conflict).toBe('# Theirs\n')
+
+      // Neither the pending debounce nor an explicit flush may write now.
+      act(() => hook.result.current.onEditorChange('# Mine v2\n'))
+      await act(() => vi.advanceTimersByTimeAsync(5000))
+      expect(writes).toEqual([])
+
+      // Resolution unblocks: keepMine rewrites with the buffer.
+      act(() => hook.result.current.keepMine())
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(writes).toEqual(['# Mine v2\n'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('treats a watcher event for an in-flight save as an echo, not a conflict', async () => {
+    vi.useFakeTimers()
+    try {
+      // Make note_write update the fake disk synchronously but resolve later,
+      // simulating the watcher event racing the IPC promise settlement.
+      let resolveWrite: (() => void) | null = null
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === 'note_read') {
+          return disk
+        }
+        if (command === 'note_write') {
+          disk = (args as { contents: string }).contents
+          writes.push(disk)
+          return new Promise<null>((resolve) => {
+            resolveWrite = () => resolve(null)
+          })
+        }
+        return null
+      })
+
+      const hook = renderHook(() => useNoteDocument('notes/a.md'))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+
+      act(() => hook.result.current.onEditorChange('# Saved\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000)) // write dispatched, unresolved
+      expect(writes).toEqual(['# Saved\n'])
+
+      // User keeps typing (dirty again) while the watcher reports our write.
+      act(() => hook.result.current.onEditorChange('# Saved and more\n'))
+      act(() => emitChange?.([{ path: 'notes/a.md', kind: 'upsert' }]))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(hook.result.current.conflict).toBeNull() // echo, not a conflict
+
+      act(() => {
+        resolveWrite?.()
+      })
+      await act(() => vi.advanceTimersByTimeAsync(0))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keepMine rewrites the file with the buffer', async () => {
     const { result } = await readyHook()
     act(() => result.current.onEditorChange('# My unsaved edit\n'))

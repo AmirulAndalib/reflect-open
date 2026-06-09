@@ -82,9 +82,10 @@ export function scanInlineWikiLinks(text: string): InlineWikiLink[] {
       const pipe = inner.indexOf('|')
       const target = (pipe === -1 ? inner : inner.slice(0, pipe)).trim()
       const alias = pipe === -1 ? null : inner.slice(pipe + 1).trim() || null
-      // Display text: the alias segment when aliased, else the target segment.
-      const displayFrom = pipe === -1 ? from + 2 : from + 2 + pipe + 1
-      const displayTo = to - 2
+      // Display text: the alias segment when a real alias exists, else the
+      // target segment — a blank alias (`[[target|  ]]`) falls back to target.
+      const displayFrom = alias !== null ? from + 2 + pipe + 1 : from + 2
+      const displayTo = alias !== null ? to - 2 : from + 2 + (pipe === -1 ? inner.length : pipe)
       links.push({ from, to, target, alias, displayFrom, displayTo })
       return false
     },

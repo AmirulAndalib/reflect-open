@@ -19,6 +19,13 @@ describe('scanInlineWikiLinks', () => {
     expect(text.slice(aliased.displayFrom, aliased.displayTo)).toBe('the project')
   })
 
+  it('falls back to the target when the alias is blank', () => {
+    const text = 'see [[Target|   ]] here'
+    const [link] = scanInlineWikiLinks(text)
+    expect(link.alias).toBeNull()
+    expect(text.slice(link.displayFrom, link.displayTo)).toBe('Target')
+  })
+
   it('respects code contexts, same as the indexer grammar', () => {
     expect(scanInlineWikiLinks('code `[[NotALink]]` stays literal')).toEqual([])
     expect(scanInlineWikiLinks('and [[]] is not a link')).toEqual([])

@@ -63,8 +63,26 @@ export function useNoteDocument(path: string | null): NoteDocument {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Serializes writes so a flush can't interleave with a debounced save. */
   const saveChain = useRef<Promise<void>>(Promise.resolve())
+  /**
+   * Content of the write currently in flight (set when dispatched, before the
+   * IPC resolves). The watcher event for our own save can arrive before
+   * `writeNote` settles and `diskRef` updates — matching against this prevents
+   * a false conflict when the user kept typing during the save.
+   */
+  const inFlightWriteRef = useRef<string | null>(null)
+  /** Mirrors `conflict` so the save pipeline can pause without re-rendering. */
+  const conflictRef = useRef<string | null>(null)
+  /**
+   * The currently-open path, updated synchronously on render — guards a write
+   * started for the previous note from mutating the new note's tracking refs.
+   */
+  const pathRef = useRef(path)
+  pathRef.current = path
 
-  const markClean = useCallback((content: string) => {
+  const markClean = useCallback((content: string, forPath: string) => {
+    if (pathRef.current !== forPath) {
+      return // a stale save for the previous note must not touch the new one
+    }
     diskRef.current = content
     dirtyRef.current = bufferRef.current !== content
     setDirty(dirtyRef.current)
@@ -74,15 +92,25 @@ export function useNoteDocument(path: string | null): NoteDocument {
   const protectedRef = useRef(false)
 
   const save = useCallback(() => {
-    if (!path || !dirtyRef.current || protectedRef.current) {
+    // A parked conflict pauses all saves: writing the buffer before the user
+    // chooses Keep mine / Load theirs would clobber the external change and
+    // defeat the non-destructive flow.
+    if (!path || !dirtyRef.current || protectedRef.current || conflictRef.current !== null) {
       return
     }
+    const savedPath = path
     const content = bufferRef.current
     saveChain.current = saveChain.current
-      .then(() => writeNote(path, content))
-      .then(() => markClean(content))
+      .then(() => {
+        inFlightWriteRef.current = content
+        return writeNote(savedPath, content)
+      })
+      .then(() => markClean(content, savedPath))
       .catch((err) => {
         setError(messageOf(err))
+      })
+      .finally(() => {
+        inFlightWriteRef.current = null
       })
   }, [path, markClean])
 
@@ -127,6 +155,7 @@ export function useNoteDocument(path: string | null): NoteDocument {
     }
     let active = true
     setStatus('loading')
+    conflictRef.current = null
     setConflict(null)
     setError(null)
     void (async () => {
@@ -174,15 +203,23 @@ export function useNoteDocument(path: string | null): NoteDocument {
         } catch {
           return // deleted/unreadable between event and read; nothing to reconcile
         }
-        if (!active || content === diskRef.current) {
-          return // echo of our own save (or a no-op change) — ignore
+        if (!active || content === diskRef.current || content === inFlightWriteRef.current) {
+          return // echo of our own (possibly still-settling) save — ignore
         }
         if (dirtyRef.current) {
-          setConflict(content) // never clobber unsaved edits
+          // Never clobber unsaved edits — park the external content and pause
+          // the save pipeline (cancel any pending debounce) until the user
+          // chooses; a save landing now would overwrite "theirs" first.
+          if (saveTimer.current !== null) {
+            clearTimeout(saveTimer.current)
+            saveTimer.current = null
+          }
+          conflictRef.current = content
+          setConflict(content)
           return
         }
         bufferRef.current = content
-        markClean(content)
+        markClean(content, path)
         // Re-gate: the external edit may have introduced (or removed) syntax the
         // editor can't round-trip. Remount via initialContent when protection
         // flips; otherwise reload the live editor in place.
@@ -222,17 +259,19 @@ export function useNoteDocument(path: string | null): NoteDocument {
   }, [path, flush])
 
   const keepMine = useCallback(() => {
+    conflictRef.current = null
     setConflict(null)
     dirtyRef.current = true // force the rewrite even if content drifted equal
     save()
   }, [save])
 
   const loadTheirs = useCallback(() => {
-    if (conflict === null) {
+    if (conflict === null || path === null) {
       return
     }
+    conflictRef.current = null
     bufferRef.current = conflict
-    markClean(conflict)
+    markClean(conflict, path)
     // Same re-gating as the clean-reload path: never load lossy content into a
     // live editor whose next save would drop what it can't model.
     const lossy = checkRoundTrip(conflict) === 'lossy'
