@@ -5,7 +5,7 @@
 -- creating a note immediately resolves inbound links without re-indexing sources.
 
 CREATE TABLE notes (
-  path TEXT PRIMARY KEY,
+  path TEXT PRIMARY KEY NOT NULL,
   id TEXT,
   title TEXT NOT NULL,
   title_key TEXT NOT NULL,
@@ -19,7 +19,7 @@ CREATE INDEX notes_title_key ON notes(title_key);
 CREATE INDEX notes_daily_date ON notes(daily_date);
 
 CREATE TABLE note_text (
-  note_path TEXT PRIMARY KEY REFERENCES notes(path) ON DELETE CASCADE,
+  note_path TEXT PRIMARY KEY NOT NULL REFERENCES notes(path) ON DELETE CASCADE,
   text TEXT NOT NULL
 );
 
@@ -55,7 +55,7 @@ CREATE TABLE assets (
 );
 CREATE INDEX assets_note ON assets(note_path);
 
-CREATE TABLE index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE index_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
 
 CREATE VIRTUAL TABLE search_fts USING fts5(path UNINDEXED, title, body);
 

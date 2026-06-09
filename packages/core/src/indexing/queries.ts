@@ -1,5 +1,5 @@
-import { db } from '@reflect/db'
-import { sql } from 'kysely'
+import { db, type Database } from '@reflect/db'
+import { sql, type Selectable } from 'kysely'
 import {
   normalizeWikiTarget,
   resolved,
@@ -13,13 +13,10 @@ import {
  * re-validated per row (see Plan 04 §2).
  */
 
-export interface Backlink {
-  sourcePath: string
-  targetRaw: string
-  alias: string | null
-  posFrom: number
-  posTo: number
-}
+export type Backlink = Pick<
+  Selectable<Database['backlinks']>,
+  'sourcePath' | 'targetRaw' | 'alias' | 'posFrom' | 'posTo'
+>
 
 /** Notes that link to `path` (resolved at query time via the `backlinks` view). */
 export function getBacklinks(path: string): Promise<Backlink[]> {
@@ -31,12 +28,10 @@ export function getBacklinks(path: string): Promise<Backlink[]> {
     .execute()
 }
 
-export interface NoteRow {
-  path: string
-  title: string
-  dailyDate: string | null
-  isPrivate: number
-}
+export type NoteRow = Pick<
+  Selectable<Database['notes']>,
+  'path' | 'title' | 'dailyDate' | 'isPrivate'
+>
 
 export function getNote(path: string): Promise<NoteRow | undefined> {
   return db
@@ -56,10 +51,7 @@ export async function getNotesByTag(tag: string): Promise<string[]> {
   return rows.map((row) => row.notePath)
 }
 
-export interface SearchHit {
-  path: string
-  title: string
-}
+export type SearchHit = Pick<Selectable<Database['searchFts']>, 'path' | 'title'>
 
 /** Full-text search over title + body (FTS5 `MATCH`, ranked). */
 export function searchNotes(query: string, limit = 50): Promise<SearchHit[]> {
