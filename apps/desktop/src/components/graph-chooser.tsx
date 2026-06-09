@@ -1,10 +1,11 @@
+import { type ReactElement } from 'react'
 import { useGraph } from '@/providers/graph-provider'
 
 /**
  * First-run / no-graph screen: open a folder as a graph, or reopen a recent one.
  * Shown by `App` whenever no graph is active (Plan 02 loading gate).
  */
-export function GraphChooser() {
+export function GraphChooser(): ReactElement {
   const { recents, error, pickAndOpen, openRecent, forget } = useGraph()
 
   return (
@@ -25,7 +26,11 @@ export function GraphChooser() {
           Open graph…
         </button>
 
-        {error ? <p className="text-center text-sm text-red-500">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="text-center text-sm text-red-500">
+            {error}
+          </p>
+        ) : null}
 
         {recents.length > 0 ? (
           <div className="space-y-2">
@@ -52,7 +57,7 @@ export function GraphChooser() {
                     type="button"
                     onClick={() => void forget(recent.root)}
                     aria-label={`Forget ${recent.name}`}
-                    className="shrink-0 text-xs text-[color:var(--text-muted)] opacity-0 group-hover:opacity-100"
+                    className="shrink-0 text-xs text-[color:var(--text-muted)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
                   >
                     Forget
                   </button>

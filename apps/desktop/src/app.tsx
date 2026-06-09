@@ -1,3 +1,4 @@
+import { type ReactElement } from 'react'
 import { GraphChooser } from '@/components/graph-chooser'
 import { GraphWorkspace } from '@/components/graph-workspace'
 import { useGraph } from '@/providers/graph-provider'
@@ -7,7 +8,7 @@ import { useGraph } from '@/providers/graph-provider'
  * and the workspace based on whether a graph is open. Real product surfaces
  * (daily notes, search, AI) hang off the workspace in later plans.
  */
-export function App() {
+export function App(): ReactElement {
   const { status, graph } = useGraph()
 
   if (status === 'ready' && graph) {

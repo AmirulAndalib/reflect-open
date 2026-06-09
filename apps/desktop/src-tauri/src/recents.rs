@@ -7,10 +7,12 @@
 //! Plan 12) and risk corrupting the in-graph index.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 
 use crate::error::{AppError, AppResult};
 
@@ -30,20 +32,33 @@ fn store_path() -> AppResult<PathBuf> {
     Ok(base.join("reflect-open").join("recent-graphs.json"))
 }
 
-fn load_from(path: &Path) -> Vec<RecentGraph> {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
+/// Load the stored list. A missing store is an empty list, but a real IO error
+/// or malformed JSON is propagated — we must **not** silently treat a corrupt or
+/// unreadable store as empty, or the next mutation would persist that emptiness
+/// and wipe every saved entry.
+fn load_from(path: &Path) -> AppResult<Vec<RecentGraph>> {
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(AppError::io(err.to_string())),
+    };
+    serde_json::from_str(&raw).map_err(|err| AppError::io(err.to_string()))
 }
 
 fn save_to(path: &Path, recents: &[RecentGraph]) -> AppResult<()> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
+    let dir = path
+        .parent()
+        .ok_or_else(|| AppError::io("recents store path has no parent directory"))?;
+    fs::create_dir_all(dir)?;
     let json =
         serde_json::to_string_pretty(recents).map_err(|err| AppError::io(err.to_string()))?;
-    fs::write(path, json)?;
+    // Write to a temp file in the same dir, then atomically rename over the
+    // target so a crash mid-write can't truncate the existing store.
+    let mut tmp = NamedTempFile::new_in(dir)?;
+    tmp.write_all(json.as_bytes())?;
+    tmp.flush()?;
+    tmp.persist(path)
+        .map_err(|err| AppError::io(err.to_string()))?;
     Ok(())
 }
 
@@ -70,18 +85,18 @@ pub fn record(root: &Path, name: &str) -> AppResult<()> {
         name: name.to_string(),
         opened_ms: now_ms(),
     };
-    save_to(&path, &with_entry(load_from(&path), entry))
+    save_to(&path, &with_entry(load_from(&path)?, entry))
 }
 
 /// The recent-graphs list, newest first.
 pub fn list() -> AppResult<Vec<RecentGraph>> {
-    Ok(load_from(&store_path()?))
+    load_from(&store_path()?)
 }
 
 /// Drop a graph from the recents list (by root path).
 pub fn forget(root: &str) -> AppResult<()> {
     let path = store_path()?;
-    let mut recents = load_from(&path);
+    let mut recents = load_from(&path)?;
     recents.retain(|r| r.root != root);
     save_to(&path, &recents)
 }
@@ -159,13 +174,23 @@ mod tests {
         let path = dir.path().join("recent-graphs.json");
         let recents = vec![entry("/a", 1), entry("/b", 2)];
         save_to(&path, &recents).unwrap();
-        assert_eq!(load_from(&path), recents);
+        assert_eq!(load_from(&path).unwrap(), recents);
     }
 
     #[test]
     fn missing_store_loads_empty() {
         let dir = tempdir().unwrap();
-        assert!(load_from(&dir.path().join("nope.json")).is_empty());
+        assert!(load_from(&dir.path().join("nope.json")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn corrupt_store_errors_instead_of_wiping() {
+        // A malformed store must surface an error, not silently read as empty
+        // (which a later save would persist, destroying the real entries).
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("recent-graphs.json");
+        fs::write(&path, b"{ this is not json").unwrap();
+        assert!(load_from(&path).is_err());
     }
 
     #[test]

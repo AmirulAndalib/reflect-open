@@ -206,9 +206,14 @@ fn graph_info(root: &Path) -> GraphInfo {
 
 /// Set the active root, record it in recents, and return its info.
 fn activate(state: &State<GraphState>, root: &Path) -> AppResult<GraphInfo> {
-    set_root(state, root)?;
     let info = graph_info(root);
-    crate::recents::record(root, &info.name)?;
+    set_root(state, root)?;
+    // Recents is a convenience cache: a failure to persist it must not fail the
+    // open (which would leave Rust treating the graph as open while the command
+    // returns an error, out of sync with the UI). Best-effort, log and move on.
+    if let Err(err) = crate::recents::record(root, &info.name) {
+        eprintln!("reflect: failed to record recent graph: {err:?}");
+    }
     Ok(info)
 }
 

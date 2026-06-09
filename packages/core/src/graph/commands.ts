@@ -10,7 +10,7 @@ import {
 } from './schemas'
 
 /** Commands that return `()` from Rust serialize as `null` over IPC. */
-const voidSchema = z.unknown()
+const voidSchema = z.null()
 
 /** Open an existing graph at `path` (ensures the standard layout exists). */
 export async function openGraph(path: string): Promise<GraphInfo> {

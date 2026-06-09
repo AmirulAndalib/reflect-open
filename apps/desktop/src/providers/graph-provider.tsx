@@ -4,15 +4,16 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   forgetRecent,
-  isAppError,
   openGraph,
   recentGraphs,
+  toAppError,
   type GraphInfo,
   type RecentGraph,
 } from '@reflect/core'
@@ -36,7 +37,9 @@ interface GraphContextValue {
 const GraphContext = createContext<GraphContextValue | null>(null)
 
 function messageOf(error: unknown): string {
-  return isAppError(error) ? error.message : String(error)
+  // `toAppError` already normalizes Errors/strings/objects safely, so unknown
+  // throws never render as `[object Object]`.
+  return toAppError(error).message
 }
 
 /**
@@ -49,6 +52,10 @@ export function GraphProvider({ children }: { children: ReactNode }) {
   const [graph, setGraph] = useState<GraphInfo | null>(null)
   const [recents, setRecents] = useState<RecentGraph[]>([])
   const [error, setError] = useState<string | null>(null)
+  // Monotonic open token: only the most recent open may commit `graph`/`status`,
+  // so overlapping opens (double-click, StrictMode remount) can't finish out of
+  // order and leave us on a graph the user didn't pick last.
+  const openSeq = useRef(0)
 
   const loadRecents = useCallback(async (): Promise<RecentGraph[]> => {
     try {
@@ -63,12 +70,20 @@ export function GraphProvider({ children }: { children: ReactNode }) {
 
   const openRecent = useCallback(
     async (root: string): Promise<void> => {
+      const seq = ++openSeq.current
       setStatus('opening')
       setError(null)
       try {
-        setGraph(await openGraph(root))
+        const info = await openGraph(root)
+        if (seq !== openSeq.current) {
+          return // superseded by a newer open
+        }
+        setGraph(info)
         setStatus('ready')
       } catch (err) {
+        if (seq !== openSeq.current) {
+          return
+        }
         setError(messageOf(err))
         setStatus('choosing')
       }
