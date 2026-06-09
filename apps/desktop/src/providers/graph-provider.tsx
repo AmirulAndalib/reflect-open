@@ -139,7 +139,12 @@ export function GraphProvider({ children }: { children: ReactNode }) {
             void (async () => {
               try {
                 await watchStart()
-                indexUnlisten.current = await subscribeIndexChanges(generation)
+                const unlisten = await subscribeIndexChanges(generation)
+                if (seq !== openSeq.current) {
+                  unlisten() // a newer open superseded us mid-setup — tear down
+                  return
+                }
+                indexUnlisten.current = unlisten
               } catch (err) {
                 console.error('index watcher start failed:', messageOf(err))
               }
