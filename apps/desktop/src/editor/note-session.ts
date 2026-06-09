@@ -98,8 +98,12 @@ export interface NoteSession {
   editorChanged: (markdown: string) => void
   /** The watcher reported an on-disk change to this note; reconcile. */
   externalChanged: () => void
-  /** Persist pending edits now (e.g. on window blur). */
-  flush: () => void
+  /**
+   * Persist pending edits now (e.g. on window blur). Resolves once the
+   * flushed write has settled — quit-time teardown awaits this so the webview
+   * can't die before the bytes land.
+   */
+  flush: () => Promise<void>
   /** Resolve a conflict by keeping the buffer (rewrites the file). */
   keepMine: () => void
   /** Resolve a conflict by loading the external content (discards the buffer). */
@@ -227,9 +231,12 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     }
   }
 
-  function flush(): void {
+  function flush(): Promise<void> {
     cancelScheduledSave()
     save()
+    // save() extended the chain synchronously (or left it settled when there
+    // was nothing to do) — the chain as of now is exactly this flush's write.
+    return saveChain
   }
 
   function editorChanged(markdown: string): void {
@@ -395,7 +402,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
   function dispose(): void {
     // Flush first: the queued save step reads the (now frozen) buffer, so
     // pending edits persist to this session's path even after the UI moves on.
-    flush()
+    void flush()
     disposed = true
   }
 

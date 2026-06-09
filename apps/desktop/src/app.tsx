@@ -1,6 +1,7 @@
-import { type ReactElement } from 'react'
+import { useEffect, type ReactElement } from 'react'
 import { GraphChooser } from '@/components/graph-chooser'
 import { GraphWorkspace } from '@/components/graph-workspace'
+import { installQuitFlush } from '@/lib/quit-flush'
 import { useGraph } from '@/providers/graph-provider'
 
 /**
@@ -10,6 +11,13 @@ import { useGraph } from '@/providers/graph-provider'
  */
 export function App(): ReactElement {
   const { status, graph } = useGraph()
+
+  // Quit-time persistence: flush dirty note buffers before the webview dies
+  // (window close, ⌘Q, reload) — unmount effects don't run on those paths.
+  // installQuitFlush returns its teardown, which the effect returns as cleanup.
+  useEffect(() => {
+    return installQuitFlush()
+  }, [])
 
   if (status === 'ready' && graph) {
     return <GraphWorkspace graph={graph} />

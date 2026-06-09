@@ -10,8 +10,11 @@
 mod db;
 mod error;
 mod fs;
+mod quit;
 mod recents;
 mod watcher;
+
+use tauri::{Emitter, Manager};
 
 /// Returns the desktop application version from Cargo metadata.
 ///
@@ -39,6 +42,7 @@ pub fn run() {
         .manage(fs::GraphState::default())
         .manage(db::IndexState::default())
         .manage(watcher::WatcherState::default())
+        .manage(quit::QuitState::default())
         .invoke_handler(tauri::generate_handler![
             app_version,
             fs::graph_open,
@@ -59,7 +63,22 @@ pub fn run() {
             db::db_query,
             watcher::watch_start,
             watcher::watch_stop,
+            quit::quit_confirm,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                // A user/OS-initiated quit (⌘Q — no exit code) with a live
+                // webview defers once so the frontend can flush dirty note
+                // buffers (`app:quit-requested` → `quit_confirm`). An exit
+                // carrying a code is the confirm itself; with no webview left
+                // the window-close path has already flushed.
+                let quit = app.state::<quit::QuitState>();
+                if code.is_none() && !quit.flushed() && !app.webview_windows().is_empty() {
+                    api.prevent_exit();
+                    let _ = app.emit("app:quit-requested", ());
+                }
+            }
+        });
 }

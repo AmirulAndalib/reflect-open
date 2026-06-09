@@ -14,6 +14,7 @@
 export { setBridge, hasBridge, type IpcBridge, type Unlisten } from './ipc/bridge'
 export { call } from './ipc/invoke'
 export { getAppVersion } from './ipc/commands'
+export { confirmQuit, subscribeQuitRequested } from './app/quit'
 export { appErrorSchema, isAppError, toAppError, type AppError } from './errors'
 
 // Graph & file storage (Plan 02)
