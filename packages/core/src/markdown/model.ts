@@ -14,20 +14,22 @@ export interface Span {
 }
 
 /**
- * Fail-safe coercion for the privacy flag. `private` is a hard block (such notes
- * must never reach any external service), so the risk to avoid is a false
- * *negative*. We accept the YAML 1.1-style truthy strings (`yes`/`on`/`1`) that a
- * v1.2 loader reads as plain strings, and otherwise err toward not-private only
- * for the explicit falsey/absent cases.
+ * Coerce the privacy flag. `private` is a hard block (such notes must never reach
+ * any external service), so coercion is explicit and predictable rather than
+ * truthiness-based: a note is private only when it carries an explicit truthy
+ * boolean/number/string. Anything unrecognized (typo, object, absent) is **not**
+ * private — it never silently marks an unrelated note private, and the explicit
+ * `private: true` path the security model relies on is always honoured. We also
+ * accept the YAML 1.1-style words (`yes`/`on`) a 1.2 loader reads as strings.
  */
 function coercePrivate(value: unknown): boolean {
-  if (value === true) return true
-  if (value === false || value === undefined || value === null) return false
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value === 1
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase()
     return normalized === 'true' || normalized === 'yes' || normalized === 'on' || normalized === '1'
   }
-  return Boolean(value)
+  return false
 }
 
 /**

@@ -51,11 +51,12 @@ describe('parseFrontmatter', () => {
     expect(warning).toMatch(/not a mapping/i)
   })
 
-  it('coerces the private flag fail-safe (boolean true, "yes"; absent/false → false)', () => {
+  it('coerces the private flag explicitly (true/yes; false/no/unknown/absent → false)', () => {
     expect(parseFrontmatter('private: true').data.private).toBe(true)
     expect(parseFrontmatter('private: yes').data.private).toBe(true)
     expect(parseFrontmatter('private: false').data.private).toBe(false)
     expect(parseFrontmatter('private: no').data.private).toBe(false)
+    expect(parseFrontmatter('private: banana').data.private).toBe(false)
     expect(parseFrontmatter('id: x').data.private).toBe(false)
   })
 })
@@ -71,6 +72,11 @@ describe('upsertFrontmatter', () => {
     expect(result).toContain('custom: keep')
     expect(result).toContain('private: true')
     expect(result.endsWith('# Body\n\ntext')).toBe(true)
+  })
+
+  it('is a byte-identical no-op for an empty patch (never re-serializes)', () => {
+    const source = '---\nid: x # keep this comment\ncustom: keep\n---\n# Body'
+    expect(upsertFrontmatter(source, {})).toBe(source)
   })
 
   it('deletes a key when the patch value is undefined', () => {

@@ -13,6 +13,11 @@ describe('renameWikiLink', () => {
     const source = 'see [[Alpha]] and [[Beta]]'
     expect(renameWikiLink(source, 'Gamma', 'Delta')).toBe(source)
   })
+
+  it('matches on the trimmed, case-folded target', () => {
+    const source = '[[ Foo ]] and [[Foo]] and [[ foo|bar]]'
+    expect(renameWikiLink(source, 'Foo', 'Baz')).toBe('[[Baz]] and [[Baz]] and [[Baz|bar]]')
+  })
 })
 
 describe('appendUnderHeading', () => {
@@ -30,5 +35,9 @@ describe('appendUnderHeading', () => {
     expect(appendUnderHeading(doc, 'Inbox', '- new')).toBe(
       '# A\n\nalpha\n\n# B\n\nbeta\n\n## Inbox\n\n- new\n',
     )
+  })
+
+  it('matches the heading case-insensitively', () => {
+    expect(appendUnderHeading(doc, 'a', '- new')).toBe('# A\n\nalpha\n\n- new\n\n# B\n\nbeta')
   })
 })

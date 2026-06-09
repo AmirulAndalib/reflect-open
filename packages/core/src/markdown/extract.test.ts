@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { parseNote } from './extract'
 
-const parse = (source: string, path = 'notes/test.md') => parseNote({ path, source })
+function parse(source: string, path = 'notes/test.md') {
+  return parseNote({ path, source })
+}
 
 describe('parseNote — wiki links', () => {
   it('extracts plain, aliased, and date targets with positions', () => {

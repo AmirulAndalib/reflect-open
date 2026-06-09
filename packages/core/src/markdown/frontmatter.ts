@@ -84,14 +84,17 @@ export function parseFrontmatter(raw: string | null): ParsedFrontmatter {
  * exists (and `patch` is non-empty).
  */
 export function upsertFrontmatter(source: string, patch: Record<string, unknown>): string {
+  // An empty patch is a no-op — never re-serialize (which could disturb comments,
+  // spacing, or key order in an existing block).
+  if (Object.keys(patch).length === 0) {
+    return source
+  }
+
   const { raw, body } = splitFrontmatter(source)
 
   if (raw === null) {
-    if (Object.keys(patch).length === 0) {
-      return source
-    }
     const doc = new Document(patch)
-    return `---\n${String(doc)}---\n${source}`
+    return `---\n${ensureTrailingNewline(String(doc))}---\n${source}`
   }
 
   const doc = parseDocument(raw)
@@ -102,9 +105,10 @@ export function upsertFrontmatter(source: string, patch: Record<string, unknown>
       doc.set(key, value)
     }
   }
-  let nextRaw = String(doc)
-  if (!nextRaw.endsWith('\n')) {
-    nextRaw += '\n'
-  }
-  return `---\n${nextRaw}---\n${body}`
+  return `---\n${ensureTrailingNewline(String(doc))}---\n${body}`
+}
+
+/** Guard against a YAML serializer that omits the trailing newline before `---`. */
+function ensureTrailingNewline(text: string): string {
+  return text.endsWith('\n') ? text : `${text}\n`
 }
