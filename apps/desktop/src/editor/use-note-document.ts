@@ -132,8 +132,21 @@ export function useNoteDocument(path: string | null): NoteDocument {
     save()
   }, [save])
 
+  /** True while we apply external content to the editor via `setMarkdown`. */
+  const applyingExternalRef = useRef(false)
+
   const onEditorChange = useCallback(
     (markdown: string) => {
+      if (applyingExternalRef.current) {
+        // This change is our own setMarkdown applying disk content, not a user
+        // edit. The editor's serialization may normalize (trailing newline,
+        // loose lists) and differ from the disk bytes — that must not dirty the
+        // buffer or schedule a save, or a reload would rewrite a file the user
+        // never touched. Track the serialized form; dirtiness resumes with the
+        // next real edit.
+        bufferRef.current = markdown
+        return
+      }
       bufferRef.current = markdown
       dirtyRef.current = markdown !== diskRef.current
       setDirty(dirtyRef.current)
@@ -143,6 +156,18 @@ export function useNoteDocument(path: string | null): NoteDocument {
     },
     [scheduleSave],
   )
+
+  /** Apply external content to the live editor without entering the save path. */
+  const applyToEditor = useCallback((content: string) => {
+    applyingExternalRef.current = true
+    try {
+      // setContent dispatches synchronously, so the change handler runs (and is
+      // suppressed) within this call.
+      editorRef.current?.setMarkdown(content)
+    } finally {
+      applyingExternalRef.current = false
+    }
+  }, [])
 
   const bindEditor = useCallback((handle: NoteEditorHandle | null) => {
     editorRef.current = handle
@@ -201,10 +226,10 @@ export function useNoteDocument(path: string | null): NoteDocument {
       // While protected there is no live editor mounted (the pane shows the
       // read-only view), and lossy content must never enter one regardless.
       if (!lossy) {
-        editorRef.current?.setMarkdown(content)
+        applyToEditor(content)
       }
     },
-    [markClean],
+    [markClean, applyToEditor],
   )
 
   // Load the note when the path changes.
@@ -319,7 +344,7 @@ export function useNoteDocument(path: string | null): NoteDocument {
     setIsProtected(lossy)
     setInitialContent(conflict)
     if (!lossy) {
-      editorRef.current?.setMarkdown(conflict)
+      applyToEditor(conflict)
     }
     setConflict(null)
   }, [conflict, markClean])

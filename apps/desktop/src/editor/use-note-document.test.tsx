@@ -145,6 +145,39 @@ describe('useNoteDocument', () => {
     }
   })
 
+  it('an external reload never dirties the buffer, even when serialization normalizes', async () => {
+    vi.useFakeTimers()
+    try {
+      const hook = renderHook(() => useNoteDocument('notes/a.md'))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+
+      // The editor's change handler fires synchronously inside setMarkdown and
+      // reports a *normalized* serialization (extra trailing newline) — as the
+      // real editor does for e.g. loose lists.
+      const editor = fakeEditor()
+      const normalizing: typeof editor = {
+        ...editor,
+        setMarkdown: (markdown) => {
+          editor.setMarkdown(markdown)
+          hook.result.current.onEditorChange(`${markdown}\n`)
+        },
+      }
+      act(() => hook.result.current.bindEditor(normalizing))
+
+      disk = '# Changed outside\n'
+      act(() => emitChange?.([{ path: 'notes/a.md', kind: 'upsert' }]))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(editor.applied).toEqual(['# Changed outside\n'])
+      expect(hook.result.current.dirty).toBe(false)
+
+      // No save may fire from the reload alone.
+      await act(() => vi.advanceTimersByTimeAsync(5000))
+      expect(writes).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('pauses saves while a conflict is parked (no clobbering theirs)', async () => {
     vi.useFakeTimers()
     try {

@@ -148,7 +148,12 @@ function insertSavedImages(
           ? view.state.tr.insertText(markdown, at)
           : view.state.tr.insertText(markdown)
       view.dispatch(tr)
-      at = undefined // subsequent files follow the (mapped) selection
+      if (at !== undefined) {
+        // Chain subsequent drops after the one just inserted (the drop point
+        // doesn't move the selection, so falling back to the caret would put
+        // later files at the wrong place).
+        at += markdown.length
+      }
     }
   })()
 }
