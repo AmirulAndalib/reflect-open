@@ -410,6 +410,43 @@ describe('useNoteDocument', () => {
     await waitFor(() => expect(hook.result.current.status).toBe('error'))
   })
 
+  it('a same-graph generation bump keeps unsaved edits and saves with the new generation', async () => {
+    vi.useFakeTimers()
+    try {
+      const written: Array<{ contents: string; generation: number }> = []
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === 'note_read') {
+          return disk
+        }
+        if (command === 'note_write') {
+          const { contents, generation } = args as { contents: string; generation: number }
+          written.push({ contents, generation })
+          return null
+        }
+        return null
+      })
+
+      const hook = renderHook(({ gen }) => useNoteDocument('notes/a.md', gen), {
+        initialProps: { gen: 1 },
+      })
+      await act(() => vi.advanceTimersByTimeAsync(0))
+
+      // Reopening the same graph bumps the generation without remounting the
+      // pane. The dirty buffer must survive (no dispose/reload-from-disk) and
+      // the pending save must carry the NEW generation — a stale one would be
+      // rejected by Rust and the edit silently lost.
+      act(() => hook.result.current.onEditorChange('# Unsaved\n'))
+      hook.rerender({ gen: 2 })
+      expect(hook.result.current.dirty).toBe(true)
+
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      expect(written).toEqual([{ contents: '# Unsaved\n', generation: 2 }])
+      expect(hook.result.current.dirty).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keepMine rewrites the file with the buffer', async () => {
     const { result } = await readyHook()
     act(() => result.current.onEditorChange('# My unsaved edit\n'))

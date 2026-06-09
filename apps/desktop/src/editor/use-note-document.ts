@@ -52,6 +52,18 @@ export function useNoteDocument(
   const editorRef = useRef<NoteEditorHandle | null>(null)
   const sessionRef = useRef<NoteSession | null>(null)
 
+  // Writes read the generation at write time, not at session creation, so the
+  // session must NOT be keyed on `generation`: reopening the *same* graph bumps
+  // it without remounting the pane, and recreating the session would dispose-
+  // flush with a stale generation (rejected by Rust) and silently reload the
+  // buffer from disk — losing unsaved edits. Cross-graph safety is preserved
+  // because a real graph switch remounts the whole workspace (keyed by root):
+  // the unmounted pane never re-renders, its ref keeps the old generation, and
+  // Rust rejects its final flush instead of landing it in the new graph.
+  const generationRef = useRef(generation)
+  generationRef.current = generation
+  const canWrite = generation !== null
+
   useEffect(() => {
     if (!path) {
       return
@@ -60,10 +72,15 @@ export function useNoteDocument(
       path,
       io: {
         read: readNote,
-        write:
-          generation === null
-            ? null
-            : (forPath, contents) => writeNote(forPath, contents, generation),
+        write: canWrite
+          ? (forPath, contents) => {
+              const current = generationRef.current
+              if (current === null) {
+                return Promise.reject(new Error('no graph generation available for save'))
+              }
+              return writeNote(forPath, contents, current)
+            }
+          : null,
       },
       classify: checkRoundTrip,
       onSnapshot: setSnapshot,
@@ -80,7 +97,7 @@ export function useNoteDocument(
       // path-switch "final flush" lives here, not in cross-note bookkeeping.
       session.dispose()
     }
-  }, [path, generation, createIfMissing])
+  }, [path, canWrite, createIfMissing])
 
   // External-change reconciliation via the watcher (Plan 04b events).
   useEffect(() => {
