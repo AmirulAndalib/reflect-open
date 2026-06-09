@@ -27,9 +27,38 @@ seam).
   navigation (step 3), and the `⌘D/⌘N/⌘[/⌘]` shortcuts through the keymap registry
   (step 5). The note route carries `path` (identity = path in the first wave, Plan 03;
   `id` joins later).
-- **06b** — the virtualized multi-day stream (`@tanstack/react-virtual`, step 2),
-  jot-to-today quick capture (step 6), and scroll/focus restoration polish on
-  back/forward.
+- **06b** — the virtualized daily stream + navigation polish (planned 2026-06-09):
+
+  1. **The stream (step 2).** A virtualized chronological list where **every day is a
+     virtual note**: each row mounts the Plan 05 single-note editor (`NotePane` with
+     `createIfMissing`) keyed by date — the file is only created when the day is
+     actually edited (decided: dynamically create virtual day notes; materialize on
+     edit). **Order is chronological** — past above, future below — anchored at today
+     on launch, and the future is scrollable (future days are valid write targets).
+  2. **Fixed virtual window, not true infinite scroll.** Window = `today − 5 years …
+     today + 1 year` as a static count (~2.2k virtual rows — free until mounted),
+     index ↔ date as pure offset math. This avoids bidirectional-prepend scroll
+     compensation entirely; "load older" can extend the window later if ever needed.
+     Dynamic row heights via `measureElement` (editors grow while typing); overscan
+     ~2 so only a handful of ProseKit instances are live; offscreen days unmount and
+     flush through the save pipeline's final-flush path (built in Plan 05).
+  3. **Routes drive the stream.** `today` and `daily/:date` both render the stream
+     scrolled to the target date; prev/next become scroll + `⌘` navigation rather
+     than separate pages.
+  4. **Scroll/focus restore (step 4 tail).** History entries become
+     `{ route, scroll? }` with a `saveScrollState` API; views report their offset
+     before navigating away; back/forward restores the offset and refocuses the
+     target editor.
+  5. **Indexing state surfaced (step 7).** Expose the background index stage
+     (`reconciling` → `live`) from the graph-index lifecycle; subtle header
+     indicator — product states, not spinners.
+
+  **Deferred from 06b:** jot-to-today quick capture → **Plan 11** (decided
+  2026-06-09; `⌘D` + typing covers the need until capture is formalized).
+
+  **Tests (headless):** window↔date math, router scroll-state semantics, lazy
+  materialize-on-edit (exists), launch-focus. Stream scroll feel + height
+  measurement need `tauri dev` (jsdom has no layout).
 
 ## Steps
 
