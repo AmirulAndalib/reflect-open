@@ -13,3 +13,113 @@ body,
 #root {
   height: 100%;
 }
+
+/* ---- Editor (Plan 05) ------------------------------------------------------
+   meowdown ships structural CSS only; visibility of markdown syntax and all
+   theming is ours. Its MarkMode plugin sets `data-mark-mode` on the editor root
+   and, in `focus` mode, adds `.show` to syntax spans near the caret. Our
+   wiki-link decorations follow the same contract (`.md-wiki-mark` + `.show`). */
+
+.reflect-editor .ProseMirror {
+  outline: none;
+  font-family: var(--font-reading, var(--font-sans));
+  line-height: var(--leading-relaxed, 1.7);
+  color: var(--text);
+  caret-color: var(--accent);
+}
+
+.reflect-editor .ProseMirror h1,
+.reflect-editor .ProseMirror h2,
+.reflect-editor .ProseMirror h3 {
+  font-weight: 650;
+  letter-spacing: var(--tracking-snug, -0.01em);
+  margin: 1.25em 0 0.4em;
+}
+.reflect-editor .ProseMirror h1 { font-size: var(--text-2xl, 1.5rem); }
+.reflect-editor .ProseMirror h2 { font-size: var(--text-xl, 1.25rem); }
+.reflect-editor .ProseMirror h3 { font-size: var(--text-lg, 1.125rem); }
+.reflect-editor .ProseMirror h1:first-child { margin-top: 0; }
+
+.reflect-editor .ProseMirror p {
+  margin: 0.4em 0;
+}
+
+.reflect-editor .ProseMirror blockquote {
+  border-left: 2px solid var(--accent-soft, var(--border));
+  color: var(--text-secondary);
+  margin: 0.6em 0;
+  padding-left: 1em;
+}
+
+.reflect-editor .ProseMirror code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.9em;
+  background: var(--surface-sunken, rgb(0 0 0 / 5%));
+  border-radius: var(--radius-sm, 4px);
+  padding: 0.1em 0.3em;
+}
+
+.reflect-editor .ProseMirror pre {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.875em;
+  background: var(--surface-sunken, rgb(0 0 0 / 5%));
+  border-radius: var(--radius-md, 6px);
+  margin: 0.6em 0;
+  padding: 0.75em 1em;
+}
+.reflect-editor .ProseMirror pre code {
+  background: none;
+  padding: 0;
+}
+
+/* Markdown syntax characters (meowdown's spans + our wiki-link syntax spans).
+   `hide`: never visible. `focus`: visible only with the caret-adjacent `.show`.
+   `show`: always visible, dimmed. */
+.reflect-editor .md-mark,
+.reflect-editor .md-link-uri,
+.reflect-editor .md-wiki-mark {
+  color: var(--text-muted);
+}
+.reflect-editor [data-mark-mode='hide'] :is(.md-mark, .md-link-uri, .md-wiki-mark),
+.reflect-editor
+  [data-mark-mode='focus']
+  :is(.md-mark, .md-link-uri, .md-wiki-mark):not(.show) {
+  display: none;
+}
+
+/* Inline images: the literal `![alt](src)` text keeps a widget-rendered
+   preview directly beneath it (Plan 05b). */
+.reflect-editor .md-image {
+  user-select: none;
+  margin: 0.25em 0 0.5em;
+}
+.reflect-editor .md-image img {
+  max-width: 100%;
+  max-height: 28rem;
+  border-radius: var(--radius-md, 6px);
+}
+
+/* Read-only view for notes the editor can't faithfully round-trip yet. */
+.reflect-protected-note {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reflect-editor * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Wiki-link chips (decorations over the literal `[[…]]` text). */
+.reflect-editor .md-wiki-link {
+  color: var(--accent-soft-text, var(--accent));
+  background: var(--accent-soft, rgb(99 102 241 / 12%));
+  border-radius: var(--radius-sm, 4px);
+  padding: 0.05em 0.15em;
+  cursor: pointer;
+}
+.reflect-editor .md-wiki-link.is-active {
+  background: transparent;
+}

@@ -36,6 +36,26 @@ export async function applyIndexChanges(changes: FileChange[], generation: numbe
 }
 
 /**
+ * Subscribe to the raw `index:changed` batches (zod-validated). The general
+ * notification primitive: the indexing subscription below builds on it, and the
+ * editor (Plan 05) uses it for external-change reconciliation of the open note.
+ */
+export function subscribeFileChanges(
+  handler: (changes: FileChange[]) => void,
+): Promise<UnlistenFn> {
+  return listen('index:changed', (event) => {
+    const parsed = fileChangesSchema.safeParse(event.payload)
+    if (parsed.success) {
+      handler(parsed.data)
+    } else {
+      // A malformed payload means the Rust↔TS event contract drifted — loud
+      // beats silently-stale indexes and editors.
+      console.error('invalid index:changed payload:', parsed.error)
+    }
+  })
+}
+
+/**
  * Subscribe to `index:changed` and apply each batch at `generation`. Returns an
  * unlisten function; call it (and resubscribe with the new generation) when the
  * active graph changes.
@@ -44,14 +64,11 @@ export function subscribeIndexChanges(generation: number): Promise<UnlistenFn> {
   // Serialize batches so overlapping events for the same path can't reorder
   // (e.g. an upsert landing after a later remove, leaving a ghost row).
   let applyQueue: Promise<void> = Promise.resolve()
-  return listen('index:changed', (event) => {
-    const parsed = fileChangesSchema.safeParse(event.payload)
-    if (parsed.success) {
-      applyQueue = applyQueue
-        .then(() => applyIndexChanges(parsed.data, generation))
-        .catch((err) => {
-          console.error('failed to apply watcher batch:', err)
-        })
-    }
+  return subscribeFileChanges((changes) => {
+    applyQueue = applyQueue
+      .then(() => applyIndexChanges(changes, generation))
+      .catch((err) => {
+        console.error('failed to apply watcher batch:', err)
+      })
   })
 }

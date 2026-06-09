@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { getAppVersion, type GraphInfo } from '@reflect/core'
+import { useCallback, useEffect, useState } from 'react'
+import { getAppVersion, isAppError, notePath, readNote, writeNote, type GraphInfo } from '@reflect/core'
 import { AppShell } from '@/components/app-shell'
-import { NoteEditor } from '@/editor/note-editor'
+import { NotePane } from '@/components/note-pane'
 import { useTheme } from '@/providers/theme-provider'
 
-/** Sample note for the Plan 05 editor spike (persistence arrives in Plan 06). */
-const SAMPLE_NOTE = `# Welcome to Reflect
+/** The fixed note the workspace opens until Plan 06 brings navigation. */
+const WELCOME_PATH = notePath('welcome')
+
+/** Seed content, written once when the welcome note doesn't exist yet. */
+const WELCOME_NOTE = `# Welcome to Reflect
 
 This is the **meowdown** editor — markdown you can _see_, backed by plain files.
+Everything you type here is saved to \`${WELCOME_PATH}\` in your graph.
 
 Daily notes link to people and ideas with [[Wiki Links]], and to dates like [[2026-06-09]].
 
@@ -36,7 +40,10 @@ interface GraphWorkspaceProps {
 export function GraphWorkspace({ graph }: GraphWorkspaceProps) {
   const { resolvedTheme, setTheme } = useTheme()
   const [version, setVersion] = useState<string | null>(null)
-  const markdownRef = useRef(SAMPLE_NOTE)
+  // Set once the welcome note is known to exist (created on first open), so the
+  // editor only ever binds to a real file. Keyed off the graph root: switching
+  // graphs re-ensures in the new one.
+  const [openPath, setOpenPath] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -57,13 +64,37 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps) {
     }
   }, [])
 
+  useEffect(() => {
+    let active = true
+    setOpenPath(null)
+    void (async () => {
+      try {
+        await readNote(WELCOME_PATH)
+      } catch (err) {
+        if (isAppError(err) && err.kind === 'notFound') {
+          try {
+            await writeNote(WELCOME_PATH, WELCOME_NOTE, graph.generation)
+          } catch {
+            // fall through — NotePane surfaces the open error
+          }
+        }
+        // Any other failure also falls through: always mount NotePane so its
+        // own read attempt can show the real error instead of an endless
+        // "Opening note…".
+      } finally {
+        if (active) {
+          setOpenPath(WELCOME_PATH)
+        }
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [graph.root, graph.generation])
+
   const toggleTheme = useCallback((): void => {
     setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
   }, [resolvedTheme, setTheme])
-
-  const handleEditorChange = useCallback((markdown: string): void => {
-    markdownRef.current = markdown
-  }, [])
 
   const cloudLabel = graph.cloudSync ? (CLOUD_LABELS[graph.cloudSync] ?? graph.cloudSync) : null
 
@@ -102,7 +133,11 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps) {
         ) : null}
 
         <div className="mx-auto w-full max-w-2xl flex-1 overflow-auto px-6 py-8">
-          <NoteEditor initialContent={SAMPLE_NOTE} onChange={handleEditorChange} />
+          {openPath ? (
+            <NotePane path={openPath} />
+          ) : (
+            <div className="text-sm text-[color:var(--text-muted)]">Opening note…</div>
+          )}
         </div>
       </div>
     </AppShell>

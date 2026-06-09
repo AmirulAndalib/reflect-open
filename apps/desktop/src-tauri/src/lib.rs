@@ -27,6 +27,7 @@ pub fn run() {
             fs::graph_create,
             fs::note_read,
             fs::note_write,
+            fs::asset_write,
             fs::note_move,
             fs::note_delete,
             fs::list_files,
