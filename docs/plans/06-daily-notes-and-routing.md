@@ -19,6 +19,18 @@ note" + "new note" keyboard paths.
 **Out:** calendar/meeting context (deferred), templates (deferred — leave an insertion
 seam).
 
+## Delivery split (decided 2026-06-09)
+
+- **06a** — the spine: the typed route model + history router (step 4), the central
+  date module, open-to-today with **lazy create-on-first-keystroke** (step 1),
+  prev/today/next day navigation (single-day view), `[[YYYY-MM-DD]]` Mod+click
+  navigation (step 3), and the `⌘D/⌘N/⌘[/⌘]` shortcuts through the keymap registry
+  (step 5). The note route carries `path` (identity = path in the first wave, Plan 03;
+  `id` joins later).
+- **06b** — the virtualized multi-day stream (`@tanstack/react-virtual`, step 2),
+  jot-to-today quick capture (step 6), and scroll/focus restoration polish on
+  back/forward.
+
 ## Steps
 
 1. **Today on launch.** On graph ready, resolve today's `daily/YYYY-MM-DD.md` (local

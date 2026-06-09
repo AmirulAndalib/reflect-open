@@ -25,6 +25,14 @@ import { scanInlineWikiLinks } from '@reflect/core'
 
 const wikiLinkKey = new PluginKey<DecorationSet>('reflect-wiki-links')
 
+export interface WikiLinkOptions {
+  /**
+   * Called with the link target on Mod+click (plain click places the caret, as
+   * in any live-preview editor). Resolution/navigation is the caller's job.
+   */
+  onNavigate?: (target: string) => void
+}
+
 /** One decorated range, in document positions. Exported for tests. */
 export interface WikiLinkRange {
   from: number
@@ -108,7 +116,7 @@ function buildDecorations(state: EditorState): DecorationSet {
   return DecorationSet.create(state.doc, decorations)
 }
 
-function createWikiLinkPlugin(): Plugin<DecorationSet> {
+function createWikiLinkPlugin(options: WikiLinkOptions): Plugin<DecorationSet> {
   return new Plugin<DecorationSet>({
     key: wikiLinkKey,
     state: {
@@ -124,11 +132,25 @@ function createWikiLinkPlugin(): Plugin<DecorationSet> {
     },
     props: {
       decorations: (state) => wikiLinkKey.getState(state),
+      handleClick: (_view, _pos, event) => {
+        if (!options.onNavigate || !(event.metaKey || event.ctrlKey)) {
+          return false
+        }
+        // The chip decoration carries the target; read it off the clicked span.
+        const target = (event.target as HTMLElement | null)
+          ?.closest?.('[data-wiki-target]')
+          ?.getAttribute('data-wiki-target')
+        if (!target) {
+          return false
+        }
+        options.onNavigate(target)
+        return true
+      },
     },
   })
 }
 
 /** The wiki-link chip extension, composed into the editor via `union`. */
-export function defineWikiLinks(): PlainExtension {
-  return definePlugin(createWikiLinkPlugin())
+export function defineWikiLinks(options: WikiLinkOptions = {}): PlainExtension {
+  return definePlugin(createWikiLinkPlugin(options))
 }

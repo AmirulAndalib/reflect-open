@@ -46,13 +46,27 @@ export interface NoteDocument {
   loadTheirs: () => void
 }
 
+export interface NoteDocumentOptions {
+  /**
+   * Treat a missing file as an empty note instead of an error. The file is then
+   * created by the first save — Plan 06's lazy daily-note contract: opening a
+   * day never litters the graph; writing does.
+   */
+  createIfMissing?: boolean
+}
+
 /**
  * @param path graph-relative path of the open note
  * @param generation the open graph's session generation (`GraphInfo.generation`);
  *   pins every write to that graph — Rust rejects a write whose generation is
  *   stale, so a flush racing a graph switch can't land in the new graph.
  */
-export function useNoteDocument(path: string | null, generation: number | null): NoteDocument {
+export function useNoteDocument(
+  path: string | null,
+  generation: number | null,
+  options?: NoteDocumentOptions,
+): NoteDocument {
+  const createIfMissing = options?.createIfMissing ?? false
   const [status, setStatus] = useState<NoteDocumentStatus>('loading')
   const [initialContent, setInitialContent] = useState('')
   const [isProtected, setIsProtected] = useState(false)
@@ -279,7 +293,16 @@ export function useNoteDocument(path: string | null, generation: number | null):
     missedChangeRef.current = false
     void (async () => {
       try {
-        const content = await readNote(path)
+        let content: string
+        try {
+          content = await readNote(path)
+        } catch (err) {
+          if (createIfMissing && isAppError(err) && err.kind === 'notFound') {
+            content = '' // lazy note: starts empty, created by the first save
+          } else {
+            throw err
+          }
+        }
         if (!active) {
           return
         }
@@ -313,7 +336,7 @@ export function useNoteDocument(path: string | null, generation: number | null):
     return () => {
       active = false
     }
-  }, [path, reconcileFromDisk])
+  }, [path, createIfMissing, reconcileFromDisk])
 
   // External-change reconciliation via the watcher (Plan 04b events).
   useEffect(() => {

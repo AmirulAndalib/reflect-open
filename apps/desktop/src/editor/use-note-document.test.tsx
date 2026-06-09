@@ -367,6 +367,49 @@ describe('useNoteDocument', () => {
     }
   })
 
+  it('lazy notes open empty when missing and are created by the first save', async () => {
+    vi.useFakeTimers()
+    try {
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === 'note_read') {
+          throw { kind: 'notFound', message: 'missing' } // AppError shape
+        }
+        if (command === 'note_write') {
+          disk = (args as { contents: string }).contents
+          writes.push(disk)
+          return null
+        }
+        return null
+      })
+
+      const hook = renderHook(() =>
+        useNoteDocument('daily/2026-06-09.md', 1, { createIfMissing: true }),
+      )
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(hook.result.current.status).toBe('ready')
+      expect(hook.result.current.initialContent).toBe('')
+      expect(hook.result.current.dirty).toBe(false)
+      expect(writes).toEqual([]) // opening alone never creates the file
+
+      act(() => hook.result.current.onEditorChange('first keystroke\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      expect(writes).toEqual(['first keystroke\n'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a missing non-lazy note is still an error', async () => {
+    mockInvoke.mockImplementation(async (command) => {
+      if (command === 'note_read') {
+        throw { kind: 'notFound', message: 'missing' }
+      }
+      return null
+    })
+    const hook = renderHook(() => useNoteDocument('notes/gone.md', 1))
+    await waitFor(() => expect(hook.result.current.status).toBe('error'))
+  })
+
   it('keepMine rewrites the file with the buffer', async () => {
     const { result } = await readyHook()
     act(() => result.current.onEditorChange('# My unsaved edit\n'))
