@@ -72,6 +72,27 @@ describe('createGraphIndex', () => {
     expect(unlisten).not.toHaveBeenCalled() // retained as the active subscription
   })
 
+  it('reports progress: reconciling → live; idle when there is no index', async () => {
+    const onProgress = vi.fn()
+    const index = createGraphIndex({ onProgress })
+    index.sync(5, () => false)
+    await index.stop()
+    expect(onProgress.mock.calls.map(([stage]) => stage)).toEqual(['reconciling', 'live'])
+
+    onProgress.mockClear()
+    index.sync(null, () => false)
+    expect(onProgress).toHaveBeenCalledWith('idle')
+  })
+
+  it('reports idle (not live) when the sync pass fails un-superseded', async () => {
+    const onProgress = vi.fn()
+    mockReconcile.mockRejectedValue(new Error('boom'))
+    const index = createGraphIndex({ onProgress })
+    index.sync(5, () => false)
+    await index.stop()
+    expect(onProgress.mock.calls.map(([stage]) => stage)).toEqual(['reconciling', 'idle'])
+  })
+
   it('bails after reconcile when superseded — no subscribe, no watcher', async () => {
     const index = createGraphIndex()
     index.sync(5, () => true) // stale immediately after reconcile

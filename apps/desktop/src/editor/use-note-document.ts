@@ -27,13 +27,27 @@ export interface NoteDocument extends NoteSessionSnapshot {
   loadTheirs: () => void
 }
 
+export interface NoteDocumentOptions {
+  /**
+   * Treat a missing file as an empty note instead of an error. The file is then
+   * created by the first save — Plan 06's lazy daily-note contract: opening a
+   * day never litters the graph; writing does.
+   */
+  createIfMissing?: boolean
+}
+
 /**
  * @param path graph-relative path of the open note
  * @param generation the open graph's session generation (`GraphInfo.generation`);
  *   pins every write to that graph — Rust rejects a write whose generation is
  *   stale, so a flush racing a graph switch can't land in the new graph.
  */
-export function useNoteDocument(path: string | null, generation: number | null): NoteDocument {
+export function useNoteDocument(
+  path: string | null,
+  generation: number | null,
+  options?: NoteDocumentOptions,
+): NoteDocument {
+  const createIfMissing = options?.createIfMissing ?? false
   const [snapshot, setSnapshot] = useState<NoteSessionSnapshot>(INITIAL_NOTE_SNAPSHOT)
   const editorRef = useRef<NoteEditorHandle | null>(null)
   const sessionRef = useRef<NoteSession | null>(null)
@@ -54,6 +68,7 @@ export function useNoteDocument(path: string | null, generation: number | null):
       classify: checkRoundTrip,
       onSnapshot: setSnapshot,
       applyContent: (markdown) => editorRef.current?.setMarkdown(markdown),
+      createIfMissing,
     })
     sessionRef.current = session
     session.load()
@@ -65,7 +80,7 @@ export function useNoteDocument(path: string | null, generation: number | null):
       // path-switch "final flush" lives here, not in cross-note bookkeeping.
       session.dispose()
     }
-  }, [path, generation])
+  }, [path, generation, createIfMissing])
 
   // External-change reconciliation via the watcher (Plan 04b events).
   useEffect(() => {

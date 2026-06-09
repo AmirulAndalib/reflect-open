@@ -1,12 +1,22 @@
-import type { ReactElement } from 'react'
-import { NoteEditor } from '@/editor/note-editor'
+import { useCallback, useEffect, useRef, type ReactElement } from 'react'
+import { resolveWikiTarget } from '@reflect/core'
+import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
+import { isIsoDate } from '@/lib/dates'
 import { useGraph } from '@/providers/graph-provider'
+import { useRouter } from '@/routing/router'
+import { routeForPath } from '@/routing/route'
 
 interface NotePaneProps {
   /** Graph-relative path of the note to edit. */
   path: string
+  /** Treat a missing file as empty (created on first keystroke) — Plan 06. */
+  lazy?: boolean
+  /** Focus the editor when it mounts (the navigated-to day/note). */
+  autoFocus?: boolean
+  /** Called once the autofocus actually happened (the editor mounted). */
+  onAutoFocused?: () => void
 }
 
 /**
@@ -17,14 +27,67 @@ interface NotePaneProps {
  * so a converter gap can never silently rewrite a file. Plan 06 mounts one of
  * these per day in the daily stream.
  */
-export function NotePane({ path }: NotePaneProps): ReactElement {
+export function NotePane({
+  path,
+  lazy = false,
+  autoFocus = false,
+  onAutoFocused,
+}: NotePaneProps): ReactElement {
   const { graph } = useGraph()
+  const { navigate } = useRouter()
   const graphRoot = graph?.root ?? null
   const generation = graph?.generation ?? null
-  const document = useNoteDocument(path, generation)
+  const document = useNoteDocument(path, generation, { createIfMissing: lazy })
   const { options: images, saveError: imageSaveError } = useImagePersistence(
     graphRoot,
     generation,
+  )
+
+  const unmountedRef = useRef(false)
+  useEffect(() => {
+    unmountedRef.current = false
+    return () => {
+      unmountedRef.current = true
+    }
+  }, [])
+
+  // Mod+click on a [[wiki link]]: resolve via the index; an unresolved ISO date
+  // is still a valid daily target (created lazily on first write). Unresolved
+  // non-date targets are a no-op until Plan 07 adds the "create note" offer.
+  const onWikiLinkClick = useCallback(
+    (target: string) => {
+      void (async () => {
+        try {
+          const resolution = await resolveWikiTarget(target)
+          // The pane can unmount while resolution is in flight (route change,
+          // graph switch) — a late navigate would yank the user somewhere
+          // they've already left.
+          if (unmountedRef.current) {
+            return
+          }
+          if (resolution.kind === 'resolved') {
+            navigate(routeForPath(resolution.ref))
+          } else if (isIsoDate(resolution.text)) {
+            navigate({ kind: 'daily', date: resolution.text })
+          }
+        } catch (err) {
+          console.error('wiki-link resolution failed:', err)
+        }
+      })()
+    },
+    [navigate],
+  )
+
+  const bindEditor = document.bindEditor
+  const handleRef = useCallback(
+    (handle: NoteEditorHandle | null) => {
+      bindEditor(handle)
+      if (handle && autoFocus) {
+        handle.focus()
+        onAutoFocused?.()
+      }
+    },
+    [bindEditor, autoFocus, onAutoFocused],
   )
 
   if (document.status === 'loading') {
@@ -118,7 +181,8 @@ export function NotePane({ path }: NotePaneProps): ReactElement {
         initialContent={document.initialContent}
         onChange={document.onEditorChange}
         images={images}
-        handleRef={document.bindEditor}
+        onWikiLinkClick={onWikiLinkClick}
+        handleRef={handleRef}
       />
     </div>
   )

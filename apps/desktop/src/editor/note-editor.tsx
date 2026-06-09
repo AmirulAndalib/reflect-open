@@ -43,15 +43,21 @@ interface NoteEditorProps {
   markMode?: MarkMode
   /** Image rendering + paste/drop persistence (Plan 05b). */
   images?: ImageOptions
+  /** Mod+click on a `[[wiki link]]` chip (Plan 06 navigation). */
+  onWikiLinkClick?: (target: string) => void
   /** Imperative handle (React 19 ref-as-prop). */
   handleRef?: Ref<NoteEditorHandle>
 }
 
-function createNoteEditor(initialContent: string, images: ImageOptions): Editor {
+function createNoteEditor(
+  initialContent: string,
+  images: ImageOptions,
+  onNavigate: (target: string) => void,
+): Editor {
   const editor = createEditor({
     extension: union(
       defineEditorExtension(),
-      defineWikiLinks(),
+      defineWikiLinks({ onNavigate }),
       defineImages(images),
       defineReflectKeymap(),
     ),
@@ -69,17 +75,24 @@ export function NoteEditor({
   onChange,
   markMode = 'focus',
   images,
+  onWikiLinkClick,
   handleRef,
 }: NoteEditorProps): ReactElement {
-  // Extensions are created once (uncontrolled editor), so the image options are
-  // read through a ref that tracks the latest props.
+  // Extensions are created once (uncontrolled editor), so per-render options are
+  // read through refs that track the latest props.
   const imagesRef = useRef<ImageOptions | undefined>(images)
   imagesRef.current = images
+  const wikiClickRef = useRef<((target: string) => void) | undefined>(onWikiLinkClick)
+  wikiClickRef.current = onWikiLinkClick
   const [editor] = useState(() =>
-    createNoteEditor(initialContent, {
-      resolveUrl: (src) => imagesRef.current?.resolveUrl(src) ?? null,
-      saveImage: (file) => imagesRef.current?.saveImage?.(file) ?? Promise.resolve(null),
-    }),
+    createNoteEditor(
+      initialContent,
+      {
+        resolveUrl: (src) => imagesRef.current?.resolveUrl(src) ?? null,
+        saveImage: (file) => imagesRef.current?.saveImage?.(file) ?? Promise.resolve(null),
+      },
+      (target) => wikiClickRef.current?.(target),
+    ),
   )
 
   useExtension(

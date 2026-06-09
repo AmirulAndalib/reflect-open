@@ -50,9 +50,17 @@ export interface GraphIndex {
 /** Stage of the index lifecycle that failed, for `onError` reporting. */
 export type GraphIndexStage = 'open' | 'sync'
 
+/** Live progress of the background sync, for UI surfacing (Plan 06b). */
+export type GraphIndexProgress = 'reconciling' | 'live' | 'idle'
+
 export interface GraphIndexOptions {
   /** Called when a stage fails. The lifecycle itself never throws. */
   onError?: (stage: GraphIndexStage, error: unknown) => void
+  /**
+   * Called as the sync pass progresses. Bailed (superseded) passes emit
+   * nothing further — the newer open's pass owns the indicator.
+   */
+  onProgress?: (progress: GraphIndexProgress) => void
 }
 
 /**
@@ -61,7 +69,7 @@ export interface GraphIndexOptions {
  * keeps one instance (e.g. in a ref) across graph switches.
  */
 export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
-  const { onError } = options
+  const { onError, onProgress } = options
   let abort: AbortController | null = null
   let done: Promise<void> = Promise.resolve()
   // Boxed so the async sync pass can read/replace the active subscription without
@@ -91,10 +99,12 @@ export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
 
     if (generation === null) {
       // No index for this graph — stop any watcher left from the previous one.
+      onProgress?.('idle')
       void watchStop().catch(() => {})
       return
     }
 
+    onProgress?.('reconciling')
     const controller = new AbortController()
     abort = controller
     done = (async () => {
@@ -117,8 +127,12 @@ export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
         live.unlisten?.()
         live.unlisten = pending
         pending = null // ownership transferred
+        onProgress?.('live')
       } catch (error) {
         onError?.('sync', error)
+        if (!isStale()) {
+          onProgress?.('idle')
+        }
       } finally {
         pending?.()
       }

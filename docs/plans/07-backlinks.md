@@ -21,6 +21,10 @@ resolution.
 graph-map view (deferred), suggested backlinks (nice-to-have; can follow once retrieval
 exists in Plan 09).
 
+**Carried in from Plan 06 review:** clicking a wiki link that fails to resolve currently
+logs to the console only — surface it to the user (toast/inline) as part of this plan's
+link UX (create-from-unresolved largely subsumes the failure case).
+
 ## Steps
 
 1. **`[[` autocomplete.** Builds on the meowdown wiki-link extension added in Plan 05

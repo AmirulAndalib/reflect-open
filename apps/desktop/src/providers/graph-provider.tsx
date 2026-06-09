@@ -27,6 +27,8 @@ interface GraphContextValue {
   status: GraphStatus
   graph: GraphInfo | null
   recents: RecentGraph[]
+  /** True while the background index reconcile is running (Plan 06b). */
+  indexing: boolean
   error: string | null
   /** Show the OS folder picker, then open (and bootstrap) the chosen graph. */
   pickAndOpen: () => Promise<void>
@@ -53,6 +55,7 @@ export function GraphProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<GraphStatus>('loading')
   const [graph, setGraph] = useState<GraphInfo | null>(null)
   const [recents, setRecents] = useState<RecentGraph[]>([])
+  const [indexing, setIndexing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Monotonic open token: only the most recent open may commit `graph`/`status`,
   // so overlapping opens (double-click, StrictMode remount) can't finish out of
@@ -65,6 +68,7 @@ export function GraphProvider({ children }: { children: ReactNode }) {
   const indexRef = useRef(
     createGraphIndex({
       onError: (stage, err) => console.error(`index ${stage} failed:`, messageOf(err)),
+      onProgress: (progress) => setIndexing(progress === 'reconciling'),
     }),
   )
 
@@ -190,8 +194,8 @@ export function GraphProvider({ children }: { children: ReactNode }) {
   )
 
   const value = useMemo<GraphContextValue>(
-    () => ({ status, graph, recents, error, pickAndOpen, openRecent, forget }),
-    [status, graph, recents, error, pickAndOpen, openRecent, forget],
+    () => ({ status, graph, recents, indexing, error, pickAndOpen, openRecent, forget }),
+    [status, graph, recents, indexing, error, pickAndOpen, openRecent, forget],
   )
 
   return <GraphContext.Provider value={value}>{children}</GraphContext.Provider>

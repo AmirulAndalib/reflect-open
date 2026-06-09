@@ -77,6 +77,14 @@ export interface NoteSessionOptions {
    * session recognizes the re-entry and won't treat it as a user edit.
    */
   applyContent: (markdown: string) => void
+  /**
+   * Treat a missing file as an empty note on load instead of an error; the
+   * file is then created by the first save — Plan 06's lazy daily-note
+   * contract: opening a day never litters the graph, writing does. Applies
+   * only to the initial load: a note deleted mid-session still reconciles to
+   * a no-op rather than silently emptying the editor.
+   */
+  createIfMissing?: boolean
   saveDebounceMs?: number
 }
 
@@ -103,6 +111,7 @@ export interface NoteSession {
 /** Create the document session for one note. See the module doc for semantics. */
 export function createNoteSession(options: NoteSessionOptions): NoteSession {
   const { path, io, classify, onSnapshot, applyContent } = options
+  const createIfMissing = options.createIfMissing ?? false
   const saveDebounceMs = options.saveDebounceMs ?? DEFAULT_SAVE_DEBOUNCE_MS
 
   // Snapshot state (surfaces via onSnapshot).
@@ -300,6 +309,18 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     adoptCleanContent(content)
   }
 
+  /** The initial read; with `createIfMissing`, a missing file is an empty note. */
+  async function readInitial(): Promise<string> {
+    try {
+      return await io.read(path)
+    } catch (cause) {
+      if (createIfMissing && isAppError(cause) && cause.kind === 'notFound') {
+        return '' // lazy note: starts empty, created by the first save
+      }
+      throw cause
+    }
+  }
+
   function load(): void {
     loading = true
     missedChange = false
@@ -309,7 +330,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     emit()
     void (async () => {
       try {
-        const content = await io.read(path)
+        const content = await readInitial()
         if (disposed) {
           return
         }
