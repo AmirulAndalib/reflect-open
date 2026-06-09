@@ -18,6 +18,10 @@ describe('renameWikiLink', () => {
     const source = '[[ Foo ]] and [[Foo]] and [[ foo|bar]]'
     expect(renameWikiLink(source, 'Foo', 'Baz')).toBe('[[Baz]] and [[Baz]] and [[Baz|bar]]')
   })
+
+  it('rejects a destination target containing wiki-link syntax', () => {
+    expect(() => renameWikiLink('[[Foo]]', 'Foo', 'A|B')).toThrow(/invalid wiki-link target/i)
+  })
 })
 
 describe('appendUnderHeading', () => {

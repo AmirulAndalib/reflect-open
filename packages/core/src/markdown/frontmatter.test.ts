@@ -79,6 +79,12 @@ describe('upsertFrontmatter', () => {
     expect(upsertFrontmatter(source, {})).toBe(source)
   })
 
+  it('refuses to update invalid frontmatter rather than dropping bytes', () => {
+    expect(() => upsertFrontmatter('---\nfoo: [unclosed\n---\nbody', { id: 'x' })).toThrow(
+      /invalid YAML frontmatter/i,
+    )
+  })
+
   it('deletes a key when the patch value is undefined', () => {
     const source = '---\nid: x\ncustom: keep\n---\nbody'
     const result = upsertFrontmatter(source, { id: undefined })

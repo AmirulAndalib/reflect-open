@@ -29,6 +29,11 @@ function applySplices(source: string, splices: Splice[]): string {
  * surrounding text. Used by the rename-rewrite flow.
  */
 export function renameWikiLink(source: string, from: string, to: string): string {
+  // `[[…]]` has no escaping, so a target can't contain the bracket/pipe/newline
+  // characters that delimit the syntax — writing one would corrupt the link.
+  if (/[[\]|\r\n]/.test(to)) {
+    throw new Error(`invalid wiki-link target (cannot contain [ ] | or a newline): ${to}`)
+  }
   const fromKey = from.trim().toLowerCase()
   const { wikiLinks } = parseNote({ path: '', source })
   const splices = wikiLinks
