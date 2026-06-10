@@ -52,4 +52,14 @@ describe('buildAutocompleteEntries', () => {
     const entries = buildAutocompleteEntries('Roadmap', [], { offerCreate: false })
     expect(entries).toEqual([])
   })
+
+  it('suppressing create still passes suggestion rows through', () => {
+    const entries = buildAutocompleteEntries(
+      'New Idea',
+      [suggestion({ target: 'New Ideas Board', title: 'New Ideas Board' })],
+      { offerCreate: false },
+    )
+    expect(entries).toHaveLength(1)
+    expect(entries[0].kind).toBe('suggestion')
+  })
 })
