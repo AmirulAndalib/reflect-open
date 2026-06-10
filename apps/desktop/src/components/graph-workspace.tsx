@@ -5,8 +5,11 @@ import { AppShell } from '@/components/app-shell'
 import { CommandPalette } from '@/components/command-palette/command-palette'
 import { EmbeddingsSync } from '@/components/embeddings-sync'
 import { PaletteProvider } from '@/components/command-palette/palette-provider'
+import { DailyContextSidebar } from '@/components/daily-sidebar/daily-context-sidebar'
+import { dailySidebarDate } from '@/components/daily-sidebar/sidebar-route'
 import { RouteContent } from '@/components/route-content'
 import { useAppVersion } from '@/hooks/use-app-version'
+import { useToday } from '@/lib/use-today'
 import { OperationsStatus } from '@/components/operations-status'
 import { useGraph } from '@/providers/graph-provider'
 import { useTheme } from '@/providers/theme-provider'
@@ -43,9 +46,13 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
 function WorkspaceContent({ graph }: GraphWorkspaceProps): ReactElement {
   const { resolvedTheme, setTheme } = useTheme()
   const { indexing } = useGraph()
-  const { navigate } = useRouter()
+  const { navigate, route } = useRouter()
   const version = useAppVersion()
   const commandContext = useAppShortcuts()
+  const today = useToday()
+  // Daily routes get the contextual sidebar; note/search/settings routes get
+  // none (the AppShell collapses the region entirely when sidebar is absent).
+  const sidebarDate = dailySidebarDate(route, today)
 
   const toggleTheme = useCallback((): void => {
     setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
@@ -59,7 +66,7 @@ function WorkspaceContent({ graph }: GraphWorkspaceProps): ReactElement {
         <span className="text-xs font-semibold text-[color:var(--text-secondary)]">R</span>
       }
       sidebar={
-        <div className="p-4 text-sm text-[color:var(--text-secondary)]">Context</div>
+        sidebarDate !== null ? <DailyContextSidebar date={sidebarDate} /> : undefined
       }
     >
       <div className="flex h-full flex-col">
