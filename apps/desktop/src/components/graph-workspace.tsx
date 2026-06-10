@@ -1,6 +1,8 @@
-import { useCallback, type ReactElement } from 'react'
+import { useCallback, useEffect, type ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
 import { AppShell } from '@/components/app-shell'
+import { CommandPalette } from '@/components/command-palette/command-palette'
+import { PaletteProvider, usePalette } from '@/components/command-palette/palette-provider'
 import { DailyStream } from '@/components/daily-stream'
 import { NotePane } from '@/components/note-pane'
 import { useAppVersion } from '@/hooks/use-app-version'
@@ -33,7 +35,9 @@ interface GraphWorkspaceProps {
 export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
   return (
     <RouterProvider key={graph.root}>
-      <WorkspaceContent graph={graph} />
+      <PaletteProvider>
+        <WorkspaceContent graph={graph} />
+      </PaletteProvider>
     </RouterProvider>
   )
 }
@@ -42,7 +46,7 @@ function WorkspaceContent({ graph }: GraphWorkspaceProps): ReactElement {
   const { resolvedTheme, setTheme } = useTheme()
   const { indexing } = useGraph()
   const version = useAppVersion()
-  useAppShortcuts()
+  const commandContext = useAppShortcuts()
 
   const toggleTheme = useCallback((): void => {
     setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
@@ -97,9 +101,22 @@ function WorkspaceContent({ graph }: GraphWorkspaceProps): ReactElement {
         </div>
 
         <OperationsStatus />
+        <CommandPalette context={commandContext} />
       </div>
     </AppShell>
   )
+}
+
+/**
+ * `search/:query` is a deep-link target, not a second search surface (decided
+ * 2026-06-09): arriving opens the ⌘K palette pre-filled over the stream.
+ */
+function SearchRoute({ query, today }: { query: string; today: string }): ReactElement {
+  const { openPalette } = usePalette()
+  useEffect(() => {
+    openPalette(query)
+  }, [query, openPalette])
+  return <DailyStream targetDate={today} />
 }
 
 /** Route → view. `today` tracks the live clock — midnight re-renders it. */
@@ -122,10 +139,6 @@ function RouteContent(): ReactElement {
         </ScrollRestored>
       )
     case 'search':
-      return (
-        <div className="p-6 text-sm text-[color:var(--text-muted)]">
-          Search arrives in Plan 08.
-        </div>
-      )
+      return <SearchRoute query={route.query} today={today} />
   }
 }

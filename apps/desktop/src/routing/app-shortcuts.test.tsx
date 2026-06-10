@@ -1,19 +1,29 @@
 import { renderHook, act } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
+import { PaletteProvider, usePalette } from '@/components/command-palette/palette-provider'
 import { listRegisteredBindings } from '@/editor/keymap'
 import { useAppShortcuts } from './app-shortcuts'
 import { RouterProvider, useRouter } from './router'
+
+vi.mock('@/providers/graph-provider', () => ({
+  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 } }),
+}))
+vi.mock('@/providers/theme-provider', () => ({
+  useTheme: () => ({ theme: 'light', resolvedTheme: 'light', setTheme: vi.fn() }),
+}))
 
 function shortcutsHook() {
   return renderHook(
     () => {
       useAppShortcuts()
-      return useRouter()
+      return { router: useRouter(), palette: usePalette() }
     },
     {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <RouterProvider>{children}</RouterProvider>
+        <RouterProvider>
+          <PaletteProvider>{children}</PaletteProvider>
+        </RouterProvider>
       ),
     },
   )
@@ -24,9 +34,9 @@ function press(key: string) {
 }
 
 describe('app shortcuts', () => {
-  it('registers in the central keymap registry under the app scope', () => {
+  it('registers the command keybindings in the central keymap registry', () => {
     const bindings = listRegisteredBindings()
-    for (const key of ['Mod-d', 'Mod-n', 'Mod-[', 'Mod-]']) {
+    for (const key of ['Mod-d', 'Mod-n', 'Mod-[', 'Mod-]', 'Mod-k']) {
       expect(bindings.get(key)).toBe('app')
     }
   })
@@ -35,18 +45,25 @@ describe('app shortcuts', () => {
     const { result } = shortcutsHook()
 
     act(() => press('n'))
-    expect(result.current.route.kind).toBe('note')
-    const notePathOpened = (result.current.route as { kind: 'note'; path: string }).path
-    expect(notePathOpened).toMatch(/^notes\/[0-9a-z]+\.md$/)
+    expect(result.current.router.route.kind).toBe('note')
+    const opened = result.current.router.route as { kind: 'note'; path: string }
+    expect(opened.path).toMatch(/^notes\/[0-9a-z]+\.md$/)
 
     act(() => press('d'))
-    expect(result.current.route).toEqual({ kind: 'today' })
+    expect(result.current.router.route).toEqual({ kind: 'today' })
 
     act(() => press('['))
-    expect(result.current.route.kind).toBe('note')
+    expect(result.current.router.route.kind).toBe('note')
 
     act(() => press(']'))
-    expect(result.current.route).toEqual({ kind: 'today' })
+    expect(result.current.router.route).toEqual({ kind: 'today' })
+  })
+
+  it('⌘K opens the palette', () => {
+    const { result } = shortcutsHook()
+    expect(result.current.palette.open).toBe(false)
+    act(() => press('k'))
+    expect(result.current.palette.open).toBe(true)
   })
 
   it('matches uppercase keys (caps lock) and ignores auto-repeat', () => {
@@ -54,22 +71,24 @@ describe('app shortcuts', () => {
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'N', metaKey: true }))
     })
-    expect(result.current.route.kind).toBe('note') // caps lock still triggers
+    expect(result.current.router.route.kind).toBe('note') // caps lock still triggers
 
-    const opened = result.current.route
+    const opened = result.current.router.route
     act(() => {
       window.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'n', metaKey: true, repeat: true }),
       )
     })
-    expect(result.current.route).toEqual(opened) // held key doesn't spam notes
+    expect(result.current.router.route).toEqual(opened) // held key doesn't spam notes
   })
 
   it('ignores chords with extra modifiers', () => {
     const { result } = shortcutsHook()
-    window.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'n', metaKey: true, shiftKey: true }),
-    )
-    expect(result.current.route).toEqual({ kind: 'today' })
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'n', metaKey: true, shiftKey: true }),
+      )
+    })
+    expect(result.current.router.route).toEqual({ kind: 'today' })
   })
 })

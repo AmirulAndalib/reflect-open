@@ -48,6 +48,15 @@ export {
   type SearchHit,
 } from './queries'
 export { rankWikiSuggestions, type WikiSuggestion } from './suggest'
+export {
+  searchNotesRanked,
+  parseHighlights,
+  randomNotePath,
+  HIGHLIGHT_START,
+  HIGHLIGHT_END,
+  type RankedSearchHit,
+  type HighlightSegment,
+} from './search'
 export { lineSnippet } from './snippet'
 export {
   rewriteLinksForTitleChange,
