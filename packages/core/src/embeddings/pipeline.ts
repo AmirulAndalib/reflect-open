@@ -40,27 +40,43 @@ export async function embedNote(options: EmbedNoteOptions): Promise<number> {
     return 0
   }
 
-  // Stored hash+model pairs: a model change makes every chunk "new", so a
-  // model switch re-embeds naturally — no separate rebuild bookkeeping.
+  // Stored hash+model pairs, **counted**: duplicate identical sections mean
+  // several chunks can share one hash, and only as many may skip embedding as
+  // there are stored rows to pair with (apply_chunks pairs one row per
+  // skipped chunk — an unmatched skip is a loud error). A model change makes
+  // every chunk "new", so a model switch re-embeds with no extra bookkeeping.
   const existing = await db
     .selectFrom('embeddingChunks')
     .where('notePath', '=', path)
     .select(['contentHash', 'modelId'])
     .execute()
-  const stored = new Set(existing.map((row) => `${row.modelId} ${row.contentHash}`))
+  const available = new Map<string, number>()
+  for (const row of existing) {
+    const key = `${row.modelId} ${row.contentHash}`
+    available.set(key, (available.get(key) ?? 0) + 1)
+  }
 
-  const toEmbed = chunks.filter((chunk) => !stored.has(`${modelId} ${chunk.contentHash}`))
+  const skip = chunks.map((chunk) => {
+    const key = `${modelId} ${chunk.contentHash}`
+    const remaining = available.get(key) ?? 0
+    if (remaining > 0) {
+      available.set(key, remaining - 1)
+      return true
+    }
+    return false
+  })
+  const toEmbed = chunks.filter((_, i) => !skip[i])
   const vectors = toEmbed.length > 0 ? await embedTexts(toEmbed.map((chunk) => chunk.text)) : []
-  const vectorByHash = new Map(toEmbed.map((chunk, i) => [chunk.contentHash, vectors[i]]))
+  let vectorAt = 0
 
-  const payload: EmbedChunkPayload[] = chunks.map((chunk) => ({
+  const payload: EmbedChunkPayload[] = chunks.map((chunk, i) => ({
     heading: chunk.heading,
     posFrom: chunk.posFrom,
     posTo: chunk.posTo,
     text: chunk.text,
     contentHash: chunk.contentHash,
     modelId,
-    vector: vectorByHash.get(chunk.contentHash) ?? null,
+    vector: skip[i] ? null : vectors[vectorAt++],
   }))
   await embedApply(path, payload, generation)
   return toEmbed.length

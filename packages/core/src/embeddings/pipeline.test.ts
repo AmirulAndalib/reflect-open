@@ -96,6 +96,29 @@ describe('embedNote', () => {
     expect(second.embedded).toHaveLength(1)
   })
 
+  it('duplicate-hash chunks only skip as many embeds as rows exist', async () => {
+    // Two byte-identical sections (above the runt-merge threshold) produce
+    // two chunks with one hash.
+    const section = `# A\n\n${'The same sentence again. '.repeat(12)}\n`
+    const dup = section + section
+    const first = fakePipelineBridge({ content: dup, storedRows: [] })
+    await embedNote({ path: 'notes/a.md', generation: 1, modelId: MODEL })
+    const hashes = first.applied[0].chunks.map((chunk) => chunk.contentHash)
+    expect(hashes[0]).toBe(hashes[1]) // genuinely duplicated chunks
+
+    // Only ONE stored row for that hash: exactly one chunk may skip; the
+    // other must re-embed (vector present), or apply_chunks errors loudly.
+    const second = fakePipelineBridge({
+      content: dup,
+      storedRows: [{ content_hash: hashes[0], model_id: MODEL }],
+    })
+    const count = await embedNote({ path: 'notes/a.md', generation: 1, modelId: MODEL })
+    expect(count).toBe(1)
+    const sent = second.applied[0].chunks
+    expect(sent.filter((chunk) => chunk.vector === null)).toHaveLength(1)
+    expect(sent.filter((chunk) => chunk.vector !== null)).toHaveLength(1)
+  })
+
   it('an emptied note drops its chunks via embed_remove', async () => {
     const { applied } = fakePipelineBridge({ content: '\n', storedRows: [] })
     const count = await embedNote({ path: 'notes/a.md', generation: 1, modelId: MODEL })

@@ -19,7 +19,9 @@ function operationHandle() {
 describe('ensureEmbeddingsVisibly', () => {
   it('resolves the operation only at a terminal status (a racing ensure returns loading)', async () => {
     const handle = operationHandle()
-    let emit: ((payload: unknown) => void) | null = null
+    // Boxed: TS control-flow analysis doesn't track closure assignments and
+    // would narrow a plain `let` to `never` at the call site below.
+    const emitter: { fire: ((payload: unknown) => void) | null } = { fire: null }
     setBridge({
       invoke: async (command) => {
         if (command === 'embed_ensure') {
@@ -31,18 +33,18 @@ describe('ensureEmbeddingsVisibly', () => {
         return null
       },
       listen: async (_event, handler) => {
-        emit = handler
+        emitter.fire = handler
         return () => {
-          emit = null
+          emitter.fire = null
         }
       },
     })
 
     const pending = ensureEmbeddingsVisibly()
-    await vi.waitFor(() => expect(emit).not.toBeNull())
+    await vi.waitFor(() => expect(emitter.fire).not.toBeNull())
     expect(handle.done).not.toHaveBeenCalled() // still loading — not "done"
 
-    emit?.({ status: 'ready', model: 'all-MiniLM-L6-v2' })
+    emitter.fire?.({ status: 'ready', model: 'all-MiniLM-L6-v2' })
     const status = await pending
     expect(status).toEqual({ status: 'ready', model: 'all-MiniLM-L6-v2' })
     expect(handle.done).toHaveBeenCalledTimes(1)

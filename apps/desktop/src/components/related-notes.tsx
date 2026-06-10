@@ -30,7 +30,9 @@ export function RelatedNotes({ path, seed }: RelatedNotesProps): ReactElement | 
   const trimmedSeed = seed.trim().slice(0, SEED_CHARS)
 
   const { data } = useQuery({
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'related', path],
+    // The seed is part of the key: the same path re-seeded (reload, save,
+    // external sync) must not serve neighbors computed from the old body.
+    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'related', path, trimmedSeed],
     queryFn: () => retrieve(trimmedSeed, { mode: 'semantic', limit: 7 }),
     enabled: ready && hasBridge() && graph !== null && trimmedSeed !== '',
   })
