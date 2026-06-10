@@ -35,6 +35,28 @@ against `master` (not merged — Alex review gate).
    commented inline). Actionable bot findings fixed and pushed — see
    final-report.md “Bot-review round”; post-fix verification green
    (typecheck, lint, test 3/3 — desktop 257 tests —, build).
+9. ✅ CodeRabbit follow-up round 2 (07:50–08:00 PT, all nine review-body
+   items re-verified by 9 parallel read-only agents against the worktree):
+   - `note-session.ts` `reconcileFromDisk`: a successful read of a
+     previously-missing note now clears `missing` (and emits) even when the
+     content equals the adopted seed baseline or the in-flight write, so the
+     missing→present transition can't get stuck; regression test added
+     (“external write matching the seed verbatim still clears missing”).
+   - `app-commands.test.ts`: `sidebar.toggle` → `context.toggleSidebar`
+     now covered.
+   - `app-shell.tsx`: explicit `: ReactElement` return type.
+   - `settings/section.tsx`: extracted documented `SettingsSectionProps`.
+   - Refinements over round 1: banner upgraded `role="status"` →
+     `role="alert"` (it mounts with content already present, so a polite
+     live region wouldn't announce; alert announces on first render and
+     matches the warning semantics — no visible change); `queries.test.ts`
+     bridge install moved from module load into `beforeEach` with
+     `afterEach(() => setBridge(null))`, the prevailing pattern
+     (`setBridge` returns `void`, so capturing/restoring a previous bridge
+     isn't possible).
+   - Post-fix verification green: `pnpm typecheck` (3/3), `pnpm lint`,
+     `turbo run test --force` (desktop 41 files / 258 tests, core, db),
+     `turbo run build --force` (same pre-existing >500 kB chunk warning).
 
 ## Blockers
 

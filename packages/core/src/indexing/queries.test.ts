@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '../ipc/bridge'
 import { dailyDatesInRange } from './queries'
 
@@ -6,13 +6,13 @@ import { dailyDatesInRange } from './queries'
 // SQL (snake_case columns, range parameters) — the same harness pipeline.test
 // uses for the indexer.
 const mockInvoke = vi.fn<(command: string, args: Record<string, unknown>) => Promise<unknown>>()
-setBridge({ invoke: mockInvoke, listen: async () => () => {} })
 
 beforeEach(() => {
   mockInvoke.mockReset()
+  setBridge({ invoke: mockInvoke, listen: async () => () => {} })
 })
 
-afterAll(() => {
+afterEach(() => {
   setBridge(null)
 })
 

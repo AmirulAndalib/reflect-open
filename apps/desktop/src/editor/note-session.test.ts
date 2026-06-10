@@ -381,4 +381,23 @@ describe('missing-note seed (new ordinary notes)', () => {
     expect(h.applied).toEqual(['# Created elsewhere\n'])
     expect(h.writes).toEqual([])
   })
+
+  it('an external write matching the seed verbatim still clears missing', async () => {
+    // The read equals the adopted baseline, so there is nothing to reconcile —
+    // but the file exists on disk now, and the snapshot must say so.
+    const h = harness({ disk: null, createIfMissing: true, missingSeed: SEED })
+    h.session.load()
+    await settled()
+    expect(h.snapshots.at(-1)?.missing).toBe(true)
+
+    h.setDisk(SEED)
+    h.session.externalChanged()
+    await settled()
+
+    const ready = h.snapshots.at(-1)
+    expect(ready?.missing).toBe(false)
+    expect(ready?.conflict).toBeNull()
+    expect(h.applied).toEqual([]) // content unchanged: no editor reload
+    expect(h.writes).toEqual([])
+  })
 })

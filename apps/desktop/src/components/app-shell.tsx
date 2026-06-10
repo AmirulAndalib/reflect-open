@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 interface AppShellProps {
@@ -17,7 +17,7 @@ interface AppShellProps {
  * and landmark regions only; what fills the slots (and whether the sidebar
  * shows at all) is the workspace's business.
  */
-export function AppShell({ sidebar, context, children, className }: AppShellProps) {
+export function AppShell({ sidebar, context, children, className }: AppShellProps): ReactElement {
   return (
     <div
       className={cn(

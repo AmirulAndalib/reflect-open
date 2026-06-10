@@ -52,7 +52,7 @@ function fakeContext(overrides?: Partial<CommandContext>) {
 }
 
 describe('app commands', () => {
-  it('nav.today, history, palette, and theme commands hit their capabilities', async () => {
+  it('nav.today, history, palette, theme, and sidebar commands hit their capabilities', async () => {
     const { context, navigated } = fakeContext()
     await command('nav.today').run(context)
     expect(navigated).toEqual([{ kind: 'today' }])
@@ -64,6 +64,8 @@ describe('app commands', () => {
     expect(context.openPalette).toHaveBeenCalled()
     await command('theme.toggle').run(context)
     expect(context.toggleTheme).toHaveBeenCalled()
+    await command('sidebar.toggle').run(context)
+    expect(context.toggleSidebar).toHaveBeenCalled()
   })
 
   it('settings.open navigates to the settings screen', async () => {

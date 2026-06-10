@@ -374,8 +374,19 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     } catch {
       return // deleted/unreadable between event and read; nothing to reconcile
     }
-    if (disposed || content === disk || content === inFlightWrite) {
-      return // stale, or an echo of our own (possibly still-settling) save
+    if (disposed) {
+      return
+    }
+    if (content === disk || content === inFlightWrite) {
+      // Nothing to reconcile (stale, or an echo of our own possibly
+      // still-settling save) — but a successful read of a previously-missing
+      // note means the file exists now (e.g. another device wrote the seed
+      // verbatim), so record that transition before skipping.
+      if (missing) {
+        missing = false
+        emit()
+      }
+      return
     }
     if (dirty) {
       // Never clobber unsaved edits — park the external content and pause the
