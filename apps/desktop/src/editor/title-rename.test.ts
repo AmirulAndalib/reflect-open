@@ -27,7 +27,7 @@ describe('createTitleRenameTracker', () => {
     expect(renames).toEqual([])
     vi.advanceTimersByTime(5000)
     expect(renames).toEqual([
-      { from: 'Old Title', to: 'New Title', previousAutoAlias: null, content: '# New Title\n' },
+      { from: 'Old Title', to: 'New Title', previousAutoAlias: null },
     ])
   })
 
@@ -82,7 +82,7 @@ describe('createTitleRenameTracker', () => {
     tracker.saved('# D\n')
     tracker.settle()
     expect(renames).toEqual([
-      { from: 'C', to: 'D', previousAutoAlias: null, content: '# D\n' },
+      { from: 'C', to: 'D', previousAutoAlias: null },
     ])
   })
 
@@ -94,8 +94,8 @@ describe('createTitleRenameTracker', () => {
     tracker.saved('# Third\n')
     tracker.settle()
     expect(renames).toEqual([
-      { from: 'First', to: 'Second', previousAutoAlias: null, content: '# Second\n' },
-      { from: 'Second', to: 'Third', previousAutoAlias: 'First', content: '# Third\n' },
+      { from: 'First', to: 'Second', previousAutoAlias: null },
+      { from: 'Second', to: 'Third', previousAutoAlias: 'First' },
     ])
   })
 
@@ -120,7 +120,7 @@ describe('createTitleRenameTracker', () => {
     tracker.saved('# B\n') // "keep mine" re-saves the same title → re-arms
     vi.advanceTimersByTime(5000)
     expect(renames).toEqual([
-      { from: 'A', to: 'B', previousAutoAlias: null, content: '# B\n' },
+      { from: 'A', to: 'B', previousAutoAlias: null },
     ])
   })
 
@@ -147,12 +147,7 @@ describe('createTitleRenameTracker', () => {
     tracker.saved('# Renamed\n') // a real rename afterwards still works
     tracker.settle()
     expect(renames).toEqual([
-      {
-        from: 'My New Note',
-        to: 'Renamed',
-        previousAutoAlias: null,
-        content: '# Renamed\n',
-      },
+      { from: 'My New Note', to: 'Renamed', previousAutoAlias: null },
     ])
   })
 
@@ -165,7 +160,7 @@ describe('createTitleRenameTracker', () => {
     tracker.saved('# B\n')
     tracker.settle()
     expect(renames).toEqual([
-      { from: 'A', to: 'B', previousAutoAlias: null, content: '# B\n' },
+      { from: 'A', to: 'B', previousAutoAlias: null },
     ])
   })
 

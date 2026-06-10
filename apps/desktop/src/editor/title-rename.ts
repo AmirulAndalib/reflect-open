@@ -19,8 +19,6 @@ export interface TitleRename {
   to: string
   /** The alias auto-added by this session's previous rename (prune candidate). */
   previousAutoAlias: string | null
-  /** The full document content at the settle that fired this rename. */
-  content: string
 }
 
 export interface TitleRenameTrackerOptions {
@@ -54,7 +52,7 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
   const quietMs = options.quietMs ?? DEFAULT_QUIET_MS
 
   let baselineTitle: string | null = null
-  let pending: { title: string; content: string } | null = null
+  let pending: string | null = null
   let previousAutoAlias: string | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let disposed = false
@@ -90,14 +88,13 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
     }
     const rename: TitleRename = {
       from: baselineTitle,
-      to: pending.title,
+      to: pending,
       previousAutoAlias,
-      content: pending.content,
     }
     // The title we just renamed away from becomes this session's auto-alias —
     // a follow-up rename prunes it instead of accreting one alias per edit.
     previousAutoAlias = baselineTitle
-    baselineTitle = pending.title
+    baselineTitle = pending
     pending = null
     onRename(rename)
   }
@@ -139,7 +136,7 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
       pending = null
       return
     }
-    pending = { title, content }
+    pending = title
     cancelTimer()
     timer = setTimeout(fire, quietMs)
   }
