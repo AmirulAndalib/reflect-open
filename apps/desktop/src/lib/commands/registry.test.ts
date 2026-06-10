@@ -15,6 +15,7 @@ function fakeContext(overrides?: Partial<CommandContext>): CommandContext {
     toggleSidebar: vi.fn(),
     generation: () => 1,
     openPalette: vi.fn(),
+    enableSemanticSearch: vi.fn(),
     ...overrides,
   }
 }

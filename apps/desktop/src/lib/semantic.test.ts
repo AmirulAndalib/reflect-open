@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '@reflect/core'
-import { ensureEmbeddingsVisibly } from './semantic'
+import { consumeLegacySemanticOptIn, ensureEmbeddingsVisibly } from './semantic'
 
 const startOperation = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/operations', () => ({ startOperation }))
@@ -15,6 +15,19 @@ function operationHandle() {
   startOperation.mockReturnValue(handle)
   return handle
 }
+
+describe('consumeLegacySemanticOptIn', () => {
+  it('returns a stored opt-in exactly once (the settings document owns it after)', () => {
+    localStorage.setItem('reflect.semantic.enabled', 'true')
+    expect(consumeLegacySemanticOptIn()).toBe(true)
+    expect(consumeLegacySemanticOptIn()).toBe(false)
+    expect(localStorage.getItem('reflect.semantic.enabled')).toBeNull()
+  })
+
+  it('is false when the legacy key was never set', () => {
+    expect(consumeLegacySemanticOptIn()).toBe(false)
+  })
+})
 
 describe('ensureEmbeddingsVisibly', () => {
   it('resolves the operation only at a terminal status (a racing ensure returns loading)', async () => {

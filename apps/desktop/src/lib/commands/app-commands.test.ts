@@ -9,13 +9,9 @@ const rebuildIndex = vi.hoisted(() => vi.fn())
 const embedStatus = vi.hoisted(() =>
   vi.fn<() => Promise<EmbedStatus>>(async () => ({ status: 'uninitialized' })),
 )
-const ensureEmbeddingsVisibly = vi.hoisted(() => vi.fn(async () => ({ status: 'ready', model: 'm' })))
-const setSemanticEnabled = vi.hoisted(() => vi.fn())
 const backfillEmbeddingsVisibly = vi.hoisted(() => vi.fn(async () => 'completed'))
 vi.mock('@/lib/semantic', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/semantic')>()),
-  ensureEmbeddingsVisibly,
-  setSemanticEnabled,
   backfillEmbeddingsVisibly,
 }))
 vi.mock('@reflect/core', async (importOriginal) => ({
@@ -46,6 +42,7 @@ function fakeContext(overrides?: Partial<CommandContext>) {
     toggleSidebar: vi.fn(),
     generation: () => 7,
     openPalette: vi.fn(),
+    enableSemanticSearch: vi.fn(),
     ...overrides,
   }
   return { context, navigated }
@@ -106,11 +103,11 @@ describe('app commands', () => {
     expect(navigated).toHaveLength(1) // unchanged
   })
 
-  it('semantic.enable persists the opt-in and loads the model visibly', async () => {
+  it('semantic.enable persists the opt-in through the context capability', async () => {
     const { context } = fakeContext()
     await command('semantic.enable').run(context)
-    expect(setSemanticEnabled).toHaveBeenCalledWith(true)
-    expect(ensureEmbeddingsVisibly).toHaveBeenCalled()
+    // EmbeddingsSync owns the download reaction; the command only opts in.
+    expect(context.enableSemanticSearch).toHaveBeenCalled()
   })
 
   it('index.rebuild runs at the open generation and reports as an operation', async () => {

@@ -8,28 +8,29 @@ import {
 import { startOperation } from '@/lib/operations'
 
 /**
- * Semantic-search enablement (Plan 09). The model is ~90MB and downloads from
- * the network, so it is **opt-in**: the `semantic.enable` command flips a
- * persisted flag and kicks the first download; later launches auto-load from
- * the local cache because the flag is set. Acceptance: "first semantic use
- * downloads the model with progress; later uses are instant."
+ * Semantic-search loading (Plan 09). The model is ~90MB and downloads from
+ * the network, so it is **opt-in**: the `semanticSearchEnabled` setting flips
+ * the persisted opt-in and `EmbeddingsSync` kicks the first download; later
+ * launches auto-load from the local cache because the flag is set.
+ * Acceptance: "first semantic use downloads the model with progress; later
+ * uses are instant."
  */
 
-const ENABLED_KEY = 'reflect.semantic.enabled'
+/** Where the opt-in lived before it moved into the settings document. */
+const LEGACY_ENABLED_KEY = 'reflect.semantic.enabled'
 
-export function semanticEnabled(): boolean {
+/**
+ * Read-and-clear the pre-settings localStorage opt-in. Returns true exactly
+ * once for a user who enabled semantic search before the flag moved into
+ * settings — the caller persists it there and the key never matters again.
+ */
+export function consumeLegacySemanticOptIn(): boolean {
   try {
-    return localStorage.getItem(ENABLED_KEY) === 'true'
+    const enabled = localStorage.getItem(LEGACY_ENABLED_KEY) === 'true'
+    localStorage.removeItem(LEGACY_ENABLED_KEY)
+    return enabled
   } catch {
     return false
-  }
-}
-
-export function setSemanticEnabled(enabled: boolean): void {
-  try {
-    localStorage.setItem(ENABLED_KEY, String(enabled))
-  } catch {
-    // best-effort; the command can be re-run
   }
 }
 
