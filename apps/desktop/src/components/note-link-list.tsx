@@ -12,11 +12,11 @@ interface NoteLinkListProps {
 }
 
 /**
- * The note-context section under an open note — one presentation shared by
- * backlinks ("Linked from") and semantic neighbors ("Related"), so the two
- * ambient-recall surfaces stay visually identical and panels stay thin query
- * adapters. The rows themselves are {@link NoteLinkRows}, shared with the
- * daily sidebar's day sections.
+ * A note-context section under an open note (today the semantic neighbors'
+ * "Related" panel), keeping panels thin query adapters over one shared
+ * presentation. The rows themselves are {@link NoteLinkRows}, shared with
+ * the daily sidebar's day sections. Backlinks render separately in old
+ * Reflect's grouped style ({@link BacklinksPanel}).
  */
 export function NoteLinkList({
   ariaLabel,

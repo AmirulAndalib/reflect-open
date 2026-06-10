@@ -9,13 +9,11 @@ import { RouterProvider, useRouter } from '@/routing/router'
 import { DailyContextSidebar } from './daily-context-sidebar'
 
 const dailyDatesInRange = vi.hoisted(() => vi.fn())
-const getBacklinksWithContext = vi.hoisted(() => vi.fn())
 const relatedNotes = vi.hoisted(() => vi.fn())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   dailyDatesInRange,
-  getBacklinksWithContext,
   relatedNotes,
 }))
 vi.mock('@/providers/graph-provider', () => ({
@@ -42,7 +40,6 @@ function renderSidebar(date: string) {
 beforeEach(() => {
   window.sessionStorage.clear()
   dailyDatesInRange.mockReset().mockResolvedValue([])
-  getBacklinksWithContext.mockReset().mockResolvedValue([])
   relatedNotes.mockReset().mockResolvedValue([])
 })
 
@@ -53,7 +50,7 @@ describe('DailyContextSidebar header', () => {
     expect(view.getByRole('heading', { name: formatDayLabel(today) })).toBeDefined()
     expect(view.getByText('Today')).toBeDefined()
     expect(view.queryByText('Go to today')).toBeNull()
-    await waitFor(() => expect(getBacklinksWithContext).toHaveBeenCalled())
+    await waitFor(() => expect(relatedNotes).toHaveBeenCalled())
     view.unmount()
   })
 
@@ -118,32 +115,6 @@ describe('DailyContextSidebar calendar', () => {
       </QueryClientProvider>,
     )
     expect(view.getByText(monthLabel('2026-09'))).toBeDefined()
-    view.unmount()
-  })
-})
-
-describe('DailyContextSidebar backlinks', () => {
-  it('shows a quiet empty state when nothing links to the day', async () => {
-    const view = renderSidebar('2026-06-09')
-    await view.findByText('No notes link to this day yet.')
-    expect(getBacklinksWithContext).toHaveBeenCalledWith('daily/2026-06-09.md')
-    view.unmount()
-  })
-
-  it('lists inbound links with snippets and navigates on click', async () => {
-    getBacklinksWithContext.mockResolvedValue([
-      {
-        sourcePath: 'notes/standup.md',
-        sourceTitle: 'Standup',
-        snippet: 'review on [[2026-06-09]]',
-        posFrom: 4,
-      },
-    ])
-    const view = renderSidebar('2026-06-09')
-    await view.findByText('Standup')
-    expect(view.getByText('review on [[2026-06-09]]')).toBeDefined()
-    await userEvent.click(view.getByText('Standup'))
-    expect(view.getByTestId('route').textContent).toContain('notes/standup.md')
     view.unmount()
   })
 })
