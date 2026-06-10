@@ -7,12 +7,10 @@ interface NoteContextSidebarProps {
 }
 
 /**
- * An ordinary note's contextual sidebar: the note's semantic neighbors.
- * Inbound links live under the note itself (the incoming-backlinks panel),
- * not here. Rendered in the AppShell's right region on `note` routes; the
- * note pane hides its inline similar-notes panel at the breakpoint where
- * this sidebar appears, so the context shows exactly once at every window
- * size.
+ * An ordinary note's contextual sidebar: the note's semantic neighbors —
+ * the only place similar notes appear. Inbound links live under the note
+ * itself (the incoming-backlinks panel), not here. Rendered in the
+ * AppShell's right region on `note` routes.
  */
 export function NoteContextSidebar({ path }: NoteContextSidebarProps): ReactElement {
   return (

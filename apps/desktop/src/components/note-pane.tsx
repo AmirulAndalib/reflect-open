@@ -4,7 +4,6 @@ import { BacklinksPanel } from '@/components/backlinks-panel'
 import { InlineAlert } from '@/components/inline-alert'
 import { NoteConflictBanner } from '@/components/note-conflict-banner'
 import { ProtectedNoteView } from '@/components/protected-note-view'
-import { RelatedNotes } from '@/components/related-notes'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
@@ -36,15 +35,6 @@ interface NotePaneProps {
    * is click-to-focus.
    */
   editorClassName?: string
-  /**
-   * The route's context sidebar shows this note's similar notes, so render
-   * the inline copy only below `lg` — the breakpoint where the AppShell
-   * hides that sidebar. Backlinks are unaffected: the incoming-backlinks
-   * panel lives under the note at every window size. Off in the daily
-   * stream, whose sidebar describes only the target day, not every visible
-   * one.
-   */
-  contextInSidebar?: boolean
 }
 
 /** The seeded title for a brand-new (missing) ordinary note. */
@@ -69,7 +59,6 @@ export function NotePane({
   onAutoFocused,
   className,
   editorClassName,
-  contextInSidebar = false,
 }: NotePaneProps): ReactElement {
   const { graph } = useGraph()
   const { settings } = useSettings()
@@ -147,9 +136,6 @@ export function NotePane({
       <div className={className}>
         <ProtectedNoteView content={document.initialContent} />
         <BacklinksPanel path={path} />
-        <div className={contextInSidebar ? 'lg:hidden' : undefined}>
-          <RelatedNotes path={path} />
-        </div>
       </div>
     )
   }
@@ -190,9 +176,6 @@ export function NotePane({
       </NoteEditor>
 
       <BacklinksPanel path={path} />
-      <div className={contextInSidebar ? 'lg:hidden' : undefined}>
-        <RelatedNotes path={path} />
-      </div>
     </div>
   )
 }

@@ -39,7 +39,6 @@ export function RouteContent(): ReactElement {
               path={route.path}
               lazy
               autoFocus
-              contextInSidebar
               className="flex grow flex-col"
               editorClassName="grow"
             />
