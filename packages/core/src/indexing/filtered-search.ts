@@ -6,11 +6,12 @@ import { HIGHLIGHT_END, HIGHLIGHT_START } from './search'
 import { buildFtsMatch } from './search-query'
 
 /**
- * Filtered search over the notes projection (Plan 08b): the parsed filter
- * tokens become composable predicates on `notes` (EXISTS subqueries against
- * `tags` and the `backlinks` view), with remaining free text constraining and
- * ranking through FTS. Without text, results order by recency — a filtered
- * recall feed.
+ * The one palette search (Plan 08): parsed filter tokens become composable
+ * predicates on `notes` (EXISTS subqueries against `tags` and the `backlinks`
+ * view), with free text constraining and ranking through FTS (title-boosted
+ * bm25, highlighted snippets). Filters may be empty — plain text search is the
+ * degenerate case, so there is exactly one search path to keep correct.
+ * Without text, results order by recency — a (possibly filtered) recall feed.
  */
 
 export interface FilteredSearchHit {

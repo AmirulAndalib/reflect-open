@@ -1,22 +1,13 @@
-import { useDeferredValue, useMemo, type ReactElement } from 'react'
+import { type ReactElement } from 'react'
 import { Command } from 'cmdk'
-import { useQuery } from '@tanstack/react-query'
-import {
-  hasBridge,
-  parseHighlights,
-  parseSearchQuery,
-  searchNotesRanked,
-  searchWithFilters,
-  suggestWikiTargets,
-} from '@reflect/core'
-import { listCommands, runCommand } from '@/lib/commands/registry'
+import { parseHighlights } from '@reflect/core'
+import { runCommand } from '@/lib/commands/registry'
 import type { CommandContext } from '@/lib/commands/types'
 import { formatDayLabel } from '@/lib/dates'
-import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
-import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
-import { buildPaletteSections, type NoteEntry } from './entries'
+import { type NoteEntry } from './entries'
 import { usePalette } from './palette-provider'
+import { usePaletteResults } from './use-palette-results'
 
 /**
  * The ⌘K palette (Plan 08): one keyboard surface for find / navigate / do.
@@ -48,62 +39,7 @@ function Snippet({ snippet }: { snippet: string }): ReactElement {
 
 export function CommandPalette({ context }: CommandPaletteProps): ReactElement | null {
   const { open, query, setQuery, closePalette } = usePalette()
-  const { graph } = useGraph()
-
-  // Defer the query the index sees: fast typing coalesces (the plan's
-  // debounce) while the input itself stays perfectly responsive.
-  const trimmed = useDeferredValue(query.trim())
-  // Filter tokens (#tag, is:daily, links:, linked-from:, updated:) switch the
-  // palette into constrained search (Plan 08b) — the merge queries park and
-  // the parsed constraints run instead.
-  const parsed = useMemo(() => parseSearchQuery(trimmed), [trimmed])
-  const searching = open && hasBridge() && graph !== null && !trimmed.startsWith('>')
-  const {
-    data: suggestions,
-    isLoading: suggestionsLoading,
-    isError: suggestionsError,
-  } = useQuery({
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'palette-suggest', trimmed],
-    queryFn: () => suggestWikiTargets(trimmed, 8),
-    enabled: searching && !parsed.filtered,
-  })
-  const { data: hits, isLoading: hitsLoading, isError: hitsError } = useQuery({
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'palette-search', trimmed],
-    queryFn: () => searchNotesRanked(trimmed),
-    enabled: searching && !parsed.filtered && trimmed !== '',
-  })
-  const {
-    data: filteredHits,
-    isLoading: filteredLoading,
-    isError: filteredError,
-  } = useQuery({
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'palette-filtered', trimmed],
-    queryFn: () => searchWithFilters(parsed),
-    enabled: searching && parsed.filtered,
-  })
-  // "No results" must mean the index answered **the live query**: the active
-  // fetches settled (isLoading, not isPending — a disabled query is forever
-  // pending) *and* the deferred value has caught up. Opening pre-filled, the
-  // deferred value can settle on the stale previous query first; that state
-  // is "still answering", not "empty".
-  const resultsSettled =
-    !suggestionsLoading && !hitsLoading && !filteredLoading && trimmed === query.trim()
-  // An errored query is "settled" to TanStack but not an answer — showing
-  // "No results" for a failed index read would be a lie.
-  const searchFailed = suggestionsError || hitsError || filteredError
-
-  const sections = useMemo(
-    () =>
-      buildPaletteSections({
-        query,
-        dataQuery: trimmed,
-        suggestions: suggestions ?? [],
-        hits: hits ?? [],
-        filteredHits: parsed.filtered ? (filteredHits ?? []) : null,
-        commands: listCommands(),
-      }),
-    [query, trimmed, suggestions, hits, filteredHits, parsed.filtered],
-  )
+  const { sections, resultsSettled, searchFailed } = usePaletteResults(open, query)
 
   if (!open) {
     return null

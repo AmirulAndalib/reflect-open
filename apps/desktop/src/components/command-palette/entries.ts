@@ -1,12 +1,12 @@
 import { dailyPath } from '@reflect/core'
 import type { AppCommand } from '@/lib/commands/types'
-import type { FilteredSearchHit, RankedSearchHit, WikiSuggestion } from '@reflect/core'
+import type { FilteredSearchHit, WikiSuggestion } from '@reflect/core'
 
 /**
  * Pure assembly of the palette's sections (Plan 08): merges title suggestions
- * (exact < prefix < substring, from the index), FTS body hits, and matching
+ * (exact < prefix < substring, from the index), search hits, and matching
  * commands into the sectioned result model. Factored from the component so the
- * ranking/dedupe/`>`-prefix rules are unit-testable.
+ * ranking/dedupe/`>`-prefix/filter-mode rules are unit-testable.
  */
 
 export interface NoteEntry {
@@ -14,7 +14,7 @@ export interface NoteEntry {
   title: string
   /** Set for daily notes (render the day label). */
   date: string | null
-  /** Body snippet with highlight markers (FTS hits only). */
+  /** Body snippet with highlight markers (search hits only). */
   snippet: string | null
 }
 
@@ -38,15 +38,16 @@ function matchesCommand(command: AppCommand, query: string): boolean {
 
 export function buildPaletteSections(options: {
   query: string
-  /** The query the suggestion/hit arrays actually answer (the deferred value). */
+  /** The query the data arrays actually answer (the deferred value). */
   dataQuery: string
   suggestions: WikiSuggestion[]
-  hits: RankedSearchHit[]
-  /** Non-null when filter tokens parsed (Plan 08b): replaces the merge below. */
-  filteredHits?: FilteredSearchHit[] | null
+  /** The one search path's results (filters may be empty — Plan 08b). */
+  hits: FilteredSearchHit[]
+  /** True when the data query carried filter tokens: hits ARE the list. */
+  filtered: boolean
   commands: AppCommand[]
 }): PaletteSections {
-  const { commands } = options
+  const { commands, filtered } = options
   const query = options.query.trim()
   // The index queries are keyed on a *deferred* value that can lag the live
   // input. A just-cleared input must show the recall feed, never the previous
@@ -54,7 +55,6 @@ export function buildPaletteSections(options: {
   const dataStale = options.dataQuery.trim() !== query
   const suggestions = query === '' && dataStale ? [] : options.suggestions
   const hits = query === '' && dataStale ? [] : options.hits
-  const filteredHits = query === '' && dataStale ? null : (options.filteredHits ?? null)
 
   if (query.startsWith('>')) {
     const commandQuery = query.slice(1).trim()
@@ -65,12 +65,12 @@ export function buildPaletteSections(options: {
     }
   }
 
-  if (query !== '' && filteredHits !== null) {
+  if (query !== '' && filtered) {
     // Filter tokens are a search mode: the constraint result IS the list —
     // no title-suggestion merge, no command rows.
     return {
       commandsOnly: false,
-      notes: filteredHits.slice(0, NOTE_CAP).map((hit) => ({
+      notes: hits.slice(0, NOTE_CAP).map((hit) => ({
         path: hit.path,
         title: hit.title,
         date: hit.dailyDate,
@@ -80,7 +80,7 @@ export function buildPaletteSections(options: {
     }
   }
 
-  // Title matches lead (they're what jump-to-note wants), FTS body hits fill
+  // Title matches lead (they're what jump-to-note wants), search hits fill
   // the rest; one row per note, the stronger (title) form wins.
   const notes: NoteEntry[] = []
   const seen = new Set<string>()
@@ -106,7 +106,7 @@ export function buildPaletteSections(options: {
   for (const hit of bodyHits) {
     if (!seen.has(hit.path)) {
       seen.add(hit.path)
-      notes.push({ path: hit.path, title: hit.title, date: null, snippet: hit.snippet })
+      notes.push({ path: hit.path, title: hit.title, date: hit.dailyDate, snippet: hit.snippet })
     }
   }
 
