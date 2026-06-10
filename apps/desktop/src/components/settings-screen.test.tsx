@@ -62,7 +62,7 @@ afterEach(() => {
 
 describe('SettingsScreen', () => {
   it('reflects the persisted markdown syntax mode', async () => {
-    stored = { editorMarkMode: 'show' }
+    stored = { editorMarkdownSyntax: 'show' }
     renderScreen()
     await waitFor(() => expect(radio(/^show/i).checked).toBe(true))
     expect(radio(/^focus/i).checked).toBe(false)
@@ -74,7 +74,7 @@ describe('SettingsScreen', () => {
 
     fireEvent.click(radio(/^show/i))
 
-    await waitFor(() => expect(saved).toEqual([{ editorMarkMode: 'show' }]))
+    await waitFor(() => expect(saved).toEqual([{ editorMarkdownSyntax: 'show' }]))
     expect(radio(/^show/i).checked).toBe(true)
     expect(radio(/^focus/i).checked).toBe(false)
   })

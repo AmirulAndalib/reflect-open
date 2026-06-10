@@ -15,8 +15,10 @@ import {
   hasBridge,
   loadSettings,
   saveSettings,
+  toAppError,
   type Settings,
 } from '@reflect/core'
+import { startOperation } from '@/lib/operations'
 
 /**
  * App-wide user settings (config-dir JSON, not graph state), applied instantly.
@@ -89,8 +91,9 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
       .then(() => saveSettings(settings))
       .catch((error: unknown) => {
         // The in-memory value stays applied; the next successful save (or
-        // relaunch) reconciles. Settings are low-stakes enough not to block.
-        console.error('saving settings failed:', error)
+        // relaunch) reconciles. The failure is product status, not console
+        // noise — surface it where backgrounded errors live.
+        startOperation('Saving settings').fail(toAppError(error).message)
       })
   }, [loaded, settings])
 

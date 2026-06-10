@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import type { EditorMarkMode } from '@reflect/core'
+import type { EditorMarkdownSyntax } from '@reflect/core'
 import { useSettings } from '@/providers/settings-provider'
 
 /**
@@ -8,13 +8,13 @@ import { useSettings } from '@/providers/settings-provider'
  * {@link useSettings}; there is no save button.
  */
 
-interface MarkModeOption {
-  value: EditorMarkMode
+interface MarkdownSyntaxOption {
+  value: EditorMarkdownSyntax
   label: string
   description: string
 }
 
-const MARK_MODE_OPTIONS: MarkModeOption[] = [
+const MARKDOWN_SYNTAX_OPTIONS: MarkdownSyntaxOption[] = [
   {
     value: 'focus',
     label: 'Focus',
@@ -45,8 +45,8 @@ export function SettingsScreen(): ReactElement {
             How literal markdown characters (#, **, [[ ]]) are displayed while editing.
           </p>
           <div className="mt-3 flex flex-col gap-2">
-            {MARK_MODE_OPTIONS.map((option) => {
-              const selected = settings.editorMarkMode === option.value
+            {MARKDOWN_SYNTAX_OPTIONS.map((option) => {
+              const selected = settings.editorMarkdownSyntax === option.value
               return (
                 <label
                   key={option.value}
@@ -58,10 +58,10 @@ export function SettingsScreen(): ReactElement {
                 >
                   <input
                     type="radio"
-                    name="editor-mark-mode"
+                    name="editor-markdown-syntax"
                     value={option.value}
                     checked={selected}
-                    onChange={() => updateSettings({ editorMarkMode: option.value })}
+                    onChange={() => updateSettings({ editorMarkdownSyntax: option.value })}
                     className="mt-0.5 accent-[var(--accent)]"
                   />
                   <span>

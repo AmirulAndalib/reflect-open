@@ -1,8 +1,9 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ReactNode } from 'react'
 import { setBridge } from '@reflect/core'
+import { resetOperations, useOperations } from '@/lib/operations'
 import { SETTINGS_QUERY_KEY, SettingsProvider, useSettings } from './settings-provider'
 
 /**
@@ -78,52 +79,53 @@ afterEach(() => {
   cleanup() // `globals: false` disables testing-library's automatic cleanup
   setBridge(null)
   queryClient.clear()
+  resetOperations() // failed-save entries linger on a timer otherwise
 })
 
 describe('SettingsProvider', () => {
   it('serves defaults immediately, then the persisted document', async () => {
-    stored = { editorMarkMode: 'show' }
+    stored = { editorMarkdownSyntax: 'show' }
     const { result } = renderHook(() => useSettings(), { wrapper })
     // Defaults are usable before the IPC load settles — no loading gate.
-    expect(result.current.settings.editorMarkMode).toBe('focus')
-    await waitFor(() => expect(result.current.settings.editorMarkMode).toBe('show'))
+    expect(result.current.settings.editorMarkdownSyntax).toBe('focus')
+    await waitFor(() => expect(result.current.settings.editorMarkdownSyntax).toBe('show'))
     // Hydration alone must not write the store back.
     expect(saved).toEqual([])
   })
 
   it('normalizes an invalid persisted value to its default', async () => {
-    stored = { editorMarkMode: 'sideways' }
+    stored = { editorMarkdownSyntax: 'sideways' }
     const { result } = renderHook(() => useSettings(), { wrapper })
     await loadSettled()
-    expect(result.current.settings.editorMarkMode).toBe('focus')
+    expect(result.current.settings.editorMarkdownSyntax).toBe('focus')
   })
 
   it('applies an update instantly and persists the full document', async () => {
-    stored = { editorMarkMode: 'focus', futureKey: true }
+    stored = { editorMarkdownSyntax: 'focus', futureKey: true }
     const { result } = renderHook(() => useSettings(), { wrapper })
     await loadSettled()
 
     act(() => {
-      result.current.updateSettings({ editorMarkMode: 'show' })
+      result.current.updateSettings({ editorMarkdownSyntax: 'show' })
     })
     // Applied synchronously — plain React state, no IO in the way.
-    expect(result.current.settings.editorMarkMode).toBe('show')
+    expect(result.current.settings.editorMarkdownSyntax).toBe('show')
     // The persisted document keeps unknown keys (newer-version settings survive).
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkMode: 'show', futureKey: true }]),
+      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', futureKey: true }]),
     )
   })
 
   it('an update racing the initial load wins and keeps passthrough keys', async () => {
-    stored = { editorMarkMode: 'focus', futureKey: true }
+    stored = { editorMarkdownSyntax: 'focus', futureKey: true }
     gateLoad = true
     const { result } = renderHook(() => useSettings(), { wrapper })
 
     // Update while settings_load is still in flight…
     act(() => {
-      result.current.updateSettings({ editorMarkMode: 'show' })
+      result.current.updateSettings({ editorMarkdownSyntax: 'show' })
     })
-    expect(result.current.settings.editorMarkMode).toBe('show')
+    expect(result.current.settings.editorMarkdownSyntax).toBe('show')
     // …and nothing may hit the disk before the disk has been read: a save
     // built from defaults would drop `futureKey` permanently.
     expect(saved).toEqual([])
@@ -134,41 +136,43 @@ describe('SettingsProvider', () => {
     // The load result must not clobber the update, and the deferred flush
     // persists the update merged over the *loaded* document.
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkMode: 'show', futureKey: true }]),
+      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', futureKey: true }]),
     )
-    expect(result.current.settings.editorMarkMode).toBe('show')
+    expect(result.current.settings.editorMarkdownSyntax).toBe('show')
   })
 
   it('compounding updates racing the initial load flush as one document', async () => {
-    stored = { editorMarkMode: 'show' }
+    stored = { editorMarkdownSyntax: 'show' }
     gateLoad = true
     const { result } = renderHook(() => useSettings(), { wrapper })
 
     act(() => {
-      result.current.updateSettings({ editorMarkMode: 'show' })
-      result.current.updateSettings({ editorMarkMode: 'focus' })
+      result.current.updateSettings({ editorMarkdownSyntax: 'show' })
+      result.current.updateSettings({ editorMarkdownSyntax: 'focus' })
     })
     act(() => {
       releaseLoad()
     })
-    await waitFor(() => expect(saved).toEqual([{ editorMarkMode: 'focus' }]))
-    expect(result.current.settings.editorMarkMode).toBe('focus')
+    await waitFor(() => expect(saved).toEqual([{ editorMarkdownSyntax: 'focus' }]))
+    expect(result.current.settings.editorMarkdownSyntax).toBe('focus')
   })
 
-  it('keeps the applied value when the save fails', async () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    try {
-      const { result } = renderHook(() => useSettings(), { wrapper })
-      await loadSettled()
+  it('keeps the applied value and surfaces a failed save as an operation', async () => {
+    const { result } = renderHook(
+      () => ({ ...useSettings(), operations: useOperations() }),
+      { wrapper },
+    )
+    await loadSettled()
 
-      failSaves = true
-      act(() => {
-        result.current.updateSettings({ editorMarkMode: 'show' })
-      })
-      await waitFor(() => expect(errorSpy).toHaveBeenCalled())
-      expect(result.current.settings.editorMarkMode).toBe('show')
-    } finally {
-      errorSpy.mockRestore()
-    }
+    failSaves = true
+    act(() => {
+      result.current.updateSettings({ editorMarkdownSyntax: 'show' })
+    })
+    await waitFor(() =>
+      expect(result.current.operations).toMatchObject([
+        { label: 'Saving settings', status: 'failed', error: 'disk full' },
+      ]),
+    )
+    expect(result.current.settings.editorMarkdownSyntax).toBe('show')
   })
 })

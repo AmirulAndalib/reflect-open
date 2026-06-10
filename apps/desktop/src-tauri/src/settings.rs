@@ -83,7 +83,7 @@ mod tests {
     fn save_load_round_trip() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("settings.json");
-        let settings = doc(&[("editorMarkMode", json!("show"))]);
+        let settings = doc(&[("editorMarkdownSyntax", json!("show"))]);
         save_to(&path, &settings).unwrap();
         assert_eq!(load_from(&path).unwrap(), settings);
     }

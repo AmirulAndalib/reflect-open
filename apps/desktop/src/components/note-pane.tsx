@@ -208,7 +208,7 @@ export function NotePane({
         key={path}
         initialContent={document.initialContent}
         onChange={document.onEditorChange}
-        markMode={settings.editorMarkMode}
+        markMode={settings.editorMarkdownSyntax}
         images={images}
         onWikiLinkClick={onWikiLinkClick}
         handleRef={handleRef}

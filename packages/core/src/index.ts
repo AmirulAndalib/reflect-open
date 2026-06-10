@@ -52,10 +52,10 @@ export {
 // User settings (config-dir JSON document; Rust persists, this layer validates)
 export {
   settingsSchema,
-  editorMarkModeSchema,
+  editorMarkdownSyntaxSchema,
   DEFAULT_SETTINGS,
   type Settings,
-  type EditorMarkMode,
+  type EditorMarkdownSyntax,
 } from './settings/schema'
 export { loadSettings, saveSettings } from './settings/commands'
 
