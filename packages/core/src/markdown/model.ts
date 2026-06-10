@@ -33,6 +33,22 @@ function coercePrivate(value: unknown): boolean {
 }
 
 /**
+ * Coerce the pin value. `pinned: true` pins; a finite number pins **with an
+ * explicit sidebar order** — the encoding the future reorder UI writes
+ * (fractional ranks make an insertion a one-file write). Truthy words follow
+ * `private`'s rules; anything unrecognized is unpinned.
+ */
+function coercePinned(value: unknown): boolean | number {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isFinite(value) ? value : false
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    return normalized === 'true' || normalized === 'yes' || normalized === 'on' || normalized === '1'
+  }
+  return false
+}
+
+/**
  * Known frontmatter subset; unknown keys are preserved untouched (passthrough).
  * Built to tolerate external edits — bad known fields fall back via `.catch`
  * rather than failing the whole parse and making a note unreadable.
@@ -44,9 +60,25 @@ export const frontmatterSchema = z
     aliases: z.array(z.string()).catch([]).default([]),
     /** Hard privacy flag: such notes must never be sent to any external service. */
     private: z.preprocess(coercePrivate, z.boolean()).default(false),
+    /**
+     * Pinned to the sidebar's Pinned section: `true`, or a number for an
+     * explicit order. Unpinned notes omit the key. Read through
+     * {@link isPinned}/{@link pinnedOrder} — `pinned: 0` is a pinned note.
+     */
+    pinned: z.preprocess(coercePinned, z.union([z.boolean(), z.number()])).default(false),
   })
   .passthrough()
 export type Frontmatter = z.infer<typeof frontmatterSchema>
+
+/** Is the note pinned at all? Never truthiness — `pinned: 0` is order 0, pinned. */
+export function isPinned(frontmatter: Frontmatter): boolean {
+  return frontmatter.pinned !== false
+}
+
+/** The explicit pin order when the key is numeric; bare `pinned: true` has none. */
+export function pinnedOrder(frontmatter: Frontmatter): number | null {
+  return typeof frontmatter.pinned === 'number' ? frontmatter.pinned : null
+}
 
 /** A `[[target]]` or `[[target|alias]]` reference. */
 export interface WikiLink extends Span {

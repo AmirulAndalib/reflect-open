@@ -18,6 +18,7 @@ import {
 import { createEditor, defineDocChangeHandler, union, type Editor } from '@prosekit/core'
 import { ProseKit, useExtension } from '@prosekit/react'
 import '@meowdown/core/style.css'
+import { cn } from '@/lib/utils'
 import { defineImages, type ImageOptions } from './images'
 import { defineReflectKeymap } from './keymap'
 import { selectFirstHeadingText } from './title-selection'
@@ -59,6 +60,12 @@ interface NoteEditorProps {
   images?: ImageOptions
   /** Mod+click on a `[[wiki link]]` chip (Plan 06 navigation). */
   onWikiLinkClick?: (target: string) => void
+  /**
+   * Extra classes for the editable root. The mount div *is* the ProseMirror
+   * contenteditable, so e.g. a `min-h-*` here makes the whole reserved area
+   * click-to-focus (the daily stream uses this for per-day sizing).
+   */
+  className?: string
   /** Imperative handle (React 19 ref-as-prop). */
   handleRef?: Ref<NoteEditorHandle>
   /**
@@ -95,6 +102,7 @@ export function NoteEditor({
   markMode = 'focus',
   images,
   onWikiLinkClick,
+  className,
   handleRef,
   children,
 }: NoteEditorProps): ReactElement {
@@ -151,7 +159,7 @@ export function NoteEditor({
 
   return (
     <ProseKit editor={editor}>
-      <div ref={editor.mount} className="reflect-editor" />
+      <div ref={editor.mount} className={cn('reflect-editor', className)} />
       {children}
     </ProseKit>
   )

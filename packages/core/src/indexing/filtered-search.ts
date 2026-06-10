@@ -71,6 +71,9 @@ export async function searchWithFilters(
   if (filters.dailyOnly) {
     query = query.where('notes.dailyDate', 'is not', null)
   }
+  if (filters.pinnedOnly) {
+    query = query.where('notes.isPinned', '=', 1)
+  }
   if (linksToPath !== null) {
     const target = linksToPath
     query = query.where(({ exists, selectFrom }) =>

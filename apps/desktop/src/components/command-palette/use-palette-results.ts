@@ -41,9 +41,9 @@ export function usePaletteResults(open: boolean, query: string): PaletteResults 
   // Defer the query the index sees: fast typing coalesces (the plan's
   // debounce) while the input itself stays perfectly responsive.
   const trimmed = useDeferredValue(query.trim())
-  // Filter tokens (#tag, is:daily, links:, linked-from:, updated:) switch the
-  // search into constrained mode (Plan 08b); plain text is the same query
-  // with empty filters — one search path.
+  // Filter tokens (#tag, is:daily, is:pinned, links:, linked-from:, updated:)
+  // switch the search into constrained mode (Plan 08b); plain text is the same
+  // query with empty filters — one search path.
   const parsed = useMemo(() => parseSearchQuery(trimmed), [trimmed])
   const searching = open && hasBridge() && graph !== null && !trimmed.startsWith('>')
 

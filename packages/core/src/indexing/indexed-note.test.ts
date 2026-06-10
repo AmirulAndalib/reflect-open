@@ -5,7 +5,7 @@ import { buildIndexedNote, indexedNoteSchema } from './indexed-note'
 describe('buildIndexedNote', () => {
   it('flattens a parsed note into the index payload', () => {
     const source =
-      '---\nid: 01H\naliases: [PJX, "Proj X"]\nprivate: true\n---\n' +
+      '---\nid: 01H\naliases: [PJX, "Proj X"]\nprivate: true\npinned: true\n---\n' +
       '# Project X\n\nLinks [[Charlotte]] and [[Note|alias]] and #status. ' +
       'See [site](https://x.com) and ![p](assets/p.png).'
     const indexed = buildIndexedNote(parseNote({ path: 'notes/project-x.md', source }), {
@@ -18,6 +18,8 @@ describe('buildIndexedNote', () => {
     expect(indexed.title).toBe('Project X')
     expect(indexed.titleKey).toBe('project x')
     expect(indexed.isPrivate).toBe(true)
+    expect(indexed.isPinned).toBe(true)
+    expect(indexed.pinnedOrder).toBeNull() // bare `pinned: true` carries no order
     expect(indexed.fileHash).toBe('abc')
     expect(indexed.mtime).toBe(123)
     expect(indexed.aliases).toEqual([
@@ -58,6 +60,16 @@ describe('buildIndexedNote', () => {
     expect(indexed.title).toBe('2026-06-09')
     expect(indexed.id).toBeNull()
     expect(indexed.isPrivate).toBe(false)
+    expect(indexed.isPinned).toBe(false)
+  })
+
+  it('projects an explicit pin order', () => {
+    const indexed = buildIndexedNote(
+      parseNote({ path: 'notes/n.md', source: '---\npinned: 2\n---\n# N' }),
+      { fileHash: 'h', mtime: 0 },
+    )
+    expect(indexed.isPinned).toBe(true)
+    expect(indexed.pinnedOrder).toBe(2)
   })
 
   it('produces a payload that satisfies the cross-language contract schema', () => {

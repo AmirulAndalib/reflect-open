@@ -53,12 +53,14 @@ function renderPalette(query: string, context?: Partial<CommandContext>) {
   const navigate = vi.fn()
   const fullContext: CommandContext = {
     navigate,
+    route: () => ({ kind: 'today' }),
     back: vi.fn(),
     forward: vi.fn(),
     toggleTheme: vi.fn(),
     toggleSidebar: vi.fn(),
     generation: () => 1,
     openPalette: vi.fn(),
+    enableSemanticSearch: vi.fn(),
     ...context,
   }
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

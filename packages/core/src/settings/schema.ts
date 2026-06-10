@@ -42,11 +42,68 @@ export const allNotesFilterTagsSchema = z.array(z.string()).catch(['book', 'link
 
 export type AllNotesFilterTags = z.infer<typeof allNotesFilterTagsSchema>
 
+/**
+ * Whether semantic search is on. Off by default — turning it on downloads the
+ * ~90MB embedding model, and that first network fetch is the user's call
+ * (Plan 09). Later launches load the cached model because this flag is set.
+ */
+export const semanticSearchEnabledSchema = z.boolean().catch(false)
+
+/**
+ * The cloud AI providers Reflect can call directly (BYOK — the user's own
+ * keys, no Reflect-hosted proxy).
+ */
+export const aiProviderIdSchema = z.enum(['openai', 'anthropic', 'google'])
+
+export type AiProviderId = z.infer<typeof aiProviderIdSchema>
+
+/**
+ * One configured AI model: a provider and the chosen model id. The API key
+ * itself lives in the OS keychain (addressed by `id` — see `aiKeySecretName`)
+ * and **never** in this document; `keyHint` keeps only the key's trailing
+ * characters so the settings UI can identify it. Which entry is the app-wide
+ * default is a sibling scalar (`defaultAiModelId`), not a per-entry flag, so
+ * "at most one default" holds by construction.
+ */
+export const aiModelConfigSchema = z.object({
+  id: z.string().min(1),
+  provider: aiProviderIdSchema,
+  model: z.string().min(1),
+  keyHint: z.string().catch(''),
+})
+
+export type AiModelConfig = z.infer<typeof aiModelConfigSchema>
+
+/**
+ * The `aiModels` entry AI features use by default. A dangling or null id is
+ * legal (hand-edits, removed entries) — readers resolve it through
+ * `defaultAiModel`, which falls back to the first entry.
+ */
+export const defaultAiModelIdSchema = z.string().nullable().catch(null)
+
+/**
+ * The configured AI models. Resilience is per entry, not per list: a corrupt
+ * entry is dropped while the rest load, so one bad hand-edit can't wipe every
+ * configured provider. A non-array value degrades to the empty list.
+ */
+export const aiModelsSchema = z
+  .array(z.unknown())
+  .catch([])
+  .transform((entries) =>
+    entries.flatMap((entry) => {
+      const parsed = aiModelConfigSchema.safeParse(entry)
+      return parsed.success ? [parsed.data] : []
+    }),
+  )
+
 export const settingsSchema = z
   .object({
     editorMarkdownSyntax: editorMarkdownSyntaxSchema,
+    semanticSearchEnabled: semanticSearchEnabledSchema,
     theme: themePreferenceSchema,
     allNotesFilterTags: allNotesFilterTagsSchema,
+    aiModels: aiModelsSchema,
+    defaultAiModelId: defaultAiModelIdSchema,
   })
   .passthrough()
 

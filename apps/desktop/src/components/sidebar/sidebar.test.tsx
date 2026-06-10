@@ -2,11 +2,12 @@ import { cleanup, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { GraphInfo } from '@reflect/core'
+import type { GraphInfo, PinnedNote } from '@reflect/core'
 import type { CommandContext } from '@/lib/commands/types'
 import { RouterProvider } from '@/routing/router'
 
 const suggestWikiTargets = vi.hoisted(() => vi.fn())
+const getPinnedNotes = vi.hoisted(() => vi.fn<() => Promise<PinnedNote[]>>(async () => []))
 const openRecent = vi.hoisted(() => vi.fn())
 const pickAndOpen = vi.hoisted(() => vi.fn())
 
@@ -14,6 +15,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   suggestWikiTargets,
+  getPinnedNotes,
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({
@@ -42,12 +44,14 @@ function renderSidebar(overrides?: Partial<CommandContext>) {
   const openPalette = vi.fn()
   const context: CommandContext = {
     navigate,
+    route: () => ({ kind: 'today' }),
     back: vi.fn(),
     forward: vi.fn(),
     toggleTheme: vi.fn(),
     toggleSidebar: vi.fn(),
     generation: () => 1,
     openPalette,
+    enableSemanticSearch: vi.fn(),
     ...overrides,
   }
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -99,6 +103,41 @@ describe('Sidebar', () => {
     await userEvent.click(rust)
     // Recents navigate through the router directly; the row marks itself current.
     await waitFor(() => expect(rust.getAttribute('aria-current')).toBe('page'))
+  })
+
+  it('pinned notes render their own section above recents, deduped from the feed', async () => {
+    getPinnedNotes.mockResolvedValue([
+      { path: 'notes/roadmap.md', title: 'Roadmap', dailyDate: null },
+    ])
+    suggestWikiTargets.mockResolvedValue([
+      { target: 'Roadmap', path: 'notes/roadmap.md', title: 'Roadmap', alias: null, date: null },
+      { target: 'Rust', path: 'notes/rust.md', title: 'Rust', alias: null, date: null },
+    ])
+    const { view } = renderSidebar()
+
+    const pinnedSection = await waitFor(() => {
+      const section = view.getByRole('region', { name: /pinned notes/i })
+      expect(section.textContent).toContain('Roadmap')
+      return section
+    })
+    // The pinned note appears once — in the Pinned section, not Recents.
+    expect(view.getAllByRole('button', { name: 'Roadmap' })).toHaveLength(1)
+    expect(view.getByRole('region', { name: /recent notes/i }).textContent).not.toContain(
+      'Roadmap',
+    )
+
+    const roadmap = await view.findByRole('button', { name: 'Roadmap' })
+    expect(pinnedSection.contains(roadmap)).toBe(true)
+    await userEvent.click(roadmap)
+    await waitFor(() => expect(roadmap.getAttribute('aria-current')).toBe('page'))
+  })
+
+  it('the pinned section is hidden while nothing is pinned', async () => {
+    getPinnedNotes.mockResolvedValue([])
+    suggestWikiTargets.mockResolvedValue([])
+    const { view } = renderSidebar()
+    await waitFor(() => expect(getPinnedNotes).toHaveBeenCalled())
+    expect(view.queryByRole('region', { name: /pinned notes/i })).toBeNull()
   })
 
   it('the graph footer switches to another recent graph', async () => {

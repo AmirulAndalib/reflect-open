@@ -19,9 +19,9 @@ interface NoteLinkRowsProps {
 }
 
 /**
- * The note-reference rows every ambient-recall surface shares — the in-note
- * backlinks/related panels (via {@link NoteLinkList}) and the daily sidebar's
- * day sections — so a note link looks and behaves identically wherever it
+ * The note-reference rows the related-notes surfaces share — the in-note
+ * Related panel (via {@link NoteLinkList}) and the daily sidebar's day
+ * sections — so a note link looks and behaves identically wherever it
  * appears. Hosts own the wrapper (section heading, collapsible section) and
  * the empty state; this is just the rows.
  */

@@ -3,8 +3,10 @@ import { usePalette } from '@/components/command-palette/palette-provider'
 import { registerKeymap } from '@/editor/keymap'
 import { APP_COMMANDS } from '@/lib/commands/app-commands'
 import { runCommand } from '@/lib/commands/registry'
+import { retryFailedEmbeddings } from '@/lib/semantic'
 import type { CommandContext } from '@/lib/commands/types'
 import { useGraph } from '@/providers/graph-provider'
+import { useSettings } from '@/providers/settings-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
 import { useTheme } from '@/providers/theme-provider'
 import { useRouter } from './router'
@@ -38,11 +40,12 @@ function isModKey(event: KeyboardEvent): boolean {
  * returned context is also what the palette itself runs commands through.
  */
 export function useAppShortcuts(): CommandContext {
-  const { navigate, back, forward } = useRouter()
+  const { route, navigate, back, forward } = useRouter()
   const { resolvedTheme, setTheme } = useTheme()
   const { graph } = useGraph()
   const { openPalette, open: paletteOpen } = usePalette()
   const { toggleSidebar } = useSidebar()
+  const { updateSettings } = useSettings()
 
   // The palette is modal: app shortcuts must not navigate behind its overlay.
   // A ref keeps the listener stable across open/close renders.
@@ -53,18 +56,27 @@ export function useAppShortcuts(): CommandContext {
   // that created the context (palette open across an index rebuild, etc.).
   const generationRef = useRef<number | null>(graph?.generation ?? null)
   generationRef.current = graph?.generation ?? null
+  const routeRef = useRef(route)
+  routeRef.current = route
 
   const context = useMemo<CommandContext>(
     () => ({
       navigate,
+      route: () => routeRef.current,
       back,
       forward,
       toggleTheme: () => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'),
       toggleSidebar,
       generation: () => generationRef.current,
       openPalette,
+      enableSemanticSearch: () => {
+        updateSettings({ semanticSearchEnabled: true })
+        // EmbeddingsSync loads an untouched runtime; a `failed` one only
+        // retries on an explicit action like this command.
+        void retryFailedEmbeddings()
+      },
     }),
-    [navigate, back, forward, resolvedTheme, setTheme, openPalette, toggleSidebar],
+    [navigate, back, forward, resolvedTheme, setTheme, openPalette, toggleSidebar, updateSettings],
   )
 
   useEffect(() => {

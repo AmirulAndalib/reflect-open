@@ -9,15 +9,13 @@ const rebuildIndex = vi.hoisted(() => vi.fn())
 const embedStatus = vi.hoisted(() =>
   vi.fn<() => Promise<EmbedStatus>>(async () => ({ status: 'uninitialized' })),
 )
-const ensureEmbeddingsVisibly = vi.hoisted(() => vi.fn(async () => ({ status: 'ready', model: 'm' })))
-const setSemanticEnabled = vi.hoisted(() => vi.fn())
 const backfillEmbeddingsVisibly = vi.hoisted(() => vi.fn(async () => 'completed'))
+const toggleNotePinned = vi.hoisted(() => vi.fn(async () => true))
 vi.mock('@/lib/semantic', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/semantic')>()),
-  ensureEmbeddingsVisibly,
-  setSemanticEnabled,
   backfillEmbeddingsVisibly,
 }))
+vi.mock('@/lib/note-pin', () => ({ toggleNotePinned }))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   randomNotePath,
@@ -40,12 +38,14 @@ function fakeContext(overrides?: Partial<CommandContext>) {
   const navigated: Route[] = []
   const context: CommandContext = {
     navigate: (route) => void navigated.push(route),
+    route: () => ({ kind: 'today' }),
     back: vi.fn(),
     forward: vi.fn(),
     toggleTheme: vi.fn(),
     toggleSidebar: vi.fn(),
     generation: () => 7,
     openPalette: vi.fn(),
+    enableSemanticSearch: vi.fn(),
     ...overrides,
   }
   return { context, navigated }
@@ -106,11 +106,46 @@ describe('app commands', () => {
     expect(navigated).toHaveLength(1) // unchanged
   })
 
-  it('semantic.enable persists the opt-in and loads the model visibly', async () => {
+  it('note.togglePin flips the pin of the note the route edits', async () => {
+    toggleNotePinned.mockClear()
+    const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+    await command('note.togglePin').run(context)
+    expect(toggleNotePinned).toHaveBeenCalledWith('notes/a.md', 7)
+  })
+
+  it('note.togglePin targets the daily file on daily/today routes', async () => {
+    toggleNotePinned.mockClear()
+    const { context } = fakeContext({ route: () => ({ kind: 'daily', date: '2026-06-09' }) })
+    await command('note.togglePin').run(context)
+    expect(toggleNotePinned).toHaveBeenCalledWith('daily/2026-06-09.md', 7)
+  })
+
+  it('note.togglePin reports a failed toggle as an operation, never an unhandled throw', async () => {
+    try {
+      toggleNotePinned.mockClear()
+      toggleNotePinned.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
+      const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+      // runCommand has no error channel — the command must absorb and report.
+      await expect(command('note.togglePin').run(context)).resolves.toBeUndefined()
+    } finally {
+      resetOperations()
+    }
+  })
+
+  it('note.togglePin no-ops on note-less routes and without a graph', async () => {
+    toggleNotePinned.mockClear()
+    const { context } = fakeContext({ route: () => ({ kind: 'settings' }) })
+    await command('note.togglePin').run(context)
+    const { context: noGraph } = fakeContext({ generation: () => null })
+    await command('note.togglePin').run(noGraph)
+    expect(toggleNotePinned).not.toHaveBeenCalled()
+  })
+
+  it('semantic.enable persists the opt-in through the context capability', async () => {
     const { context } = fakeContext()
     await command('semantic.enable').run(context)
-    expect(setSemanticEnabled).toHaveBeenCalledWith(true)
-    expect(ensureEmbeddingsVisibly).toHaveBeenCalled()
+    // EmbeddingsSync owns the download reaction; the command only opts in.
+    expect(context.enableSemanticSearch).toHaveBeenCalled()
   })
 
   it('index.rebuild runs at the open generation and reports as an operation', async () => {

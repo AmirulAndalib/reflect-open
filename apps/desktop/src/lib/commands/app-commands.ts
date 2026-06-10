@@ -1,12 +1,10 @@
-import { embedStatus, notePath, randomNotePath, rebuildIndex } from '@reflect/core'
+import { embedStatus, errorMessage, notePath, randomNotePath, rebuildIndex } from '@reflect/core'
 import { ulid } from 'ulidx'
+import { todayIso } from '@/lib/dates'
+import { toggleNotePinned } from '@/lib/note-pin'
 import { startOperation } from '@/lib/operations'
-import {
-  backfillEmbeddingsVisibly,
-  ensureEmbeddingsVisibly,
-  setSemanticEnabled,
-} from '@/lib/semantic'
-import type { Route } from '@/routing/route'
+import { backfillEmbeddingsVisibly } from '@/lib/semantic'
+import { notePathForRoute, type Route } from '@/routing/route'
 import { registerCommands } from './registry'
 import type { AppCommand } from './types'
 
@@ -66,6 +64,29 @@ const APP_COMMANDS: AppCommand[] = [
     run: (context) => context.openPalette(),
   },
   {
+    id: 'note.togglePin',
+    title: 'Pin or unpin note',
+    keywords: ['pinned', 'favorite', 'bookmark', 'sidebar'],
+    // The original app's pin shortcut. Flips the `pinned` frontmatter flag of
+    // the note the current route edits; on search/settings there is no such
+    // note and the command is a no-op.
+    keybinding: 'Mod-o',
+    run: async (context) => {
+      const generation = context.generation()
+      const path = notePathForRoute(context.route(), todayIso())
+      if (generation === null || path === null) {
+        return
+      }
+      try {
+        await toggleNotePinned(path, generation)
+      } catch (cause) {
+        // runCommand has no error channel of its own — an unreported failure
+        // here would be a silent ⌘O. Surface it like other background work.
+        startOperation('Pinning note').fail(errorMessage(cause))
+      }
+    },
+  },
+  {
     id: 'note.random',
     title: 'Open random note',
     keywords: ['shuffle', 'serendipity'],
@@ -100,14 +121,12 @@ const APP_COMMANDS: AppCommand[] = [
     id: 'semantic.enable',
     title: 'Enable semantic search',
     keywords: ['embeddings', 'ai', 'similar', 'model'],
-    // Downloads the local model (~90MB) — deliberately a command, never
-    // automatic: the first network fetch is the user's call. EmbeddingsSync
-    // reacts to `ready` with the backfill, and the persisted flag makes
-    // later launches load from cache without asking again.
-    run: async () => {
-      setSemanticEnabled(true)
-      await ensureEmbeddingsVisibly()
-    },
+    // Downloads the local model (~90MB) — deliberately opt-in, never
+    // automatic: the first network fetch is the user's call. Persisting the
+    // setting is the entire command — EmbeddingsSync loads the model when the
+    // flag flips on and backfills once it's `ready`; later launches load from
+    // cache without asking again.
+    run: (context) => context.enableSemanticSearch(),
   },
   {
     id: 'index.rebuild',

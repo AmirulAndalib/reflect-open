@@ -1,9 +1,11 @@
 import type { ReactElement } from 'react'
 import { AboutSection } from './settings/about-section'
+import { AiModelsSection } from './settings/ai-models-section'
 import { AllNotesSection } from './settings/all-notes-section'
 import { AppearanceSection } from './settings/appearance-section'
 import { EditorSection } from './settings/editor-section'
 import { KeyboardSection } from './settings/keyboard-section'
+import { SearchSection } from './settings/search-section'
 
 /**
  * The settings screen (a routed view, like notes — reached via ⌘, or the
@@ -18,6 +20,8 @@ export function SettingsScreen(): ReactElement {
         <AppearanceSection />
         <EditorSection />
         <AllNotesSection />
+        <SearchSection />
+        <AiModelsSection />
         <KeyboardSection />
         <AboutSection />
       </div>

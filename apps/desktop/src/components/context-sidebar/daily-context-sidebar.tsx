@@ -1,14 +1,17 @@
 import type { ReactElement } from 'react'
+import { dailyPath } from '@reflect/core'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { BacklinksSection } from './backlinks-section'
+import { DayCalendar } from './day-calendar'
+import { SidebarSection } from './sidebar-section'
+import { SimilarNotesSection } from './similar-notes-section'
 import { keybindingFor } from '@/lib/commands/app-commands'
 import { formatBindingLabel } from '@/lib/keybindings'
 import { addDaysIso, formatDayLabel } from '@/lib/dates'
 import { useToday } from '@/lib/use-today'
+import { cn } from '@/lib/utils'
+import { hasMacosTitleBarOverlay } from '@/lib/window-chrome'
 import { useRouter } from '@/routing/router'
-import { DayBacklinks } from './day-backlinks'
-import { DayCalendar } from './day-calendar'
-import { DayRelatedNotes } from './day-related-notes'
-import { SidebarSection } from './sidebar-section'
 
 interface DailyContextSidebarProps {
   /** The day the sidebar describes — a validated ISO date from the route. */
@@ -23,8 +26,9 @@ const TODAY_HINT = TODAY_KEYBINDING !== null ? formatBindingLabel(TODAY_KEYBINDI
 /**
  * The daily note's contextual sidebar (modeled on the old app's note context
  * sidebar): adjacent-day navigation, a month calendar marking days with
- * notes, the day's inbound links, and semantic neighbors when embeddings are
- * available. Rendered in the AppShell's right region on daily routes only.
+ * notes, and semantic neighbors when embeddings are available. Inbound links
+ * live under the note itself (the incoming-backlinks section), not here.
+ * Rendered in the AppShell's right region on daily routes only.
  */
 export function DailyContextSidebar({ date }: DailyContextSidebarProps): ReactElement {
   const { navigate } = useRouter()
@@ -32,7 +36,14 @@ export function DailyContextSidebar({ date }: DailyContextSidebarProps): ReactEl
   const isToday = date === today
 
   return (
-    <div className="flex flex-col px-2 py-2 text-text">
+    <div
+      className={cn(
+        'flex flex-col px-2 pb-2 text-text',
+        // The day-navigation buttons must clear the WindowDragRegion strip
+        // when the macOS title bar is overlaid.
+        hasMacosTitleBarOverlay ? 'pt-7' : 'pt-2',
+      )}
+    >
       <header className="border-b border-black/5 px-1 pb-2 dark:border-white/5">
         <div className="flex items-center justify-between gap-1">
           <button
@@ -78,8 +89,8 @@ export function DailyContextSidebar({ date }: DailyContextSidebarProps): ReactEl
       <SidebarSection storageKey="calendar" title="Calendar">
         <DayCalendar selectedDate={date} today={today} />
       </SidebarSection>
-      <DayBacklinks date={date} />
-      <DayRelatedNotes date={date} />
+      <BacklinksSection path={dailyPath(date)} emptyLabel="No notes link to this day yet." />
+      <SimilarNotesSection path={dailyPath(date)} />
     </div>
   )
 }

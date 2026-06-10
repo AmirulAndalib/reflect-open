@@ -23,6 +23,19 @@ interface NotePaneProps {
   autoFocus?: boolean
   /** Called once the autofocus actually happened (the editor mounted). */
   onAutoFocused?: () => void
+  /**
+   * Extra classes for the editable area (e.g. the daily stream's per-day
+   * `min-h-*`). Applied to the contenteditable root, so the reserved space
+   * is click-to-focus.
+   */
+  editorClassName?: string
+  /**
+   * The route's context sidebar shows this note's backlinks and similar
+   * notes, so render the inline copies only below `lg` — the breakpoint
+   * where the AppShell hides that sidebar. Off in the daily stream, whose
+   * sidebar describes only the target day, not every visible one.
+   */
+  contextInSidebar?: boolean
 }
 
 /** The seeded title for a brand-new (missing) ordinary note. */
@@ -45,6 +58,8 @@ export function NotePane({
   lazy = false,
   autoFocus = false,
   onAutoFocused,
+  editorClassName,
+  contextInSidebar = false,
 }: NotePaneProps): ReactElement {
   const { graph } = useGraph()
   const { settings } = useSettings()
@@ -121,7 +136,10 @@ export function NotePane({
     return (
       <div>
         <ProtectedNoteView content={document.initialContent} />
-        <BacklinksPanel path={path} />
+        <div className={contextInSidebar ? 'lg:hidden' : undefined}>
+          <BacklinksPanel path={path} />
+          <RelatedNotes path={path} />
+        </div>
       </div>
     )
   }
@@ -163,13 +181,16 @@ export function NotePane({
         markMode={settings.editorMarkdownSyntax}
         images={images}
         onWikiLinkClick={onWikiLinkClick}
+        className={editorClassName}
         handleRef={handleRef}
       >
         <WikiAutocomplete onCreate={createFromAutocomplete} />
       </NoteEditor>
 
-      <BacklinksPanel path={path} />
-      <RelatedNotes path={path} />
+      <div className={contextInSidebar ? 'lg:hidden' : undefined}>
+        <BacklinksPanel path={path} />
+        <RelatedNotes path={path} />
+      </div>
     </div>
   )
 }

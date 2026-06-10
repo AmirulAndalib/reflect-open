@@ -135,6 +135,25 @@ export interface NoteSessionOptions {
 export interface FrontmatterPatch {
   /** Alternative wiki-link titles for this note (the Plan 07b auto-alias). */
   aliases?: string[]
+  /**
+   * Sidebar pin. `true` pins; a number pins with an explicit order (what the
+   * future reorder UI writes); `false` deletes the key rather than writing
+   * `pinned: false` — unpinned is the absence of the flag, and a note whose
+   * only metadata was the pin returns to having no frontmatter at all.
+   */
+  pinned?: boolean | number
+}
+
+/** Translate the typed patch into the YAML write (`undefined` deletes a key). */
+function yamlPatch(patch: FrontmatterPatch): Record<string, unknown> {
+  const yaml: Record<string, unknown> = {}
+  if (patch.aliases !== undefined) {
+    yaml.aliases = patch.aliases
+  }
+  if (patch.pinned !== undefined) {
+    yaml.pinned = patch.pinned === false ? undefined : patch.pinned
+  }
+  return yaml
 }
 
 /** One open note's document lifecycle. Create via {@link createNoteSession}. */
@@ -169,6 +188,17 @@ export interface NoteSession {
    * then reconciles like any external change).
    */
   updateFrontmatter: (patch: FrontmatterPatch) => boolean
+  /**
+   * {@link NoteSession.updateFrontmatter}, but the patch **lands on disk now**
+   * regardless of session state. Normally that's a flush; under a parked
+   * conflict — where saves are paused and a flush is a deliberate no-op — the
+   * contested content is patched and written through too, so the index sees
+   * the change immediately and *both* resolutions keep it ("keep mine" writes
+   * the patched header, "load theirs" adopts the patched park). Same gating
+   * and false-return as `updateFrontmatter`. For patches that should ride the
+   * resolution instead (the rename alias), use `updateFrontmatter`.
+   */
+  commitFrontmatter: (patch: FrontmatterPatch) => Promise<boolean>
   /** Flush pending edits and detach: no further snapshots are emitted. */
   dispose: () => void
 }
@@ -510,11 +540,36 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     if (disposed || isProtected || status !== 'ready') {
       return false
     }
-    header = splitDoc(upsertFrontmatter(header + buffer, { ...patch })).header
+    header = splitDoc(upsertFrontmatter(header + buffer, yamlPatch(patch))).header
     dirty = header + buffer !== disk
     emit()
     if (dirty) {
       scheduleSave()
+    }
+    return true
+  }
+
+  async function commitFrontmatter(patch: FrontmatterPatch): Promise<boolean> {
+    if (!updateFrontmatter(patch)) {
+      return false
+    }
+    if (conflict === null) {
+      await flush()
+      return true
+    }
+    // Saves are paused: the patch above rides the in-memory header (landing
+    // with "keep mine"), so make the other half land too — patch the parked
+    // content and write it through. The park refreshes in place, so "load
+    // theirs" adopts the patched bytes, and recording the write in `disk`
+    // makes the watcher's echo a recognized no-op.
+    if (io.write !== null) {
+      const patched = upsertFrontmatter(conflict, yamlPatch(patch))
+      if (patched !== conflict) {
+        await io.write(path, patched)
+        conflict = patched
+        disk = patched
+        emit()
+      }
     }
     return true
   }
@@ -536,6 +591,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     loadTheirs,
     content: () => header + buffer,
     updateFrontmatter,
+    commitFrontmatter,
     dispose,
   }
 }

@@ -15,6 +15,7 @@ describe('parseSearchQuery', () => {
       filters: {
         tags: [],
         dailyOnly: false,
+        pinnedOnly: false,
         linksTo: null,
         linkedFrom: null,
         updatedAfterMs: null,
@@ -52,6 +53,11 @@ describe('parseSearchQuery', () => {
   it('is:daily flags daily-only (case-insensitive)', () => {
     expect(parseSearchQuery('Is:Daily standup').filters.dailyOnly).toBe(true)
     expect(parseSearchQuery('Is:Daily standup').text).toBe('standup')
+  })
+
+  it('is:pinned flags pinned-only (case-insensitive)', () => {
+    expect(parseSearchQuery('Is:Pinned roadmap').filters.pinnedOnly).toBe(true)
+    expect(parseSearchQuery('Is:Pinned roadmap').text).toBe('roadmap')
   })
 
   it('an unknown is: value stays text', () => {

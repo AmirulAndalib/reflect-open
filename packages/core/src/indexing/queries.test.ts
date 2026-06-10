@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '../ipc/bridge'
-import { dailyDatesInRange } from './queries'
+import { dailyDatesInRange, getPinnedNotes } from './queries'
 
 // A fake bridge resolves `db_query` so the test exercises the real compiled
 // SQL (snake_case columns, range parameters) — the same harness pipeline.test
@@ -37,5 +37,30 @@ describe('dailyDatesInRange', () => {
   it('returns an empty list when no daily notes exist in the range', async () => {
     mockInvoke.mockResolvedValue([])
     await expect(dailyDatesInRange('2025-01-01', '2025-01-31')).resolves.toEqual([])
+  })
+})
+
+describe('getPinnedNotes', () => {
+  it('selects pinned rows: explicit orders first, then folded title', async () => {
+    mockInvoke.mockResolvedValue([
+      { path: 'notes/a.md', title: 'Alpha', daily_date: null },
+      { path: 'notes/b.md', title: 'Beta', daily_date: null },
+    ])
+
+    const pinned = await getPinnedNotes()
+
+    expect(pinned).toEqual([
+      { path: 'notes/a.md', title: 'Alpha', dailyDate: null },
+      { path: 'notes/b.md', title: 'Beta', dailyDate: null },
+    ])
+    const [command, args] = mockInvoke.mock.calls[0]
+    expect(command).toBe('db_query')
+    const sql = String(args.sql)
+    expect(sql).toContain('is_pinned')
+    // Ordered pins lead (NULL orders sort last), alphabetical within.
+    expect(sql).toContain('order by pinned_order IS NULL')
+    expect(sql).toContain('"pinned_order"')
+    expect(sql).toContain('title_key')
+    expect(args.params).toEqual([1])
   })
 })

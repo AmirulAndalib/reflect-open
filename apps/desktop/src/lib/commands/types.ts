@@ -9,6 +9,8 @@ import type { Route } from '@/routing/route'
 
 export interface CommandContext {
   navigate: (route: Route) => void
+  /** The current route, read at run time — what note-scoped commands act on. */
+  route: () => Route
   back: () => void
   forward: () => void
   toggleTheme: () => void
@@ -22,6 +24,12 @@ export interface CommandContext {
   generation: () => number | null
   /** Open the ⌘K palette (optionally pre-filled). */
   openPalette: (query?: string) => void
+  /**
+   * Persist the semantic-search opt-in (`semanticSearchEnabled`).
+   * EmbeddingsSync reacts to the setting by loading — first time:
+   * downloading — the model, so flipping the flag is the whole command.
+   */
+  enableSemanticSearch: () => void
 }
 
 export interface AppCommand {

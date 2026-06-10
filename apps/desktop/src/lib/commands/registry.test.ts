@@ -9,12 +9,14 @@ afterEach(() => {
 function fakeContext(overrides?: Partial<CommandContext>): CommandContext {
   return {
     navigate: vi.fn(),
+    route: () => ({ kind: 'today' }),
     back: vi.fn(),
     forward: vi.fn(),
     toggleTheme: vi.fn(),
     toggleSidebar: vi.fn(),
     generation: () => 1,
     openPalette: vi.fn(),
+    enableSemanticSearch: vi.fn(),
     ...overrides,
   }
 }

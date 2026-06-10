@@ -1,6 +1,13 @@
 import { z } from 'zod'
 import { dateFromDailyPath, isDaily } from '../graph/paths'
-import { foldKey, foldTag, normalizeWikiTarget, type ParsedNote } from '../markdown'
+import {
+  foldKey,
+  foldTag,
+  isPinned,
+  normalizeWikiTarget,
+  pinnedOrder,
+  type ParsedNote,
+} from '../markdown'
 import { previewSnippet } from './snippet'
 
 /**
@@ -22,7 +29,8 @@ import { previewSnippet } from './snippet'
  * hash-based reconcile alone would never re-index an unchanged file, leaving
  * new columns at their migration defaults forever.
  *
- * History: 1 — Plan 04 baseline · 2 — `notes.preview` + `tags.tag_key`.
+ * History: 1 — Plan 04 baseline · 2 — `notes.preview` + `tags.tag_key` (the
+ * first stamped version; v2 rows also carry the 0004 pinned columns).
  */
 export const PROJECTION_VERSION = 2
 
@@ -58,6 +66,9 @@ export const indexedNoteSchema = z.object({
   titleKey: z.string(),
   dailyDate: z.string().nullable(),
   isPrivate: z.boolean(),
+  isPinned: z.boolean(),
+  /** Explicit pin order (`pinned: <n>`); null for bare `pinned: true`. */
+  pinnedOrder: z.number().nullable(),
   fileHash: z.string(),
   mtime: z.number(),
   text: z.string(),
@@ -99,6 +110,8 @@ export function buildIndexedNote(
     titleKey: foldKey(parsed.title),
     dailyDate: isDaily(parsed.path) ? dateFromDailyPath(parsed.path) : null,
     isPrivate: parsed.frontmatter.private,
+    isPinned: isPinned(parsed.frontmatter),
+    pinnedOrder: pinnedOrder(parsed.frontmatter),
     fileHash: meta.fileHash,
     mtime: meta.mtime,
     text: parsed.text,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseFrontmatter, splitFrontmatter, upsertFrontmatter } from './frontmatter'
+import { isPinned, pinnedOrder } from './model'
 
 describe('splitFrontmatter', () => {
   it('returns the whole file as body when there is no frontmatter', () => {
@@ -43,7 +44,7 @@ describe('parseFrontmatter', () => {
   it('degrades broken YAML to defaults + a warning, never throwing', () => {
     const { data, warning } = parseFrontmatter('foo: [unclosed')
     expect(warning).toMatch(/invalid YAML/i)
-    expect(data).toEqual({ aliases: [], private: false })
+    expect(data).toEqual({ aliases: [], private: false, pinned: false })
   })
 
   it('treats non-mapping frontmatter as ignored + a warning', () => {
@@ -58,6 +59,26 @@ describe('parseFrontmatter', () => {
     expect(parseFrontmatter('private: no').data.private).toBe(false)
     expect(parseFrontmatter('private: banana').data.private).toBe(false)
     expect(parseFrontmatter('id: x').data.private).toBe(false)
+  })
+
+  it('coerces the pinned value: booleans, truthy words, numbers as explicit order', () => {
+    expect(parseFrontmatter('pinned: true').data.pinned).toBe(true)
+    expect(parseFrontmatter('pinned: yes').data.pinned).toBe(true)
+    expect(parseFrontmatter('pinned: false').data.pinned).toBe(false)
+    expect(parseFrontmatter('pinned: banana').data.pinned).toBe(false)
+    expect(parseFrontmatter('id: x').data.pinned).toBe(false)
+    expect(parseFrontmatter('pinned: 2').data.pinned).toBe(2)
+    expect(parseFrontmatter('pinned: 1.5').data.pinned).toBe(1.5)
+    expect(parseFrontmatter('pinned: .nan').data.pinned).toBe(false)
+  })
+
+  it('isPinned/pinnedOrder read the pin value — `pinned: 0` is order 0, pinned', () => {
+    expect(isPinned(parseFrontmatter('pinned: 0').data)).toBe(true)
+    expect(pinnedOrder(parseFrontmatter('pinned: 0').data)).toBe(0)
+    expect(isPinned(parseFrontmatter('pinned: true').data)).toBe(true)
+    expect(pinnedOrder(parseFrontmatter('pinned: true').data)).toBeNull()
+    expect(isPinned(parseFrontmatter('id: x').data)).toBe(false)
+    expect(pinnedOrder(parseFrontmatter('id: x').data)).toBeNull()
   })
 })
 
@@ -90,5 +111,22 @@ describe('upsertFrontmatter', () => {
     const result = upsertFrontmatter(source, { id: undefined })
     expect(result).not.toContain('id: x')
     expect(result).toContain('custom: keep')
+  })
+
+  it('removes the whole block when the last key is deleted', () => {
+    expect(upsertFrontmatter('---\npinned: true\n---\n# Body', { pinned: undefined })).toBe(
+      '# Body',
+    )
+  })
+
+  it('does not create a block for a deletion-only patch', () => {
+    expect(upsertFrontmatter('# Body', { pinned: undefined })).toBe('# Body')
+  })
+
+  it('round-trips pin → unpin back to the original source', () => {
+    const source = '# Body\n\ntext'
+    const pinned = upsertFrontmatter(source, { pinned: true })
+    expect(pinned).toBe('---\npinned: true\n---\n# Body\n\ntext')
+    expect(upsertFrontmatter(pinned, { pinned: undefined })).toBe(source)
   })
 })

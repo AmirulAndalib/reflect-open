@@ -96,6 +96,10 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
         {virtualizer.getVirtualItems().map((item) => {
           const date = dateAtIndex(dayWindow, item.index)
           const isToday = date === today
+          // V1's daily-note sizing: past days hug their content (an empty day
+          // collapses to a short row), while today and future days reserve
+          // most of a viewport of writing room. ISO dates compare lexically.
+          const isPast = date < today
           const autoFocus = focusPending.current === date
           return (
             <div
@@ -119,6 +123,7 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
                   lazy
                   autoFocus={autoFocus}
                   onAutoFocused={consumeFocus}
+                  editorClassName={isPast ? 'min-h-[200px]' : 'min-h-[60vh]'}
                 />
               </section>
             </div>

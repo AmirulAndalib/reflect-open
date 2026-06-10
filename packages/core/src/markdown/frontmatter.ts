@@ -1,4 +1,4 @@
-import { Document, parse as parseYaml, parseDocument } from 'yaml'
+import { Document, isMap, parse as parseYaml, parseDocument } from 'yaml'
 import { frontmatterSchema, type Frontmatter } from './model'
 
 /**
@@ -81,7 +81,9 @@ export function parseFrontmatter(raw: string | null): ParsedFrontmatter {
  * the body is preserved byte-for-byte and only the frontmatter region is
  * rewritten via the YAML `Document` API, which keeps key order, comments, and
  * unknown keys. A `undefined` value deletes the key. Creates a block if none
- * exists (and `patch` is non-empty).
+ * exists (and the patch sets something), and removes the block entirely when
+ * deleting its last key — a note whose only metadata was a toggled flag returns
+ * to having no frontmatter at all, not an empty `---` husk.
  */
 export function upsertFrontmatter(source: string, patch: Record<string, unknown>): string {
   // An empty patch is a no-op — never re-serialize (which could disturb comments,
@@ -93,7 +95,14 @@ export function upsertFrontmatter(source: string, patch: Record<string, unknown>
   const { raw, body } = splitFrontmatter(source)
 
   if (raw === null) {
-    const doc = new Document(patch)
+    // Deletions of keys that were never there can't create a block.
+    const defined = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== undefined),
+    )
+    if (Object.keys(defined).length === 0) {
+      return source
+    }
+    const doc = new Document(defined)
     return `---\n${ensureTrailingNewline(String(doc))}---\n${source}`
   }
 
@@ -111,7 +120,20 @@ export function upsertFrontmatter(source: string, patch: Record<string, unknown>
       doc.set(key, value)
     }
   }
+  if (isEmptyDocument(doc)) {
+    return body
+  }
   return `---\n${ensureTrailingNewline(String(doc))}---\n${body}`
+}
+
+/**
+ * True when the patched document holds nothing worth a block: no keys and no
+ * document-level comments (a commented block is kept — dropping it would lose
+ * bytes the user wrote).
+ */
+function isEmptyDocument(doc: Document): boolean {
+  const noKeys = doc.contents === null || (isMap(doc.contents) && doc.contents.items.length === 0)
+  return noKeys && doc.commentBefore == null && doc.comment == null
 }
 
 /** Guard against a YAML serializer that omits the trailing newline before `---`. */

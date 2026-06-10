@@ -5,6 +5,8 @@
  */
 export {
   frontmatterSchema,
+  isPinned,
+  pinnedOrder,
   PARSED_NOTE_VERSION,
   type Frontmatter,
   type Span,

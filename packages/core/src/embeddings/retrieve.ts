@@ -32,6 +32,16 @@ export interface RetrieveOptions {
 
 const KNN_CANDIDATES = 24
 
+/**
+ * Neighbors farther than this cosine distance are noise, not "similar notes":
+ * KNN always fills the candidate list with the nearest chunks however
+ * unrelated they are (worst in small graphs). 0.7 is the old app's tuned
+ * cutoff for the same model family, carried over for parity. The
+ * `embedding_vectors` table's metric is cosine (migration 0003), so vec0
+ * distances threshold directly.
+ */
+const MAX_RELATED_COSINE_DISTANCE = 0.7
+
 interface ChunkHitRow {
   path: string
   title: string
@@ -53,15 +63,15 @@ async function semanticHits(query: string, limit: number): Promise<RetrievalHit[
     ORDER BY v.distance
   `.execute(db)
 
-  // Best chunk per note wins; distance maps to a similarity-ish score
-  // (lower distance = higher score) for callers that want magnitudes.
+  // Best chunk per note wins; the score is cosine similarity (the vec0
+  // table's metric is cosine) for callers that want magnitudes.
   const byNote = new Map<string, RetrievalHit>()
   for (const row of result.rows) {
     if (!byNote.has(row.path)) {
       byNote.set(row.path, {
         path: row.path,
         title: row.title,
-        score: 1 / (1 + row.distance),
+        score: 1 - row.distance,
         snippet: row.text.trim(),
         heading: row.heading,
         isPrivate: row.isPrivate !== 0,
@@ -80,6 +90,7 @@ async function lexicalHits(query: string, limit: number): Promise<RetrievalHit[]
     filters: {
       tags: [],
       dailyOnly: false,
+      pinnedOnly: false,
       linksTo: null,
       linkedFrom: null,
       updatedAfterMs: null,
@@ -173,7 +184,9 @@ export async function retrieve(query: string, options?: RetrieveOptions): Promis
  * chunk vector — no re-embedding, no pane-provided seed text: the embedding
  * sync keeps chunks current on every save, and the index invalidation scope
  * refetches consumers, so freshness is automatic. Returns [] when the note
- * has no vectors yet (model never enabled, or not yet embedded).
+ * has no vectors yet (model never enabled, or not yet embedded). Candidates
+ * past {@link MAX_RELATED_COSINE_DISTANCE} are dropped rather than padded in,
+ * so a sparse graph shows few (or no) neighbors instead of wrong ones.
  */
 export async function relatedNotes(path: string, limit = 6): Promise<RetrievalHit[]> {
   const seed = await sql<{ vec: string }>`
@@ -199,11 +212,14 @@ export async function relatedNotes(path: string, limit = 6): Promise<RetrievalHi
   `.execute(db)
   const byNote = new Map<string, RetrievalHit>()
   for (const row of result.rows) {
+    if (row.distance > MAX_RELATED_COSINE_DISTANCE) {
+      continue
+    }
     if (row.path !== path && !byNote.has(row.path)) {
       byNote.set(row.path, {
         path: row.path,
         title: row.title,
-        score: 1 / (1 + row.distance),
+        score: 1 - row.distance,
         snippet: row.text.trim(),
         heading: row.heading,
         isPrivate: row.isPrivate !== 0,

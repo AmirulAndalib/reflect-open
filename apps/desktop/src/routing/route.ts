@@ -7,7 +7,7 @@
  * note route carries `path` — the reserved frontmatter `id` can join it later
  * without breaking the shape.
  */
-import { dateFromDailyPath, isDaily } from '@reflect/core'
+import { dailyPath, dateFromDailyPath, isDaily } from '@reflect/core'
 import { isIsoDate } from '@/lib/dates'
 
 export type Route =
@@ -47,6 +47,27 @@ export function routesEqual(a: Route, b: Route): boolean {
 export function routeForPath(path: string): Route {
   const date = isDaily(path) ? dateFromDailyPath(path) : null
   return date !== null && isIsoDate(date) ? { kind: 'daily', date } : { kind: 'note', path }
+}
+
+/**
+ * The note file a route is editing — what note-scoped commands (pin, …) act
+ * on: a note route's path, a daily route's file (today's for the `today`
+ * route, hence the `today` parameter), and null for screens that edit no
+ * note (search, settings).
+ */
+export function notePathForRoute(route: Route, today: string): string | null {
+  switch (route.kind) {
+    case 'note':
+      return route.path
+    case 'daily':
+      return dailyPath(route.date)
+    case 'today':
+      return dailyPath(today)
+    case 'allNotes':
+    case 'search':
+    case 'settings':
+      return null
+  }
 }
 
 /**
