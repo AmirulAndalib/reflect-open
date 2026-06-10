@@ -123,6 +123,39 @@ describe('BacklinksPanel', () => {
     reopened.unmount()
   })
 
+  it('lets one group be peeked at after the header collapse (old Reflect behavior)', async () => {
+    getBacklinksWithContext.mockResolvedValue([
+      {
+        sourcePath: 'notes/meeting.md',
+        sourceTitle: 'Meeting Notes',
+        snippet: 'discussed [[Roadmap]] follow-ups',
+        posFrom: 12,
+      },
+      {
+        sourcePath: 'notes/planning.md',
+        sourceTitle: 'Planning',
+        snippet: 'ship the [[Roadmap]]',
+        posFrom: 3,
+      },
+    ])
+    const view = renderPanel('notes/roadmap.md')
+
+    const header = await view.findByRole('button', { name: /Incoming backlinks \(2\)/ })
+    await userEvent.click(header)
+    expect(view.queryByText('discussed [[Roadmap]] follow-ups')).toBeNull()
+    expect(view.queryByText('ship the [[Roadmap]]')).toBeNull()
+
+    await userEvent.click(
+      view.getByRole('button', { name: 'Expand references from Meeting Notes' }),
+    )
+    expect(view.getByText('discussed [[Roadmap]] follow-ups')).toBeDefined()
+    expect(view.queryByText('ship the [[Roadmap]]')).toBeNull()
+
+    await userEvent.click(header)
+    expect(view.getByText('ship the [[Roadmap]]')).toBeDefined()
+    view.unmount()
+  })
+
   it('collapses one source group via its own chevron', async () => {
     getBacklinksWithContext.mockResolvedValue([
       {

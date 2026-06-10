@@ -6,7 +6,10 @@ interface BacklinkSourceGroupProps {
   source: BacklinkSource
   /** The first group renders without the leading hairline divider. */
   first: boolean
-  /** Panel-level toggle; the group's own state follows it when it changes. */
+  /**
+   * Panel-level toggle. Each change resets the group's own state, which the
+   * group chevron can then override until the next panel toggle.
+   */
   expanded: boolean
   /** Open the source note (the panel wires this to the router). */
   onOpen: (path: string) => void
@@ -16,8 +19,11 @@ interface BacklinkSourceGroupProps {
  * One referencing note in the incoming-backlinks section, in old Reflect's
  * presentation: an accent-colored title that opens the note, the linking
  * lines beneath as selectable text, and a chevron in the left gutter —
- * revealed on hover — that collapses just this group. Groups are separated
- * by hairline rules rather than boxed rows.
+ * revealed on hover — that toggles just this group. The group chevron
+ * deliberately overrides the panel-level toggle (old Reflect's behavior):
+ * collapsing the panel collapses every group, after which one source can be
+ * peeked at without re-expanding the rest. Groups are separated by hairline
+ * rules rather than boxed rows.
  */
 export function BacklinkSourceGroup({
   source,
