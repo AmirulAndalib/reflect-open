@@ -1,10 +1,11 @@
-import { useState, type ReactElement } from 'react'
+import type { ReactElement } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { getBacklinksWithContext, hasBridge } from '@reflect/core'
 import { BacklinkSourceGroup } from '@/components/backlink-source-group'
 import { groupBacklinksBySource } from '@/lib/group-backlinks'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
+import { useSessionFlag } from '@/lib/use-session-flag'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
@@ -16,10 +17,6 @@ interface BacklinksPanelProps {
 
 /** Session-wide (all notes) expanded state, old Reflect's `backlinks-expanded`. */
 const EXPANDED_STORAGE_KEY = 'reflect.backlinks-expanded'
-
-function readExpandedState(): boolean {
-  return window.sessionStorage.getItem(EXPANDED_STORAGE_KEY) !== 'collapsed'
-}
 
 /**
  * Incoming backlinks at the bottom of every note — daily and ordinary — in
@@ -43,16 +40,16 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
     queryFn: () => getBacklinksWithContext(path),
     enabled: hasBridge() && graph !== null,
   })
-  const [expanded, setExpanded] = useState(readExpandedState)
+  // Shared across every mounted panel: the daily stream shows one per day,
+  // and the header toggle must move them together, not just this instance.
+  const [expanded, setExpanded] = useSessionFlag(EXPANDED_STORAGE_KEY, true)
 
   if (!data || data.length === 0) {
     return null
   }
 
   const toggleExpanded = (): void => {
-    const next = !expanded
-    setExpanded(next)
-    window.sessionStorage.setItem(EXPANDED_STORAGE_KEY, next ? 'expanded' : 'collapsed')
+    setExpanded(!expanded)
   }
 
   const count = data.length

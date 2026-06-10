@@ -123,6 +123,37 @@ describe('BacklinksPanel', () => {
     reopened.unmount()
   })
 
+  it('keeps simultaneously mounted panels in sync (one per day in the stream)', async () => {
+    getBacklinksWithContext.mockResolvedValue([
+      {
+        sourcePath: 'notes/meeting.md',
+        sourceTitle: 'Meeting Notes',
+        snippet: 'discussed [[Roadmap]] follow-ups',
+        posFrom: 12,
+      },
+    ])
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = render(
+      <QueryClientProvider client={client}>
+        <RouterProvider>
+          <BacklinksPanel path="daily/2026-06-09.md" />
+          <BacklinksPanel path="daily/2026-06-10.md" />
+        </RouterProvider>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() =>
+      expect(view.getAllByRole('button', { name: /Incoming backlink \(1\)/ })).toHaveLength(2),
+    )
+    const headers = view.getAllByRole('button', { name: /Incoming backlink \(1\)/ })
+
+    await userEvent.click(headers[0])
+    expect(headers[0].getAttribute('aria-expanded')).toBe('false')
+    expect(headers[1].getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByText('discussed [[Roadmap]] follow-ups')).toBeNull()
+    view.unmount()
+  })
+
   it('lets one group be peeked at after the header collapse (old Reflect behavior)', async () => {
     getBacklinksWithContext.mockResolvedValue([
       {
