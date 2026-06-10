@@ -6,7 +6,9 @@ use rusqlite::Connection;
 use serde_json::Value;
 
 use super::embed_write::{apply_chunks, remove_chunks, EmbeddedChunk};
-use super::migrations::{migrate, open_in_memory, open_index_at, validate_migrations};
+use super::migrations::{
+    migrate, migrate_to_version, open_in_memory, open_index_at, validate_migrations,
+};
 use super::query::run_query;
 use super::write::{apply_note, clear_index, IndexedLink, IndexedNote};
 
@@ -56,7 +58,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 2); // applied migrations (0001 + 0002)
+    assert_eq!(version, 3); // applied migrations (0001 + 0002 + 0003)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -171,7 +173,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();
@@ -461,6 +463,85 @@ fn reindexing_a_note_keeps_its_chunks_but_true_deletion_drops_them() {
     tx.commit().unwrap();
     assert_eq!(chunk_rows(&conn), vec![]);
     assert_eq!(vector_count(&conn), 0);
+}
+
+#[test]
+fn embedding_vectors_use_cosine_distance() {
+    // A probe pointing the same direction as a stored vector but at half its
+    // magnitude: cosine distance 0, L2 distance 0.5 — this test discriminates
+    // the metric (retrieve.ts thresholds raw distances as cosine).
+    let conn = migrated();
+    index_note(&conn, "notes/a.md");
+    let mut stored = vec384(0.0);
+    stored[0] = 1.0;
+    apply_chunks(&conn, "notes/a.md", &[chunk("a1", Some(stored))]).unwrap();
+
+    let mut probe = vec![0.0f32; 384];
+    probe[0] = 0.5;
+    let probe_json = format!(
+        "[{}]",
+        probe
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    let rows = run_query(
+        &conn,
+        "SELECT v.distance FROM embedding_vectors v
+         WHERE v.embedding MATCH ?1 AND k = 1 ORDER BY v.distance",
+        &[Value::String(probe_json)],
+    )
+    .unwrap();
+    let distance = rows[0].get("distance").unwrap().as_f64().unwrap();
+    assert!(
+        distance.abs() < 1e-6,
+        "expected cosine distance 0, got {distance}"
+    );
+}
+
+#[test]
+fn cosine_migration_preserves_stored_vectors() {
+    // Stage a vector on the pre-cosine schema (0002), then run 0003: the
+    // vector must survive the table rebuild byte-for-byte (no re-embedding),
+    // matching itself at cosine distance 0.
+    let mut conn = open_in_memory().expect("open");
+    migrate_to_version(&mut conn, 2).expect("migrate to 0002");
+    index_note(&conn, "notes/a.md");
+    apply_chunks(&conn, "notes/a.md", &[chunk("a1", Some(vec384(0.25)))]).unwrap();
+    assert_eq!(vector_count(&conn), 1);
+
+    migrate(&mut conn).expect("migrate to latest");
+    assert_eq!(vector_count(&conn), 1);
+
+    let vec_json = run_query(
+        &conn,
+        "SELECT vec_to_json(v.embedding) AS vec FROM embedding_vectors v",
+        &[],
+    )
+    .unwrap()[0]
+        .get("vec")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    let rows = run_query(
+        &conn,
+        "SELECT c.note_path, v.distance FROM embedding_vectors v
+         JOIN embedding_chunks c ON c.id = v.rowid
+         WHERE v.embedding MATCH ?1 AND k = 1 ORDER BY v.distance",
+        &[Value::String(vec_json)],
+    )
+    .unwrap();
+    assert_eq!(
+        rows[0].get("note_path").unwrap().as_str().unwrap(),
+        "notes/a.md"
+    );
+    let distance = rows[0].get("distance").unwrap().as_f64().unwrap();
+    assert!(
+        distance.abs() < 1e-6,
+        "expected cosine distance 0, got {distance}"
+    );
 }
 
 #[test]

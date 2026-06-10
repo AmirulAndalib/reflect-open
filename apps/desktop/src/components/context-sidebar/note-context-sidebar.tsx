@@ -1,53 +1,24 @@
 import type { ReactElement } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getNote, hasBridge } from '@reflect/core'
-import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
-import { useGraph } from '@/providers/graph-provider'
-import { SidebarBacklinks } from './sidebar-backlinks'
-import { SidebarRelatedNotes } from './sidebar-related-notes'
+import { BacklinksSection } from './backlinks-section'
+import { SimilarNotesSection } from './similar-notes-section'
 
 interface NoteContextSidebarProps {
-  /** Graph-relative path of the open (non-daily) note. */
+  /** Graph-relative path of the open note the sidebar describes. */
   path: string
 }
 
 /**
- * The filename without directory or extension — the display fallback while a
- * brand-new note has no indexed title yet (the index lags the first save).
- */
-function titleFromPath(path: string): string {
-  const basename = path.split('/').at(-1) ?? path
-  return basename.replace(/\.md$/, '')
-}
-
-/**
- * An ordinary note's contextual sidebar (modeled on the old app's note context
- * sidebar): the note's title, its inbound links, and semantic neighbors when
- * embeddings are available. The old app's remaining sections (note actions,
- * published URL, contacts, books) ride cloud features V2 doesn't have.
- * Rendered in the AppShell's right region on note routes only — daily routes
- * get {@link DailyContextSidebar} instead.
+ * An ordinary note's contextual sidebar (the old app's note context sidebar):
+ * the note's inbound links and its semantic neighbors. Rendered in the
+ * AppShell's right region on `note` routes; the note pane hides its inline
+ * copies of these panels at the breakpoint where this sidebar appears, so the
+ * context shows exactly once at every window size.
  */
 export function NoteContextSidebar({ path }: NoteContextSidebarProps): ReactElement {
-  const { graph } = useGraph()
-  const { data: note } = useQuery({
-    // getNote resolves `undefined` for an unindexed path; normalize to `null`
-    // because TanStack Query reserves `undefined` for "no data yet".
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'note', path],
-    queryFn: async () => (await getNote(path)) ?? null,
-    enabled: hasBridge() && graph !== null,
-  })
-
   return (
     <div className="flex flex-col px-2 py-2 text-text">
-      <header className="border-b border-black/5 px-1 pb-2 dark:border-white/5">
-        <h2 className="truncate text-center text-sm font-semibold">
-          {note?.title ?? titleFromPath(path)}
-        </h2>
-      </header>
-
-      <SidebarBacklinks path={path} emptyText="No notes link to this note yet." />
-      <SidebarRelatedNotes path={path} />
+      <BacklinksSection path={path} emptyLabel="No notes link to this note yet." />
+      <SimilarNotesSection path={path} />
     </div>
   )
 }

@@ -6,18 +6,16 @@ import type { ReactNode } from 'react'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { NoteContextSidebar } from './note-context-sidebar'
 
-const getNote = vi.hoisted(() => vi.fn())
 const getBacklinksWithContext = vi.hoisted(() => vi.fn())
 const relatedNotes = vi.hoisted(() => vi.fn())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
-  getNote,
   getBacklinksWithContext,
   relatedNotes,
 }))
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: 1 } }),
+  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 } }),
 }))
 
 function RouteProbe(): ReactNode {
@@ -39,83 +37,56 @@ function renderSidebar(path: string) {
 
 beforeEach(() => {
   window.sessionStorage.clear()
-  getNote.mockReset().mockResolvedValue(undefined)
   getBacklinksWithContext.mockReset().mockResolvedValue([])
   relatedNotes.mockReset().mockResolvedValue([])
 })
 
-describe('NoteContextSidebar header', () => {
-  it('shows the indexed note title', async () => {
-    getNote.mockResolvedValue({
-      path: 'notes/rust.md',
-      title: 'Rust',
-      dailyDate: null,
-      isPrivate: false,
-    })
+describe('NoteContextSidebar', () => {
+  it('queries the note path for both backlinks and similar notes', async () => {
     const view = renderSidebar('notes/rust.md')
-    await waitFor(() =>
-      expect(view.getByRole('heading', { name: 'Rust' })).toBeDefined(),
-    )
-    expect(getNote).toHaveBeenCalledWith('notes/rust.md')
+    await waitFor(() => expect(getBacklinksWithContext).toHaveBeenCalledWith('notes/rust.md'))
+    await waitFor(() => expect(relatedNotes).toHaveBeenCalledWith('notes/rust.md'))
     view.unmount()
   })
 
-  it('falls back to the filename while the note is not indexed yet', async () => {
-    const view = renderSidebar('notes/borrow-checker.md')
-    expect(view.getByRole('heading', { name: 'borrow-checker' })).toBeDefined()
-    await waitFor(() => expect(getNote).toHaveBeenCalled())
-    view.unmount()
-  })
-})
-
-describe('NoteContextSidebar backlinks', () => {
-  it('shows a quiet empty state when nothing links to the note', async () => {
+  it('shows a note-flavored empty state and no Similar notes section without results', async () => {
     const view = renderSidebar('notes/rust.md')
     await view.findByText('No notes link to this note yet.')
-    expect(getBacklinksWithContext).toHaveBeenCalledWith('notes/rust.md')
+    expect(view.queryByText('Similar notes')).toBeNull()
     view.unmount()
   })
 
-  it('lists inbound links with snippets and navigates on click', async () => {
+  it('lists inbound links and navigates on click', async () => {
     getBacklinksWithContext.mockResolvedValue([
       {
-        sourcePath: 'notes/standup.md',
-        sourceTitle: 'Standup',
+        sourcePath: 'daily/2026-06-09.md',
+        sourceTitle: 'June 9th, 2026',
         snippet: 'pairing on [[Rust]]',
-        posFrom: 4,
+        posFrom: 10,
       },
     ])
     const view = renderSidebar('notes/rust.md')
-    await view.findByText('Standup')
-    expect(view.getByText('pairing on [[Rust]]')).toBeDefined()
-    await userEvent.click(view.getByText('Standup'))
-    expect(view.getByTestId('route').textContent).toContain('notes/standup.md')
-    view.unmount()
-  })
-})
-
-describe('NoteContextSidebar related notes', () => {
-  it('renders no Related section without results', async () => {
-    const view = renderSidebar('notes/rust.md')
-    await waitFor(() => expect(relatedNotes).toHaveBeenCalledWith('notes/rust.md'))
-    expect(view.queryByText('Related')).toBeNull()
+    await userEvent.click(await view.findByText('June 9th, 2026'))
+    expect(view.getByTestId('route').textContent).toContain('"kind":"daily"')
+    expect(view.getByTestId('route').textContent).toContain('"date":"2026-06-09"')
     view.unmount()
   })
 
-  it('lists semantic neighbors when they exist', async () => {
+  it('lists similar notes under their own section and navigates on click', async () => {
     relatedNotes.mockResolvedValue([
       {
         path: 'notes/zig.md',
         title: 'Zig',
-        score: 0.9,
+        score: 0.8,
         snippet: 'comptime experiments',
         heading: null,
+        isPrivate: false,
       },
     ])
     const view = renderSidebar('notes/rust.md')
-    await view.findByText('Zig')
-    expect(view.getByText('Related')).toBeDefined()
+    await view.findByText('Similar notes')
     await userEvent.click(view.getByText('Zig'))
+    expect(view.getByTestId('route').textContent).toContain('"kind":"note"')
     expect(view.getByTestId('route').textContent).toContain('notes/zig.md')
     view.unmount()
   })

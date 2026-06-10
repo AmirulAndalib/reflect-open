@@ -2,7 +2,7 @@ import type { ReactElement } from 'react'
 import { NoteLinkRows, type NoteLinkItem } from '@/components/note-link-rows'
 
 interface NoteLinkListProps {
-  /** Accessible name of the section (e.g. "Backlinks", "Related notes"). */
+  /** Accessible name of the section (e.g. "Backlinks", "Similar notes"). */
   ariaLabel: string
   /** The section heading text. */
   heading: string
@@ -12,11 +12,11 @@ interface NoteLinkListProps {
 }
 
 /**
- * A note-context section under an open note (today the semantic neighbors'
- * "Related" panel), keeping panels thin query adapters over one shared
- * presentation. The rows themselves are {@link NoteLinkRows}, shared with
- * the daily sidebar's day sections. Backlinks render separately in old
- * Reflect's grouped style ({@link BacklinksPanel}).
+ * The note-context section under an open note — one presentation shared by
+ * backlinks ("Linked from") and semantic neighbors ("Similar notes"), so the
+ * two ambient-recall surfaces stay visually identical and panels stay thin
+ * query adapters. The rows themselves are {@link NoteLinkRows}, shared with
+ * the context sidebars' sections.
  */
 export function NoteLinkList({
   ariaLabel,

@@ -20,6 +20,7 @@ static MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
     Migrations::new(vec![
         M::up(include_str!("../../migrations/0001_initial.sql")),
         M::up(include_str!("../../migrations/0002_embeddings.sql")),
+        M::up(include_str!("../../migrations/0003_cosine_vectors.sql")),
     ])
 });
 
@@ -72,6 +73,15 @@ pub(super) fn migrate(conn: &mut Connection) -> AppResult<()> {
     MIGRATIONS
         .to_latest(conn)
         .map_err(|err| AppError::io(format!("migration failed: {err}")))
+}
+
+/// Stop at a specific schema version, so tests can stage data on an older
+/// schema and prove a later migration carries it forward.
+#[cfg(test)]
+pub(super) fn migrate_to_version(conn: &mut Connection, version: usize) -> AppResult<()> {
+    MIGRATIONS
+        .to_version(conn, version)
+        .map_err(|err| AppError::io(format!("migration to {version} failed: {err}")))
 }
 
 /// Open (creating if needed) and migrate `<root>/.reflect/index.sqlite`.

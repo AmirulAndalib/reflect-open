@@ -1,6 +1,10 @@
 import type { ReactElement } from 'react'
 import { dailyPath } from '@reflect/core'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { BacklinksSection } from './backlinks-section'
+import { DayCalendar } from './day-calendar'
+import { SidebarSection } from './sidebar-section'
+import { SimilarNotesSection } from './similar-notes-section'
 import { keybindingFor } from '@/lib/commands/app-commands'
 import { formatBindingLabel } from '@/lib/keybindings'
 import { addDaysIso, formatDayLabel } from '@/lib/dates'
@@ -8,10 +12,6 @@ import { useToday } from '@/lib/use-today'
 import { cn } from '@/lib/utils'
 import { hasMacosTitleBarOverlay } from '@/lib/window-chrome'
 import { useRouter } from '@/routing/router'
-import { DayCalendar } from './day-calendar'
-import { SidebarBacklinks } from './sidebar-backlinks'
-import { SidebarRelatedNotes } from './sidebar-related-notes'
-import { SidebarSection } from './sidebar-section'
 
 interface DailyContextSidebarProps {
   /** The day the sidebar describes — a validated ISO date from the route. */
@@ -89,11 +89,8 @@ export function DailyContextSidebar({ date }: DailyContextSidebarProps): ReactEl
       <SidebarSection storageKey="calendar" title="Calendar">
         <DayCalendar selectedDate={date} today={today} />
       </SidebarSection>
-      <SidebarBacklinks
-        path={dailyPath(date)}
-        emptyText="No notes link to this day yet."
-      />
-      <SidebarRelatedNotes path={dailyPath(date)} />
+      <BacklinksSection path={dailyPath(date)} emptyLabel="No notes link to this day yet." />
+      <SimilarNotesSection path={dailyPath(date)} />
     </div>
   )
 }
