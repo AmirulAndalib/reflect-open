@@ -76,12 +76,35 @@ export {
   settingsSchema,
   editorMarkdownSyntaxSchema,
   themePreferenceSchema,
+  aiProviderIdSchema,
+  aiModelConfigSchema,
+  aiModelsSchema,
   DEFAULT_SETTINGS,
   type Settings,
   type EditorMarkdownSyntax,
   type ThemePreference,
+  type AiProviderId,
+  type AiModelConfig,
 } from './settings/schema'
 export { loadSettings, saveSettings } from './settings/commands'
+
+// AI providers & keychain secrets (Plan 10)
+export {
+  AI_PROVIDERS,
+  aiProvider,
+  aiModelLabel,
+  type AiProviderInfo,
+  type AiModelOption,
+} from './ai/provider-catalog'
+export { aiKeySecretName, setSecret, getSecret, deleteSecret } from './ai/secrets'
+export {
+  KEY_HINT_LENGTH,
+  apiKeyHint,
+  withAiModelAdded,
+  withAiModelRemoved,
+  withDefaultAiModel,
+  defaultAiModel,
+} from './ai/models'
 
 // Markdown document model (Plan 03)
 export {

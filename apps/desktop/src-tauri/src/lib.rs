@@ -6,7 +6,7 @@
 //! primitive it exposes. Each module wires one capability:
 //! [`fs`] (graph file IO), [`db`] (SQLite index), [`watcher`] (file events),
 //! [`recents`] (recent-graphs store), [`settings`] (user settings store),
-//! [`error`] (the shared error contract).
+//! [`secrets`] (OS keychain), [`error`] (the shared error contract).
 
 mod db;
 mod embed;
@@ -14,6 +14,7 @@ mod error;
 mod fs;
 mod quit;
 mod recents;
+mod secrets;
 mod settings;
 mod watcher;
 
@@ -61,6 +62,9 @@ pub fn run() {
             recents::forget_recent,
             settings::settings_load,
             settings::settings_save,
+            secrets::secret_set,
+            secrets::secret_get,
+            secrets::secret_delete,
             db::index_open,
             db::index_apply,
             db::index_apply_batch,

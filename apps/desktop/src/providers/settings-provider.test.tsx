@@ -118,7 +118,7 @@ describe('SettingsProvider', () => {
     expect(result.current.settings.editorMarkdownSyntax).toBe('show')
     // The persisted document keeps unknown keys (newer-version settings survive).
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system', futureKey: true }]),
+      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system', aiModels: [], futureKey: true }]),
     )
   })
 
@@ -142,7 +142,7 @@ describe('SettingsProvider', () => {
     // The load result must not clobber the update, and the deferred flush
     // persists the update merged over the *loaded* document.
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system', futureKey: true }]),
+      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system', aiModels: [], futureKey: true }]),
     )
     expect(result.current.settings.editorMarkdownSyntax).toBe('show')
   })
@@ -160,7 +160,7 @@ describe('SettingsProvider', () => {
       releaseLoad()
     })
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkdownSyntax: 'focus', theme: 'system' }]),
+      expect(saved).toEqual([{ editorMarkdownSyntax: 'focus', theme: 'system', aiModels: [] }]),
     )
     expect(result.current.settings.editorMarkdownSyntax).toBe('focus')
   })
@@ -205,7 +205,7 @@ describe('SettingsProvider', () => {
       result.current.updateSettings({ editorMarkdownSyntax: 'show' })
     })
     await waitFor(() =>
-      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system' }]),
+      expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system', aiModels: [] }]),
     )
   })
 
@@ -227,7 +227,7 @@ describe('SettingsProvider', () => {
     await act(async () => {
       await flushSettings()
     })
-    expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system' }])
+    expect(saved).toEqual([{ editorMarkdownSyntax: 'show', theme: 'system', aiModels: [] }])
   })
 
   it('surfaces a failed load and keeps changes session-only', async () => {

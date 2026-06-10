@@ -35,6 +35,11 @@ base64 = "0.22.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 fastembed = "5"
+keyring = { version = "3", features = [
+  "apple-native",
+  "windows-native",
+  "sync-secret-service",
+] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
