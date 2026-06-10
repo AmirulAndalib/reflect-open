@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { dailyPath } from '@reflect/core'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { keybindingFor } from '@/lib/commands/app-commands'
 import { formatBindingLabel } from '@/lib/keybindings'
@@ -8,7 +9,8 @@ import { cn } from '@/lib/utils'
 import { hasMacosTitleBarOverlay } from '@/lib/window-chrome'
 import { useRouter } from '@/routing/router'
 import { DayCalendar } from './day-calendar'
-import { DayRelatedNotes } from './day-related-notes'
+import { SidebarBacklinks } from './sidebar-backlinks'
+import { SidebarRelatedNotes } from './sidebar-related-notes'
 import { SidebarSection } from './sidebar-section'
 
 interface DailyContextSidebarProps {
@@ -87,7 +89,11 @@ export function DailyContextSidebar({ date }: DailyContextSidebarProps): ReactEl
       <SidebarSection storageKey="calendar" title="Calendar">
         <DayCalendar selectedDate={date} today={today} />
       </SidebarSection>
-      <DayRelatedNotes date={date} />
+      <SidebarBacklinks
+        path={dailyPath(date)}
+        emptyText="No notes link to this day yet."
+      />
+      <SidebarRelatedNotes path={dailyPath(date)} />
     </div>
   )
 }
