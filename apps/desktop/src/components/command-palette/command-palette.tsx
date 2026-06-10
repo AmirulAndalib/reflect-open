@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   hasBridge,
   parseHighlights,
+  retrieve,
   searchNotesRanked,
   suggestWikiTargets,
 } from '@reflect/core'
@@ -11,6 +12,7 @@ import { listCommands, runCommand } from '@/lib/commands/registry'
 import type { CommandContext } from '@/lib/commands/types'
 import { formatDayLabel } from '@/lib/dates'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
+import { useEmbedStatus } from '@/lib/use-embed-status'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { buildPaletteSections, type NoteEntry } from './entries'
@@ -47,6 +49,11 @@ function Snippet({ snippet }: { snippet: string }): ReactElement {
 export function CommandPalette({ context }: CommandPaletteProps): ReactElement | null {
   const { open, query, setQuery, closePalette } = usePalette()
   const { graph } = useGraph()
+  // Hybrid by default once the model is ready (decided): semantic results
+  // blend in via RRF with no toggle; without the model this is exactly the
+  // lexical search it was before.
+  const embed = useEmbedStatus()
+  const hybrid = embed.status === 'ready'
 
   // Defer the query the index sees: fast typing coalesces (the plan's
   // debounce) while the input itself stays perfectly responsive.
@@ -62,8 +69,14 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
     enabled: searching,
   })
   const { data: hits, isLoading: hitsLoading, isError: hitsError } = useQuery({
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'palette-search', trimmed],
-    queryFn: () => searchNotesRanked(trimmed),
+    queryKey: [
+      INDEX_QUERY_SCOPE,
+      graph?.root,
+      'palette-search',
+      hybrid ? 'hybrid' : 'lexical',
+      trimmed,
+    ],
+    queryFn: () => (hybrid ? retrieve(trimmed, { mode: 'hybrid' }) : searchNotesRanked(trimmed)),
     enabled: searching && trimmed !== '',
   })
   // "No results" must mean the index answered **the live query**: both
