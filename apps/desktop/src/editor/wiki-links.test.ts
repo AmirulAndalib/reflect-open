@@ -1,9 +1,10 @@
 import { docToMarkdown, markdownToDoc, type TypedEditor } from '@meowdown/core'
 import { createEditor, union } from '@prosekit/core'
 import { defineEditorExtension } from '@meowdown/core'
-import { TextSelection } from '@prosekit/pm/state'
-import { describe, expect, it } from 'vitest'
-import { computeWikiLinkRanges, defineWikiLinks } from './wiki-links'
+import { TextSelection, type EditorState } from '@prosekit/pm/state'
+import type { EditorView } from '@prosekit/pm/view'
+import { describe, expect, it, vi } from 'vitest'
+import { computeWikiLinkRanges, createWikiLinkPlugin, defineWikiLinks } from './wiki-links'
 
 function editorWith(markdown: string) {
   const editor = createEditor({ extension: union(defineEditorExtension(), defineWikiLinks()) })
@@ -59,5 +60,83 @@ describe('wiki-link decorations', () => {
       const editor = editorWith(markdown)
       expect(docToMarkdown(editor.state.doc).replace(/\n$/, '')).toBe(markdown)
     }
+  })
+})
+
+describe('wiki-link click navigation', () => {
+  function chipFor(state: EditorState, target: string) {
+    return computeWikiLinkRanges(state).find(
+      (range) => range.kind === 'chip' && range.target === target,
+    )!
+  }
+
+  function caretInside(state: EditorState, pos: number): EditorState {
+    return state.apply(state.tr.setSelection(TextSelection.create(state.doc, pos)))
+  }
+
+  function chipClickEvent(target: string, init: MouseEventInit = {}): MouseEvent {
+    const span = document.createElement('span')
+    span.setAttribute('data-wiki-target', target)
+    const event = new MouseEvent('click', init)
+    Object.defineProperty(event, 'target', { value: span })
+    return event
+  }
+
+  /** Run the gesture the way ProseMirror does: mousedown snapshot, then click. */
+  function press(state: EditorState, pos: number, event: MouseEvent) {
+    const onNavigate = vi.fn()
+    const plugin = createWikiLinkPlugin({ onNavigate })
+    const view = { state } as unknown as EditorView
+    plugin.props.handleDOMEvents!.mousedown!.call(plugin, view, new MouseEvent('mousedown'))
+    const handled = plugin.props.handleClick!.call(plugin, view, pos, event)
+    return { handled, onNavigate }
+  }
+
+  it('navigates on plain click of a rendered link', () => {
+    const { state } = editorWith('See [[Charlotte]] here.')
+    const chip = chipFor(state, 'Charlotte')
+    const { handled, onNavigate } = press(state, chip.from + 3, chipClickEvent('Charlotte'))
+    expect(handled).toBe(true)
+    expect(onNavigate).toHaveBeenCalledWith('Charlotte')
+  })
+
+  it('places the caret instead when the clicked link is already being edited', () => {
+    const { state } = editorWith('See [[Charlotte]] here.')
+    const chip = chipFor(state, 'Charlotte')
+    const editing = caretInside(state, chip.from + 3)
+    const { handled, onNavigate } = press(editing, chip.from + 5, chipClickEvent('Charlotte'))
+    expect(handled).toBe(false)
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('Mod+click navigates even while editing the link', () => {
+    const { state } = editorWith('See [[Charlotte]] here.')
+    const chip = chipFor(state, 'Charlotte')
+    const editing = caretInside(state, chip.from + 3)
+    const { handled, onNavigate } = press(
+      editing,
+      chip.from + 5,
+      chipClickEvent('Charlotte', { metaKey: true }),
+    )
+    expect(handled).toBe(true)
+    expect(onNavigate).toHaveBeenCalledWith('Charlotte')
+  })
+
+  it('navigates when clicking one link while editing another', () => {
+    const { state } = editorWith('[[Alpha]] and [[Beta]]')
+    const editing = caretInside(state, chipFor(state, 'Alpha').from + 3)
+    const beta = chipFor(editing, 'Beta')
+    const { handled, onNavigate } = press(editing, beta.from + 3, chipClickEvent('Beta'))
+    expect(handled).toBe(true)
+    expect(onNavigate).toHaveBeenCalledWith('Beta')
+  })
+
+  it('ignores clicks outside any link', () => {
+    const { state } = editorWith('See [[Charlotte]] here.')
+    const event = new MouseEvent('click')
+    Object.defineProperty(event, 'target', { value: document.createElement('span') })
+    const { handled, onNavigate } = press(state, 1, event)
+    expect(handled).toBe(false)
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 })
