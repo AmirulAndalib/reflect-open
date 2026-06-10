@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 import { dailyPath } from '@reflect/core'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { DayCalendar } from './day-calendar'
+import { NoteActionsSection } from './note-actions-section'
 import { SidebarSection } from './sidebar-section'
 import { SimilarNotesSection } from './similar-notes-section'
 import { keybindingFor } from '@/lib/commands/app-commands'
@@ -25,9 +26,9 @@ const TODAY_HINT = TODAY_KEYBINDING !== null ? formatBindingLabel(TODAY_KEYBINDI
 /**
  * The daily note's contextual sidebar (modeled on the old app's note context
  * sidebar): adjacent-day navigation, a month calendar marking days with
- * notes, and semantic neighbors when embeddings are available. Inbound links
- * live under the note itself (the incoming-backlinks section), not here.
- * Rendered in the AppShell's right region on daily routes only.
+ * notes, semantic neighbors when embeddings are available, and note actions.
+ * Inbound links live under the note itself (the incoming-backlinks section),
+ * not here. Rendered in the AppShell's right region on daily routes only.
  */
 export function DailyContextSidebar({ date }: DailyContextSidebarProps): ReactElement {
   const { navigate } = useRouter()
@@ -89,6 +90,7 @@ export function DailyContextSidebar({ date }: DailyContextSidebarProps): ReactEl
         <DayCalendar selectedDate={date} today={today} />
       </SidebarSection>
       <SimilarNotesSection path={dailyPath(date)} />
+      <NoteActionsSection path={dailyPath(date)} />
     </div>
   )
 }
