@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import type { ThemePreference } from '@reflect/core'
+import type { ThemePreference, WeekStartDay } from '@reflect/core'
 import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/providers/settings-provider'
@@ -17,6 +17,16 @@ const THEME_OPTIONS: ThemeOption[] = [
   { value: 'system', label: 'System', icon: Monitor },
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
+]
+
+interface WeekStartOption {
+  value: WeekStartDay
+  label: string
+}
+
+const WEEK_START_OPTIONS: WeekStartOption[] = [
+  { value: 'monday', label: 'Monday' },
+  { value: 'sunday', label: 'Sunday' },
 ]
 
 /**
@@ -55,6 +65,36 @@ export function AppearanceSection(): ReactElement {
                 />
                 <Icon aria-hidden strokeWidth={1.75} className="size-4" />
                 <span className="text-xs font-medium">{label}</span>
+              </SettingsOptionCard>
+            )
+          })}
+        </div>
+      </SettingsField>
+      <SettingsField
+        legend="Start week on"
+        description="The first day shown in the daily notes calendar."
+      >
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {WEEK_START_OPTIONS.map(({ value, label }) => {
+            const selected = settings.weekStartDay === value
+            return (
+              <SettingsOptionCard
+                key={value}
+                selected={selected}
+                className={cn(
+                  'items-center justify-center px-3 py-2.5',
+                  selected ? 'text-accent-soft-text' : 'text-text-secondary',
+                )}
+              >
+                <input
+                  type="radio"
+                  name="week-start-day"
+                  value={value}
+                  checked={selected}
+                  onChange={() => updateSettings({ weekStartDay: value })}
+                  className="sr-only"
+                />
+                <span className="text-sm font-medium">{label}</span>
               </SettingsOptionCard>
             )
           })}

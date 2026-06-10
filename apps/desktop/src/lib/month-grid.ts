@@ -14,13 +14,12 @@ import { addDaysIso } from './dates'
 /**
  * Pure month-grid math for the daily sidebar's calendar (no DOM, no queries).
  * Months are `YYYY-MM` strings and days are ISO `YYYY-MM-DD` strings — the
- * same local-calendar contract as `lib/dates`. Weeks start on Monday (ISO
- * 8601), matching the chronological-spine framing of the daily stream.
+ * same local-calendar contract as `lib/dates`. By default weeks start on
+ * Monday (ISO 8601); pass `weekStartsOn: 0` for Sunday.
  */
 
 const MONTH_FORMAT = 'yyyy-MM'
 const ISO_DATE_FORMAT = 'yyyy-MM-dd'
-const WEEK_STARTS_ON = 1
 
 /** One cell of the calendar grid. */
 export interface MonthGridCell {
@@ -65,23 +64,29 @@ export function addMonths(month: string, delta: number): string {
   return format(addMonthsToDate(parseMonth(month), delta), MONTH_FORMAT)
 }
 
-/** Two-letter weekday labels for the grid's header row, Monday first. */
-export function weekdayLabels(): string[] {
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: WEEK_STARTS_ON })
+/**
+ * Two-letter weekday labels for the grid's header row.
+ * @param weekStartsOn - 1 for Monday (default, ISO 8601); 0 for Sunday.
+ */
+export function weekdayLabels(weekStartsOn: 0 | 1 = 1): string[] {
+  const weekStart = startOfWeek(new Date(), { weekStartsOn })
   return [...Array(7).keys()].map((dayOffset) =>
     format(addDays(weekStart, dayOffset), 'EEEEEE'),
   )
 }
 
-/** Build the full-week grid for a `YYYY-MM` month. */
-export function buildMonthGrid(month: string): MonthGrid {
+/**
+ * Build the full-week grid for a `YYYY-MM` month.
+ * @param weekStartsOn - 1 for Monday (default, ISO 8601); 0 for Sunday.
+ */
+export function buildMonthGrid(month: string, weekStartsOn: 0 | 1 = 1): MonthGrid {
   const monthStart = startOfMonth(parseMonth(month))
   const gridStart = format(
-    startOfWeek(monthStart, { weekStartsOn: WEEK_STARTS_ON }),
+    startOfWeek(monthStart, { weekStartsOn }),
     ISO_DATE_FORMAT,
   )
   const gridEnd = format(
-    endOfWeek(endOfMonth(monthStart), { weekStartsOn: WEEK_STARTS_ON }),
+    endOfWeek(endOfMonth(monthStart), { weekStartsOn }),
     ISO_DATE_FORMAT,
   )
 
