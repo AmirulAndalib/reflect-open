@@ -2,7 +2,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ReactNode } from 'react'
-import { setBridge } from '@reflect/core'
+import { setBridge, type AiModelConfig } from '@reflect/core'
 import { resetOperations, useOperations } from '@/lib/operations'
 import { flushSettings } from '@/lib/settings-flush'
 import { SETTINGS_QUERY_KEY, SettingsProvider, useSettings } from './settings-provider'
@@ -187,6 +187,69 @@ describe('SettingsProvider', () => {
       }))
     })
     expect(result.current.settings.aiModels).toEqual([])
+  })
+
+  it('a read-modify-write racing the initial load replays over the loaded document', async () => {
+    const persisted: AiModelConfig = {
+      id: 'a',
+      provider: 'openai',
+      model: 'gpt-5.1',
+      keyHint: '11111',
+      isDefault: true,
+    }
+    const added: AiModelConfig = {
+      id: 'b',
+      provider: 'anthropic',
+      model: 'claude-opus-4-8',
+      keyHint: '22222',
+      isDefault: false,
+    }
+    stored = { aiModels: [persisted] }
+    gateLoad = true
+    const { result } = renderHook(() => useSettings(), { wrapper })
+
+    act(() => {
+      result.current.updateSettingsWith((current) => ({
+        aiModels: [...current.aiModels, added],
+      }))
+    })
+    // Held until hydration: applied over defaults, this "add one" would
+    // compute [added] and the eventual save would erase the persisted entry.
+    expect(result.current.settings.aiModels).toEqual([])
+    expect(saved).toEqual([])
+
+    act(() => {
+      releaseLoad()
+    })
+    await waitFor(() => expect(result.current.settings.aiModels).toEqual([persisted, added]))
+    await waitFor(() =>
+      expect(saved).toEqual([expect.objectContaining({ aiModels: [persisted, added] })]),
+    )
+  })
+
+  it('a queued read-modify-write still applies session-only when the load fails', async () => {
+    const added: AiModelConfig = {
+      id: 'b',
+      provider: 'anthropic',
+      model: 'claude-opus-4-8',
+      keyHint: '22222',
+      isDefault: true,
+    }
+    failLoad = true
+    const { result } = renderHook(() => useSettings(), { wrapper })
+
+    act(() => {
+      result.current.updateSettingsWith((current) => ({
+        aiModels: [...current.aiModels, added],
+      }))
+    })
+    // The failed load drains the queue over defaults — the edit must not
+    // vanish — but nothing is written over a store that couldn't be read.
+    await waitFor(() => expect(result.current.settings.aiModels).toEqual([added]))
+    await act(async () => {
+      await flushSettings()
+    })
+    expect(saved).toEqual([])
   })
 
   it('keeps the applied value and surfaces a failed save as an operation', async () => {

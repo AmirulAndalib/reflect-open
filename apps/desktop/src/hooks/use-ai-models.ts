@@ -70,6 +70,12 @@ export function useAiModels(): UseAiModelsValue {
 
   const removeModel = useCallback(
     async (id: string): Promise<void> => {
+      // Keychain first, deliberately. The two stores can't be updated
+      // transactionally; interrupted in this order, the leftover is a
+      // visibly dead settings row the user can remove again. The reverse
+      // order would strand the credential invisibly in the keychain — the
+      // keyring API can't enumerate entries, so it could never be swept.
+      // The settings write itself is retried by the provider on failure.
       await deleteSecret(aiKeySecretName(id))
       updateSettingsWith((current) => ({ aiModels: withAiModelRemoved(current.aiModels, id) }))
     },

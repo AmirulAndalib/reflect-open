@@ -42,7 +42,9 @@ interface SettingsContextValue {
    * merged settings at apply time. Use this for read-modify-write updates
    * (e.g. list edits after an `await`): React applies functional updaters
    * sequentially, so concurrent edits compose instead of clobbering each
-   * other through a stale render-time snapshot.
+   * other through a stale render-time snapshot. Updaters dispatched before
+   * hydration are queued and replayed over the loaded document — an edit of
+   * a list the disk is about to supply must not be computed from defaults.
    */
   updateSettingsWith: (updater: (current: Settings) => Partial<Settings>) => void
 }
@@ -81,19 +83,48 @@ export function SettingsProvider({ children }: SettingsProviderProps): ReactElem
     setOverrides((current) => ({ ...current, ...patch }))
   }, [])
 
+  const applyUpdater = useCallback((updater: (current: Settings) => Partial<Settings>) => {
+    setOverrides((current) => {
+      // Rebuild the merged document from the *queued* overrides, not the
+      // render-time `settings` value — React applies these updaters in
+      // order, so each one sees the result of the previous edit even when
+      // both were dispatched from stale closures.
+      const merged: Settings = { ...DEFAULT_SETTINGS, ...loadedRef.current, ...current }
+      return { ...current, ...updater(merged) }
+    })
+  }, [])
+
+  // Read-modify-write trails hydration, like persistence does: an updater
+  // applied over defaults would compute its patch from a list the disk
+  // document is about to supply (an early "add" would then override — and on
+  // the next save erase — every persisted entry). `null` marks the queue as
+  // drained; from then on updaters apply directly.
+  const pendingUpdaters = useRef<((current: Settings) => Partial<Settings>)[] | null>([])
+
   const updateSettingsWith = useCallback(
     (updater: (current: Settings) => Partial<Settings>) => {
-      setOverrides((current) => {
-        // Rebuild the merged document from the *queued* overrides, not the
-        // render-time `settings` value — React applies these updaters in
-        // order, so each one sees the result of the previous edit even when
-        // both were dispatched from stale closures.
-        const merged: Settings = { ...DEFAULT_SETTINGS, ...loadedRef.current, ...current }
-        return { ...current, ...updater(merged) }
-      })
+      if (pendingUpdaters.current !== null) {
+        pendingUpdaters.current.push(updater)
+        return
+      }
+      applyUpdater(updater)
     },
-    [],
+    [applyUpdater],
   )
+
+  useEffect(() => {
+    // Drain once the load settles either way — after a failed load the
+    // updaters apply over defaults and changes stay session-only, matching
+    // the scalar-update semantics below.
+    if ((loaded === undefined && !loadError) || pendingUpdaters.current === null) {
+      return
+    }
+    const queued = pendingUpdaters.current
+    pendingUpdaters.current = null
+    for (const updater of queued) {
+      applyUpdater(updater)
+    }
+  }, [loaded, loadError, applyUpdater])
 
   // A corrupt store fails the load *by design* (Rust errors rather than
   // reading empty, so a later save can't wipe the real document). Changes
