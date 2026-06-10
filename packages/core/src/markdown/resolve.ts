@@ -13,21 +13,38 @@ import { foldKey } from './keys'
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
+/** Is `value` a real calendar day (not just `YYYY-MM-DD`-shaped)? */
+function isCalendarDate(value: string): boolean {
+  const [year, month, day] = value.split('-').map(Number)
+  if (month < 1 || month > 12) {
+    return false
+  }
+  // Day 0 of the next month = the last day of `month` (leap-years included).
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return day >= 1 && day <= daysInMonth
+}
+
 /** A wiki-link target normalized for matching. */
 export interface NormalizedTarget {
   /** Original target, trimmed. */
   raw: string
   /** Case-folded key for case-insensitive title/alias matching. */
   key: string
-  /** Set when the target is a `YYYY-MM-DD` daily-note reference. */
+  /** Set when the target is a **real** `YYYY-MM-DD` daily-note reference. */
   date?: string
 }
 
-/** Trim, case-fold, and detect a `YYYY-MM-DD` daily-note target. */
+/**
+ * Trim, case-fold, and detect a `YYYY-MM-DD` daily-note target. Detection is
+ * calendar-valid, not just shape-valid: an impossible date (`2026-02-31`) must
+ * not be offered or resolved as a daily anywhere — the desktop's daily route
+ * validates the calendar, so a shape-only match here would diverge (suggested
+ * as a daily, but clicking it would create a regular note).
+ */
 export function normalizeWikiTarget(target: string): NormalizedTarget {
   const raw = target.trim()
   const normalized: NormalizedTarget = { raw, key: foldKey(raw) }
-  if (ISO_DATE_RE.test(raw)) {
+  if (ISO_DATE_RE.test(raw) && isCalendarDate(raw)) {
     normalized.date = raw
   }
   return normalized
