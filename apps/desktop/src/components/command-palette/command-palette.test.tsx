@@ -1,7 +1,7 @@
-import { render, waitFor } from '@testing-library/react'
+import { cleanup, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect } from 'react'
 import type { CommandContext } from '@/lib/commands/types'
 import { CommandPalette } from './command-palette'
@@ -20,6 +20,11 @@ vi.mock('@/providers/graph-provider', () => ({
 }))
 // Import after the core mock so registration sees the mocked module graph.
 await import('@/lib/commands/app-commands')
+
+// RTL auto-cleanup isn't wired globally in this project: without this, a
+// previous test's still-mounted palette leaks into the next test's
+// document.body queries (e.g. its settled "No results").
+afterEach(cleanup)
 
 // cmdk scrolls the selected item into view and observes list size; jsdom has
 // no layout, so both get inert stubs.
@@ -71,6 +76,20 @@ describe('CommandPalette', () => {
     )
     const { view } = renderPalette('')
     expect(view.queryByText('No results')).toBeNull() // loading ≠ empty
+    release([])
+    await waitFor(() => expect(view.queryByText('No results')).not.toBeNull())
+  })
+
+  it('no "No results" while FTS is still answering a non-empty query', async () => {
+    suggestWikiTargets.mockResolvedValue([]) // titles answered: nothing
+    let release!: (value: never[]) => void
+    const pending = new Promise((resolve) => {
+      release = resolve
+    })
+    searchNotesRanked.mockImplementation(() => pending)
+    const { view } = renderPalette('rust')
+    await waitFor(() => expect(suggestWikiTargets).toHaveBeenCalled())
+    expect(view.queryByText('No results')).toBeNull() // body hits still in flight
     release([])
     await waitFor(() => expect(view.queryByText('No results')).not.toBeNull())
   })

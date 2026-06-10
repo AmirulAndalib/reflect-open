@@ -57,11 +57,17 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
     queryFn: () => suggestWikiTargets(trimmed, 8),
     enabled: searching,
   })
-  const { data: hits } = useQuery({
+  const { data: hits, isLoading: hitsLoading } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'palette-search', trimmed],
     queryFn: () => searchNotesRanked(trimmed),
     enabled: searching && trimmed !== '',
   })
+  // "No results" must mean the index answered **the live query**: both
+  // fetches settled (isLoading, not isPending — a disabled query is forever
+  // pending) *and* the deferred value has caught up. Opening pre-filled, the
+  // deferred value can settle on the stale previous query first; that state
+  // is "still answering", not "empty".
+  const resultsSettled = !suggestionsLoading && !hitsLoading && trimmed === query.trim()
 
   const sections = useMemo(
     () =>
@@ -116,12 +122,9 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
             className="reflect-palette-input"
           />
           <Command.List className="reflect-palette-list">
-            {/* "No results" must mean the index answered, not "still loading" —
-                the recall feed otherwise flashes a false empty on open.
-                (isLoading, not isPending: a disabled query is forever pending.) */}
-            {suggestionsLoading ? null : (
+            {resultsSettled ? (
               <Command.Empty className="reflect-palette-empty">No results</Command.Empty>
-            )}
+            ) : null}
             {sections.notes.length > 0 ? (
               <Command.Group
                 heading={query.trim() === '' ? 'Recent' : 'Notes'}
