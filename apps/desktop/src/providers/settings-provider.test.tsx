@@ -129,6 +129,7 @@ describe('SettingsProvider', () => {
       expect(saved).toEqual([
         {
           editorMarkdownSyntax: 'focus',
+          editorSpellCheck: true,
           semanticSearchEnabled: false,
           theme: 'system',
           allNotesFilterTags: ['book'],
@@ -154,6 +155,7 @@ describe('SettingsProvider', () => {
       expect(saved).toEqual([
         {
           editorMarkdownSyntax: 'show',
+          editorSpellCheck: true,
           semanticSearchEnabled: false,
           theme: 'system',
           allNotesFilterTags: ['book', 'link', 'person'],
@@ -188,6 +190,7 @@ describe('SettingsProvider', () => {
       expect(saved).toEqual([
         {
           editorMarkdownSyntax: 'show',
+          editorSpellCheck: true,
           semanticSearchEnabled: false,
           theme: 'system',
           allNotesFilterTags: ['book', 'link', 'person'],
@@ -216,6 +219,7 @@ describe('SettingsProvider', () => {
       expect(saved).toEqual([
         {
           editorMarkdownSyntax: 'focus',
+          editorSpellCheck: true,
           semanticSearchEnabled: false,
           theme: 'system',
           allNotesFilterTags: ['book', 'link', 'person'],
@@ -370,6 +374,7 @@ describe('SettingsProvider', () => {
       expect(saved).toEqual([
         {
           editorMarkdownSyntax: 'show',
+          editorSpellCheck: true,
           semanticSearchEnabled: false,
           theme: 'system',
           allNotesFilterTags: ['book', 'link', 'person'],
@@ -401,6 +406,7 @@ describe('SettingsProvider', () => {
     expect(saved).toEqual([
       {
         editorMarkdownSyntax: 'show',
+        editorSpellCheck: true,
         semanticSearchEnabled: false,
         theme: 'system',
         allNotesFilterTags: ['book', 'link', 'person'],
