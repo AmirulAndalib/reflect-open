@@ -7,10 +7,14 @@ describe('settingsSchema', () => {
       editorMarkdownSyntax: 'focus',
       semanticSearchEnabled: false,
       theme: 'system',
+      aiModels: [],
+      defaultAiModelId: null,
     })
     expect(DEFAULT_SETTINGS.editorMarkdownSyntax).toBe('focus')
     expect(DEFAULT_SETTINGS.semanticSearchEnabled).toBe(false)
     expect(DEFAULT_SETTINGS.theme).toBe('system')
+    expect(DEFAULT_SETTINGS.aiModels).toEqual([])
+    expect(DEFAULT_SETTINGS.defaultAiModelId).toBeNull()
   })
 
   it('accepts valid values', () => {
@@ -38,7 +42,49 @@ describe('settingsSchema', () => {
       editorMarkdownSyntax: 'show',
       semanticSearchEnabled: false,
       theme: 'system',
+      aiModels: [],
+      defaultAiModelId: null,
       futureKey: true,
+    })
+  })
+
+  describe('aiModels', () => {
+    const valid = {
+      id: 'abc',
+      provider: 'anthropic',
+      model: 'claude-opus-4-8',
+      keyHint: 'wxyz1',
+    }
+
+    it('passes valid entries through', () => {
+      expect(settingsSchema.parse({ aiModels: [valid] }).aiModels).toEqual([valid])
+    })
+
+    it('defaults the per-entry display fields', () => {
+      const entry = { id: 'abc', provider: 'openai', model: 'gpt-5.1' }
+      expect(settingsSchema.parse({ aiModels: [entry] }).aiModels).toEqual([
+        { ...entry, keyHint: '' },
+      ])
+    })
+
+    it('drops a corrupt entry without losing the rest', () => {
+      const parsed = settingsSchema.parse({
+        aiModels: [valid, { provider: 'aliens' }, 42],
+      })
+      expect(parsed.aiModels).toEqual([valid])
+    })
+
+    it('degrades a non-array value to the empty list', () => {
+      expect(settingsSchema.parse({ aiModels: 'nope' }).aiModels).toEqual([])
+      expect(settingsSchema.parse({ aiModels: { id: 'x' } }).aiModels).toEqual([])
+    })
+  })
+
+  describe('defaultAiModelId', () => {
+    it('passes a string id through and defaults invalid values to null', () => {
+      expect(settingsSchema.parse({ defaultAiModelId: 'abc' }).defaultAiModelId).toBe('abc')
+      expect(settingsSchema.parse({ defaultAiModelId: null }).defaultAiModelId).toBeNull()
+      expect(settingsSchema.parse({ defaultAiModelId: 42 }).defaultAiModelId).toBeNull()
     })
   })
 })

@@ -84,7 +84,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'show', semanticSearchEnabled: false, theme: 'system' },
+        { editorMarkdownSyntax: 'show', semanticSearchEnabled: false, theme: 'system', aiModels: [], defaultAiModelId: null },
       ]),
     )
     expect(radio(/^show/i).checked).toBe(true)
@@ -101,7 +101,7 @@ describe('SettingsScreen', () => {
     expect(radio(/^light/i).checked).toBe(true)
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: false, theme: 'light' },
+        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: false, theme: 'light', aiModels: [], defaultAiModelId: null },
       ]),
     )
   })
@@ -114,7 +114,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: true, theme: 'system' },
+        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: true, theme: 'system', aiModels: [], defaultAiModelId: null },
       ]),
     )
     // The control flips to the loading state (EmbeddingsSync owns the actual
@@ -143,7 +143,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: false, theme: 'system' },
+        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: false, theme: 'system', aiModels: [], defaultAiModelId: null },
       ]),
     )
     expect(screen.getByRole('button', { name: /enable semantic search/i })).toBeTruthy()
@@ -162,7 +162,7 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(invoked).toContain('embed_ensure'))
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: true, theme: 'system' },
+        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: true, theme: 'system', aiModels: [], defaultAiModelId: null },
       ]),
     )
   })
@@ -181,7 +181,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: false, theme: 'system' },
+        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: false, theme: 'system', aiModels: [], defaultAiModelId: null },
       ]),
     )
     expect(screen.getByRole('button', { name: /enable semantic search/i })).toBeTruthy()
