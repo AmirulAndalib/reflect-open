@@ -75,4 +75,14 @@ describe('NoteActionsSection pin toggle', () => {
     expect(operationFail).toHaveBeenCalled()
     view.unmount()
   })
+
+  it('labels a failed unpin as unpinning', async () => {
+    getPinnedNotes.mockResolvedValue([{ path: 'notes/a.md', title: 'A', dailyDate: null }])
+    toggleNotePinned.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
+    const view = renderSection('notes/a.md')
+    await userEvent.click(await view.findByRole('button', { name: /Unpin note/ }))
+    expect(startOperation).toHaveBeenCalledWith('Unpinning note')
+    expect(operationFail).toHaveBeenCalled()
+    view.unmount()
+  })
 })

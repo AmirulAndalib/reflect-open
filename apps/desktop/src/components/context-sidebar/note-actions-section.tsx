@@ -43,7 +43,7 @@ export function NoteActionsSection({ path }: NoteActionsSectionProps): ReactElem
     try {
       await toggleNotePinned(path, generation)
     } catch (cause) {
-      startOperation('Pinning note').fail(errorMessage(cause))
+      startOperation(isPinned ? 'Unpinning note' : 'Pinning note').fail(errorMessage(cause))
     } finally {
       setIsToggling(false)
     }
