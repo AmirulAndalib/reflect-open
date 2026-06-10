@@ -1,19 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  getLinkSources,
-  hasBridge,
-  nextAliases,
-  parseNote,
-  readNote,
-  resolveWikiTarget,
-  rewriteLinksForTitleChange,
-  subscribeFileChanges,
-  upsertFrontmatter,
-  writeNote,
-} from '@reflect/core'
+import { hasBridge, readNote, subscribeFileChanges, writeNote } from '@reflect/core'
 import { registerFlush } from './flush-registry'
 import type { NoteEditorHandle } from './note-editor'
-import { createTitleRenameTracker, type TitleRename, type TitleRenameTracker } from './title-rename'
+import {
+  createRenameCoordinator,
+  type RenameCoordinator,
+  type RenameProgress,
+} from './rename-coordinator'
 import {
   createNoteSession,
   INITIAL_NOTE_SNAPSHOT,
@@ -71,16 +64,12 @@ export function useNoteDocument(
   const createIfMissing = options?.createIfMissing ?? false
   const trackRenames = options?.trackRenames ?? false
   const [snapshot, setSnapshot] = useState<NoteSessionSnapshot>(INITIAL_NOTE_SNAPSHOT)
-  const [renameProgress, setRenameProgress] = useState<{ done: number; total: number } | null>(
-    null,
-  )
+  const [renameProgress, setRenameProgress] = useState<RenameProgress | null>(null)
   const editorRef = useRef<NoteEditorHandle | null>(null)
   const sessionRef = useRef<NoteSession | null>(null)
-  const trackerRef = useRef<TitleRenameTracker | null>(null)
+  const coordinatorRef = useRef<RenameCoordinator | null>(null)
   /** Mirrors the snapshot's conflict for non-reactive checks (rename gating). */
   const conflictRef = useRef<string | null>(null)
-  /** Serializes rename rewrites — a second settle must wait for the first. */
-  const renameChain = useRef<Promise<void>>(Promise.resolve())
 
   // Writes read the generation at write time, not at session creation, so the
   // session must NOT be keyed on `generation`: reopening the *same* graph bumps
@@ -98,72 +87,18 @@ export function useNoteDocument(
     if (!path) {
       return
     }
-    // The rename rewrite (Plan 07b): rewrite inbound links across the graph,
-    // then record the old title as an alias on this note. Runs serialized;
-    // every write carries the generation (stale → loud rejection). The alias
-    // is bound to *this* effect's session — never the ref, which can already
-    // point at a different note's session by the time the rewrite finishes —
-    // and lands via its frontmatter channel while the pane is open (the
-    // editor view never churns), or via a direct disk write after teardown
-    // (no editor left to disturb; a reopened pane reconciles it like any
-    // external change).
-    let paneClosed = false
-    const runRename = (rename: TitleRename): void => {
-      renameChain.current = renameChain.current.then(async () => {
-        const generation = generationRef.current
-        if (generation === null) {
-          return
-        }
-        try {
-          await rewriteLinksForTitleChange({
-            path,
-            from: rename.from,
-            to: rename.to,
-            io: {
-              sources: getLinkSources,
-              read: readNote,
-              write: (forPath, contents) => writeNote(forPath, contents, generation),
-              resolve: resolveWikiTarget,
-            },
-            onProgress: (done, total) => setRenameProgress({ done, total }),
-          })
-          const aliases = nextAliases(
-            parseNote({ path, source: rename.content }).frontmatter.aliases,
-            rename,
-          )
-          if (aliases !== null) {
-            if (!paneClosed) {
-              session.updateFrontmatter({ aliases })
-              // Flush rather than ride the debounce: a settle is exactly the
-              // moment to persist, and quit-time teardown awaits this chain.
-              await session.flush()
-            } else {
-              const content = await readNote(path)
-              const patched = upsertFrontmatter(content, { aliases })
-              if (patched !== content) {
-                await writeNote(path, patched, generation)
-              }
-            }
-          }
-        } catch (cause) {
-          console.error('rename link rewrite failed:', cause)
-        } finally {
-          setRenameProgress(null)
-        }
-      })
-    }
-    const tracker = trackRenames
-      ? createTitleRenameTracker({
+    // The auto-rename lifecycle (Plan 07b) is owned by the coordinator — the
+    // tracker, the rewrite chain, and alias placement live there, bound to
+    // *this* effect's session, never to a ref another note could repoint.
+    const coordinator = trackRenames
+      ? createRenameCoordinator({
           path,
-          onRename: runRename,
-          // A parked conflict contests this very content — rewriting the graph
-          // for a title the user may be about to discard ("load theirs") would
-          // strand every rewritten link. Blocked renames stay pending: "keep
-          // mine" saves and re-arms; "load theirs" re-baselines and clears.
+          generation: () => generationRef.current,
           canFire: () => conflictRef.current === null,
+          onProgress: setRenameProgress,
         })
       : null
-    trackerRef.current = tracker
+    coordinatorRef.current = coordinator
 
     const session = createNoteSession({
       path,
@@ -185,37 +120,31 @@ export function useNoteDocument(
         setSnapshot(snapshot)
       },
       applyContent: (markdown) => editorRef.current?.setMarkdown(markdown),
-      onContent: tracker
-        ? (content, origin) => {
-            if (origin === 'saved') {
-              tracker.saved(content)
-            } else {
-              tracker.baseline(content) // load/external: new ground truth, no rewrite
-            }
-          }
-        : undefined,
+      onContent: coordinator ? coordinator.content : undefined,
       createIfMissing,
     })
+    coordinator?.bind(session)
     sessionRef.current = session
     session.load()
     return () => {
       if (sessionRef.current === session) {
         sessionRef.current = null
       }
-      if (trackerRef.current === tracker) {
-        trackerRef.current = null
+      if (coordinatorRef.current === coordinator) {
+        coordinatorRef.current = null
       }
       // Disposal flushes pending edits to the session's own path — the
       // path-switch "final flush" lives here, not in cross-note bookkeeping.
       // The flush's landed save reaches the tracker via onContent('saved');
-      // settle after it so a just-edited title still renames on the way out.
-      paneClosed = true // a rename firing from here writes its alias to disk
+      // settle after it so a just-edited title still renames on the way out
+      // (the closed coordinator writes its alias to disk).
+      coordinator?.close()
       const settled = session.flush()
       session.dispose()
-      if (tracker) {
+      if (coordinator) {
         void settled.then(() => {
-          tracker.settle()
-          tracker.dispose()
+          coordinator.settle()
+          coordinator.dispose()
         })
       }
     }
@@ -258,15 +187,15 @@ export function useNoteDocument(
       const settled = sessionRef.current?.flush()
       // Blur is a settle point for title renames — but only after the flushed
       // save lands, so the tracker has seen the final title.
-      void settled?.then(() => trackerRef.current?.settle())
+      void settled?.then(() => coordinatorRef.current?.settle())
     }
     const unregister = registerFlush(async () => {
       await sessionRef.current?.flush()
       // Quit teardown is a settle point too: a pending title change must
       // rewrite its links before the webview dies — settle (synchronously
       // appends the rewrite to the chain), then wait for the writes to land.
-      trackerRef.current?.settle()
-      await renameChain.current
+      coordinatorRef.current?.settle()
+      await coordinatorRef.current?.settled()
     })
     window.addEventListener('blur', flush)
     return () => {

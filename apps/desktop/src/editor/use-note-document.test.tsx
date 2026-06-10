@@ -205,6 +205,50 @@ describe('useNoteDocument', () => {
     }
   })
 
+  it('a rename settling after a note switch never touches the new note', async () => {
+    vi.useFakeTimers()
+    try {
+      const files: Record<string, string> = {
+        'notes/a.md': '# Old Title\n',
+        'notes/b.md': '# Note B\n',
+        'notes/src.md': 'see [[Old Title]]\n',
+      }
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === 'note_read') {
+          return files[(args as { path: string }).path]
+        }
+        if (command === 'note_write') {
+          const { path: writePath, contents } = args as { path: string; contents: string }
+          files[writePath] = contents
+          return null
+        }
+        if (command === 'db_query') {
+          const sql = String((args as { sql: string }).sql)
+          return sql.includes('"links"') ? [{ source_path: 'notes/src.md' }] : []
+        }
+        return null
+      })
+
+      // Note A: edit the title, save lands, rename pending.
+      const paneA = renderHook(() => useNoteDocument('notes/a.md', 1, { trackRenames: true }))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      act(() => paneA.result.current.onEditorChange('# New Title\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      paneA.unmount() // teardown settles A's rename asynchronously
+
+      // Note B mounts immediately — the rename must not be able to see it.
+      const paneB = renderHook(() => useNoteDocument('notes/b.md', 1, { trackRenames: true }))
+      await act(() => vi.runAllTimersAsync())
+
+      expect(files['notes/src.md']).toBe('see [[New Title]]\n')
+      expect(files['notes/a.md']).toContain('aliases:') // alias on A, via disk
+      expect(files['notes/b.md']).toBe('# Note B\n') // B untouched
+      paneB.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('quit-time flushAllNotes settles a pending rename before resolving', async () => {
     vi.useFakeTimers()
     try {
