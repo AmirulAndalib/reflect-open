@@ -94,6 +94,13 @@ describe('CommandPalette', () => {
     await waitFor(() => expect(view.queryByText('No results')).not.toBeNull())
   })
 
+  it('a failed index query shows an error, not "No results"', async () => {
+    suggestWikiTargets.mockRejectedValue(new Error('index unavailable'))
+    const { view } = renderPalette('')
+    await view.findByText('Search unavailable — the index didn’t answer.')
+    expect(view.queryByText('No results')).toBeNull()
+  })
+
   it('empty query shows the recent-notes recall feed', async () => {
     suggestWikiTargets.mockResolvedValue([
       { target: 'Recent One', path: 'notes/r1.md', title: 'Recent One', alias: null, date: null },

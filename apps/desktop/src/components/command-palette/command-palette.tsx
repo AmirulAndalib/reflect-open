@@ -52,12 +52,16 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
   // debounce) while the input itself stays perfectly responsive.
   const trimmed = useDeferredValue(query.trim())
   const searching = open && hasBridge() && graph !== null && !trimmed.startsWith('>')
-  const { data: suggestions, isLoading: suggestionsLoading } = useQuery({
+  const {
+    data: suggestions,
+    isLoading: suggestionsLoading,
+    isError: suggestionsError,
+  } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'palette-suggest', trimmed],
     queryFn: () => suggestWikiTargets(trimmed, 8),
     enabled: searching,
   })
-  const { data: hits, isLoading: hitsLoading } = useQuery({
+  const { data: hits, isLoading: hitsLoading, isError: hitsError } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'palette-search', trimmed],
     queryFn: () => searchNotesRanked(trimmed),
     enabled: searching && trimmed !== '',
@@ -68,6 +72,9 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
   // deferred value can settle on the stale previous query first; that state
   // is "still answering", not "empty".
   const resultsSettled = !suggestionsLoading && !hitsLoading && trimmed === query.trim()
+  // An errored query is "settled" to TanStack but not an answer — showing
+  // "No results" for a failed index read would be a lie.
+  const searchFailed = suggestionsError || hitsError
 
   const sections = useMemo(
     () =>
@@ -122,7 +129,12 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
             className="reflect-palette-input"
           />
           <Command.List className="reflect-palette-list">
-            {resultsSettled ? (
+            {searchFailed ? (
+              <div role="alert" className="reflect-palette-empty">
+                Search unavailable — the index didn’t answer.
+              </div>
+            ) : null}
+            {resultsSettled && !searchFailed ? (
               <Command.Empty className="reflect-palette-empty">No results</Command.Empty>
             ) : null}
             {sections.notes.length > 0 ? (
