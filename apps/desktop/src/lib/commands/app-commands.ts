@@ -124,6 +124,16 @@ const APP_COMMANDS: AppCommand[] = [
   },
 ]
 
+/**
+ * The registered keybinding for `commandId`, or `null` when the command has
+ * none (or the id is unknown). UI hints — sidebar keycaps, "go to today"
+ * affordances — derive bindings through this so they can never drift from the
+ * command definition, and disappear if the binding ever does.
+ */
+export function keybindingFor(commandId: string): string | null {
+  return APP_COMMANDS.find((command) => command.id === commandId)?.keybinding ?? null
+}
+
 let registered = false
 
 /**

@@ -27,14 +27,14 @@ function ShortcutGroup({
 }): ReactElement {
   return (
     <div className="px-4 py-3.5">
-      <h3 className="text-[11px] font-semibold tracking-[0.08em] text-[color:var(--text-muted)] uppercase">
+      <h3 className="text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
         {heading}
       </h3>
       <ul className="mt-1.5">
         {shortcuts.map(({ binding, description }) => (
           <li
             key={binding}
-            className="flex items-center justify-between gap-4 py-1.5 text-sm text-[color:var(--text-secondary)]"
+            className="flex items-center justify-between gap-4 py-1.5 text-sm text-text-secondary"
           >
             <span className="min-w-0 truncate">{description}</span>
             {/* The keycaps are aria-hidden decoration; this carries the binding for AT. */}

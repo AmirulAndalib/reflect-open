@@ -66,4 +66,34 @@ describe('buildMonthGrid', () => {
     expect(() => buildMonthGrid('2026-13')).toThrow(/YYYY-MM/)
     expect(() => buildMonthGrid('June')).toThrow(/YYYY-MM/)
   })
+
+  it('stays contiguous day-by-day across US DST transitions', () => {
+    // 2026-03 spans the spring-forward (Mar 8); 2026-11 the fall-back (Nov 1).
+    const DAY_MILLIS = 86_400_000
+    const utcMillis = (date: string): number => {
+      const [year, monthPart, day] = date.split('-').map(Number)
+      return Date.UTC(year, monthPart - 1, day)
+    }
+
+    for (const { month, lastDay } of [
+      { month: '2026-03', lastDay: '2026-03-31' },
+      { month: '2026-11', lastDay: '2026-11-30' },
+    ]) {
+      const grid = buildMonthGrid(month)
+      for (const week of grid.weeks) {
+        expect(week).toHaveLength(7)
+      }
+
+      const cells = grid.weeks.flat()
+      for (let index = 1; index < cells.length; index += 1) {
+        expect(utcMillis(cells[index].date) - utcMillis(cells[index - 1].date)).toBe(
+          DAY_MILLIS,
+        )
+      }
+
+      const dates = cells.map((cell) => cell.date)
+      expect(dates.filter((date) => date === `${month}-01`)).toHaveLength(1)
+      expect(dates.filter((date) => date === lastDay)).toHaveLength(1)
+    }
+  })
 })

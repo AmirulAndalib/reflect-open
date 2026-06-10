@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { dailyPath, getBacklinksWithContext, hasBridge } from '@reflect/core'
+import { NoteLinkRows } from '@/components/note-link-rows'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
@@ -31,36 +32,25 @@ export function DayBacklinks({ date }: DayBacklinksProps): ReactElement {
   return (
     <SidebarSection storageKey="backlinks" title="Linked from" count={data?.length}>
       {isLoading ? (
-        <p className="px-2 py-1 text-xs text-[color:var(--text-muted)]">Loading…</p>
+        <p className="px-2 py-1 text-xs text-text-muted">Loading…</p>
       ) : isError ? (
-        <p role="alert" className="px-2 py-1 text-xs text-[color:var(--text-muted)]">
+        <p role="alert" className="px-2 py-1 text-xs text-text-muted">
           Couldn’t load backlinks.
         </p>
       ) : backlinks.length === 0 ? (
-        <p className="px-2 py-1 text-xs text-[color:var(--text-muted)]">
+        <p className="px-2 py-1 text-xs text-text-muted">
           No notes link to this day yet.
         </p>
       ) : (
-        <ul className="space-y-0.5">
-          {backlinks.map((backlink) => (
-            <li key={`${backlink.sourcePath}:${backlink.posFrom}`}>
-              <button
-                type="button"
-                onClick={() => navigate(routeForPath(backlink.sourcePath))}
-                className="w-full rounded px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/5"
-              >
-                <span className="block truncate text-sm font-medium">
-                  {backlink.sourceTitle}
-                </span>
-                {backlink.snippet !== '' ? (
-                  <span className="block truncate text-xs text-[color:var(--text-muted)]">
-                    {backlink.snippet}
-                  </span>
-                ) : null}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <NoteLinkRows
+          items={backlinks.map((backlink) => ({
+            key: `${backlink.sourcePath}:${backlink.posFrom}`,
+            title: backlink.sourceTitle,
+            snippet: backlink.snippet,
+            path: backlink.sourcePath,
+          }))}
+          onOpen={(target) => navigate(routeForPath(target))}
+        />
       )}
     </SidebarSection>
   )

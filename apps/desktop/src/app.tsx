@@ -29,7 +29,7 @@ export function App(): ReactElement {
 
   // 'loading' | 'opening'
   return (
-    <div className="flex h-screen w-screen items-center justify-center text-sm text-[color:var(--text-muted)]">
+    <div className="flex h-screen w-screen items-center justify-center text-sm text-text-muted">
       Loading…
     </div>
   )

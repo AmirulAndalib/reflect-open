@@ -27,10 +27,10 @@ interface CommandPaletteProps {
 
 function Snippet({ snippet }: { snippet: string }): ReactElement {
   return (
-    <span className="block truncate text-xs text-[color:var(--text-muted)]">
+    <span className="block truncate text-xs text-text-muted">
       {parseHighlights(snippet).map((segment, i) =>
         segment.highlighted ? (
-          <mark key={i} className="rounded-sm bg-[var(--accent-soft,rgb(99_102_241/0.2))] px-0.5">
+          <mark key={i} className="rounded-sm bg-accent-soft px-0.5">
             {segment.text}
           </mark>
         ) : (
@@ -112,7 +112,7 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
                         <Icon
                           aria-hidden
                           strokeWidth={1.75}
-                          className="size-4 shrink-0 text-[color:var(--text-muted)]"
+                          className="size-4 shrink-0 text-text-muted"
                         />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm">
@@ -144,7 +144,7 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
                         <Icon
                           aria-hidden
                           strokeWidth={1.75}
-                          className="size-4 shrink-0 text-[color:var(--text-muted)]"
+                          className="size-4 shrink-0 text-text-muted"
                         />
                         <span className="min-w-0 flex-1 truncate text-sm">{command.title}</span>
                         {command.keybinding ? <ShortcutKeys binding={command.keybinding} /> : null}
@@ -157,7 +157,7 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
           </Command.List>
           <div
             aria-hidden
-            className="flex items-center gap-4 border-t border-[var(--border)] px-3.5 py-2 text-[11px] text-[color:var(--text-muted)]"
+            className="flex items-center gap-4 border-t border-border px-3.5 py-2 text-[11px] text-text-muted"
           >
             <span className="flex items-center gap-1.5">
               <Kbd>↑</Kbd>

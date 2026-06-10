@@ -108,4 +108,22 @@ describe('useFileChanges', () => {
     expect(subscribeFileChanges).not.toHaveBeenCalled()
     bridgeless.unmount()
   })
+
+  // The hook doesn't catch handler throws (the contract only covers the
+  // subscription lifecycle), so only the rejected-subscription path is tested.
+  it('logs and stays inert when the subscription itself fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    subscribeFileChanges.mockRejectedValue(new Error('bridge gone'))
+    const handler = vi.fn()
+    const view = render(<Host handler={handler} />)
+    await act(async () => {})
+
+    expect(consoleError).toHaveBeenCalledWith(
+      'file-change subscription failed:',
+      expect.any(Error),
+    )
+    expect(handler).not.toHaveBeenCalled()
+    expect(() => view.unmount()).not.toThrow()
+    consoleError.mockRestore()
+  })
 })

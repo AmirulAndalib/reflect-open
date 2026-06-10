@@ -45,3 +45,14 @@ export function routeForPath(path: string): Route {
   const date = isDaily(path) ? dateFromDailyPath(path) : null
   return date !== null && isIsoDate(date) ? { kind: 'daily', date } : { kind: 'note', path }
 }
+
+/**
+ * The invariant the router maintains on every entry: a `daily` route never
+ * carries an impossible calendar date past the boundary (`dailyPath` would
+ * throw on one downstream). A malformed date collapses to the `today` route —
+ * the same anchoring the stream would choose — so views consuming
+ * {@link useRouter} can trust `route.date` without re-validating it.
+ */
+export function normalizeRoute(route: Route): Route {
+  return route.kind === 'daily' && !isIsoDate(route.date) ? { kind: 'today' } : route
+}

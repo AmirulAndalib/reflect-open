@@ -61,7 +61,7 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
             type="button"
             aria-label="Previous month"
             onClick={() => setMonth(addMonths(month, -1))}
-            className="rounded p-1 text-[color:var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5"
+            className="rounded p-1 text-text-secondary hover:bg-surface-hover"
           >
             <ChevronLeft aria-hidden className="size-3.5" />
           </button>
@@ -69,7 +69,7 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
             type="button"
             aria-label="Next month"
             onClick={() => setMonth(addMonths(month, 1))}
-            className="rounded p-1 text-[color:var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5"
+            className="rounded p-1 text-text-secondary hover:bg-surface-hover"
           >
             <ChevronRight aria-hidden className="size-3.5" />
           </button>
@@ -83,7 +83,7 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
               <th
                 key={weekday}
                 scope="col"
-                className="pb-0.5 text-[10px] font-medium text-[color:var(--text-muted)]"
+                className="pb-0.5 text-[10px] font-medium text-text-muted"
               >
                 {weekday}
               </th>
@@ -107,13 +107,13 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
                       className={cn(
                         'relative mx-auto flex size-7 items-center justify-center rounded-md text-xs tabular-nums',
                         cell.inMonth
-                          ? 'text-[color:var(--text)]'
-                          : 'text-[color:var(--text-muted)]',
+                          ? 'text-text'
+                          : 'text-text-muted',
                         isSelected
-                          ? 'bg-[var(--accent)] font-semibold text-white'
-                          : 'hover:bg-black/5 dark:hover:bg-white/5',
+                          ? 'bg-accent font-semibold text-white'
+                          : 'hover:bg-surface-hover',
                         isToday && !isSelected
-                          ? 'font-semibold text-[color:var(--accent)]'
+                          ? 'font-semibold text-accent'
                           : null,
                       )}
                     >
@@ -124,7 +124,7 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
                           data-testid={`note-dot-${cell.date}`}
                           className={cn(
                             'absolute bottom-0.5 size-1 rounded-full',
-                            isSelected ? 'bg-white/80' : 'bg-[var(--accent)]',
+                            isSelected ? 'bg-white/80' : 'bg-accent',
                           )}
                         />
                       ) : null}

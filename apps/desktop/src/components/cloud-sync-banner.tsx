@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { InlineAlert } from '@/components/inline-alert'
 
 /** Human labels for the cloud-sync providers Rust detects under a graph root. */
 const CLOUD_LABELS: Record<string, string> = {
@@ -22,10 +23,10 @@ interface CloudSyncBannerProps {
 export function CloudSyncBanner({ provider }: CloudSyncBannerProps): ReactElement {
   const label = CLOUD_LABELS[provider] ?? provider
   return (
-    <div role="alert" className="border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-xs text-amber-700 dark:text-amber-300">
+    <InlineAlert className="rounded-none border-x-0 border-t-0 px-6">
       This graph is inside {label}. Reflect syncs via GitHub — a cloud-synced
       folder is unsupported and can corrupt the local index. Consider moving it to a
       non-synced location.
-    </div>
+    </InlineAlert>
   )
 }

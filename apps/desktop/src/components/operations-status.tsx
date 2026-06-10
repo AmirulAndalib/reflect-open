@@ -18,11 +18,11 @@ export function OperationsStatus(): ReactElement | null {
         <div
           key={operation.id}
           role="status"
-          className="rounded-md border border-black/10 bg-[var(--surface,var(--background,#fff))] px-3 py-2 text-xs shadow-lg dark:border-white/10"
+          className="rounded-md border border-black/10 bg-surface px-3 py-2 text-xs shadow-lg dark:border-white/10"
         >
           <span className="block font-medium">{operation.label}</span>
           {operation.progress !== null ? (
-            <span className="block text-[color:var(--text-muted)]">
+            <span className="block text-text-muted">
               {operation.progress.done}/{operation.progress.total}
             </span>
           ) : null}

@@ -33,8 +33,8 @@ export function SidebarItem({
         'group flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium',
         'transition-colors duration-100',
         active
-          ? 'bg-[var(--surface-hover)] text-[color:var(--accent)] dark:text-[color:var(--accent-hover)]'
-          : 'text-[color:var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[color:var(--text)]',
+          ? 'bg-surface-hover text-accent dark:text-accent-hover'
+          : 'text-text-secondary hover:bg-surface-hover hover:text-text',
       )}
     >
       <Icon aria-hidden strokeWidth={1.75} className="size-4 shrink-0" />

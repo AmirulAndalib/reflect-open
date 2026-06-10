@@ -8,6 +8,52 @@
    ThemeProvider on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Design-system tokens exposed as Tailwind theme keys, 1:1 by name, so
+   product code writes `text-text-muted` / `bg-surface-hover` instead of
+   arbitrary `text-[color:var(--text-muted)]` escapes. `inline` makes the
+   utilities reference the live token (`color: var(--text-muted)`), keeping
+   `.dark` / `.reflect-space` runtime theming intact. */
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-app: var(--surface-app);
+  --color-surface-hover: var(--surface-hover);
+
+  --color-text: var(--text);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-on-brand: var(--text-on-brand);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input-bg: var(--input-bg);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-text: var(--accent-soft-text);
+
+  --color-focus-ring: var(--focus-ring);
+  --color-destructive: var(--destructive);
+
+  --shadow-input: var(--ds-shadow-input);
+  --shadow-sm: var(--ds-shadow-sm);
+  --shadow-md: var(--ds-shadow-md);
+  --shadow-pop: var(--ds-shadow-pop);
+}
+
+/* The DS shadow tokens share Tailwind's `--shadow-*` theme namespace, so a
+   direct `--shadow-sm: var(--shadow-sm)` mapping would make Tailwind emit a
+   self-referential (circular, thus invalid) variable into `@layer theme`.
+   Re-exposing the tokens under `--ds-shadow-*` keeps the theme keys pointing
+   at a different name, so nothing is emitted and the cycle can't form. */
+:root {
+  --ds-shadow-input: var(--shadow-input);
+  --ds-shadow-sm: var(--shadow-sm);
+  --ds-shadow-md: var(--shadow-md);
+  --ds-shadow-pop: var(--shadow-pop);
+}
+
 html,
 body,
 #root {

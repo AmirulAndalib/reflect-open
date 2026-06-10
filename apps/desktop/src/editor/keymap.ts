@@ -102,25 +102,38 @@ function toggleHeading(level: number): Command {
   }
 }
 
-/** Display descriptions for the editor-scope bindings (the shortcuts UI). */
-export const EDITOR_BINDING_DESCRIPTIONS: Record<string, string> = {
-  'Mod-b': 'Bold',
-  'Mod-i': 'Italic',
-  'Mod-e': 'Inline code',
-  'Mod-1': 'Heading 1',
-  'Mod-2': 'Heading 2',
-  'Mod-3': 'Heading 3',
+interface EditorBindingDefinition {
+  /** The keybinding (ProseMirror key string, e.g. `Mod-b`). */
+  binding: string
+  /** What the binding does — shown in the Keyboard settings section. */
+  description: string
+  command: Command
 }
 
+/**
+ * The editor-scope bindings, one definition each: the keymap the editor
+ * registers and the descriptions the shortcuts UI shows both derive from this
+ * list, so a new binding can't ship without its settings row (and vice versa).
+ */
+const EDITOR_BINDING_DEFINITIONS: EditorBindingDefinition[] = [
+  { binding: 'Mod-b', description: 'Bold', command: toggleInlineMarker('**') },
+  { binding: 'Mod-i', description: 'Italic', command: toggleInlineMarker('_') },
+  { binding: 'Mod-e', description: 'Inline code', command: toggleInlineMarker('`') },
+  { binding: 'Mod-1', description: 'Heading 1', command: toggleHeading(1) },
+  { binding: 'Mod-2', description: 'Heading 2', command: toggleHeading(2) },
+  { binding: 'Mod-3', description: 'Heading 3', command: toggleHeading(3) },
+]
+
+/** Display descriptions for the editor-scope bindings (the shortcuts UI). */
+export const EDITOR_BINDING_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
+  EDITOR_BINDING_DEFINITIONS.map(({ binding, description }) => [binding, description]),
+)
+
 /** Reflect's editor-scope bindings — registered once, collision-checked. */
-export const EDITOR_BINDINGS: Record<string, Command> = registerKeymap('editor', {
-  'Mod-b': toggleInlineMarker('**'),
-  'Mod-i': toggleInlineMarker('_'),
-  'Mod-e': toggleInlineMarker('`'),
-  'Mod-1': toggleHeading(1),
-  'Mod-2': toggleHeading(2),
-  'Mod-3': toggleHeading(3),
-})
+export const EDITOR_BINDINGS: Record<string, Command> = registerKeymap(
+  'editor',
+  Object.fromEntries(EDITOR_BINDING_DEFINITIONS.map(({ binding, command }) => [binding, command])),
+)
 
 /** The editor keymap extension, composed into the editor via `union`. */
 export function defineReflectKeymap(): PlainExtension {

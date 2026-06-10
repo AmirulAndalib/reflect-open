@@ -219,6 +219,15 @@ need pixel-exact brand icons. Set `stroke-width: 1.75` to match.
 Button, IconButton, Input, SearchField, Checkbox, Badge, Card, Avatar, MenuItem,
 ShortcutKey, Toggle. *(populated below)*
 
+> **Consuming this package:** `@reflect/design-system` exports **only**
+> `styles.css`, `tokens/*`, and `assets/*` (see `package.json`). The `.jsx`
+> components here are *spec artifacts* — reference implementations for fidelity,
+> not importable modules. Product apps (e.g. `apps/desktop`) build their own
+> primitives on the tokens; the desktop app additionally maps the tokens into
+> Tailwind theme keys (`@theme inline` in its `styles/index.css`), so product
+> code writes `text-text-muted` / `bg-surface-hover` instead of raw `var(--…)`
+> escapes.
+
 **`guidelines/`** — foundation specimen cards (Design System tab).
 
 **`ui_kits/`**

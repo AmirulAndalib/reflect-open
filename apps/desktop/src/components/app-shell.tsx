@@ -21,25 +21,25 @@ export function AppShell({ sidebar, context, children, className }: AppShellProp
   return (
     <div
       className={cn(
-        'flex h-screen w-screen overflow-hidden bg-[var(--surface-app)] text-[color:var(--text)]',
+        'flex h-screen w-screen overflow-hidden bg-surface-app text-text',
         className,
       )}
     >
       {sidebar ? (
         <aside
           aria-label="Workspace"
-          className="flex w-[var(--sidebar-width)] shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--surface-sunken)]"
+          className="flex w-[var(--sidebar-width)] shrink-0 flex-col overflow-hidden border-r border-border bg-surface-sunken"
         >
           {sidebar}
         </aside>
       ) : null}
 
-      <main className="min-w-0 flex-1 overflow-auto bg-[var(--surface)]">{children}</main>
+      <main className="min-w-0 flex-1 overflow-auto bg-surface">{children}</main>
 
       {context ? (
         <aside
           aria-label="Context"
-          className="hidden w-80 shrink-0 overflow-auto border-l border-[var(--border)] bg-[var(--surface-sunken)] lg:block"
+          className="hidden w-80 shrink-0 overflow-auto border-l border-border bg-surface-sunken lg:block"
         >
           {context}
         </aside>

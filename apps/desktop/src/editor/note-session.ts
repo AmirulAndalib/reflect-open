@@ -126,6 +126,17 @@ export interface NoteSessionOptions {
   saveDebounceMs?: number
 }
 
+/**
+ * The frontmatter keys the app patches through a live session — deliberately
+ * narrower than what `upsertFrontmatter` can write, so a typo'd key can't
+ * silently land junk in a note's header. Extend it when a new key earns a
+ * session-channel writer.
+ */
+export interface FrontmatterPatch {
+  /** Alternative wiki-link titles for this note (the Plan 07b auto-alias). */
+  aliases?: string[]
+}
+
 /** One open note's document lifecycle. Create via {@link createNoteSession}. */
 export interface NoteSession {
   /** The graph-relative path this session is bound to. */
@@ -151,11 +162,13 @@ export interface NoteSession {
   /**
    * Patch frontmatter keys (e.g. `aliases`, Plan 07b) without touching the
    * editor: the header is updated in place and saved through the normal
-   * pipeline. Returns false (and does nothing) while protected, not ready,
-   * or disposed — callers with a fallback path (the rename coordinator's
-   * direct disk write) branch on it.
+   * pipeline. Returns false (and does nothing) when the session can't take
+   * the patch — disposed, protected, or not yet `ready`. All three mean the
+   * same thing to a caller: this channel is unavailable, use the fallback
+   * (the rename coordinator writes straight to disk, which a live session
+   * then reconciles like any external change).
    */
-  updateFrontmatter: (patch: Record<string, unknown>) => boolean
+  updateFrontmatter: (patch: FrontmatterPatch) => boolean
   /** Flush pending edits and detach: no further snapshots are emitted. */
   dispose: () => void
 }
@@ -493,11 +506,11 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     adoptCleanContent(content)
   }
 
-  function updateFrontmatter(patch: Record<string, unknown>): boolean {
+  function updateFrontmatter(patch: FrontmatterPatch): boolean {
     if (disposed || isProtected || status !== 'ready') {
       return false
     }
-    header = splitDoc(upsertFrontmatter(header + buffer, patch)).header
+    header = splitDoc(upsertFrontmatter(header + buffer, { ...patch })).header
     dirty = header + buffer !== disk
     emit()
     if (dirty) {

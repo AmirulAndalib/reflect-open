@@ -105,7 +105,7 @@ export function NotePane({
 
   if (document.status === 'loading') {
     return (
-      <div className="px-1 py-2 text-sm text-[color:var(--text-muted)]">Loading note…</div>
+      <div className="px-1 py-2 text-sm text-text-muted">Loading note…</div>
     )
   }
 
@@ -152,7 +152,7 @@ export function NotePane({
         <span
           aria-label="Unsaved changes"
           title="Unsaved changes"
-          className="absolute -top-1 right-0 size-2 rounded-full bg-[var(--accent)]"
+          className="absolute -top-1 right-0 size-2 rounded-full bg-accent"
         />
       ) : null}
 

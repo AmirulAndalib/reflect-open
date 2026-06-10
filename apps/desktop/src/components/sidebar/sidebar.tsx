@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
 import { CalendarDays, PanelLeftClose, Settings, SquarePen } from 'lucide-react'
+import { keybindingFor } from '@/lib/commands/app-commands'
 import { runCommand } from '@/lib/commands/registry'
 import type { CommandContext } from '@/lib/commands/types'
 import { formatBindingLabel } from '@/lib/keybindings'
@@ -22,6 +23,8 @@ interface SidebarProps {
  * graph switcher footer. Nav rows run registered commands so a binding and
  * its behavior stay one definition.
  */
+const SIDEBAR_TOGGLE_BINDING = keybindingFor('sidebar.toggle')
+
 export function Sidebar({ graph, context }: SidebarProps): ReactElement {
   const { route } = useRouter()
   return (
@@ -30,9 +33,13 @@ export function Sidebar({ graph, context }: SidebarProps): ReactElement {
         <button
           type="button"
           aria-label="Hide sidebar"
-          title={`Hide sidebar (${formatBindingLabel('Mod-\\')})`}
+          title={
+            SIDEBAR_TOGGLE_BINDING !== null
+              ? `Hide sidebar (${formatBindingLabel(SIDEBAR_TOGGLE_BINDING)})`
+              : 'Hide sidebar'
+          }
           onClick={() => context.toggleSidebar()}
-          className="rounded-md p-1 text-[color:var(--text-muted)] transition-colors duration-100 hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-secondary)]"
+          className="rounded-md p-1 text-text-muted transition-colors duration-100 hover:bg-surface-hover hover:text-text-secondary"
         >
           <PanelLeftClose aria-hidden strokeWidth={1.75} className="size-4" />
         </button>
@@ -44,20 +51,20 @@ export function Sidebar({ graph, context }: SidebarProps): ReactElement {
         <SidebarItem
           icon={CalendarDays}
           label="Today"
-          binding="Mod-d"
+          binding={keybindingFor('nav.today') ?? undefined}
           active={route.kind === 'today' || route.kind === 'daily'}
           onClick={() => void runCommand('nav.today', context)}
         />
         <SidebarItem
           icon={SquarePen}
           label="New note"
-          binding="Mod-n"
+          binding={keybindingFor('note.new') ?? undefined}
           onClick={() => void runCommand('note.new', context)}
         />
         <SidebarItem
           icon={Settings}
           label="Settings"
-          binding="Mod-,"
+          binding={keybindingFor('settings.open') ?? undefined}
           active={route.kind === 'settings'}
           onClick={() => void runCommand('settings.open', context)}
         />

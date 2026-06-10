@@ -2,6 +2,8 @@ import type { ReactElement } from 'react'
 import type { EditorMarkdownSyntax } from '@reflect/core'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/providers/settings-provider'
+import { SettingsField } from './field'
+import { SettingsOptionCard } from './option-card'
 import { SettingsSection } from './section'
 
 interface MarkdownSyntaxOption {
@@ -28,25 +30,18 @@ export function EditorSection(): ReactElement {
 
   return (
     <SettingsSection title="Editor">
-      <fieldset className="px-4 py-3.5">
-        <legend className="float-left text-sm font-medium text-[color:var(--text)]">
-          Markdown syntax
-        </legend>
-        <p className="clear-left mt-0.5 text-xs text-[color:var(--text-muted)]">
-          How literal markdown characters (#, **, [[ ]]) are displayed while editing.
-        </p>
+      <SettingsField
+        legend="Markdown syntax"
+        description="How literal markdown characters (#, **, [[ ]]) are displayed while editing."
+      >
         <div className="mt-3 flex flex-col gap-2">
           {MARKDOWN_SYNTAX_OPTIONS.map((option) => {
             const selected = settings.editorMarkdownSyntax === option.value
             return (
-              <label
+              <SettingsOptionCard
                 key={option.value}
-                className={cn(
-                  'flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors duration-100',
-                  selected
-                    ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
-                    : 'border-[var(--border)] hover:bg-[var(--surface-hover)]',
-                )}
+                selected={selected}
+                className="items-start gap-3 px-3 py-2.5"
               >
                 <input
                   type="radio"
@@ -54,26 +49,26 @@ export function EditorSection(): ReactElement {
                   value={option.value}
                   checked={selected}
                   onChange={() => updateSettings({ editorMarkdownSyntax: option.value })}
-                  className="mt-0.5 accent-[var(--accent)]"
+                  className="mt-0.5 accent-accent"
                 />
                 <span>
                   <span
                     className={cn(
                       'block text-sm font-medium',
-                      selected && 'text-[color:var(--accent-soft-text)]',
+                      selected && 'text-accent-soft-text',
                     )}
                   >
                     {option.label}
                   </span>
-                  <span className="mt-0.5 block text-xs text-[color:var(--text-muted)]">
+                  <span className="mt-0.5 block text-xs text-text-muted">
                     {option.description}
                   </span>
                 </span>
-              </label>
+              </SettingsOptionCard>
             )
           })}
         </div>
-      </fieldset>
+      </SettingsField>
     </SettingsSection>
   )
 }

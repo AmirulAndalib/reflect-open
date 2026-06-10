@@ -16,9 +16,9 @@ export function Kbd({ children, className }: KbdProps): ReactElement {
     <kbd
       className={cn(
         'inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px]',
-        'border border-[var(--border)] bg-[var(--surface)] px-1',
-        'font-sans text-[10px] font-medium leading-none text-[color:var(--text-muted)]',
-        'shadow-[var(--shadow-input)] dark:bg-white/5',
+        'border border-border bg-surface px-1',
+        'font-sans text-[10px] font-medium leading-none text-text-muted',
+        'shadow-input dark:bg-white/5',
         className,
       )}
     >

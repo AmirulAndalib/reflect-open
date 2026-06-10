@@ -71,19 +71,29 @@ Semantics you get for free from the provider (and must not re-implement):
 ## 3. Add the control
 
 `apps/desktop/src/components/settings-screen.tsx` is a routed view (⌘, or the
-palette's "Open settings"). Follow the existing pattern: a `<section>` per
-group, a `<fieldset>` with a `legend` and a one-line description per setting,
-and `onChange` calling `updateSettings` directly. Add a test in
-`settings-screen.test.tsx` — the existing ones render the screen inside the
-*real* provider over a fake bridge (`setBridge`), interact with the control,
-and assert the document that reaches `settings_save`. That covers the whole
-chain (control → patch → merge → persist), not just the click handler.
+palette's "Open settings") composed of one section component per group under
+`apps/desktop/src/components/settings/`. Build yours from the shared
+primitives in that directory rather than hand-rolling markup:
+
+- `SettingsSection` (`section.tsx`) — the heading + bordered card per group.
+- `SettingsField` (`field.tsx`) — the `<fieldset>` with a `legend` and a
+  one-line description per setting.
+- `SettingsOptionCard` (`option-card.tsx`) — one choice in a radio group, with
+  the shared selected/hover/focus treatment.
+
+`onChange` calls `updateSettings` directly (see `appearance-section.tsx` for
+the complete shape). Add a test in `settings-screen.test.tsx` — the existing
+ones render the screen inside the *real* provider over a fake bridge
+(`setBridge`), interact with the control, and assert the document that reaches
+`settings_save`. That covers the whole chain (control → patch → merge →
+persist), not just the click handler.
 
 ## Checklist
 
 - [ ] Value schema with `.catch(default)` added to `settingsSchema`
 - [ ] New types exported from `packages/core/src/index.ts`
 - [ ] Schema tests: missing → default, invalid → default, valid round-trips
-- [ ] Control in `settings-screen.tsx` wired to `updateSettings`
+- [ ] Section under `components/settings/` built from the shared primitives,
+      wired to `updateSettings`
 - [ ] Screen test covering the new control
 - [ ] No Rust changes, no migrations, no per-key save logic

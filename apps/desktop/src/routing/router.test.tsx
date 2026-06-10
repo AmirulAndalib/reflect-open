@@ -1,11 +1,14 @@
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { ReactNode } from 'react'
+import type { Route } from './route'
 import { RouterProvider, useRouter } from './router'
 
-function routerHook() {
+function routerHook(initialRoute?: Route) {
   return renderHook(() => useRouter(), {
-    wrapper: ({ children }: { children: ReactNode }) => <RouterProvider>{children}</RouterProvider>,
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <RouterProvider initialRoute={initialRoute}>{children}</RouterProvider>
+    ),
   })
 }
 
@@ -93,6 +96,26 @@ describe('router', () => {
     expect(result.current.entryId).toBe(todayId)
     act(() => result.current.forward())
     expect(result.current.entryId).toBe(noteId)
+  })
+
+  it('normalizes a malformed daily date to the today route on navigate', () => {
+    const { result } = routerHook()
+    // 2026-02-31 is well-formed but impossible — dailyPath would throw on it.
+    act(() => result.current.navigate({ kind: 'daily', date: '2026-02-31' }))
+    expect(result.current.route).toEqual({ kind: 'today' })
+    // Normalization happens before the no-op check: re-navigating doesn't push.
+    expect(result.current.canBack).toBe(false)
+  })
+
+  it('normalizes a malformed daily initial route to today', () => {
+    const { result } = routerHook({ kind: 'daily', date: 'not-a-date' })
+    expect(result.current.route).toEqual({ kind: 'today' })
+  })
+
+  it('keeps a real daily date intact', () => {
+    const { result } = routerHook()
+    act(() => result.current.navigate({ kind: 'daily', date: '2026-06-08' }))
+    expect(result.current.route).toEqual({ kind: 'daily', date: '2026-06-08' })
   })
 
   it('drops scroll offsets for a truncated forward branch', () => {

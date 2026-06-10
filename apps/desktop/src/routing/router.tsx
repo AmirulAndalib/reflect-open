@@ -8,7 +8,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
-import { routesEqual, type Route } from './route'
+import { normalizeRoute, routesEqual, type Route } from './route'
 
 /**
  * The app router (Plan 06): a history stack over typed {@link Route}s — no URL,
@@ -66,7 +66,7 @@ export function RouterProvider({
   children,
 }: RouterProviderProps): ReactElement {
   const [history, setHistory] = useState<HistoryState>({
-    stack: [{ id: 0, route: initialRoute }],
+    stack: [{ id: 0, route: normalizeRoute(initialRoute) }],
     index: 0,
   })
   const [arrivalSeq, setArrivalSeq] = useState(0)
@@ -78,8 +78,9 @@ export function RouterProvider({
   currentId.current = history.stack[history.index].id
 
   const navigate = useCallback((route: Route) => {
+    const target = normalizeRoute(route)
     setHistory((current) => {
-      if (routesEqual(current.stack[current.index].route, route)) {
+      if (routesEqual(current.stack[current.index].route, target)) {
         // No stack growth — but this is still an explicit arrival: forget the
         // entry's saved offset so the view re-anchors to its target instead of
         // restoring the old scroll position.
@@ -92,7 +93,7 @@ export function RouterProvider({
       }
       const stack = [
         ...current.stack.slice(0, current.index + 1),
-        { id: nextId.current++, route },
+        { id: nextId.current++, route: target },
       ]
       return { stack, index: stack.length - 1 }
     })

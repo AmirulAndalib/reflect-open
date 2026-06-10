@@ -47,7 +47,7 @@ export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement
             aria-label="Show sidebar"
             title="Show sidebar"
             onClick={() => commandContext.toggleSidebar()}
-            className="absolute top-2.5 left-3 z-10 rounded-md p-1 text-[color:var(--text-muted)] transition-colors duration-100 hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-secondary)]"
+            className="absolute top-2.5 left-3 z-10 rounded-md p-1 text-text-muted transition-colors duration-100 hover:bg-surface-hover hover:text-text-secondary"
           >
             <PanelLeft aria-hidden strokeWidth={1.75} className="size-4" />
           </button>

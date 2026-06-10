@@ -3,7 +3,6 @@ import { DailyStream } from '@/components/daily-stream'
 import { NotePane } from '@/components/note-pane'
 import { SearchRoute } from '@/components/search-route'
 import { SettingsScreen } from '@/components/settings-screen'
-import { isIsoDate } from '@/lib/dates'
 import { useToday } from '@/lib/use-today'
 import { useRouter } from '@/routing/router'
 import { ScrollRestored } from '@/routing/scroll-restore'
@@ -24,9 +23,9 @@ export function RouteContent(): ReactElement {
     case 'today':
       return <DailyStream targetDate={today} />
     case 'daily':
-      // A malformed date (impossible calendar day) anchors to today instead of
-      // letting dailyPath throw mid-render.
-      return <DailyStream targetDate={isIsoDate(route.date) ? route.date : today} />
+      // The router normalizes daily routes (see normalizeRoute), so the date
+      // is a real calendar day by the time it reaches a view.
+      return <DailyStream targetDate={route.date} />
     case 'note':
       return (
         <ScrollRestored className="h-full overflow-auto px-6 py-8">

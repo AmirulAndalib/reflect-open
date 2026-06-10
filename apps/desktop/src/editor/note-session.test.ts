@@ -14,7 +14,10 @@ interface Harness {
   writes: Array<{ path: string; contents: string }>
   applied: string[]
   contents: Array<{ content: string; origin: string }>
-  setDisk: (contents: string) => void
+  /** `null` deletes the file: subsequent reads throw the notFound AppError. */
+  setDisk: (contents: string | null) => void
+  /** While set, writes reject with this message (the save-failure seam). */
+  failWrites: (message: string | null) => void
   session: ReturnType<typeof createNoteSession>
 }
 
@@ -31,6 +34,7 @@ function harness(options?: {
   const applied: string[] = []
   const contents: Array<{ content: string; origin: string }> = []
   let disk = options?.disk === undefined ? '# Hello\n' : options.disk
+  let writeFailure: string | null = null
   const session = createNoteSession({
     path: 'notes/a.md',
     io: {
@@ -44,6 +48,9 @@ function harness(options?: {
         options?.write === false
           ? null
           : async (path, contents) => {
+              if (writeFailure !== null) {
+                throw new Error(writeFailure)
+              }
               writes.push({ path, contents })
               disk = contents
             },
@@ -67,6 +74,9 @@ function harness(options?: {
     contents,
     setDisk: (contents) => {
       disk = contents
+    },
+    failWrites: (message) => {
+      writeFailure = message
     },
     session,
   }
@@ -399,5 +409,95 @@ describe('missing-note seed (new ordinary notes)', () => {
     expect(ready?.conflict).toBeNull()
     expect(h.applied).toEqual([]) // content unchanged: no editor reload
     expect(h.writes).toEqual([])
+  })
+
+  it('an external delete reconciles to a no-op: the buffer survives, edits still save', async () => {
+    // createIfMissing applies only to the initial load; a deletion mid-session
+    // must not error the session or empty the editor — the buffer is the user's.
+    const h = harness({ disk: '# Hello\n' })
+    h.session.load()
+    await settled()
+
+    h.setDisk(null) // deleted out from under us
+    h.session.externalChanged()
+    await settled()
+
+    const after = h.snapshots.at(-1)
+    expect(after?.status).toBe('ready')
+    expect(after?.error).toBeNull()
+    expect(h.applied).toEqual([]) // nothing pushed into the editor
+
+    // The next edit recreates the file through the normal save path.
+    h.session.editorChanged('# Hello again\n')
+    await settled()
+    expect(h.writes).toEqual([{ path: 'notes/a.md', contents: '# Hello again\n' }])
+  })
+
+  it('a delete racing unsaved edits neither conflicts nor drops them', async () => {
+    const h = harness({ disk: '# Hello\n' })
+    h.session.load()
+    await settled()
+
+    h.session.editorChanged('# Unsaved\n')
+    h.setDisk(null)
+    h.session.externalChanged() // read fails: nothing to park a conflict against
+    await settled()
+
+    const after = h.snapshots.at(-1)
+    expect(after?.conflict).toBeNull()
+    expect(after?.dirty).toBe(false) // the debounced save already landed…
+    expect(h.writes.at(-1)).toEqual({ path: 'notes/a.md', contents: '# Unsaved\n' }) // …recreating the file
+  })
+
+  it('a failed save surfaces the error and a later save clears it', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const h = harness()
+      h.session.load()
+      await settled()
+
+      h.failWrites('disk full')
+      h.session.editorChanged('# Edited\n')
+      await settled()
+
+      const failed = h.snapshots.at(-1)
+      expect(failed?.error).toBe('disk full')
+      expect(failed?.dirty).toBe(true) // the edit is kept, not lost
+      expect(h.writes).toEqual([])
+
+      // The disk recovers; the next edit re-enters the pipeline and the
+      // landed save resolves the surfaced error.
+      h.failWrites(null)
+      h.session.editorChanged('# Edited more\n')
+      await settled()
+
+      const recovered = h.snapshots.at(-1)
+      expect(recovered?.error).toBeNull()
+      expect(recovered?.dirty).toBe(false)
+      expect(h.writes).toEqual([{ path: 'notes/a.md', contents: '# Edited more\n' }])
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  it('flush after a failed save retries the same buffer', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const h = harness()
+      h.session.load()
+      await settled()
+
+      h.failWrites('disk full')
+      h.session.editorChanged('# Edited\n')
+      await settled()
+      expect(h.snapshots.at(-1)?.error).toBe('disk full')
+
+      h.failWrites(null)
+      await h.session.flush() // a settle point (blur/quit) retries without a new edit
+      expect(h.writes).toEqual([{ path: 'notes/a.md', contents: '# Edited\n' }])
+      expect(h.snapshots.at(-1)?.error).toBeNull()
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 })

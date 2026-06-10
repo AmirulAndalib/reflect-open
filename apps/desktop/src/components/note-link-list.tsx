@@ -1,16 +1,5 @@
 import type { ReactElement } from 'react'
-
-/** One row in a {@link NoteLinkList}: a note reference with optional context. */
-export interface NoteLinkItem {
-  /** Stable list identity (a path, or path:position for repeated sources). */
-  key: string
-  /** The note title shown as the row's main line. */
-  title: string
-  /** Context line under the title (the linking text, a snippet); `''` hides it. */
-  snippet: string
-  /** Graph-relative path to navigate to on click. */
-  path: string
-}
+import { NoteLinkRows, type NoteLinkItem } from '@/components/note-link-rows'
 
 interface NoteLinkListProps {
   /** Accessible name of the section (e.g. "Backlinks", "Related notes"). */
@@ -26,7 +15,8 @@ interface NoteLinkListProps {
  * The note-context section under an open note — one presentation shared by
  * backlinks ("Linked from") and semantic neighbors ("Related"), so the two
  * ambient-recall surfaces stay visually identical and panels stay thin query
- * adapters.
+ * adapters. The rows themselves are {@link NoteLinkRows}, shared with the
+ * daily sidebar's day sections.
  */
 export function NoteLinkList({
   ariaLabel,
@@ -39,27 +29,10 @@ export function NoteLinkList({
       aria-label={ariaLabel}
       className="mt-6 border-t border-black/5 pt-3 dark:border-white/5"
     >
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
         {heading}
       </h3>
-      <ul className="space-y-0.5">
-        {items.map((item) => (
-          <li key={item.key}>
-            <button
-              type="button"
-              onClick={() => onOpen(item.path)}
-              className="w-full rounded px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/5"
-            >
-              <span className="block truncate text-sm font-medium">{item.title}</span>
-              {item.snippet !== '' ? (
-                <span className="block truncate text-xs text-[color:var(--text-muted)]">
-                  {item.snippet}
-                </span>
-              ) : null}
-            </button>
-          </li>
-        ))}
-      </ul>
+      <NoteLinkRows items={items} onOpen={onOpen} />
     </section>
   )
 }

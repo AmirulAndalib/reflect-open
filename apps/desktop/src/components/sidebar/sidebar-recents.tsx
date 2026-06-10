@@ -43,7 +43,7 @@ export function SidebarRecents(): ReactElement | null {
 
   return (
     <section aria-label="Recent notes">
-      <h2 className="px-2.5 pb-1 pt-4 text-[11px] font-semibold tracking-[0.08em] text-[color:var(--text-muted)] uppercase">
+      <h2 className="px-2.5 pb-1 pt-4 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase">
         Recents
       </h2>
       <ul className="flex flex-col gap-px">
@@ -61,14 +61,14 @@ export function SidebarRecents(): ReactElement | null {
                   'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1 text-[13px]',
                   'transition-colors duration-100',
                   active
-                    ? 'bg-[var(--surface-hover)] text-[color:var(--text)]'
-                    : 'text-[color:var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[color:var(--text)]',
+                    ? 'bg-surface-hover text-text'
+                    : 'text-text-secondary hover:bg-surface-hover hover:text-text',
                 )}
               >
                 <Icon
                   aria-hidden
                   strokeWidth={1.75}
-                  className="size-3.5 shrink-0 text-[color:var(--text-muted)]"
+                  className="size-3.5 shrink-0 text-text-muted"
                 />
                 <span className="min-w-0 flex-1 truncate text-left">
                   {entry.date !== null ? formatDayLabel(entry.date) : entry.title}

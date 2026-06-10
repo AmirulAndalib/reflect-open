@@ -43,14 +43,14 @@ export function SidebarSection({
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-1 rounded px-2 py-1.5 text-left hover:bg-black/5 dark:hover:bg-white/5"
+        className="flex w-full items-center gap-1 rounded px-2 py-1.5 text-left hover:bg-surface-hover"
       >
-        <Chevron aria-hidden className="size-3 text-[color:var(--text-muted)]" />
-        <span className="text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
+        <Chevron aria-hidden className="size-3 text-text-muted" />
+        <span className="text-xs font-medium uppercase tracking-wide text-text-muted">
           {title}
         </span>
         {count !== undefined && count > 0 ? (
-          <span className="text-xs tabular-nums text-[color:var(--text-muted)]">{count}</span>
+          <span className="text-xs tabular-nums text-text-muted">{count}</span>
         ) : null}
       </button>
       {open ? <div className="px-2 pb-2">{children}</div> : null}

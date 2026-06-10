@@ -12,7 +12,7 @@ import { KeyboardSection } from './settings/keyboard-section'
 export function SettingsScreen(): ReactElement {
   return (
     <div aria-label="Settings">
-      <h1 className="text-lg font-semibold text-[color:var(--text)]">Settings</h1>
+      <h1 className="text-lg font-semibold text-text">Settings</h1>
       <div className="mt-6">
         <AppearanceSection />
         <EditorSection />
