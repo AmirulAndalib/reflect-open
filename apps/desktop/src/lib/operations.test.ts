@@ -28,6 +28,10 @@ describe('operations store', () => {
     expect(result.current[0].progress).toEqual({ done: 3, total: 12 })
 
     act(() => handle.done())
+    // Once shown, the entry stays for the minimum visible window — a fast
+    // operation must not flash for a single frame.
+    expect(result.current).toHaveLength(1)
+    act(() => vi.advanceTimersByTime(1200))
     expect(result.current).toEqual([])
   })
 
@@ -41,7 +45,7 @@ describe('operations store', () => {
     expect(result.current[0].status).toBe('failed')
     expect(result.current[0].error).toBe('disk full')
 
-    act(() => vi.advanceTimersByTime(8000))
+    act(() => vi.advanceTimersByTime(8000 + 1200))
     expect(result.current).toEqual([])
   })
 
@@ -53,6 +57,7 @@ describe('operations store', () => {
       startOperation('second')
     })
     act(() => first.done())
+    act(() => vi.advanceTimersByTime(1200))
     expect(result.current.map((operation) => operation.label)).toEqual(['second'])
   })
 })

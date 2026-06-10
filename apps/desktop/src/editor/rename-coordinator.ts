@@ -154,7 +154,7 @@ export function createRenameCoordinator(options: RenameCoordinatorOptions): Rena
         console.error('rename alias placement failed:', cause)
       } finally {
         if (failure !== null) {
-          operation.fail(`Rename "${rename.from}" → "${rename.to}": ${failure}`)
+          operation.fail(failure) // the label already names the rename
         } else {
           operation.done()
         }

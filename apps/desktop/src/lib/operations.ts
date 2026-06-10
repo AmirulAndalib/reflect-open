@@ -26,6 +26,11 @@ export interface OperationHandle {
 }
 
 const FAILED_LINGER_MS = 8000
+/**
+ * Once shown, an entry stays visible at least this long — a fast operation
+ * (a one-source rename) otherwise flashes for a frame and reads as a glitch.
+ */
+const MIN_VISIBLE_MS = 1200
 
 let nextId = 1
 let operations: Operation[] = []
@@ -62,14 +67,24 @@ function remove(id: number): void {
 /** Begin a visible background operation. */
 export function startOperation(label: string): OperationHandle {
   const id = nextId++
+  const shownAt = Date.now()
   operations = [...operations, { id, label, progress: null, status: 'running', error: null }]
   emit()
+  const removeAfterMinimum = (extra: number): void => {
+    const visibleFor = Date.now() - shownAt
+    const wait = Math.max(0, MIN_VISIBLE_MS - visibleFor) + extra
+    if (wait === 0) {
+      remove(id)
+    } else {
+      setTimeout(() => remove(id), wait)
+    }
+  }
   return {
     progress: (done, total) => patch(id, { progress: { done, total } }),
-    done: () => remove(id),
+    done: () => removeAfterMinimum(0),
     fail: (message) => {
       patch(id, { status: 'failed', error: message })
-      setTimeout(() => remove(id), FAILED_LINGER_MS)
+      removeAfterMinimum(FAILED_LINGER_MS)
     },
   }
 }
