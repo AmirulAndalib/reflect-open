@@ -21,10 +21,15 @@ beforeEach(() => {
   openSession.mockReturnValue(null)
 })
 
-function fakeSession(content: string, canPatch = true) {
+function fakeSession(content: string, { canPatch = true, conflicted = false } = {}) {
   const updateFrontmatter = vi.fn(() => canPatch)
   const flush = vi.fn(async () => {})
-  const session = { content: () => content, updateFrontmatter, flush } as unknown as NoteSession
+  const session = {
+    content: () => content,
+    updateFrontmatter,
+    flush,
+    conflicted: () => conflicted,
+  } as unknown as NoteSession
   return { session, updateFrontmatter, flush }
 }
 
@@ -59,10 +64,31 @@ describe('toggleNotePinned', () => {
   })
 
   it('falls back to disk when the session cannot take the patch', async () => {
-    const { session } = fakeSession('# A\n', false)
+    const { session } = fakeSession('# A\n', { canPatch: false })
     openSession.mockReturnValue(session)
     readNote.mockResolvedValue('# A\n')
     await expect(toggleNotePinned('notes/a.md', 3)).resolves.toBe(true)
     expect(writeNote).toHaveBeenCalledWith('notes/a.md', '---\npinned: true\n---\n# A\n', 3)
+  })
+
+  it('under a parked conflict, also patches disk so the pin is indexed now', async () => {
+    // The session's saves are paused (flush is a no-op) — the in-memory patch
+    // alone would leave the sidebar stale and "load theirs" would drop the pin.
+    const { session, updateFrontmatter } = fakeSession('# Mine\n', { conflicted: true })
+    openSession.mockReturnValue(session)
+    readNote.mockResolvedValue('# Theirs\n')
+    await expect(toggleNotePinned('notes/a.md', 3)).resolves.toBe(true)
+    expect(updateFrontmatter).toHaveBeenCalledWith({ pinned: true })
+    expect(writeNote).toHaveBeenCalledWith('notes/a.md', '---\npinned: true\n---\n# Theirs\n', 3)
+  })
+
+  it('applies the session-derived target to a conflicted disk, never re-toggling it', async () => {
+    // Unpinning while disk already has no flag: nothing to write — a blind
+    // disk-side toggle would have *pinned* the contested content instead.
+    const { session } = fakeSession('---\npinned: true\n---\n# Mine\n', { conflicted: true })
+    openSession.mockReturnValue(session)
+    readNote.mockResolvedValue('# Theirs\n')
+    await expect(toggleNotePinned('notes/a.md', 3)).resolves.toBe(false)
+    expect(writeNote).not.toHaveBeenCalled()
   })
 })

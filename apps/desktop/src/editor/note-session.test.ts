@@ -265,10 +265,13 @@ describe('frontmatter ownership (Plan 07b)', () => {
     h.session.load()
     await vi.runAllTimersAsync()
     h.session.editorChanged('# Mine\n') // dirty
+    expect(h.session.conflicted()).toBe(false)
     h.setDisk('# Theirs\n')
     h.session.externalChanged()
     await vi.runAllTimersAsync()
     expect(h.snapshots.at(-1)?.conflict).toBe('# Theirs\n')
+    // What callers needing their write on disk *now* key off (the pin toggle).
+    expect(h.session.conflicted()).toBe(true)
 
     expect(h.session.updateFrontmatter({ aliases: ['Old Title'] })).toBe(true)
     await vi.runAllTimersAsync()
@@ -276,6 +279,7 @@ describe('frontmatter ownership (Plan 07b)', () => {
 
     h.session.keepMine()
     await vi.runAllTimersAsync()
+    expect(h.session.conflicted()).toBe(false)
     const written = h.writes.at(-1)?.contents ?? ''
     expect(written).toContain('Old Title') // the alias survived the conflict
     expect(written).toContain('# Mine')

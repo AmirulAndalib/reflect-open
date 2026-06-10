@@ -175,6 +175,13 @@ export interface NoteSession {
   keepMine: () => void
   /** Resolve a conflict by loading the external content (discards the buffer). */
   loadTheirs: () => void
+  /**
+   * True while an external change is parked awaiting the user's choice. Saves
+   * (and so {@link NoteSession.flush}) are paused for the duration — callers
+   * that need their write on disk *now* (e.g. the pin toggle feeding the
+   * index) must check this and take their own path.
+   */
+  conflicted: () => boolean
   /** The full current document (frontmatter + buffer), as a save would write it. */
   content: () => string
   /**
@@ -552,6 +559,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     flush,
     keepMine,
     loadTheirs,
+    conflicted: () => conflict !== null,
     content: () => header + buffer,
     updateFrontmatter,
     dispose,
