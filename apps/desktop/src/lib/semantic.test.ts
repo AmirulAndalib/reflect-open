@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '@reflect/core'
-import { consumeLegacySemanticOptIn, ensureEmbeddingsVisibly } from './semantic'
+import {
+  consumeLegacySemanticOptIn,
+  ensureEmbeddingsVisibly,
+  retryFailedEmbeddings,
+} from './semantic'
 
 const startOperation = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/operations', () => ({ startOperation }))
@@ -26,6 +30,33 @@ describe('consumeLegacySemanticOptIn', () => {
 
   it('is false when the legacy key was never set', () => {
     expect(consumeLegacySemanticOptIn()).toBe(false)
+  })
+})
+
+describe('retryFailedEmbeddings', () => {
+  function bridgeWithStatus(status: unknown): string[] {
+    const invoked: string[] = []
+    setBridge({
+      invoke: async (command) => {
+        invoked.push(command)
+        return status
+      },
+      listen: async () => () => {},
+    })
+    return invoked
+  }
+
+  it('re-kicks a failed load', async () => {
+    operationHandle()
+    const invoked = bridgeWithStatus({ status: 'failed', message: 'offline' })
+    await retryFailedEmbeddings()
+    expect(invoked).toContain('embed_ensure')
+  })
+
+  it('is a no-op for any other status', async () => {
+    const invoked = bridgeWithStatus({ status: 'ready', model: 'all-MiniLM-L6-v2' })
+    await retryFailedEmbeddings()
+    expect(invoked).toEqual(['embed_status'])
   })
 })
 

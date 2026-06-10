@@ -7,12 +7,15 @@ import { SettingsScreen } from './settings-screen'
 
 let stored: Record<string, unknown>
 let saved: unknown[]
+let invoked: string[]
 let embedStatus: EmbedStatus
 
 function installFakeBridge(): void {
   saved = []
+  invoked = []
   setBridge({
     invoke: async (command, args) => {
+      invoked.push(command)
       switch (command) {
         case 'settings_load':
           return stored
@@ -20,6 +23,7 @@ function installFakeBridge(): void {
           saved.push(args.settings)
           return null
         case 'embed_status':
+        case 'embed_ensure':
           return embedStatus
         default:
           return null
@@ -143,6 +147,24 @@ describe('SettingsScreen', () => {
       ]),
     )
     expect(screen.getByRole('button', { name: /enable semantic search/i })).toBeTruthy()
+  })
+
+  it('re-enabling after a failed load retries the download', async () => {
+    embedStatus = { status: 'failed', message: 'offline' }
+    renderScreen()
+    const enable = await screen.findByRole('button', { name: /enable semantic search/i })
+
+    fireEvent.click(enable)
+
+    // The opt-in persists AND the broken runtime gets a fresh embed_ensure —
+    // EmbeddingsSync only loads `uninitialized` runtimes, so the explicit
+    // action carries the retry.
+    await waitFor(() => expect(invoked).toContain('embed_ensure'))
+    await waitFor(() =>
+      expect(saved).toEqual([
+        { editorMarkdownSyntax: 'focus', semanticSearchEnabled: true, theme: 'system' },
+      ]),
+    )
   })
 
   it('surfaces a failed load with a retry affordance', async () => {

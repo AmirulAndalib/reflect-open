@@ -3,6 +3,7 @@ import { usePalette } from '@/components/command-palette/palette-provider'
 import { registerKeymap } from '@/editor/keymap'
 import { APP_COMMANDS } from '@/lib/commands/app-commands'
 import { runCommand } from '@/lib/commands/registry'
+import { retryFailedEmbeddings } from '@/lib/semantic'
 import type { CommandContext } from '@/lib/commands/types'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
@@ -65,7 +66,12 @@ export function useAppShortcuts(): CommandContext {
       toggleSidebar,
       generation: () => generationRef.current,
       openPalette,
-      enableSemanticSearch: () => updateSettings({ semanticSearchEnabled: true }),
+      enableSemanticSearch: () => {
+        updateSettings({ semanticSearchEnabled: true })
+        // EmbeddingsSync loads an untouched runtime; a `failed` one only
+        // retries on an explicit action like this command.
+        void retryFailedEmbeddings()
+      },
     }),
     [navigate, back, forward, resolvedTheme, setTheme, openPalette, toggleSidebar, updateSettings],
   )

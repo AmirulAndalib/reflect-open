@@ -66,6 +66,20 @@ async function awaitTerminalStatus(initial: EmbedStatus): Promise<EmbedStatus> {
   })
 }
 
+/**
+ * Re-kick a `failed` model load; a no-op for every other status. The explicit
+ * enable actions (settings button, `semantic.enable` command) run this so
+ * opting back in after a failure retries the download — EmbeddingsSync itself
+ * only loads an `uninitialized` runtime, because reacting to `failed` would
+ * loop a broken download forever.
+ */
+export async function retryFailedEmbeddings(): Promise<void> {
+  const status = await embedStatus()
+  if (status.status === 'failed') {
+    await ensureEmbeddingsVisibly()
+  }
+}
+
 /** Load (downloading if needed) the model, visibly. Resolves with the outcome. */
 export async function ensureEmbeddingsVisibly(): Promise<EmbedStatus> {
   const operation = startOperation('Loading semantic search model')

@@ -45,8 +45,8 @@ export function EmbeddingsSync(): null {
   }, [updateSettings])
 
   // Load while enabled and untouched. Deliberately not retried on `failed`:
-  // an automatic loop would hammer a broken download — recovery is the
-  // settings screen's explicit retry.
+  // an automatic loop would hammer a broken download — recovery rides the
+  // explicit enable/retry actions instead (see retryFailedEmbeddings).
   useEffect(() => {
     if (enabled && status.status === 'uninitialized') {
       void ensureEmbeddingsVisibly()

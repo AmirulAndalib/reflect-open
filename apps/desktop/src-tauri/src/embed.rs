@@ -4,7 +4,7 @@
 //! "unavailable" state (the same recoverable contract as sqlite-vec): semantic
 //! search is strictly additive, so nothing here may ever take the app down.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
@@ -174,10 +174,10 @@ impl Progress for DownloadProgress {
 /// them first through the same hf-hub cache gives the UI a real progress bar
 /// and leaves `try_new` a pure cache hit. Mirrors fastembed's resolution —
 /// env overrides included — so both sides agree on location and endpoint.
-fn download_model_files(app: &AppHandle, cache_dir: &PathBuf) -> Result<(), String> {
+fn download_model_files(app: &AppHandle, cache_dir: &Path) -> Result<(), String> {
     let cache_dir = std::env::var("HF_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| cache_dir.clone());
+        .unwrap_or_else(|_| cache_dir.to_path_buf());
     let endpoint =
         std::env::var("HF_ENDPOINT").unwrap_or_else(|_| "https://huggingface.co".to_string());
 

@@ -1,7 +1,7 @@
 import type { ReactElement, ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { InlineAlert } from '@/components/inline-alert'
-import { ensureEmbeddingsVisibly } from '@/lib/semantic'
+import { ensureEmbeddingsVisibly, retryFailedEmbeddings } from '@/lib/semantic'
 import { useEmbedStatus } from '@/lib/use-embed-status'
 import { useSettings } from '@/providers/settings-provider'
 import { SettingsField } from './field'
@@ -24,7 +24,12 @@ export function SearchSection(): ReactElement {
       <div>
         <button
           type="button"
-          onClick={() => updateSettings({ semanticSearchEnabled: true })}
+          onClick={() => {
+            updateSettings({ semanticSearchEnabled: true })
+            // EmbeddingsSync loads an untouched runtime; a `failed` one only
+            // retries on an explicit action like this.
+            void retryFailedEmbeddings()
+          }}
           className="inline-flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-text-on-brand shadow-sm transition-colors duration-100 hover:bg-accent-hover"
         >
           <Sparkles aria-hidden strokeWidth={1.75} className="size-3.5" />
