@@ -20,19 +20,41 @@ const PIN_KEYBINDING = keybindingFor('note.togglePin')
 const PIN_HINT = PIN_KEYBINDING !== null ? formatBindingLabel(PIN_KEYBINDING) : null
 
 /**
+ * The toggle's resolved state, held until the index reflects it. The pinned
+ * label otherwise lags one watcher round-trip behind the write, and in that
+ * window a stale "Pin note" click would silently unpin (and vice versa). The
+ * toggle reads the note itself, so its return value is the freshest truth;
+ * the bridge retires the moment the index agrees or the section moves to
+ * another note.
+ */
+interface PendingPin {
+  path: string
+  pinned: boolean
+}
+
+/**
  * "Note actions" as a context-sidebar section: mouse-reachable counterparts
  * to the note-scoped commands, starting with pin/unpin. Shared by the daily
  * and note context sidebars — dailies are valid pin targets too. The button
  * reflects the index's pinned state (the same query as the sidebar's Pinned
- * section), so it follows the pin landing in the file rather than tracking
- * UI-side state; failures surface through the operations status line, like
- * the ⌘O command.
+ * section), bridged by the last toggle's result while the watcher catches
+ * up; failures surface through the operations status line, like the ⌘O
+ * command.
  */
 export function NoteActionsSection({ path }: NoteActionsSectionProps): ReactElement {
   const { graph } = useGraph()
-  const isPinned = usePinnedNotes().some((note) => note.path === path)
+  const indexPinned = usePinnedNotes().some((note) => note.path === path)
   // Guards against a double-click racing two read-patch-write toggles.
   const [isToggling, setIsToggling] = useState(false)
+  const [pending, setPending] = useState<PendingPin | null>(null)
+
+  // Render-time state adjustment (the React-sanctioned pattern): drop the
+  // bridge once the index agrees with it, so a later external pin change
+  // can't resurrect a stale override.
+  if (pending !== null && (pending.path !== path || pending.pinned === indexPinned)) {
+    setPending(null)
+  }
+  const isPinned = pending !== null && pending.path === path ? pending.pinned : indexPinned
 
   const togglePin = async (): Promise<void> => {
     const generation = graph?.generation
@@ -41,7 +63,7 @@ export function NoteActionsSection({ path }: NoteActionsSectionProps): ReactElem
     }
     setIsToggling(true)
     try {
-      await toggleNotePinned(path, generation)
+      setPending({ path, pinned: await toggleNotePinned(path, generation) })
     } catch (cause) {
       startOperation(isPinned ? 'Unpinning note' : 'Pinning note').fail(errorMessage(cause))
     } finally {

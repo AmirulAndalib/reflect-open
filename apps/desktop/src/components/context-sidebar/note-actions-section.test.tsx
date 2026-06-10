@@ -58,6 +58,19 @@ describe('NoteActionsSection pin toggle', () => {
     view.unmount()
   })
 
+  it('flips the label from the toggle result before the index catches up', async () => {
+    const view = renderSection('notes/a.md')
+    await userEvent.click(view.getByRole('button', { name: /Pin note/ }))
+    // The index still reports unpinned; the toggle's resolved state bridges
+    // the watcher round-trip so a second click can't invert the user's intent.
+    expect(await view.findByText('Unpin note')).toBeDefined()
+    toggleNotePinned.mockResolvedValueOnce(false)
+    await userEvent.click(view.getByRole('button', { name: /Unpin note/ }))
+    expect(await view.findByText('Pin note')).toBeDefined()
+    expect(toggleNotePinned).toHaveBeenCalledTimes(2)
+    view.unmount()
+  })
+
   it('stays on Pin note when a different note is pinned', async () => {
     getPinnedNotes.mockResolvedValue([{ path: 'notes/other.md', title: 'Other', dailyDate: null }])
     const view = renderSection('notes/a.md')
