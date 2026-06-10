@@ -1,0 +1,48 @@
+import { describe, expect, it } from 'vitest'
+import type { WikiSuggestion } from '@reflect/core'
+import { buildAutocompleteEntries } from './wiki-autocomplete-entries'
+
+function suggestion(overrides: Partial<WikiSuggestion>): WikiSuggestion {
+  return {
+    target: 'Note',
+    path: 'notes/note.md',
+    title: 'Note',
+    alias: null,
+    date: null,
+    ...overrides,
+  }
+}
+
+describe('buildAutocompleteEntries', () => {
+  it('offers create when nothing matches the typed text exactly', () => {
+    const entries = buildAutocompleteEntries('New Idea', [
+      suggestion({ target: 'New Ideas Board', title: 'New Ideas Board' }),
+    ])
+    expect(entries.at(-1)).toEqual({ kind: 'create', title: 'New Idea' })
+  })
+
+  it('does not offer create on an exact title match (case-insensitive)', () => {
+    const entries = buildAutocompleteEntries('roadmap', [
+      suggestion({ target: 'Roadmap', title: 'Roadmap' }),
+    ])
+    expect(entries.every((entry) => entry.kind === 'suggestion')).toBe(true)
+  })
+
+  it('does not offer create on an exact alias match', () => {
+    const entries = buildAutocompleteEntries('meetco', [
+      suggestion({ target: 'Acme Corp', title: 'Acme Corp', alias: 'meetco' }),
+    ])
+    expect(entries.every((entry) => entry.kind === 'suggestion')).toBe(true)
+  })
+
+  it('does not offer create for a full date (the daily suggestion covers it)', () => {
+    const entries = buildAutocompleteEntries('2026-06-09', [
+      suggestion({ target: '2026-06-09', title: '2026-06-09', path: null, date: '2026-06-09' }),
+    ])
+    expect(entries.every((entry) => entry.kind === 'suggestion')).toBe(true)
+  })
+
+  it('offers nothing for a blank query', () => {
+    expect(buildAutocompleteEntries('  ', [])).toEqual([])
+  })
+})

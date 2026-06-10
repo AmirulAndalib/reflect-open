@@ -18,6 +18,7 @@ import {
   type GraphInfo,
   type RecentGraph,
 } from '@reflect/core'
+import { invalidateIndexQueries } from '@/lib/query-client'
 import { createGraphIndex } from './graph-index'
 
 /** Lifecycle of the active graph (Plan 02 loading gate). */
@@ -69,6 +70,7 @@ export function GraphProvider({ children }: { children: ReactNode }) {
     createGraphIndex({
       onError: (stage, err) => console.error(`index ${stage} failed:`, messageOf(err)),
       onProgress: (progress) => setIndexing(progress === 'reconciling'),
+      onApplied: invalidateIndexQueries,
     }),
   )
 

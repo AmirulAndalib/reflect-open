@@ -55,12 +55,15 @@ describe('createGraphIndex', () => {
   it('sync(generation) reconciles, then subscribes, then starts the watcher', async () => {
     const unlisten = vi.fn()
     mockSubscribe.mockResolvedValue(unlisten)
-    const index = createGraphIndex()
+    const onApplied = vi.fn()
+    const index = createGraphIndex({ onApplied })
     index.sync(5, () => false)
     await index.stop()
 
     expect(mockReconcile).toHaveBeenCalledWith({ generation: 5, signal: expect.any(AbortSignal) })
-    expect(mockSubscribe).toHaveBeenCalledWith(5)
+    expect(mockSubscribe).toHaveBeenCalledWith(5, onApplied)
+    // The initial reconcile is itself an index change: invalidate once there.
+    expect(onApplied).toHaveBeenCalledTimes(1)
     expect(mockWatchStart).toHaveBeenCalledTimes(1)
     // Sequenced: reconcile → subscribe → watchStart.
     expect(mockReconcile.mock.invocationCallOrder[0]).toBeLessThan(

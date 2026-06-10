@@ -1,4 +1,12 @@
-import { useImperativeHandle, useMemo, useRef, useState, type ReactElement, type Ref } from 'react'
+import {
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type Ref,
+} from 'react'
 import {
   defineEditorExtension,
   defineMarkMode,
@@ -47,6 +55,11 @@ interface NoteEditorProps {
   onWikiLinkClick?: (target: string) => void
   /** Imperative handle (React 19 ref-as-prop). */
   handleRef?: Ref<NoteEditorHandle>
+  /**
+   * Editor-attached UI rendered inside the ProseKit context (e.g. the `[[`
+   * autocomplete popover) — children can call `useEditor()`.
+   */
+  children?: ReactNode
 }
 
 function createNoteEditor(
@@ -77,6 +90,7 @@ export function NoteEditor({
   images,
   onWikiLinkClick,
   handleRef,
+  children,
 }: NoteEditorProps): ReactElement {
   // Extensions are created once (uncontrolled editor), so per-render options are
   // read through refs that track the latest props.
@@ -128,6 +142,7 @@ export function NoteEditor({
   return (
     <ProseKit editor={editor}>
       <div ref={editor.mount} className="reflect-editor" />
+      {children}
     </ProseKit>
   )
 }

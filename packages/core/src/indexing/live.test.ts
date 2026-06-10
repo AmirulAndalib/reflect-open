@@ -105,6 +105,28 @@ describe('subscribeIndexChanges', () => {
     ])
   })
 
+  it('fires onApplied only after the batch has been written to the index', async () => {
+    const order: string[] = []
+    const { emitChanges } = fakeBridge(async (command, args) => {
+      if (command === 'note_read') {
+        return '# content'
+      }
+      if (command === 'index_apply') {
+        order.push(`apply:${(args.note as { path: string }).path}`)
+      }
+      return null
+    })
+
+    await subscribeIndexChanges(1, (changes) => {
+      order.push(`applied:${changes.map((change) => change.path).join(',')}`)
+    })
+    emitChanges([{ path: 'notes/a.md', kind: 'upsert' }])
+    await vi.waitFor(() => {
+      expect(order).toContain('applied:notes/a.md')
+    })
+    expect(order).toEqual(['apply:notes/a.md', 'applied:notes/a.md'])
+  })
+
   it('drops malformed payloads instead of applying them', async () => {
     const calls: string[] = []
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

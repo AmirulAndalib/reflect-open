@@ -1,8 +1,16 @@
 import type { Database } from '@reflect/db'
 import { sql, type Selectable } from 'kysely'
-import { resolveWikiLinkAsync, type Resolution } from '../markdown'
+import { readNote } from '../graph/commands'
+import { normalizeWikiTarget, resolveWikiLinkAsync, type Resolution } from '../markdown'
 import { db } from './db'
 import { buildFtsMatch } from './search-query'
+import { lineSnippet } from './snippet'
+import {
+  rankWikiSuggestions,
+  type AliasCandidate,
+  type TitleCandidate,
+  type WikiSuggestion,
+} from './suggest'
 
 /**
  * Index read getters (Plan 04). Queries are built with Kysely and execute over
@@ -23,6 +31,119 @@ export function getBacklinks(path: string): Promise<Backlink[]> {
     .select(['sourcePath', 'targetRaw', 'alias', 'posFrom', 'posTo'])
     .orderBy('sourcePath')
     .execute()
+}
+
+/** One backlink with the context the panel renders (Plan 07). */
+export interface BacklinkContext {
+  sourcePath: string
+  sourceTitle: string
+  /** The line of the source around the link (empty when the file is unreadable). */
+  snippet: string
+  posFrom: number
+}
+
+/**
+ * Backlinks of `path` with source titles and line snippets. One read per
+ * distinct source; a source that vanished between query and read keeps its row
+ * with an empty snippet (the index lags deletes only briefly).
+ */
+export async function getBacklinksWithContext(path: string): Promise<BacklinkContext[]> {
+  const rows = await db
+    .selectFrom('backlinks')
+    .innerJoin('notes', 'notes.path', 'backlinks.sourcePath')
+    .where('targetPath', '=', path)
+    .select(['backlinks.sourcePath', 'backlinks.posFrom', 'notes.title as sourceTitle'])
+    // The view's generated types are nullable (SQLite views lose NOT NULL),
+    // but these columns come from NOT NULL `links` columns via an inner join.
+    .$narrowType<{ sourcePath: string; posFrom: number }>()
+    .orderBy('notes.title')
+    .orderBy('backlinks.sourcePath')
+    .orderBy('backlinks.posFrom')
+    .execute()
+
+  const contents = new Map<string, string | null>()
+  for (const sourcePath of new Set(rows.map((row) => row.sourcePath))) {
+    try {
+      contents.set(sourcePath, await readNote(sourcePath))
+    } catch {
+      contents.set(sourcePath, null)
+    }
+  }
+
+  return rows.map((row) => {
+    const content = contents.get(row.sourcePath)
+    return {
+      sourcePath: row.sourcePath,
+      sourceTitle: row.sourceTitle,
+      snippet: content == null ? '' : lineSnippet(content, row.posFrom),
+      posFrom: row.posFrom,
+    }
+  })
+}
+
+/** Escape `%`/`_`/`\` so user text can't act as LIKE wildcards. */
+function likeContains(key: string): string {
+  return `%${key.replaceAll(/[\\%_]/g, (match) => `\\${match}`)}%`
+}
+
+/**
+ * `[[` autocomplete candidates for `query` (Plan 07): title and alias contains-
+ * matches ranked by {@link rankWikiSuggestions} (exact < prefix < substring,
+ * titles before aliases, recent first); an empty query suggests recent notes.
+ * A full `YYYY-MM-DD` query always yields that daily as the first candidate —
+ * dailies are valid targets before their file exists (created lazily on write).
+ */
+export async function suggestWikiTargets(query: string, limit = 8): Promise<WikiSuggestion[]> {
+  const normalized = normalizeWikiTarget(query)
+  const key = normalized.key
+
+  let titleQuery = db
+    .selectFrom('notes')
+    .select(['path', 'title', 'titleKey', 'dailyDate', 'mtime'])
+    .orderBy('mtime', 'desc')
+    .limit(50)
+  if (key !== '') {
+    titleQuery = titleQuery.where(
+      sql<boolean>`title_key LIKE ${likeContains(key)} ESCAPE '\\'`,
+    )
+  }
+  const titles: TitleCandidate[] = await titleQuery.execute()
+
+  let aliases: AliasCandidate[] = []
+  if (key !== '') {
+    aliases = await db
+      .selectFrom('aliases')
+      .innerJoin('notes', 'notes.path', 'aliases.notePath')
+      .where(sql<boolean>`alias_key LIKE ${likeContains(key)} ESCAPE '\\'`)
+      .select([
+        'notes.path',
+        'notes.title',
+        'notes.titleKey',
+        'notes.dailyDate',
+        'notes.mtime',
+        'aliases.alias',
+        'aliases.aliasKey',
+      ])
+      .orderBy('notes.mtime', 'desc')
+      .limit(50)
+      .execute()
+  }
+
+  const ranked = rankWikiSuggestions(key, titles, aliases, limit)
+
+  if (normalized.date !== undefined) {
+    const date = normalized.date
+    const existing = ranked.find((suggestion) => suggestion.date === date)
+    const daily: WikiSuggestion = existing ?? {
+      target: date,
+      path: null,
+      title: date,
+      alias: null,
+      date,
+    }
+    return [daily, ...ranked.filter((suggestion) => suggestion !== existing)].slice(0, limit)
+  }
+  return ranked
 }
 
 /** Core fields of one note row: identity path, title, daily date, privacy flag. */

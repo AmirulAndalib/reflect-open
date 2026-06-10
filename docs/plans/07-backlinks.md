@@ -25,6 +25,29 @@ exists in Plan 09).
 logs to the console only — surface it to the user (toast/inline) as part of this plan's
 link UX (create-from-unresolved largely subsumes the failure case).
 
+## Delivery split (decided 2026-06-09)
+
+- **07a — linking while writing** (steps 1–3 + the TanStack Query adoption):
+  `[[` autocomplete (ProseKit autocomplete popover; suggestions ranked in
+  `@reflect/core` over titles + aliases + dailies, exact < prefix < substring,
+  recency tie-break; a full `YYYY-MM-DD` query always offers that daily — files
+  are created lazily); insertion is **literal text** (wiki links are literal
+  syntax + decorations in the meowdown model — no node, no serializer surface);
+  create-from-unresolved in the popover *and* on click (decided: clicking an
+  unresolved non-date `[[link]]` creates the note and opens it immediately —
+  this also retires the carried-in failure-feedback item); the incoming-
+  backlinks panel under **both regular notes and stream days** (decided), with
+  source title + line snippet, reads via TanStack Query invalidated by the
+  index lifecycle's post-apply hook (initial reconcile + each watcher batch).
+- **07b — rename with automatic rewrite** (steps 4–5): title changes on
+  non-daily notes **auto-update** inbound `[[links]]` (decided — no
+  confirmation prompt), triggered on *settled* titles (navigate-away / blur /
+  quiet period), never per keystroke — intermediate typing states must not
+  rewrite the graph; old title preserved as a frontmatter alias, same-session
+  intermediate aliases pruned; daily notes excluded (their date labels are
+  stream chrome, not content). Filenames stay put in the first wave — the
+  title lives in content, and `note_move` filename-sync can join later.
+
 ## Steps
 
 1. **`[[` autocomplete.** Builds on the meowdown wiki-link extension added in Plan 05

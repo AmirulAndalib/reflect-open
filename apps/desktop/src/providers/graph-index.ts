@@ -61,6 +61,12 @@ export interface GraphIndexOptions {
    * nothing further — the newer open's pass owns the indicator.
    */
   onProgress?: (progress: GraphIndexProgress) => void
+  /**
+   * Called after index rows actually changed — once when the initial reconcile
+   * commits, then per applied watcher batch. Drives query-cache invalidation
+   * (Plan 07): firing on raw file events instead would refetch stale rows.
+   */
+  onApplied?: () => void
 }
 
 /**
@@ -69,7 +75,7 @@ export interface GraphIndexOptions {
  * keeps one instance (e.g. in a ref) across graph switches.
  */
 export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
-  const { onError, onProgress } = options
+  const { onError, onProgress, onApplied } = options
   let abort: AbortController | null = null
   let done: Promise<void> = Promise.resolve()
   // Boxed so the async sync pass can read/replace the active subscription without
@@ -116,7 +122,8 @@ export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
         if (isStale()) {
           return
         }
-        pending = await subscribeIndexChanges(generation)
+        onApplied?.()
+        pending = await subscribeIndexChanges(generation, onApplied)
         if (isStale()) {
           return
         }

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, type ReactElement } from 'react'
 import { resolveWikiTarget } from '@reflect/core'
+import { BacklinksPanel } from '@/components/backlinks-panel'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
+import { WikiAutocomplete } from '@/editor/wiki-autocomplete'
+import { createNoteWithTitle } from '@/lib/create-note'
 import { isIsoDate } from '@/lib/dates'
 import { useGraph } from '@/providers/graph-provider'
 import { useRouter } from '@/routing/router'
@@ -52,8 +55,9 @@ export function NotePane({
   }, [])
 
   // Mod+click on a [[wiki link]]: resolve via the index; an unresolved ISO date
-  // is still a valid daily target (created lazily on first write). Unresolved
-  // non-date targets are a no-op until Plan 07 adds the "create note" offer.
+  // is still a valid daily target (created lazily on first write). An
+  // unresolved non-date target is created and opened on the spot (Plan 07's
+  // create-from-unresolved — frictionless, consistent with lazy dailies).
   const onWikiLinkClick = useCallback(
     (target: string) => {
       void (async () => {
@@ -69,13 +73,29 @@ export function NotePane({
             navigate(routeForPath(resolution.ref))
           } else if (isIsoDate(resolution.text)) {
             navigate({ kind: 'daily', date: resolution.text })
+          } else if (generation !== null && resolution.text.trim() !== '') {
+            const created = await createNoteWithTitle(resolution.text, generation)
+            if (!unmountedRef.current) {
+              navigate({ kind: 'note', path: created })
+            }
           }
         } catch (err) {
           console.error('wiki-link resolution failed:', err)
         }
       })()
     },
-    [navigate],
+    [navigate, generation],
+  )
+
+  // The `[[` autocomplete's create row: make the file; the popover inserts the
+  // link text either way (a failed create just leaves an unresolved link).
+  const createFromAutocomplete = useCallback(
+    async (title: string) => {
+      if (generation !== null) {
+        await createNoteWithTitle(title, generation)
+      }
+    },
+    [generation],
   )
 
   const bindEditor = document.bindEditor
@@ -118,6 +138,7 @@ export function NotePane({
         <pre className="reflect-protected-note whitespace-pre-wrap text-sm leading-relaxed">
           {document.initialContent}
         </pre>
+        <BacklinksPanel path={path} />
       </div>
     )
   }
@@ -183,7 +204,11 @@ export function NotePane({
         images={images}
         onWikiLinkClick={onWikiLinkClick}
         handleRef={handleRef}
-      />
+      >
+        <WikiAutocomplete onCreate={createFromAutocomplete} />
+      </NoteEditor>
+
+      <BacklinksPanel path={path} />
     </div>
   )
 }

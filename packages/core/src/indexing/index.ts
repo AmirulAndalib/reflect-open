@@ -34,12 +34,17 @@ export {
 export { indexNote, rebuildIndex, reconcileIndex, type IndexPassOptions } from './indexer'
 export {
   getBacklinks,
+  getBacklinksWithContext,
   getNote,
   getNotesByTag,
   searchNotes,
+  suggestWikiTargets,
   getIndexedHashes,
   resolveWikiTarget,
   type Backlink,
+  type BacklinkContext,
   type NoteRow,
   type SearchHit,
 } from './queries'
+export { rankWikiSuggestions, type WikiSuggestion } from './suggest'
+export { lineSnippet } from './snippet'

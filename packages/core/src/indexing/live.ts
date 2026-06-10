@@ -45,14 +45,24 @@ export async function applyIndexChanges(
  * Subscribe to `index:changed` and apply each batch at `generation`. Returns an
  * unlisten function; call it (and resubscribe with the new generation) when the
  * active graph changes.
+ *
+ * `onApplied` fires after a batch has been written to the index — the hook for
+ * cache invalidation (Plan 07's TanStack Query layer): invalidating on the raw
+ * file event would refetch *before* the rows changed.
  */
-export function subscribeIndexChanges(generation: number): Promise<Unlisten> {
+export function subscribeIndexChanges(
+  generation: number,
+  onApplied?: (changes: FileChange[]) => void,
+): Promise<Unlisten> {
   // Serialize batches so overlapping events for the same path can't reorder
   // (e.g. an upsert landing after a later remove, leaving a ghost row).
   let applyQueue: Promise<void> = Promise.resolve()
   return subscribeFileChanges((changes) => {
     applyQueue = applyQueue
       .then(() => applyIndexChanges(changes, generation))
+      .then(() => {
+        onApplied?.(changes)
+      })
       .catch((error) => {
         console.error('failed to apply watcher batch:', error)
       })
