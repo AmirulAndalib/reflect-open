@@ -105,7 +105,9 @@ fn pinned_migration_drops_stale_note_rows_for_reindex() {
     migrate(&mut conn).expect("migrate to latest");
     for table in ["notes", "tags", "search_fts"] {
         let count: i64 = conn
-            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row.get(0))
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(count, 0, "{table} should be wiped for the re-index");
     }
