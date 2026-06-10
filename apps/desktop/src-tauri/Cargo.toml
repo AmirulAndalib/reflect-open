@@ -44,6 +44,7 @@ keyring = { version = "3", features = [
   "sync-secret-service",
 ] }
 tauri-plugin-http = "2.5.9"
+tauri-plugin-window-state = "2"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

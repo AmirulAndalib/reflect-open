@@ -11,7 +11,6 @@ import { useRouter } from '@/routing/router'
 import { GraphFooter } from './graph-footer'
 import { SidebarItem } from './sidebar-item'
 import { SidebarPinned } from './sidebar-pinned'
-import { SidebarRecents } from './sidebar-recents'
 import { SidebarSearch } from './sidebar-search'
 
 interface SidebarProps {
@@ -21,10 +20,10 @@ interface SidebarProps {
 }
 
 /**
- * The workspace sidebar, in the original app's shape: search up top, primary
- * navigation with hover-revealed shortcut keycaps, the Pinned shelf, the
- * Recents feed, and the graph switcher footer. Nav rows run registered
- * commands so a binding and its behavior stay one definition.
+ * The workspace sidebar: search up top, primary navigation with
+ * hover-revealed shortcut keycaps, the Pinned shelf, and the graph switcher
+ * footer. Nav rows run registered commands so a binding and its behavior stay
+ * one definition.
  */
 const SIDEBAR_TOGGLE_BINDING = keybindingFor('sidebar.toggle')
 
@@ -89,7 +88,6 @@ export function Sidebar({ graph, context }: SidebarProps): ReactElement {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <SidebarPinned />
-        <SidebarRecents />
       </div>
 
       <GraphFooter graph={graph} />

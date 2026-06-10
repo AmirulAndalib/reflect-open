@@ -8,6 +8,7 @@ describe('settingsSchema', () => {
       editorSpellCheck: true,
       semanticSearchEnabled: false,
       theme: 'system',
+      weekStartDay: 'monday',
       allNotesFilterTags: ['book', 'link', 'person'],
       aiModels: [],
       defaultAiModelId: null,
@@ -16,6 +17,7 @@ describe('settingsSchema', () => {
     expect(DEFAULT_SETTINGS.editorSpellCheck).toBe(true)
     expect(DEFAULT_SETTINGS.semanticSearchEnabled).toBe(false)
     expect(DEFAULT_SETTINGS.theme).toBe('system')
+    expect(DEFAULT_SETTINGS.weekStartDay).toBe('monday')
     expect(DEFAULT_SETTINGS.allNotesFilterTags).toEqual(['book', 'link', 'person'])
     expect(DEFAULT_SETTINGS.aiModels).toEqual([])
     expect(DEFAULT_SETTINGS.defaultAiModelId).toBeNull()
@@ -29,6 +31,8 @@ describe('settingsSchema', () => {
     expect(settingsSchema.parse({ theme: 'dark' }).theme).toBe('dark')
     expect(settingsSchema.parse({ theme: 'light' }).theme).toBe('light')
     expect(settingsSchema.parse({ theme: 'system' }).theme).toBe('system')
+    expect(settingsSchema.parse({ weekStartDay: 'monday' }).weekStartDay).toBe('monday')
+    expect(settingsSchema.parse({ weekStartDay: 'sunday' }).weekStartDay).toBe('sunday')
     expect(settingsSchema.parse({ semanticSearchEnabled: true }).semanticSearchEnabled).toBe(true)
     expect(settingsSchema.parse({ semanticSearchEnabled: false }).semanticSearchEnabled).toBe(false)
     expect(
@@ -44,6 +48,8 @@ describe('settingsSchema', () => {
     expect(settingsSchema.parse({ editorSpellCheck: 0 }).editorSpellCheck).toBe(true)
     expect(settingsSchema.parse({ theme: 'sepia' }).theme).toBe('system')
     expect(settingsSchema.parse({ theme: 7 }).theme).toBe('system')
+    expect(settingsSchema.parse({ weekStartDay: 'saturday' }).weekStartDay).toBe('monday')
+    expect(settingsSchema.parse({ weekStartDay: 42 }).weekStartDay).toBe('monday')
     expect(settingsSchema.parse({ semanticSearchEnabled: 'yes' }).semanticSearchEnabled).toBe(false)
     expect(settingsSchema.parse({ semanticSearchEnabled: 1 }).semanticSearchEnabled).toBe(false)
     expect(settingsSchema.parse({ allNotesFilterTags: 'book' }).allNotesFilterTags).toEqual([
@@ -65,6 +71,7 @@ describe('settingsSchema', () => {
       editorSpellCheck: true,
       semanticSearchEnabled: false,
       theme: 'system',
+      weekStartDay: 'monday',
       allNotesFilterTags: ['book', 'link', 'person'],
       aiModels: [],
       defaultAiModelId: null,

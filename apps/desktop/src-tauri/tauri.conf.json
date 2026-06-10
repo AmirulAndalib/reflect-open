@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "reflect-open",
-        "width": 800,
-        "height": 600,
+        "width": 1300,
+        "height": 650,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }

@@ -39,6 +39,14 @@ export const themePreferenceSchema = z.enum(['system', 'light', 'dark']).catch('
 export type ThemePreference = z.infer<typeof themePreferenceSchema>
 
 /**
+ * Which day opens the calendar week. `monday` (the default) follows ISO 8601;
+ * `sunday` matches the North-American convention.
+ */
+export const weekStartDaySchema = z.enum(['monday', 'sunday']).catch('monday')
+
+export type WeekStartDay = z.infer<typeof weekStartDaySchema>
+
+/**
  * Tags pinned as one-click filters on the All Notes screen, in display order.
  * The defaults mirror the original app's built-in filter tabs (book/link/
  * person); the screen offers every other tag through its Custom menu, so an
@@ -109,6 +117,7 @@ export const settingsSchema = z
     editorSpellCheck: editorSpellCheckSchema,
     semanticSearchEnabled: semanticSearchEnabledSchema,
     theme: themePreferenceSchema,
+    weekStartDay: weekStartDaySchema,
     allNotesFilterTags: allNotesFilterTagsSchema,
     aiModels: aiModelsSchema,
     defaultAiModelId: defaultAiModelIdSchema,

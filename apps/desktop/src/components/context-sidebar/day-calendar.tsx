@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { dailyDatesInRange, hasBridge } from '@reflect/core'
+import { dailyDatesInRange, hasBridge, type WeekStartDay } from '@reflect/core'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { formatDayLabel } from '@/lib/dates'
 import {
@@ -13,6 +13,7 @@ import {
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
+import { useSettings } from '@/providers/settings-provider'
 import { useRouter } from '@/routing/router'
 
 interface DayCalendarProps {
@@ -22,7 +23,10 @@ interface DayCalendarProps {
   today: string
 }
 
-const WEEKDAYS = weekdayLabels()
+/** Maps the persisted `WeekStartDay` value to date-fns' numeric convention. */
+function toWeekStartsOn(weekStartDay: WeekStartDay): 0 | 1 {
+  return weekStartDay === 'sunday' ? 0 : 1
+}
 
 /**
  * Compact month calendar (the old app's daily-note anchor): weeks start
@@ -34,6 +38,8 @@ const WEEKDAYS = weekdayLabels()
 export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactElement {
   const { navigate } = useRouter()
   const { graph } = useGraph()
+  const { settings } = useSettings()
+  const weekStartsOn = toWeekStartsOn(settings.weekStartDay)
 
   const [month, setMonth] = useState(() => monthOf(selectedDate))
   // Render-time state adjustment (not an effect): navigating to another day
@@ -44,7 +50,7 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
     setMonth(monthOf(selectedDate))
   }
 
-  const grid = buildMonthGrid(month)
+  const grid = buildMonthGrid(month, weekStartsOn)
   const { data: notedDates } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'dailyDates', grid.start, grid.end],
     queryFn: () => dailyDatesInRange(grid.start, grid.end),
@@ -79,7 +85,7 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
       <table className="w-full border-separate border-spacing-y-0.5 text-center">
         <thead>
           <tr>
-            {WEEKDAYS.map((weekday) => (
+            {weekdayLabels(weekStartsOn).map((weekday) => (
               <th
                 key={weekday}
                 scope="col"
