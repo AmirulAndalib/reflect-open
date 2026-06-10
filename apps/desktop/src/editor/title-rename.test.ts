@@ -136,6 +136,39 @@ describe('createTitleRenameTracker', () => {
     expect(renames).toEqual([])
   })
 
+  it('the first authored title on an untitled note is a birth, not a rename', () => {
+    const { tracker, renames } = tracked()
+    tracker.baseline('') // fresh lazy note (⌘N): derived title is the filename
+    tracker.saved('# My New Note\n')
+    vi.advanceTimersByTime(10_000)
+    tracker.settle()
+    expect(renames).toEqual([]) // no phantom rename from the ULID stem
+
+    tracker.saved('# Renamed\n') // a real rename afterwards still works
+    tracker.settle()
+    expect(renames).toEqual([
+      {
+        from: 'My New Note',
+        to: 'Renamed',
+        previousAutoAlias: null,
+        content: '# Renamed\n',
+      },
+    ])
+  })
+
+  it('removing the title mid-edit clears pending but keeps the baseline', () => {
+    const { tracker, renames } = tracked()
+    tracker.baseline('# A\n')
+    tracker.saved('body only, heading deleted\n')
+    vi.advanceTimersByTime(10_000)
+    expect(renames).toEqual([]) // untitled is not a rename target
+    tracker.saved('# B\n')
+    tracker.settle()
+    expect(renames).toEqual([
+      { from: 'A', to: 'B', previousAutoAlias: null, content: '# B\n' },
+    ])
+  })
+
   it('does nothing after dispose', () => {
     const { tracker, renames } = tracked()
     tracker.baseline('# A\n')

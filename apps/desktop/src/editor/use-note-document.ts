@@ -90,12 +90,19 @@ export function useNoteDocument(
     // The auto-rename lifecycle (Plan 07b) is owned by the coordinator — the
     // tracker, the rewrite chain, and alias placement live there, bound to
     // *this* effect's session, never to a ref another note could repoint.
+    // Progress is gated on this effect being live: a rewrite finishing after
+    // a note switch must not paint its status over the newly opened note.
+    let paneLive = true
     const coordinator = trackRenames
       ? createRenameCoordinator({
           path,
           generation: () => generationRef.current,
           canFire: () => conflictRef.current === null,
-          onProgress: setRenameProgress,
+          onProgress: (progress) => {
+            if (paneLive) {
+              setRenameProgress(progress)
+            }
+          },
         })
       : null
     coordinatorRef.current = coordinator
@@ -133,6 +140,8 @@ export function useNoteDocument(
       if (coordinatorRef.current === coordinator) {
         coordinatorRef.current = null
       }
+      paneLive = false
+      setRenameProgress(null) // the next note must not inherit this one's status
       // Disposal flushes pending edits to the session's own path — the
       // path-switch "final flush" lives here, not in cross-note bookkeeping.
       // The flush's landed save reaches the tracker via onContent('saved');

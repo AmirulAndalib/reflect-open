@@ -344,6 +344,61 @@ describe('useNoteDocument', () => {
     }
   })
 
+  it('a lazy note\u2019s first heading never fires a rename', async () => {
+    vi.useFakeTimers()
+    try {
+      const files: Record<string, string> = {
+        'notes/src.md': 'unrelated\n',
+      }
+      const linkQueries: string[] = []
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === 'note_read') {
+          const content = files[(args as { path: string }).path]
+          if (content === undefined) {
+            throw { kind: 'notFound', message: 'missing' }
+          }
+          return content
+        }
+        if (command === 'note_write') {
+          const { path: writePath, contents } = args as { path: string; contents: string }
+          files[writePath] = contents
+          return null
+        }
+        if (command === 'db_query') {
+          const sql = String((args as { sql: string }).sql)
+          if (sql.includes('"links"')) {
+            linkQueries.push(sql)
+          }
+          return []
+        }
+        return null
+      })
+
+      const hook = renderHook(() =>
+        useNoteDocument('notes/01arz3ndekt.md', 1, {
+          createIfMissing: true,
+          trackRenames: true,
+        }),
+      )
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(hook.result.current.status).toBe('ready')
+
+      act(() => hook.result.current.onEditorChange('# Brand New Note\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      act(() => {
+        window.dispatchEvent(new Event('blur'))
+      })
+      await act(() => vi.runAllTimersAsync())
+
+      // Titling an untitled note is a birth: no rewrite ran, no alias landed.
+      expect(linkQueries).toEqual([])
+      expect(files['notes/01arz3ndekt.md']).toBe('# Brand New Note\n')
+      hook.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('quit-time flushAllNotes settles a pending rename before resolving', async () => {
     vi.useFakeTimers()
     try {

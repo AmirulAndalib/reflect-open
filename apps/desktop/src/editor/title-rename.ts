@@ -59,7 +59,19 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
   let timer: ReturnType<typeof setTimeout> | null = null
   let disposed = false
 
-  const titleOf = (content: string): string => parseNote({ path, source: content }).title
+  // A title only counts when the *content* declares one (frontmatter `title:`
+  // or an H1). parseNote falls back to the filename stem for untitled notes —
+  // baselining on that would make a fresh lazy note's first heading look like
+  // a rename from its ULID filename, spraying a junk alias (and potentially
+  // rewrites) on every new note. Untitled is `null` here.
+  const titleOf = (content: string): string | null => {
+    const parsed = parseNote({ path, source: content })
+    const fmTitle = (parsed.frontmatter as Record<string, unknown>).title
+    const titled =
+      (typeof fmTitle === 'string' && fmTitle.trim() !== '') ||
+      parsed.headings.some((heading) => heading.level === 1 && heading.text !== '')
+    return titled ? parsed.title : null
+  }
 
   function cancelTimer(): void {
     if (timer !== null) {
@@ -100,10 +112,26 @@ export function createTitleRenameTracker(options: TitleRenameTrackerOptions): Ti
   }
 
   function saved(content: string): void {
-    if (disposed || baselineTitle === null) {
+    if (disposed) {
       return
     }
     const title = titleOf(content)
+    if (title === null) {
+      // The title was removed mid-edit (or the note is still untitled): there
+      // is nothing to rename *to*. Clear any pending rename but keep the
+      // baseline — re-titling later still compares against the old title.
+      cancelTimer()
+      pending = null
+      return
+    }
+    if (baselineTitle === null) {
+      // The first authored title on an untitled note is a birth, not a
+      // rename — nothing links to a title that never existed.
+      cancelTimer()
+      pending = null
+      baselineTitle = title
+      return
+    }
     if (foldKey(title) === foldKey(baselineTitle)) {
       // Same key: resolution is case-insensitive, so a pure case tweak is not
       // a rename — and a reverted edit clears whatever was pending.
