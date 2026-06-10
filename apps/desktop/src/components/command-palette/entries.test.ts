@@ -41,9 +41,11 @@ describe('buildPaletteSections', () => {
     expect(sections.notes).toEqual([]) // momentarily empty beats momentarily wrong
   })
 
-  it('an empty query ignores lagging FTS hits (recall feed only)', () => {
-    // The deferred index query can still hold the previous search's results
-    // when the input is cleared — they must not leak into the recall feed.
+  it('body hits never join the recall feed, even when present', () => {
+    // Here query and dataQuery agree (''), so this pins the *defensive* belt:
+    // FTS shouldn't return hits for an empty query, but if an array arrives
+    // anyway, the recall feed stays suggestions-only. The stale-data case
+    // (dataQuery lagging the input) is covered by the test above.
     const sections = buildPaletteSections({
       query: '',
       dataQuery: '',
