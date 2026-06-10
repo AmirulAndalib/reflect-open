@@ -69,6 +69,13 @@ export function createRenameCoordinator(options: RenameCoordinatorOptions): Rena
     chain = chain.then(async () => {
       const gen = generation()
       if (gen === null) {
+        // Unreachable in the current wiring (a rename only arms after a save,
+        // which requires a generation; an unmounted pane's ref keeps its
+        // non-null value) — but the tracker's baseline has already advanced,
+        // so if a future caller gets here the drop must be loud, not silent.
+        console.error(
+          `rename dropped (no graph generation): "${rename.from}" → "${rename.to}" on ${path}`,
+        )
         return
       }
       try {
