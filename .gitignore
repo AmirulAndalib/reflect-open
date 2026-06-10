@@ -29,3 +29,6 @@ dist-ssr
 
 # Reflect graph index + local state (rebuildable projection; never committed)
 .reflect/
+
+# Claude Code session artifacts
+.claude/
