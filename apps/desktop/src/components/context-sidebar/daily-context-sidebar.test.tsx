@@ -19,6 +19,12 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: 1 } }),
 }))
+vi.mock('@/providers/settings-provider', () => ({
+  useSettings: () => ({
+    settings: { semanticSearchEnabled: true },
+    updateSettings: () => {},
+  }),
+}))
 
 function RouteProbe(): ReactNode {
   const { route } = useRouter()
@@ -135,6 +141,7 @@ describe('DailyContextSidebar related notes', () => {
         score: 0.9,
         snippet: 'borrow checker notes',
         heading: null,
+        isPrivate: false,
       },
     ])
     const view = renderSidebar('2026-06-09')
