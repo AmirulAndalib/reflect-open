@@ -18,6 +18,55 @@ command execution, keyboard-only operation, result preview/open.
 **Out:** semantic/vector search (Plan 09 — same surface, additive), AI chat over results
 (Plan 10).
 
+**Recorded non-goals (decided 2026-06-09):** the ambiguous-`[[link]]` disambiguation
+picker (deferred from Plan 07) stays deferred — deterministic resolution holds until a
+later wave gives it a deliberate UX; the global status surface is **not** Plan 08 scope
+because it lands beforehand as its own foundations pass (the `operations` store +
+`OperationsStatus`, with the rename rewrite as first tenant).
+
+## Delivery split (decided 2026-06-09)
+
+**Pre-work — foundations pass (own PR, before 08a):** consolidate the two
+module-global registries (quit-flush, path→session) into one `open-documents`
+service; add the app-global `operations` store + `OperationsStatus` surface
+(product status, not spinners — running entries with optional progress,
+failures linger so backgrounded errors aren't lost); route the rename
+coordinator's progress/errors through it, replacing the pane-local progress
+banner. Keeps 08a purely about search + palette.
+
+- **08a — palette, lexical search, command registry (the spine):**
+  1. `cmdk` palette shell in a `⌘K` modal registered through the app-scope
+     keymap registry; keyboard-native throughout.
+  2. **Typed command registry** (`src/lib/commands/`): the `Command` contract
+     below; the existing hardcoded `⌘D/⌘N/⌘[/⌘]` shortcuts **migrate into
+     registry entries** whose keybindings register through the keymap registry
+     — one source of truth that deep links and the CLI (Plan 14) reuse.
+     First-wave commands: go to today, new note, go to date (typed ISO),
+     open random note, toggle theme, rebuild index.
+  3. **Lexical search.** Empty palette = **recent notes only** (decided — the
+     zero-keystroke recall path; commands surface when the query matches one,
+     `>` prefix filters to commands). Typed queries: FTS5 with a **bm25 title
+     boost** and `snippet()` **match highlights** (decided: snippets only, no
+     preview pane in the first wave), merged with fuzzy title matches for
+     jump-to-note (reusing Plan 07a's exact < prefix < substring ranking).
+     Reads via TanStack Query under the `['index', root, …]` scope — the
+     post-apply invalidation from Plan 07a already keeps them fresh.
+  4. **`search/:query` opens the palette pre-filled** (decided) — the route
+     stays a deep-link/CLI target without a second search surface to keep
+     consistent with the palette.
+  5. **Result model:** one ranked list with sections (Notes / Dailies /
+     Commands); Enter navigates via the route model or runs the command.
+     Debounced input, small caps, index-only.
+- **08b — filters:** typed filter tokens parsed from the query (`#tag`,
+  `is:daily`, `links:Note`, `linked-from:Note`, `updated:>YYYY-MM-DD`) →
+  a small composable constraint builder over Kysely; each token round-trip
+  tested. Chips UI can follow the grammar later.
+
+**Tokenizer note:** `search_fts` was created with the default `unicode61`
+tokenizer. If recall on code identifiers/CJK proves poor, switching (e.g. to
+`trigram`) needs an FTS-rebuilding migration — cheap, since the index is a
+rebuildable cache, but it is a migration.
+
 ## Steps
 
 1. **Command palette shell** (`src/components/command-palette/`): a `⌘K` modal
