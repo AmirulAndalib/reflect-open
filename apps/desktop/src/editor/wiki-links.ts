@@ -27,8 +27,11 @@ const wikiLinkKey = new PluginKey<DecorationSet>('reflect-wiki-links')
 
 export interface WikiLinkOptions {
   /**
-   * Called with the link target on Mod+click (plain click places the caret, as
-   * in any live-preview editor). Resolution/navigation is the caller's job.
+   * Called with the link target on click. Links act like links: a plain click
+   * navigates. The exception is a link the caret is already inside (syntax
+   * revealed, being edited) — there a plain click places the caret so the
+   * text stays mouse-editable, and Mod+click still navigates.
+   * Resolution/navigation is the caller's job.
    */
   onNavigate?: (target: string) => void
 }
@@ -101,6 +104,39 @@ export function computeWikiLinkRanges(state: EditorState): WikiLinkRange[] {
   return ranges
 }
 
+/** The selection as it stood at mousedown, before the click moved the caret. */
+interface SelectionSnapshot {
+  from: number
+  to: number
+  empty: boolean
+}
+
+/**
+ * Whether a plain click at `pos` should edit (place the caret) rather than
+ * navigate: true when the pre-click caret already sat inside the clicked
+ * link — the syntax-revealed state, the user is editing it. The snapshot
+ * must be taken at mousedown: by the time the click handler runs, the
+ * browser has already moved the caret to the clicked position, so the
+ * live selection always looks "inside the link". Pure; exported for tests.
+ */
+export function clickEditsLink(
+  state: EditorState,
+  pos: number,
+  selectionBefore: SelectionSnapshot | null,
+): boolean {
+  if (!selectionBefore || !selectionBefore.empty) {
+    return false
+  }
+  return computeWikiLinkRanges(state).some(
+    (range) =>
+      range.kind === 'chip' &&
+      range.from <= pos &&
+      pos <= range.to &&
+      selectionBefore.from >= range.from &&
+      selectionBefore.to <= range.to,
+  )
+}
+
 function buildDecorations(state: EditorState): DecorationSet {
   const decorations = computeWikiLinkRanges(state).map((range) => {
     if (range.kind === 'chip') {
@@ -116,7 +152,10 @@ function buildDecorations(state: EditorState): DecorationSet {
   return DecorationSet.create(state.doc, decorations)
 }
 
-function createWikiLinkPlugin(options: WikiLinkOptions): Plugin<DecorationSet> {
+/** The decoration + click-handling plugin. Exported for tests. */
+export function createWikiLinkPlugin(options: WikiLinkOptions): Plugin<DecorationSet> {
+  let selectionBeforeClick: SelectionSnapshot | null = null
+
   return new Plugin<DecorationSet>({
     key: wikiLinkKey,
     state: {
@@ -132,8 +171,15 @@ function createWikiLinkPlugin(options: WikiLinkOptions): Plugin<DecorationSet> {
     },
     props: {
       decorations: (state) => wikiLinkKey.getState(state),
-      handleClick: (_view, _pos, event) => {
-        if (!options.onNavigate || !(event.metaKey || event.ctrlKey)) {
+      handleDOMEvents: {
+        mousedown: (view) => {
+          const { from, to, empty } = view.state.selection
+          selectionBeforeClick = { from, to, empty }
+          return false
+        },
+      },
+      handleClick: (view, pos, event) => {
+        if (!options.onNavigate) {
           return false
         }
         // The chip decoration carries the target; read it off the clicked span.
@@ -141,6 +187,10 @@ function createWikiLinkPlugin(options: WikiLinkOptions): Plugin<DecorationSet> {
           ?.closest?.('[data-wiki-target]')
           ?.getAttribute('data-wiki-target')
         if (!target) {
+          return false
+        }
+        const modClick = event.metaKey || event.ctrlKey
+        if (!modClick && clickEditsLink(view.state, pos, selectionBeforeClick)) {
           return false
         }
         options.onNavigate(target)

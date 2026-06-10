@@ -176,8 +176,11 @@ body,
   padding: 0.05em 0.15em;
   cursor: pointer;
 }
+/* Caret inside the link: syntax is revealed for editing, so clicks place the
+   caret (navigation needs Mod+click here) — signal that with a text cursor. */
 .reflect-editor .md-wiki-link.is-active {
   background: transparent;
+  cursor: text;
 }
 
 /* ---- [[ autocomplete (Plan 07) ---------------------------------------------

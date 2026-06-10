@@ -58,7 +58,7 @@ interface NoteEditorProps {
   markMode?: MarkMode
   /** Image rendering + paste/drop persistence (Plan 05b). */
   images?: ImageOptions
-  /** Mod+click on a `[[wiki link]]` chip (Plan 06 navigation). */
+  /** Click on a `[[wiki link]]` chip (Plan 06 navigation). */
   onWikiLinkClick?: (target: string) => void
   /**
    * Extra classes for the editable root. The mount div *is* the ProseMirror
