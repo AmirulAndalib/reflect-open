@@ -6,7 +6,7 @@ renames); this is the orientation layer those plans don't give you.
 
 ## The layers
 
-```
+```text
 NotePane / DailyStream                  components — composition only
   ├─ useNoteDocument()                  React adapter (use-note-document.ts)
   │    └─ createNoteSession()           pure document state machine (note-session.ts)
@@ -33,7 +33,7 @@ mistaken for a user edit.
 
 ## The save loop
 
-```
+```text
 keystroke → session.editorChanged() → debounce (800ms) → atomic write
   → file watcher event → core reindex (the ONLY incremental index path)
   → the same event returns to the session → recognized as our echo → ignored

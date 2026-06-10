@@ -78,6 +78,33 @@ Test count cross-check: master baseline 187 desktop tests; +20 (#25), +23
 (#24), +13 net (#26), +17 (#23), −4 (deleted `workspace-header.test.tsx`) =
 256. Matches.
 
+## Bot-review round (post-open)
+
+PR #27's checks all passed first try (Node CI 2m, Rust CI, CodeRabbit;
+Bugbot ran inline despite a "skipping" status check). The bots' actionable
+findings were fixed in a follow-up commit:
+
+- **Cleared seed writes a file** (Bugbot, medium): a seeded ⌘N note cleared
+  back to empty no longer births an empty file — `note-session.ts` keeps a
+  missing note clean while its buffer is blank; regression test added.
+- **Mac-only ⌘D hint** (Bugbot low / CodeRabbit minor): the daily sidebar's
+  "Go to today" hint now uses #26's `formatBindingLabel` (Ctrl+D off-Apple) —
+  a genuine cross-PR integration gap (#24 hand-rolled the hint because #26's
+  formatter didn't exist on its base).
+- **Perpetual "Loading…" on disabled query** (Bugbot, medium): `day-backlinks`
+  now keys on `isLoading` instead of `isPending`.
+- **Unhandled rejection in `useFileChanges`** (CodeRabbit, major): subscription
+  failure is now caught and `console.error`ed (house style for degraded paths).
+- **Cloud-sync banner a11y** (CodeRabbit, minor): `role="status"` so the
+  data-risk warning reaches assistive tech.
+- **Bridge leak in `queries.test.ts`** (CodeRabbit, minor): `setBridge(null)`
+  in `afterAll`.
+- **markdownlint MD040** (CodeRabbit, minor): language tags added to bare
+  fenced blocks in the four flagged docs (+ one more in the same dir).
+
+Post-fix verification: typecheck 3/3, lint clean, `turbo run test --force`
+3/3 (desktop 41 files / 257 tests), build pass.
+
 ## Known caveats
 
 - **Native Tauri runtime is unverified locally** (no Rust toolchain): window
@@ -91,12 +118,11 @@ Test count cross-check: master baseline 187 desktop tests; +20 (#25), +23
   the two PRs never saw each other.
 - **`theme.toggle` now persists** light/dark via settings (#26), permanently
   moving a user off `system` once used — intended per #26's docs.
-- Minor pre-existing/inherited quirks recorded by the reviews: seeded note
-  re-emptied by the user writes an empty file (edge case, harmless);
-  `day-backlinks` shows “Loading…” when the query is disabled (cosmetic,
-  unreachable in the real app); `EDITOR_BINDING_DESCRIPTIONS` in
-  `keymap.ts` is a hand-maintained map — new editor bindings must be added
-  there to appear in Settings → Keyboard.
+- `EDITOR_BINDING_DESCRIPTIONS` in `keymap.ts` is a hand-maintained map —
+  new editor bindings must be added there to appear in Settings → Keyboard.
+  (Two other quirks flagged by the reviews — seeded note re-emptied writing an
+  empty file, and `day-backlinks` perpetual “Loading…” on a disabled query —
+  were fixed in the bot-review round above.)
 
 ## Repo state
 

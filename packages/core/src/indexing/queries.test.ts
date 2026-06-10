@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '../ipc/bridge'
 import { dailyDatesInRange } from './queries'
 
@@ -10,6 +10,10 @@ setBridge({ invoke: mockInvoke, listen: async () => () => {} })
 
 beforeEach(() => {
   mockInvoke.mockReset()
+})
+
+afterAll(() => {
+  setBridge(null)
 })
 
 describe('dailyDatesInRange', () => {

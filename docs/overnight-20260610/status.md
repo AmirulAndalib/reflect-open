@@ -29,7 +29,12 @@ against `master` (not merged — Alex review gate).
    core 164 tests, db suite), `turbo run build --force` (pass; pre-existing
    >500 kB chunk warning).
 6. ✅ Docs under `docs/overnight-20260610/`.
-7. ✅ Pushed branch and opened the consolidation PR (URL in final-report.md).
+7. ✅ Pushed branch and opened consolidation PR
+   [#27](https://github.com/team-reflect/reflect-open/pull/27).
+8. ✅ All PR checks passed first try (Node CI, Rust CI, CodeRabbit; Bugbot
+   commented inline). Actionable bot findings fixed and pushed — see
+   final-report.md “Bot-review round”; post-fix verification green
+   (typecheck, lint, test 3/3 — desktop 257 tests —, build).
 
 ## Blockers
 

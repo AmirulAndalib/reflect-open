@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { APP_COMMANDS } from '@/lib/commands/app-commands'
+import { formatBindingLabel } from '@/lib/keybindings'
 import { addDaysIso, formatDayLabel } from '@/lib/dates'
 import { useToday } from '@/lib/use-today'
 import { useRouter } from '@/routing/router'
@@ -15,12 +16,12 @@ interface DailyContextSidebarProps {
 }
 
 // The hint is derived from the real command definition so it can never drift
-// from the actual binding (and disappears if the binding ever does).
+// from the actual binding (and disappears if the binding ever does), and is
+// formatted per platform (⌘D on Apple, Ctrl+D elsewhere) by the shared
+// keybinding formatter.
 const TODAY_KEYBINDING = APP_COMMANDS.find((command) => command.id === 'nav.today')
   ?.keybinding
-const TODAY_HINT = TODAY_KEYBINDING
-  ? TODAY_KEYBINDING.replace('Mod-', '⌘').toUpperCase()
-  : null
+const TODAY_HINT = TODAY_KEYBINDING ? formatBindingLabel(TODAY_KEYBINDING) : null
 
 /**
  * The daily note's contextual sidebar (modeled on the old app's note context

@@ -93,7 +93,7 @@ in session storage, mirroring old Reflect's `SidebarItem`.
 
 ## Architecture
 
-```
+```text
 packages/core/src/indexing/queries.ts   + dailyDatesInRange(start, end)
 apps/desktop/src/lib/month-grid.ts      pure month-grid/date helpers
 apps/desktop/src/components/daily-sidebar/

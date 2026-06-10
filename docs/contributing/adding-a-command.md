@@ -5,7 +5,7 @@ to add a new command. The canonical in-tree example is `app_version` — a real
 `#[tauri::command]`, a zod-validated response, no direct `invoke` in the UI —
 and this guide walks the same path with a hypothetical `note_stat` command.
 
-```
+```text
 React component / hook
   └─ typed binding            packages/core/src/<domain>/commands.ts
        └─ call()              packages/core/src/ipc/invoke.ts   (zod validation)

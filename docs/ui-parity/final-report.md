@@ -127,7 +127,7 @@ Full observations: `plan.md` §1–2.
 `pnpm tauri dev` fails on this machine because the Rust toolchain is not
 installed:
 
-```
+```text
 failed to run 'cargo metadata' command to get workspace directory:
 No such file or directory (os error 2)
 ```

@@ -21,7 +21,7 @@ export function DayBacklinks({ date }: DayBacklinksProps): ReactElement {
   const { navigate } = useRouter()
   const { graph } = useGraph()
   const path = dailyPath(date)
-  const { data, isPending, isError } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'backlinks', path],
     queryFn: () => getBacklinksWithContext(path),
     enabled: hasBridge() && graph !== null,
@@ -30,7 +30,7 @@ export function DayBacklinks({ date }: DayBacklinksProps): ReactElement {
   const backlinks = data ?? []
   return (
     <SidebarSection storageKey="backlinks" title="Linked from" count={data?.length}>
-      {isPending ? (
+      {isLoading ? (
         <p className="px-2 py-1 text-xs text-[color:var(--text-muted)]">Loading…</p>
       ) : isError ? (
         <p role="alert" className="px-2 py-1 text-xs text-[color:var(--text-muted)]">

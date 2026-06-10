@@ -304,6 +304,28 @@ describe('missing-note seed (new ordinary notes)', () => {
     expect(h.snapshots.at(-1)?.dirty).toBe(false)
   })
 
+  it('clearing the seed back to empty writes nothing — the note stays unborn', async () => {
+    const h = harness({ disk: null, createIfMissing: true, missingSeed: SEED })
+    h.session.load()
+    await settled()
+
+    // The user selects the seeded "Untitled" and deletes it without typing a
+    // replacement: an empty unwritten note must not be created on disk.
+    h.session.editorChanged('')
+    await h.session.flush()
+    await settled()
+
+    expect(h.writes).toEqual([])
+    expect(h.snapshots.at(-1)?.dirty).toBe(false)
+    expect(h.snapshots.at(-1)?.missing).toBe(true)
+
+    // Typing real content afterwards still births the file.
+    h.session.editorChanged('# Plans\n')
+    await settled()
+    expect(h.writes).toEqual([{ path: 'notes/a.md', contents: '# Plans\n' }])
+    expect(h.snapshots.at(-1)?.missing).toBe(false)
+  })
+
   it('a real edit creates the file with the full content and clears missing', async () => {
     const h = harness({ disk: null, createIfMissing: true, missingSeed: SEED })
     h.session.load()

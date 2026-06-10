@@ -27,13 +27,19 @@ export function useFileChanges(handler: ((changes: FileChange[]) => void) | null
       if (active) {
         handler(changes)
       }
-    }).then((stop) => {
-      if (active) {
-        unlisten = stop
-      } else {
-        stop()
-      }
     })
+      .then((stop) => {
+        if (active) {
+          unlisten = stop
+        } else {
+          stop()
+        }
+      })
+      .catch((cause: unknown) => {
+        // A failed subscription degrades to no live updates for this mount;
+        // surfaced for diagnosis rather than left as an unhandled rejection.
+        console.error('file-change subscription failed:', cause)
+      })
     return () => {
       active = false
       unlisten?.()

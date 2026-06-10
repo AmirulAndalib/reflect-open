@@ -57,11 +57,12 @@ describe('DailyContextSidebar header', () => {
     view.unmount()
   })
 
-  it('offers "Go to today" with the real ⌘D hint on other days', async () => {
+  it('offers "Go to today" with the real platform-formatted hint on other days', async () => {
     const past = addDaysIso(todayIso(), -3)
     const view = renderSidebar(past)
     const goToToday = view.getByRole('button', { name: /Go to today/ })
-    expect(goToToday.textContent).toContain('⌘D')
+    // jsdom reports a non-Apple platform, so Mod renders as Ctrl.
+    expect(goToToday.textContent).toContain('Ctrl+D')
     await userEvent.click(goToToday)
     expect(view.getByTestId('route').textContent).toContain('"kind":"today"')
     view.unmount()
