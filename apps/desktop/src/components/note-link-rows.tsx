@@ -19,11 +19,10 @@ interface NoteLinkRowsProps {
 }
 
 /**
- * The note-reference rows the related-notes surfaces share — the in-note
- * Related panel (via {@link NoteLinkList}) and the daily sidebar's day
- * sections — so a note link looks and behaves identically wherever it
- * appears. Hosts own the wrapper (section heading, collapsible section) and
- * the empty state; this is just the rows.
+ * The note-reference rows the context-sidebar sections share, so a note link
+ * looks and behaves identically wherever it appears. Hosts own the wrapper
+ * (section heading, collapsible section) and the empty state; this is just
+ * the rows.
  */
 export function NoteLinkRows({ items, onOpen }: NoteLinkRowsProps): ReactElement {
   return (
