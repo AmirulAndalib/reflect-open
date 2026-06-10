@@ -120,10 +120,10 @@ describe('DailyContextSidebar calendar', () => {
 })
 
 describe('DailyContextSidebar related notes', () => {
-  it('renders no Related section without results', async () => {
+  it('renders no Similar notes section without results', async () => {
     const view = renderSidebar('2026-06-09')
     await waitFor(() => expect(relatedNotes).toHaveBeenCalledWith('daily/2026-06-09.md'))
-    expect(view.queryByText('Related')).toBeNull()
+    expect(view.queryByText('Similar notes')).toBeNull()
     view.unmount()
   })
 
@@ -139,7 +139,7 @@ describe('DailyContextSidebar related notes', () => {
     ])
     const view = renderSidebar('2026-06-09')
     await view.findByText('Rust')
-    expect(view.getByText('Related')).toBeDefined()
+    expect(view.getByText('Similar notes')).toBeDefined()
     await userEvent.click(view.getByText('Rust'))
     expect(view.getByTestId('route').textContent).toContain('notes/rust.md')
     view.unmount()
