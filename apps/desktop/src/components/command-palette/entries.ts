@@ -1,3 +1,4 @@
+import { dailyPath } from '@reflect/core'
 import type { AppCommand } from '@/lib/commands/types'
 import type { RankedSearchHit, WikiSuggestion } from '@reflect/core'
 
@@ -58,10 +59,16 @@ export function buildPaletteSections(options: {
   const notes: NoteEntry[] = []
   const seen = new Set<string>()
   for (const suggestion of suggestions) {
-    if (suggestion.path !== null && !seen.has(suggestion.path)) {
-      seen.add(suggestion.path)
+    // A pathless suggestion is a valid daily whose file doesn't exist yet
+    // (the lazy contract) — it must still be jumpable: synthesize its daily
+    // path, and routeForPath downstream yields the daily route, where the
+    // stream creates the file on first keystroke.
+    const path =
+      suggestion.path ?? (suggestion.date !== null ? dailyPath(suggestion.date) : null)
+    if (path !== null && !seen.has(path)) {
+      seen.add(path)
       notes.push({
-        path: suggestion.path,
+        path,
         title: suggestion.title,
         date: suggestion.date,
         snippet: null,

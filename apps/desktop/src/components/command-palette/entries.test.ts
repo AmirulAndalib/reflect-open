@@ -39,6 +39,20 @@ describe('buildPaletteSections', () => {
     expect(sections.notes[1].snippet).toContain('alpha')
   })
 
+  it('a not-yet-created daily (pathless suggestion) is still jumpable', () => {
+    const sections = buildPaletteSections({
+      query: '2026-08-01',
+      suggestions: [
+        { target: '2026-08-01', path: null, title: '2026-08-01', alias: null, date: '2026-08-01' },
+      ],
+      hits: [],
+      commands: [],
+    })
+    expect(sections.notes).toEqual([
+      { path: 'daily/2026-08-01.md', title: '2026-08-01', date: '2026-08-01', snippet: null },
+    ])
+  })
+
   it('commands match on title and keywords once a query exists', () => {
     const sections = buildPaletteSections({
       query: 'dark',
