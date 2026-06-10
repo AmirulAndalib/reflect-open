@@ -300,6 +300,11 @@ fn vec384(fill: f32) -> Vec<f32> {
     vec![fill; 384]
 }
 
+/// Chunks only exist for indexed notes (apply_chunks guards on the row).
+fn index_note(conn: &Connection, path: &str) {
+    apply_note(conn, &note(path, "T", vec![])).unwrap();
+}
+
 fn chunk_rows(conn: &Connection) -> Vec<(String, String)> {
     conn.prepare("SELECT note_path, content_hash FROM embedding_chunks ORDER BY id")
         .unwrap()
@@ -319,6 +324,7 @@ fn vector_count(conn: &Connection) -> i64 {
 #[test]
 fn apply_chunks_inserts_new_and_drops_stale_with_their_vectors() {
     let conn = migrated();
+    index_note(&conn, "notes/a.md");
     apply_chunks(
         &conn,
         "notes/a.md",
@@ -350,6 +356,7 @@ fn apply_chunks_inserts_new_and_drops_stale_with_their_vectors() {
 #[test]
 fn unchanged_chunks_keep_vectors_but_refresh_positions() {
     let conn = migrated();
+    index_note(&conn, "notes/a.md");
     apply_chunks(&conn, "notes/a.md", &[chunk("h1", Some(vec384(0.5)))]).unwrap();
     let mut moved = chunk("h1", None);
     moved.pos_from = 100;
@@ -369,6 +376,7 @@ fn unchanged_chunks_keep_vectors_but_refresh_positions() {
 #[test]
 fn an_unchanged_chunk_without_a_stored_row_is_a_loud_error() {
     let conn = migrated();
+    index_note(&conn, "notes/a.md");
     let result = apply_chunks(&conn, "notes/a.md", &[chunk("missing", None)]);
     assert!(result.is_err());
 }
@@ -376,6 +384,8 @@ fn an_unchanged_chunk_without_a_stored_row_is_a_loud_error() {
 #[test]
 fn remove_chunks_drops_rows_and_vectors_for_one_note_only() {
     let conn = migrated();
+    index_note(&conn, "notes/a.md");
+    index_note(&conn, "notes/b.md");
     apply_chunks(&conn, "notes/a.md", &[chunk("a1", Some(vec384(0.1)))]).unwrap();
     apply_chunks(&conn, "notes/b.md", &[chunk("b1", Some(vec384(0.2)))]).unwrap();
     remove_chunks(&conn, "notes/a.md").unwrap();
@@ -389,6 +399,7 @@ fn remove_chunks_drops_rows_and_vectors_for_one_note_only() {
 #[test]
 fn clear_index_wipes_embeddings_too() {
     let conn = migrated();
+    index_note(&conn, "notes/a.md");
     apply_chunks(&conn, "notes/a.md", &[chunk("a1", Some(vec384(0.1)))]).unwrap();
     clear_index(&conn).unwrap();
     assert_eq!(chunk_rows(&conn), vec![]);
@@ -398,6 +409,8 @@ fn clear_index_wipes_embeddings_too() {
 #[test]
 fn knn_query_returns_nearest_chunk_first() {
     let conn = migrated();
+    index_note(&conn, "notes/near.md");
+    index_note(&conn, "notes/far.md");
     let mut near = vec384(0.0);
     near[0] = 1.0;
     let mut far = vec384(0.0);
@@ -455,6 +468,7 @@ fn stored_vectors_round_trip_through_vec_to_json() {
     // relatedNotes (TS) seeds KNN with `vec_to_json(embedding)` via db_query;
     // pin the function name + shape against the real extension.
     let conn = migrated();
+    index_note(&conn, "notes/a.md");
     apply_chunks(&conn, "notes/a.md", &[chunk("a1", Some(vec384(0.25)))]).unwrap();
     let rows = run_query(
         &conn,
@@ -479,4 +493,15 @@ fn stored_vectors_round_trip_through_vec_to_json() {
         knn[0].get("note_path").unwrap().as_str().unwrap(),
         "notes/a.md"
     );
+}
+
+#[test]
+fn apply_chunks_for_an_unindexed_path_is_a_cleaning_no_op() {
+    // The embed pipeline can race index_remove: a late embed_apply for a
+    // deleted note must not reinsert vectors for a dead path.
+    let conn = migrated();
+    let result = apply_chunks(&conn, "notes/gone.md", &[chunk("g1", Some(vec384(0.1)))]);
+    assert!(result.is_ok());
+    assert_eq!(chunk_rows(&conn), vec![]);
+    assert_eq!(vector_count(&conn), 0);
 }

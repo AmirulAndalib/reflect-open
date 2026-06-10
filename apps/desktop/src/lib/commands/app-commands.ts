@@ -1,7 +1,11 @@
-import { notePath, randomNotePath, rebuildIndex } from '@reflect/core'
+import { embedStatus, notePath, randomNotePath, rebuildIndex } from '@reflect/core'
 import { ulid } from 'ulidx'
 import { startOperation } from '@/lib/operations'
-import { ensureEmbeddingsVisibly, setSemanticEnabled } from '@/lib/semantic'
+import {
+  backfillEmbeddingsVisibly,
+  ensureEmbeddingsVisibly,
+  setSemanticEnabled,
+} from '@/lib/semantic'
 import { registerCommands } from './registry'
 import type { AppCommand } from './types'
 
@@ -93,6 +97,14 @@ const APP_COMMANDS: AppCommand[] = [
         operation.done()
       } catch (cause) {
         operation.fail(cause instanceof Error ? cause.message : String(cause))
+        return
+      }
+      // index_clear wiped the embedding tables with everything else — rebuild
+      // them too, or semantic search stays silently empty until some other
+      // trigger re-embeds.
+      const embed = await embedStatus()
+      if (embed.status === 'ready') {
+        await backfillEmbeddingsVisibly({ generation, modelId: embed.model })
       }
     },
   },

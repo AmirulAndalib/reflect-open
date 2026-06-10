@@ -17,11 +17,13 @@ import { useGraph } from '@/providers/graph-provider'
  *   Work is serialized on one queue so passes can't interleave.
  */
 export function EmbeddingsSync(): null {
-  const { graph } = useGraph()
+  const { graph, indexGeneration } = useGraph()
   const status = useEmbedStatus()
   const queue = useRef<Promise<void>>(Promise.resolve())
 
-  const generation = graph?.generation ?? null
+  // embed_apply/embed_remove are gated on the INDEX session generation, not
+  // the file-write generation in GraphInfo — the counters are independent.
+  const generation = indexGeneration
   const root = graph?.root ?? null
   const ready = status.status === 'ready'
   const modelId = status.status === 'ready' ? status.model : null
