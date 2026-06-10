@@ -4,7 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import {
   hasBridge,
   parseHighlights,
+  parseSearchQuery,
   searchNotesRanked,
+  searchWithFilters,
   suggestWikiTargets,
 } from '@reflect/core'
 import { listCommands, runCommand } from '@/lib/commands/registry'
@@ -51,6 +53,10 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
   // Defer the query the index sees: fast typing coalesces (the plan's
   // debounce) while the input itself stays perfectly responsive.
   const trimmed = useDeferredValue(query.trim())
+  // Filter tokens (#tag, is:daily, links:, linked-from:, updated:) switch the
+  // palette into constrained search (Plan 08b) — the merge queries park and
+  // the parsed constraints run instead.
+  const parsed = useMemo(() => parseSearchQuery(trimmed), [trimmed])
   const searching = open && hasBridge() && graph !== null && !trimmed.startsWith('>')
   const {
     data: suggestions,
@@ -59,22 +65,32 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
   } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'palette-suggest', trimmed],
     queryFn: () => suggestWikiTargets(trimmed, 8),
-    enabled: searching,
+    enabled: searching && !parsed.filtered,
   })
   const { data: hits, isLoading: hitsLoading, isError: hitsError } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'palette-search', trimmed],
     queryFn: () => searchNotesRanked(trimmed),
-    enabled: searching && trimmed !== '',
+    enabled: searching && !parsed.filtered && trimmed !== '',
   })
-  // "No results" must mean the index answered **the live query**: both
+  const {
+    data: filteredHits,
+    isLoading: filteredLoading,
+    isError: filteredError,
+  } = useQuery({
+    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'palette-filtered', trimmed],
+    queryFn: () => searchWithFilters(parsed),
+    enabled: searching && parsed.filtered,
+  })
+  // "No results" must mean the index answered **the live query**: the active
   // fetches settled (isLoading, not isPending — a disabled query is forever
   // pending) *and* the deferred value has caught up. Opening pre-filled, the
   // deferred value can settle on the stale previous query first; that state
   // is "still answering", not "empty".
-  const resultsSettled = !suggestionsLoading && !hitsLoading && trimmed === query.trim()
+  const resultsSettled =
+    !suggestionsLoading && !hitsLoading && !filteredLoading && trimmed === query.trim()
   // An errored query is "settled" to TanStack but not an answer — showing
   // "No results" for a failed index read would be a lie.
-  const searchFailed = suggestionsError || hitsError
+  const searchFailed = suggestionsError || hitsError || filteredError
 
   const sections = useMemo(
     () =>
@@ -83,9 +99,10 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
         dataQuery: trimmed,
         suggestions: suggestions ?? [],
         hits: hits ?? [],
+        filteredHits: parsed.filtered ? (filteredHits ?? []) : null,
         commands: listCommands(),
       }),
-    [query, trimmed, suggestions, hits],
+    [query, trimmed, suggestions, hits, filteredHits, parsed.filtered],
   )
 
   if (!open) {

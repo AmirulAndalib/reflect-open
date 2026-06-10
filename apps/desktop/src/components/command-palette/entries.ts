@@ -1,6 +1,6 @@
 import { dailyPath } from '@reflect/core'
 import type { AppCommand } from '@/lib/commands/types'
-import type { RankedSearchHit, WikiSuggestion } from '@reflect/core'
+import type { FilteredSearchHit, RankedSearchHit, WikiSuggestion } from '@reflect/core'
 
 /**
  * Pure assembly of the palette's sections (Plan 08): merges title suggestions
@@ -42,6 +42,8 @@ export function buildPaletteSections(options: {
   dataQuery: string
   suggestions: WikiSuggestion[]
   hits: RankedSearchHit[]
+  /** Non-null when filter tokens parsed (Plan 08b): replaces the merge below. */
+  filteredHits?: FilteredSearchHit[] | null
   commands: AppCommand[]
 }): PaletteSections {
   const { commands } = options
@@ -52,6 +54,7 @@ export function buildPaletteSections(options: {
   const dataStale = options.dataQuery.trim() !== query
   const suggestions = query === '' && dataStale ? [] : options.suggestions
   const hits = query === '' && dataStale ? [] : options.hits
+  const filteredHits = query === '' && dataStale ? null : (options.filteredHits ?? null)
 
   if (query.startsWith('>')) {
     const commandQuery = query.slice(1).trim()
@@ -59,6 +62,21 @@ export function buildPaletteSections(options: {
       commandsOnly: true,
       notes: [],
       commands: commands.filter((command) => matchesCommand(command, commandQuery)),
+    }
+  }
+
+  if (query !== '' && filteredHits !== null) {
+    // Filter tokens are a search mode: the constraint result IS the list —
+    // no title-suggestion merge, no command rows.
+    return {
+      commandsOnly: false,
+      notes: filteredHits.slice(0, NOTE_CAP).map((hit) => ({
+        path: hit.path,
+        title: hit.title,
+        date: hit.dailyDate,
+        snippet: hit.snippet,
+      })),
+      commands: [],
     }
   }
 

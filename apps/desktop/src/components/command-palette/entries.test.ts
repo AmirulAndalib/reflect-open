@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AppCommand } from '@/lib/commands/types'
-import type { RankedSearchHit, WikiSuggestion } from '@reflect/core'
+import type { FilteredSearchHit, RankedSearchHit, WikiSuggestion } from '@reflect/core'
 import { buildPaletteSections } from './entries'
 
 function suggestion(path: string, title: string, date: string | null = null): WikiSuggestion {
@@ -21,6 +21,7 @@ describe('buildPaletteSections', () => {
       dataQuery: '',
       suggestions: [suggestion('notes/a.md', 'Alpha')],
       hits: [],
+      filteredHits: null,
       commands: COMMANDS,
     })
     expect(sections.notes.map((note) => note.path)).toEqual(['notes/a.md'])
@@ -108,6 +109,27 @@ describe('buildPaletteSections', () => {
     expect(sections.commands.map((command) => command.id)).toEqual(['nav.today'])
   })
 
+  it('filter tokens switch to constrained results: no merge, no commands', () => {
+    const filtered: FilteredSearchHit[] = [
+      { path: 'daily/2026-06-08.md', title: '2026-06-08', dailyDate: '2026-06-08', snippet: null },
+      { path: 'notes/w.md', title: 'Work log', dailyDate: null, snippet: 'tagged …' },
+    ]
+    const sections = buildPaletteSections({
+      query: '#work is:daily',
+      dataQuery: '#work is:daily',
+      suggestions: [suggestion('notes/ignored.md', 'Ignored')],
+      hits: [hit('notes/ignored2.md', 'Also ignored')],
+      filteredHits: filtered,
+      commands: COMMANDS,
+    })
+    expect(sections.notes.map((note) => note.path)).toEqual([
+      'daily/2026-06-08.md',
+      'notes/w.md',
+    ])
+    expect(sections.notes[0].date).toBe('2026-06-08')
+    expect(sections.commands).toEqual([])
+  })
+
   it('daily suggestions keep their date for day-label rendering', () => {
     const sections = buildPaletteSections({
       query: '2026',
@@ -116,6 +138,7 @@ describe('buildPaletteSections', () => {
         { target: '2026-06-09', path: 'daily/2026-06-09.md', title: '2026-06-09', alias: null, date: '2026-06-09' },
       ],
       hits: [],
+      filteredHits: null,
       commands: [],
     })
     expect(sections.notes[0].date).toBe('2026-06-09')

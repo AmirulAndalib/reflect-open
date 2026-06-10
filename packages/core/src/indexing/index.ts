@@ -58,6 +58,8 @@ export {
   type HighlightSegment,
 } from './search'
 export { lineSnippet } from './snippet'
+export { parseSearchQuery, type ParsedSearchQuery, type SearchFilters } from './filter-query'
+export { searchWithFilters, type FilteredSearchHit } from './filtered-search'
 export {
   rewriteLinksForTitleChange,
   nextAliases,

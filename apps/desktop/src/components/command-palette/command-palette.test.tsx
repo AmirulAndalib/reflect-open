@@ -9,11 +9,13 @@ import { PaletteProvider, usePalette } from './palette-provider'
 
 const suggestWikiTargets = vi.hoisted(() => vi.fn())
 const searchNotesRanked = vi.hoisted(() => vi.fn())
+const searchWithFilters = vi.hoisted(() => vi.fn())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   suggestWikiTargets,
   searchNotesRanked,
+  searchWithFilters,
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 } }),
@@ -132,6 +134,32 @@ describe('CommandPalette', () => {
     const { view } = renderPalette('> toggle theme')
     await view.findByText('Toggle theme')
     expect(view.queryByText('Notes')).toBeNull()
+  })
+
+  it('filter tokens run the constrained search and render its rows', async () => {
+    suggestWikiTargets.mockClear()
+    searchNotesRanked.mockClear()
+    suggestWikiTargets.mockResolvedValue([])
+    searchNotesRanked.mockResolvedValue([])
+    searchWithFilters.mockResolvedValue([
+      { path: 'daily/2026-06-08.md', title: '2026-06-08', dailyDate: '2026-06-08', snippet: null },
+      { path: 'notes/w.md', title: 'Work log', dailyDate: null, snippet: null },
+    ])
+    const { view, navigate } = renderPalette('#work is:daily')
+    await view.findByText('Work log')
+    expect(view.getByText('Monday, June 8')).toBeDefined() // dailies keep labels
+    expect(searchWithFilters).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filtered: true,
+        filters: expect.objectContaining({ tags: ['work'], dailyOnly: true }),
+      }),
+    )
+    expect(searchNotesRanked).not.toHaveBeenCalled() // the merge queries park
+
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ kind: 'daily', date: '2026-06-08' }),
+    )
   })
 
   it('a daily suggestion renders its day label and opens the daily route', async () => {
