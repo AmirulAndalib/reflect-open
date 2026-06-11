@@ -140,8 +140,10 @@ Every capture lands in two phases so saving never waits on the network or AI:
 
 6. **Write path (desktop-owned, executed inside drain step 3 above).** Default shape:
    - append a `[[Links]]` entry to **today's daily note** (Plan 06 append-under-heading);
-   - create a **dedicated markdown note** when the capture is rich (description +
-     highlights + screenshot worth preserving);
+   - create a **dedicated markdown note** when the capture has enough phase-1 content
+     to be worth preserving (selection/highlights present, or a screenshot) — the
+     description arrives later in phase 2 and is patched into the dedicated note then,
+     not used to decide whether to create it;
    - write minimal **provenance** frontmatter/markdown: original URL, captured title,
      captured time, source = extension, screenshot asset path (already written by drain
      step 3.3), selection/highlights, and (after enrichment) the AI provider/model used.
