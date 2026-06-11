@@ -321,6 +321,7 @@ body {
 /* Inline images: the literal `![alt](src)` text keeps a widget-rendered
    preview directly beneath it (Plan 05b). */
 .reflect-editor .md-image {
+  -webkit-user-select: none;
   user-select: none;
   margin: 0.25em 0 0.5em;
 }
