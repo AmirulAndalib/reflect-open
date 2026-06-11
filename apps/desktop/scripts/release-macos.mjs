@@ -245,11 +245,22 @@ function build({ notarize }) {
     log('notarization skipped (--no-notarize): the bundle will not pass Gatekeeper on other Macs')
   }
 
-  const result = spawnSync('pnpm', ['tauri', 'build'], {
-    cwd: appDir,
-    stdio: 'inherit',
-    env: { ...process.env, APPLE_SIGNING_IDENTITY: identity, ...credentials?.buildEnv },
-  })
+  const buildEnv = { ...process.env, APPLE_SIGNING_IDENTITY: identity, ...credentials?.buildEnv }
+  if (!notarize) {
+    // Tauri notarizes the .app whenever these are present, so inherited shell
+    // exports would silently override --no-notarize.
+    for (const name of [
+      'APPLE_ID',
+      'APPLE_PASSWORD',
+      'APPLE_TEAM_ID',
+      'APPLE_API_KEY',
+      'APPLE_API_ISSUER',
+      'APPLE_API_KEY_PATH',
+    ]) {
+      delete buildEnv[name]
+    }
+  }
+  const result = spawnSync('pnpm', ['tauri', 'build'], { cwd: appDir, stdio: 'inherit', env: buildEnv })
   if (result.status !== 0) fail('tauri build failed')
 
   if (notarize) notarizeDmg(bundlePaths().dmg, credentials)
