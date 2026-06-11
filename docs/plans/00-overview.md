@@ -49,6 +49,7 @@ before the editor, and the editor lands before search/AI.
 | 13 | [Import / export / portability](13-import-export-portability.md) | Markdown/Obsidian-graph import, JSON/Markdown/HTML export, attachments preserved |
 | 14 | [CLI (read/discovery)](14-cli-read-discovery.md) | `reflect today`, `reflect search`, `reflect show`, path lookup |
 | 15 | [Hardening, packaging & OSS release](15-hardening-packaging-release.md) | a11y, perf budgets, signing/notarization, MIT + docs, onboarding, release pipeline |
+| 17 | [Readable filenames](17-readable-filenames.md) | Title-derived note filenames (slug + collision suffix), frontmatter `id` adoption, rename-on-settled-title file moves, ULID→slug migration |
 
 ## Milestone map
 
