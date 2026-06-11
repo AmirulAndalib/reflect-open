@@ -127,6 +127,25 @@ describe('subscribeIndexChanges', () => {
     expect(order).toEqual(['apply:notes/a.md', 'applied:notes/a.md'])
   })
 
+  it('stamps the indexed row with the modifiedMs carried by the event', async () => {
+    const mtimes: number[] = []
+    const { emitChanges } = fakeBridge(async (command, args) => {
+      if (command === 'note_read') {
+        return '# content'
+      }
+      if (command === 'index_apply') {
+        mtimes.push((args.note as { mtime: number }).mtime)
+      }
+      return null
+    })
+
+    await subscribeIndexChanges(1)
+    emitChanges([{ path: 'notes/a.md', kind: 'upsert', modifiedMs: 1234 }])
+    await vi.waitFor(() => {
+      expect(mtimes).toEqual([1234])
+    })
+  })
+
   it('drops malformed payloads instead of applying them', async () => {
     const calls: string[] = []
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

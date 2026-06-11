@@ -38,7 +38,13 @@ const REBUILD_BATCH_SIZE = 256
  */
 export const PROJECTION_VERSION_KEY = 'projection_version'
 
-/** Read, parse, and (re)index a single note for the given index generation. */
+/**
+ * Read, parse, and (re)index a single note for the given index generation.
+ * Without an explicit `mtime` the row is stamped "now" — a watcher event means
+ * the file just changed, and a real timestamp beats epoch zero (which would
+ * sink the note to the bottom of every recency sort and, because reconcile is
+ * content-hash gated, never get repaired).
+ */
 export async function indexNote(
   path: string,
   options: { generation: number; content?: string; mtime?: number },
@@ -47,7 +53,7 @@ export async function indexNote(
   const parsed = parseNote({ path, source: content })
   const fileHash = await hashContent(content)
   await applyIndexedNote(
-    buildIndexedNote(parsed, { fileHash, mtime: options.mtime ?? 0 }),
+    buildIndexedNote(parsed, { fileHash, mtime: options.mtime ?? Date.now() }),
     options.generation,
   )
 }

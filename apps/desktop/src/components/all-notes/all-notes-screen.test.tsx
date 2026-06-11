@@ -173,6 +173,27 @@ describe('AllNotesScreen', () => {
     view.unmount()
   })
 
+  it('renders a dash, not an epoch date, for a row missing its mtime', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command !== 'db_query') {
+        return null
+      }
+      const sql = String(args.sql)
+      if (sql.includes('group by')) {
+        return facetRows
+      }
+      if (sql.includes('"preview"')) {
+        return [{ path: 'notes/legacy.md', title: 'Legacy Note', mtime: 0, preview: '' }]
+      }
+      return []
+    })
+    const view = renderScreen()
+
+    await view.findByText('Legacy Note')
+    expect(view.getByText('—')).toBeDefined()
+    view.unmount()
+  })
+
   it('opens a note when its row is clicked', async () => {
     const view = renderScreen()
 

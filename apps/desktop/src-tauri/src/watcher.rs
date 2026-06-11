@@ -34,6 +34,12 @@ pub struct FileChange {
     pub path: String,
     /// `"upsert"` (created/modified) or `"remove"` (deleted).
     pub kind: String,
+    /// Last-modified time in epoch milliseconds, set for upserts. The frontend
+    /// stamps `notes.mtime` from this — without it, watcher-indexed rows would
+    /// carry no real timestamp (and reconcile would never repair them, since it
+    /// is content-hash gated).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified_ms: Option<u64>,
 }
 
 /// Graph-relative path if `path` is a tracked markdown note (`.md` under `daily/`
@@ -47,20 +53,26 @@ fn tracked_relpath(path: &Path, root: &Path) -> Option<String> {
 }
 
 /// Reduce a debounced batch of paths to unique tracked changes (last kind wins).
-/// Create/modify vs delete is decided by whether the file currently exists.
+/// Create/modify vs delete is decided by whether the file currently stats; the
+/// same stat supplies the upsert's `modified_ms`.
 fn collect_changes(paths: &[PathBuf], root: &Path) -> Vec<FileChange> {
     let mut seen: std::collections::BTreeMap<String, FileChange> =
         std::collections::BTreeMap::new();
     for path in paths {
         if let Some(rel) = tracked_relpath(path, root) {
-            let kind = if path.exists() { "upsert" } else { "remove" };
-            seen.insert(
-                rel.clone(),
-                FileChange {
-                    path: rel,
-                    kind: kind.to_string(),
+            let change = match std::fs::metadata(path) {
+                Ok(meta) => FileChange {
+                    path: rel.clone(),
+                    kind: "upsert".to_string(),
+                    modified_ms: crate::fs::modified_ms(&meta),
                 },
-            );
+                Err(_) => FileChange {
+                    path: rel.clone(),
+                    kind: "remove".to_string(),
+                    modified_ms: None,
+                },
+            };
+            seen.insert(rel, change);
         }
     }
     seen.into_values().collect()
@@ -178,8 +190,25 @@ mod tests {
             changes,
             vec![FileChange {
                 path: "notes/a.md".to_string(),
-                kind: "remove".to_string()
+                kind: "remove".to_string(),
+                modified_ms: None,
             }]
         );
+    }
+
+    #[test]
+    fn collect_changes_stamps_upserts_with_the_file_mtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("notes")).unwrap();
+        let note = root.join("notes/a.md");
+        std::fs::write(&note, "# a").unwrap();
+
+        let changes = collect_changes(&[note], root);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "notes/a.md");
+        assert_eq!(changes[0].kind, "upsert");
+        // A real timestamp, not epoch zero — All Notes sorts and labels by it.
+        assert!(changes[0].modified_ms.is_some_and(|ms| ms > 0));
     }
 }

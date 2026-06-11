@@ -34,7 +34,7 @@ export function AllNotesRow({ note, onOpen }: AllNotesRowProps): ReactElement {
         {note.tags.map((tag) => `#${tag}`).join(' ')}
       </span>
       <span className="text-right text-[13px] tabular-nums text-text-secondary">
-        {formatRecencyLabel(note.mtime, settings)}
+        {note.mtime > 0 ? formatRecencyLabel(note.mtime, settings) : '—'}
       </span>
     </button>
   )

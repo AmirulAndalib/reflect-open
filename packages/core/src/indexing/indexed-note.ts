@@ -30,9 +30,11 @@ import { previewSnippet } from './snippet'
  * new columns at their migration defaults forever.
  *
  * History: 1 — Plan 04 baseline · 2 — `notes.preview` + `tags.tag_key` (the
- * first stamped version; v2 rows also carry the 0004 pinned columns).
+ * first stamped version; v2 rows also carry the 0004 pinned columns) ·
+ * 3 — repairs `notes.mtime` 0 rows written by the watcher path before it
+ * carried `modifiedMs` (hash-reconcile can never refresh them).
  */
-export const PROJECTION_VERSION = 2
+export const PROJECTION_VERSION = 3
 
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),
