@@ -16,6 +16,8 @@
                Consolas, monospace;
   /* The note editor / reading surface can swap to a serif */
   --font-reading: 'InterVariable', Georgia, 'Times New Roman', serif;
+  /* Keyboard-shortcut glyphs (⌘ ⌥ ⇧) — system-ui renders them cleanly */
+  --font-shortcut: system-ui, ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* ---- Type scale (px) -----------------------------------
      Named for usage. App chrome lives in 2xs–sm; prose in

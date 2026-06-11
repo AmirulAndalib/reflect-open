@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { dailyPath } from '@reflect/core'
 import { NotePane } from '@/components/note-pane'
 import { formatDayLabel, todayIso } from '@/lib/dates'
+import { cn } from '@/lib/utils'
 import { useToday } from '@/lib/use-today'
 import { createDayWindow, dateAtIndex, indexOfDate } from '@/lib/day-window'
 import { useRouter } from '@/routing/router'
@@ -109,14 +110,11 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
               className="absolute inset-x-0"
               style={{ transform: `translateY(${item.start}px)` }}
             >
-              <section className="border-b border-black/5 py-6 dark:border-white/5">
-                <h2 className="mb-3 text-lg font-semibold">
+              <section className="border-b border-border py-6">
+                {/* V1 renders the date as the note's H1-sized subject, with
+                    today's tinted brand (its `highlightSubject`). */}
+                <h2 className={cn('reflect-daily-subject mb-3', isToday && 'text-accent')}>
                   {formatDayLabel(date)}
-                  {isToday ? (
-                    <span className="ml-2 align-middle text-xs font-medium text-accent">
-                      Today
-                    </span>
-                  ) : null}
                 </h2>
                 <NotePane
                   path={dailyPath(date)}

@@ -32,9 +32,12 @@ export function addDaysIso(date: string, days: number): string {
   return format(addDays(parseIsoDate(date), days), ISO_DATE_FORMAT)
 }
 
-/** Human label for an ISO date, e.g. `Tuesday, June 9`. */
+/**
+ * Human label for an ISO date, e.g. `Tue, June 9th, 2026` — the original
+ * app's default daily-note subject format (`weekMonthDayYear`).
+ */
 export function formatDayLabel(date: string): string {
-  return format(parseIsoDate(date), 'EEEE, MMMM d')
+  return format(parseIsoDate(date), 'EEE, MMMM do, yyyy')
 }
 
 /**
