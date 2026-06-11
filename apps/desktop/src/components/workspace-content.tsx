@@ -11,15 +11,20 @@ import {
   type ContextSidebarTarget,
 } from '@/components/context-sidebar/sidebar-route'
 import { EmbeddingsSync } from '@/components/embeddings-sync'
+import { ShortcutKeys } from '@/components/shortcut-keys'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { OperationsStatus } from '@/components/operations-status'
 import { RouteContent } from '@/components/route-content'
 import { Sidebar } from '@/components/sidebar/sidebar'
+import { keybindingFor } from '@/lib/commands/app-commands'
 import { useToday } from '@/lib/use-today'
 import { cn } from '@/lib/utils'
 import { hasMacosTitleBarOverlay } from '@/lib/window-chrome'
 import { useSidebar } from '@/providers/sidebar-provider'
 import { useAppShortcuts } from '@/routing/app-shortcuts'
 import { useRouter } from '@/routing/router'
+
+const TOGGLE_SIDEBAR_BINDING = keybindingFor('sidebar.toggle')
 
 interface WorkspaceContentProps {
   graph: GraphInfo
@@ -61,20 +66,27 @@ export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement
     >
       <div className="relative flex h-full flex-col">
         {collapsed ? (
-          <button
-            type="button"
-            aria-label="Show sidebar"
-            title="Show sidebar"
-            onClick={() => commandContext.toggleSidebar()}
-            className={cn(
-              'absolute left-3 z-10 rounded-md p-1 text-text-muted transition-colors duration-100 hover:bg-surface-hover hover:text-text-secondary',
-              // Clear the overlaid macOS title bar: the traffic lights float
-              // exactly where this button otherwise sits.
-              hasMacosTitleBarOverlay ? 'top-9' : 'top-2.5',
-            )}
-          >
-            <PanelLeft aria-hidden strokeWidth={1.75} className="size-4" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Show sidebar"
+                onClick={() => commandContext.toggleSidebar()}
+                className={cn(
+                  'absolute left-3 z-10 rounded-md p-1 text-text-muted transition-colors duration-100 hover:bg-surface-hover hover:text-text-secondary',
+                  // Clear the overlaid macOS title bar: the traffic lights float
+                  // exactly where this button otherwise sits.
+                  hasMacosTitleBarOverlay ? 'top-9' : 'top-2.5',
+                )}
+              >
+                <PanelLeft aria-hidden strokeWidth={1.75} className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Show sidebar{' '}
+              {TOGGLE_SIDEBAR_BINDING && <ShortcutKeys binding={TOGGLE_SIDEBAR_BINDING} />}
+            </TooltipContent>
+          </Tooltip>
         ) : null}
 
         {graph.cloudSync ? <CloudSyncBanner provider={graph.cloudSync} /> : null}

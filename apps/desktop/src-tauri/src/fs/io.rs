@@ -60,12 +60,14 @@ pub(super) fn atomic_write_bytes(target: &Path, contents: &[u8]) -> AppResult<()
     Ok(())
 }
 
-fn modified_ms(meta: &fs::Metadata) -> u64 {
+/// Last-modified time in epoch milliseconds, or `None` when the platform
+/// can't provide one. Shared by `list_files` and the watcher so every index
+/// path derives mtimes the same way.
+pub(crate) fn modified_ms(meta: &fs::Metadata) -> Option<u64> {
     meta.modified()
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|dur| dur.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 /// Collect markdown files under `root/dir` into `out` (recursive).
@@ -98,7 +100,7 @@ pub(super) fn collect_markdown(root: &Path, dir: &str, out: &mut Vec<FileMeta>) 
                 out.push(FileMeta {
                     path: rel.to_string_lossy().replace('\\', "/"),
                     size: meta.len(),
-                    modified_ms: modified_ms(&meta),
+                    modified_ms: modified_ms(&meta).unwrap_or(0),
                 });
             }
         }

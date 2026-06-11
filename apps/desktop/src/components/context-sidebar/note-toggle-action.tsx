@@ -1,6 +1,7 @@
 import { useState, type ReactElement, type ReactNode } from 'react'
 import { errorMessage } from '@reflect/core'
 import { ShortcutKeys } from '@/components/shortcut-keys'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { startOperation } from '@/lib/operations'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
@@ -20,7 +21,7 @@ interface NoteToggleActionProps {
   operations: { activate: string; deactivate: string }
   /** Keybinding hint, from the matching command definition. */
   keybinding?: string | null
-  /** Optional native tooltip explaining the flag's meaning. */
+  /** Optional tooltip explaining the flag's meaning. */
   tooltip?: string
 }
 
@@ -82,12 +83,11 @@ export function NoteToggleAction({
     }
   }
 
-  return (
+  const button = (
     <button
       type="button"
       onClick={() => void onToggle()}
       disabled={isToggling}
-      title={tooltip}
       className="group relative flex w-full items-center space-x-2 rounded-lg px-3 py-2 text-start transition-colors duration-100 hover:bg-surface-hover disabled:opacity-50"
     >
       <span
@@ -105,5 +105,16 @@ export function NoteToggleAction({
         <ShortcutKeys binding={keybinding} className="invisible group-hover:visible" />
       ) : null}
     </button>
+  )
+
+  if (!tooltip) {
+    return button
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   )
 }

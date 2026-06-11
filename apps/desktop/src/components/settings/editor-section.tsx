@@ -30,7 +30,7 @@ export function EditorSection(): ReactElement {
   const { settings, updateSettings } = useSettings()
 
   return (
-    <SettingsSection title="Editor">
+    <SettingsSection id="editor">
       <SettingsField
         legend="Markdown syntax"
         description="How literal markdown characters (#, **, [[ ]]) are displayed while editing."

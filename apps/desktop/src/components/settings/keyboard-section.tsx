@@ -49,7 +49,7 @@ function ShortcutGroup({
 
 export function KeyboardSection(): ReactElement {
   return (
-    <SettingsSection title="Keyboard shortcuts">
+    <SettingsSection id="keyboard">
       <ShortcutGroup heading="App" shortcuts={APP_SHORTCUTS} />
       <ShortcutGroup heading="Editor" shortcuts={EDITOR_SHORTCUTS} />
     </SettingsSection>

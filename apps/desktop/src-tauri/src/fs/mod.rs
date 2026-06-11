@@ -21,6 +21,8 @@ use crate::error::{AppError, AppResult};
 use self::io::{atomic_write, atomic_write_bytes, bootstrap, collect_markdown, NOTE_DIRS};
 use self::resolve::resolve;
 
+pub(crate) use self::io::modified_ms;
+
 /// The open graph root plus a monotonic generation, kept **under one lock** so
 /// they swap atomically (the same pattern as the index's `IndexState`, Plan 04b).
 /// Mutating commands carry the generation they were issued for and are rejected

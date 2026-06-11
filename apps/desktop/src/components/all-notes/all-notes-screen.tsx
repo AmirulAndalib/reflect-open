@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactElement } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { foldTag, hasBridge, listNotes, listNoteTags } from '@reflect/core'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
@@ -27,7 +27,14 @@ interface AllNotesScreenProps {
 export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
   const { graph } = useGraph()
   const { arrivalSeq, entryId, navigate, saveScrollState, savedScroll } = useRouter()
-  const scrollRef = useRef<HTMLDivElement | null>(null)
+  // The scroll container lives in state, not a ref: the virtualizer down in
+  // AllNotesTable reads it via getScrollElement, and a plain ref would be null
+  // during the table's mount-time layout effect (refs on ancestor DOM nodes
+  // attach after a child component's effects). With a warm query cache that
+  // mount is the only render, so the virtualizer would never acquire the
+  // element and the list would stay blank. State forces the post-attach
+  // re-render that hands the element over.
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
   const enabled = hasBridge() && graph !== null
 
   const { data: notes } = useQuery({
@@ -50,10 +57,10 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
   // and lose the position.
   const ready = notes !== undefined
   useEffect(() => {
-    if (ready && scrollRef.current) {
-      scrollRef.current.scrollTop = savedScroll() ?? 0
+    if (ready && scrollElement) {
+      scrollElement.scrollTop = savedScroll() ?? 0
     }
-  }, [arrivalSeq, entryId, ready, savedScroll])
+  }, [arrivalSeq, entryId, ready, savedScroll, scrollElement])
 
   return (
     <div aria-label="All notes" className="flex h-full min-h-0 flex-col">
@@ -69,7 +76,7 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
         </div>
       </header>
       <div
-        ref={scrollRef}
+        ref={setScrollElement}
         data-testid="all-notes-scroll"
         onScroll={(event) => saveScrollState(event.currentTarget.scrollTop)}
         className="min-h-0 flex-1 overflow-auto"
@@ -78,7 +85,7 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
           notes={notes}
           tag={tag}
           onOpen={(path) => navigate(routeForPath(path))}
-          scrollRef={scrollRef}
+          scrollElement={scrollElement}
         />
       </div>
     </div>

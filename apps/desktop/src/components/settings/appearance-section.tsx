@@ -49,7 +49,7 @@ export function AppearanceSection(): ReactElement {
   const { settings, updateSettings } = useSettings()
 
   return (
-    <SettingsSection title="Appearance">
+    <SettingsSection id="appearance">
       <SettingsField
         legend="Theme"
         description="System follows your OS appearance. Saved with your settings."

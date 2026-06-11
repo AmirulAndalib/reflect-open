@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
 import { useSync, type BackupState } from '@/providers/sync-provider'
@@ -48,60 +49,66 @@ export function GraphFooter({ graph }: { graph: GraphInfo }): ReactElement {
   return (
     <div className="flex items-center px-4 py-3">
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            title={graph.root}
-            className="flex min-w-0 flex-1 items-center space-x-2.5 text-left"
-          >
-            <span
-              aria-hidden
-              className={cn(
-                'h-5 w-5 flex-none rounded-md bg-accent',
-                indexing && 'motion-safe:animate-pulse',
-              )}
-            />
-            <span className="min-w-0 truncate text-xs font-medium text-text">
-              {graph.name}
-            </span>
-            {dot !== null ? (
-              <>
+        <Tooltip delayDuration={700}>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center space-x-2.5 text-left"
+              >
                 <span
                   aria-hidden
-                  title={dot.label}
-                  className={cn('h-1.5 w-1.5 flex-none rounded-full', dot.className)}
+                  className={cn(
+                    'h-5 w-5 flex-none rounded-md bg-accent',
+                    indexing && 'motion-safe:animate-pulse',
+                  )}
                 />
-                <span role="status" className="sr-only">
-                  {dot.label}
+                <span className="min-w-0 truncate text-xs font-medium text-text">
+                  {graph.name}
                 </span>
-              </>
-            ) : null}
-            {indexing ? (
-              <span role="status" className="sr-only">
-                Indexing
-              </span>
-            ) : null}
-          </button>
-        </DropdownMenuTrigger>
+                {dot !== null ? (
+                  <>
+                    <span
+                      aria-hidden
+                      className={cn('h-1.5 w-1.5 flex-none rounded-full', dot.className)}
+                    />
+                    <span role="status" className="sr-only">
+                      {dot.label}
+                    </span>
+                  </>
+                ) : null}
+                {indexing ? (
+                  <span role="status" className="sr-only">
+                    Indexing
+                  </span>
+                ) : null}
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{graph.root}</TooltipContent>
+        </Tooltip>
         <DropdownMenuContent aria-label="Switch graph" side="top" sideOffset={6}>
           {recents.map((recent) => {
             const current = recent.root === graph.root
             return (
-              <DropdownMenuItem
-                key={recent.root}
-                title={recent.root}
-                onSelect={() => {
-                  if (!current) {
-                    void openRecent(recent.root)
-                  }
-                }}
-                className={MENU_ITEM_CLASS}
-              >
-                <span className="min-w-0 flex-1 truncate">{recent.name}</span>
-                {current ? (
-                  <Check aria-hidden className="size-3.5 shrink-0 text-accent" />
-                ) : null}
-              </DropdownMenuItem>
+              <Tooltip key={recent.root} delayDuration={700}>
+                <TooltipTrigger asChild>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      if (!current) {
+                        void openRecent(recent.root)
+                      }
+                    }}
+                    className={MENU_ITEM_CLASS}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{recent.name}</span>
+                    {current ? (
+                      <Check aria-hidden className="size-3.5 shrink-0 text-accent" />
+                    ) : null}
+                  </DropdownMenuItem>
+                </TooltipTrigger>
+                <TooltipContent side="right">{recent.root}</TooltipContent>
+              </Tooltip>
             )
           })}
           {recents.length > 0 ? <DropdownMenuSeparator /> : null}

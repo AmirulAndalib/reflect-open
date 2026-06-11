@@ -1,11 +1,16 @@
 import type { ReactElement } from 'react'
 import { Settings } from 'lucide-react'
+import { ShortcutKeys } from '@/components/shortcut-keys'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { keybindingFor } from '@/lib/commands/app-commands'
 import type { ResolvedTheme } from '@/providers/theme-provider'
+
+const SETTINGS_BINDING = keybindingFor('settings.open')
 
 interface WorkspaceHeaderProps {
   /** Display name of the open graph. */
   graphName: string
-  /** Absolute root path (shown as the title tooltip). */
+  /** Absolute root path (shown as a tooltip when the name is truncated). */
   graphRoot: string
   /** True while the background index reconcile is running. */
   indexing: boolean
@@ -32,9 +37,12 @@ export function WorkspaceHeader({
 }: WorkspaceHeaderProps): ReactElement {
   return (
     <header className="flex items-center justify-between gap-4 border-b border-black/10 px-6 py-3 dark:border-white/10">
-      <h1 className="truncate text-sm font-semibold" title={graphRoot}>
-        {graphName}
-      </h1>
+      <Tooltip delayDuration={700}>
+        <TooltipTrigger asChild>
+          <h1 className="truncate text-sm font-semibold">{graphName}</h1>
+        </TooltipTrigger>
+        <TooltipContent>{graphRoot}</TooltipContent>
+      </Tooltip>
       <div className="flex items-center gap-3">
         {indexing ? (
           <span
@@ -52,15 +60,21 @@ export function WorkspaceHeader({
         >
           {resolvedTheme === 'dark' ? 'Light' : 'Dark'} mode
         </button>
-        <button
-          type="button"
-          aria-label="Open settings"
-          title="Settings (⌘,)"
-          onClick={onOpenSettings}
-          className="rounded-md border border-black/10 p-1.5 text-[color:var(--text-secondary)] dark:border-white/10"
-        >
-          <Settings aria-hidden className="size-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label="Open settings"
+              onClick={onOpenSettings}
+              className="rounded-md border border-black/10 p-1.5 text-[color:var(--text-secondary)] dark:border-white/10"
+            >
+              <Settings aria-hidden className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Settings {SETTINGS_BINDING && <ShortcutKeys binding={SETTINGS_BINDING} />}
+          </TooltipContent>
+        </Tooltip>
       </div>
     </header>
   )

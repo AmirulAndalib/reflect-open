@@ -1,15 +1,17 @@
 import type { ReactElement } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ShortcutKeys } from '@/components/shortcut-keys'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { keybindingFor } from '@/lib/commands/app-commands'
-import { formatBindingLabel } from '@/lib/keybindings'
 import { useRouter } from '@/routing/router'
 
 const BACK_BINDING = keybindingFor('history.back')
 const FORWARD_BINDING = keybindingFor('history.forward')
 
-function buttonTitle(label: string, binding: string | null): string {
-  return binding !== null ? `${label} (${formatBindingLabel(binding)})` : label
-}
+const BUTTON_CLASS =
+  'rounded-md p-1 text-text-muted transition-colors duration-100 ' +
+  'hover:bg-surface-hover hover:text-text disabled:opacity-50 ' +
+  'disabled:hover:bg-transparent disabled:hover:text-text-muted'
 
 /**
  * The sidebar's back/forward history arrows (the original app's
@@ -19,11 +21,6 @@ function buttonTitle(label: string, binding: string | null): string {
 export function NavigateArrows(): ReactElement {
   const { back, forward, canBack, canForward } = useRouter()
 
-  const buttonClass =
-    'rounded-md p-1 text-text-muted transition-colors duration-100 ' +
-    'hover:bg-surface-hover hover:text-text disabled:opacity-50 ' +
-    'disabled:hover:bg-transparent disabled:hover:text-text-muted'
-
   return (
     // The arrows sit inside the overlaid macOS title-bar band, where the
     // WindowDragRegion strip (z-40, mounted before the app) would otherwise
@@ -31,26 +28,44 @@ export function NavigateArrows(): ReactElement {
     // buttons above it by tree order while same-z overlays mounted later
     // (the command palette) still cover them.
     <div className="relative z-40 flex items-center">
-      <button
-        type="button"
-        aria-label="Go back"
-        title={buttonTitle('Go back', BACK_BINDING)}
-        disabled={!canBack}
-        onClick={back}
-        className={buttonClass}
-      >
-        <ChevronLeft aria-hidden className="size-4" />
-      </button>
-      <button
-        type="button"
-        aria-label="Go forward"
-        title={buttonTitle('Go forward', FORWARD_BINDING)}
-        disabled={!canForward}
-        onClick={forward}
-        className={buttonClass}
-      >
-        <ChevronRight aria-hidden className="size-4" />
-      </button>
+      <Tooltip>
+        {/* Span wrapper keeps pointer events alive when the button is disabled,
+            so the tooltip still opens at the start of the history stack. */}
+        <TooltipTrigger asChild>
+          <span>
+            <button
+              type="button"
+              aria-label="Go back"
+              disabled={!canBack}
+              onClick={back}
+              className={BUTTON_CLASS}
+            >
+              <ChevronLeft aria-hidden className="size-4" />
+            </button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          Go back {BACK_BINDING && <ShortcutKeys binding={BACK_BINDING} />}
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span>
+            <button
+              type="button"
+              aria-label="Go forward"
+              disabled={!canForward}
+              onClick={forward}
+              className={BUTTON_CLASS}
+            >
+              <ChevronRight aria-hidden className="size-4" />
+            </button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          Go forward {FORWARD_BINDING && <ShortcutKeys binding={FORWARD_BINDING} />}
+        </TooltipContent>
+      </Tooltip>
     </div>
   )
 }

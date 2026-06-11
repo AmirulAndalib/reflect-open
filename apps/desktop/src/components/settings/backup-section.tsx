@@ -59,7 +59,7 @@ export function BackupSection(): ReactElement {
   }
 
   return (
-    <SettingsSection title="Backup">
+    <SettingsSection id="backup">
       <SettingsField
         legend="GitHub backup"
         description="Back up this graph to a GitHub repository. Edits back up automatically a few moments after you stop typing."

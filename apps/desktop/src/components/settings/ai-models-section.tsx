@@ -1,6 +1,7 @@
 import { useState, type ReactElement } from 'react'
 import { Plus } from 'lucide-react'
 import { useAiModels } from '@/hooks/use-ai-models'
+import { Button } from '@/components/ui/button'
 import { AddAiModelDialog } from './add-ai-model-dialog'
 import { AiModelRow } from './ai-model-row'
 import { SettingsSection } from './section'
@@ -16,7 +17,7 @@ export function AiModelsSection(): ReactElement {
   const [adding, setAdding] = useState(false)
 
   return (
-    <SettingsSection title="AI models">
+    <SettingsSection id="ai-models">
       {models.length === 0 ? (
         <p className="px-4 py-3.5 text-xs text-text-muted">
           No AI models configured. Add a provider API key to use AI features — keys are
@@ -34,14 +35,16 @@ export function AiModelsSection(): ReactElement {
         ))
       )}
       <div className="px-4 py-2.5">
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => setAdding(true)}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium text-accent transition-colors duration-100 hover:bg-surface-hover"
+          className="text-accent hover:bg-surface-hover"
         >
-          <Plus aria-hidden strokeWidth={1.75} className="size-4" />
+          <Plus aria-hidden strokeWidth={1.75} />
           Add model
-        </button>
+        </Button>
       </div>
       {adding ? <AddAiModelDialog onAdd={addModel} onClose={() => setAdding(false)} /> : null}
     </SettingsSection>

@@ -14,6 +14,11 @@ export const FILE_CHANGES_EVENT = 'index:changed'
 const fileChangeSchema = z.object({
   path: z.string(),
   kind: z.enum(['upsert', 'remove']),
+  /**
+   * The file's last-modified time (epoch ms), present on upserts. The re-index
+   * path stamps `notes.mtime` from it; removes (and older payloads) omit it.
+   */
+  modifiedMs: z.number().optional(),
 })
 const fileChangesSchema = z.array(fileChangeSchema)
 

@@ -83,7 +83,7 @@ export function SearchSection(): ReactElement {
   }
 
   return (
-    <SettingsSection title="Search">
+    <SettingsSection id="search">
       <SettingsField
         legend="Semantic search"
         description="Find notes by meaning, not just keywords — smarter ⌘K results and related notes. Runs entirely on this device; enabling downloads a small model (~90 MB) once."

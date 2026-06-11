@@ -54,6 +54,7 @@ describe('indexNote', () => {
     expect(args.generation).toBe(7)
     expect(args.note.path).toBe('notes/a.md')
     expect(args.note.title).toBe('Hello')
+    expect(args.note.mtime).toBe(5)
     expect(args.note.fileHash).toMatch(/^[0-9a-f]{64}$/)
     expect((args.note.links as { targetKey: string }[]).map((link) => link.targetKey)).toContain('world')
   })
@@ -108,7 +109,7 @@ describe('applyIndexChanges (watcher dispatch)', () => {
   it('re-indexes upserts and removes deletes at the given generation', async () => {
     await applyIndexChanges(
       [
-        { path: 'notes/a.md', kind: 'upsert' },
+        { path: 'notes/a.md', kind: 'upsert', modifiedMs: 4242 },
         { path: 'notes/gone.md', kind: 'remove' },
       ],
       9,
@@ -117,7 +118,19 @@ describe('applyIndexChanges (watcher dispatch)', () => {
     const remove = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_remove')
     expect((apply![1] as { note: { path: string }; generation: number }).generation).toBe(9)
     expect((apply![1] as { note: { path: string } }).note.path).toBe('notes/a.md')
+    expect((apply![1] as { note: { mtime: number } }).note.mtime).toBe(4242)
     expect(remove![1]).toMatchObject({ path: 'notes/gone.md', generation: 9 })
+  })
+
+  it('stamps "now" — never epoch zero — when an upsert carries no modifiedMs', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_750_000_000_000)
+    try {
+      await applyIndexChanges([{ path: 'notes/a.md', kind: 'upsert' }], 9)
+      const apply = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_apply')
+      expect((apply![1] as { note: { mtime: number } }).note.mtime).toBe(1_750_000_000_000)
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 })
 

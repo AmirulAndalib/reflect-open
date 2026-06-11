@@ -42,7 +42,7 @@ export function DateTimeSection(): ReactElement {
   const today = new Date()
 
   return (
-    <SettingsSection title="Date & time">
+    <SettingsSection id="date-time">
       <SettingsField
         legend="Date format"
         description="The day and month order for dates shown throughout Reflect."

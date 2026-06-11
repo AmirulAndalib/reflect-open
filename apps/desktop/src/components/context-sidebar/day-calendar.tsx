@@ -4,9 +4,10 @@ import { dailyDatesInRange, hasBridge, type WeekStartDay } from '@reflect/core'
 import { CalendarIcon } from '@/components/icons/calendar-icon'
 import { ChevronLeftIcon } from '@/components/icons/chevron-left-icon'
 import { ChevronRightIcon } from '@/components/icons/chevron-right-icon'
+import { ShortcutKeys } from '@/components/shortcut-keys'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { keybindingFor } from '@/lib/commands/app-commands'
 import { formatDayLabel } from '@/lib/dates'
-import { formatBindingLabel } from '@/lib/keybindings'
 import {
   addMonths,
   buildMonthGrid,
@@ -33,10 +34,6 @@ function toWeekStartsOn(weekStartDay: WeekStartDay): 0 | 1 {
 }
 
 const TODAY_BINDING = keybindingFor('nav.today')
-const TODAY_TITLE =
-  TODAY_BINDING !== null
-    ? `Jump to Today (${formatBindingLabel(TODAY_BINDING)})`
-    : 'Jump to Today'
 
 const HEADER_BUTTON_CLASS =
   'cursor-default rounded-md transition-colors duration-100 hover:bg-surface-hover hover:text-text'
@@ -91,15 +88,21 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
           >
             <ChevronLeftIcon />
           </button>
-          <button
-            type="button"
-            aria-label="Jump to today"
-            title={TODAY_TITLE}
-            onClick={() => navigate({ kind: 'today' })}
-            className={HEADER_BUTTON_CLASS}
-          >
-            <CalendarIcon />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Jump to today"
+                onClick={() => navigate({ kind: 'today' })}
+                className={HEADER_BUTTON_CLASS}
+              >
+                <CalendarIcon />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Jump to Today {TODAY_BINDING && <ShortcutKeys binding={TODAY_BINDING} />}
+            </TooltipContent>
+          </Tooltip>
           <button
             type="button"
             aria-label="Next month"

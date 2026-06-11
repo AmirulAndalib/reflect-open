@@ -51,7 +51,7 @@ export function AllNotesSection(): ReactElement {
   }
 
   return (
-    <SettingsSection title="All notes">
+    <SettingsSection id="all-notes">
       <SettingsField
         legend="Filter tags"
         description="Tags pinned as one-click filters at the top of the All Notes screen."

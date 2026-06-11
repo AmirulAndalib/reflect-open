@@ -32,9 +32,11 @@ import { previewSnippet } from './snippet'
  *
  * History: 1 — Plan 04 baseline · 2 — `notes.preview` + `tags.tag_key` (the
  * first stamped version; v2 rows also carry the 0004 pinned columns) ·
- * 3 — `notes.has_conflict` (sync conflict markers, Plan 12).
+ * 3 — repairs `notes.mtime` 0 rows written by the watcher path before it
+ * carried `modifiedMs` (hash-reconcile can never refresh them) ·
+ * 4 — `notes.has_conflict` (sync conflict markers, Plan 12).
  */
-export const PROJECTION_VERSION = 3
+export const PROJECTION_VERSION = 4
 
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),
