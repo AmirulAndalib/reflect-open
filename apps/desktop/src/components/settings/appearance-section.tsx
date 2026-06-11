@@ -1,6 +1,17 @@
 import type { ReactElement } from 'react'
-import type { ThemePreference, WeekStartDay } from '@reflect/core'
+import {
+  weekStartDaySchema,
+  type ThemePreference,
+  type WeekStartDay,
+} from '@reflect/core'
 import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/providers/settings-provider'
 import { SettingsField } from './field'
@@ -74,30 +85,24 @@ export function AppearanceSection(): ReactElement {
         legend="Start week on"
         description="The first day shown in the daily notes calendar."
       >
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {WEEK_START_OPTIONS.map(({ value, label }) => {
-            const selected = settings.weekStartDay === value
-            return (
-              <SettingsOptionCard
-                key={value}
-                selected={selected}
-                className={cn(
-                  'items-center justify-center px-3 py-2.5',
-                  selected ? 'text-accent-soft-text' : 'text-text-secondary',
-                )}
-              >
-                <input
-                  type="radio"
-                  name="week-start-day"
-                  value={value}
-                  checked={selected}
-                  onChange={() => updateSettings({ weekStartDay: value })}
-                  className="sr-only"
-                />
-                <span className="text-sm font-medium">{label}</span>
-              </SettingsOptionCard>
-            )
-          })}
+        <div className="mt-3">
+          <Select
+            value={settings.weekStartDay}
+            onValueChange={(value) =>
+              updateSettings({ weekStartDay: weekStartDaySchema.parse(value) })
+            }
+          >
+            <SelectTrigger aria-label="Start week on" className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WEEK_START_OPTIONS.map(({ value, label }) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </SettingsField>
     </SettingsSection>
