@@ -134,14 +134,24 @@ function resolveNotaryCredentials(identity) {
   }
 }
 
+/**
+ * The architecture segment of the host triple (e.g. "aarch64"). Taken from
+ * rustc — the same source Tauri names bundle artifacts from — rather than
+ * process.arch, which diverges when Node runs under Rosetta.
+ */
+function hostArch() {
+  const arch = capture('rustc', ['-vV']).match(/^host: (\S+)/m)?.[1]?.split('-')[0]
+  if (!arch) fail('could not determine the host triple from rustc -vV')
+  return arch
+}
+
 /** Derive bundle output paths from tauri.conf.json and cargo's target dir. */
 function bundlePaths() {
   const conf = JSON.parse(readFileSync(join(appDir, 'src-tauri', 'tauri.conf.json'), 'utf8'))
   const metadata = JSON.parse(
     capture('cargo', ['metadata', '--format-version', '1', '--no-deps'], { cwd: repoRoot }),
   )
-  const arch = { arm64: 'aarch64', x64: 'x86_64' }[process.arch]
-  if (!arch) fail(`unsupported architecture: ${process.arch}`)
+  const arch = hostArch()
   const bundleDir = join(metadata.target_directory, 'release', 'bundle')
   return {
     app: join(bundleDir, 'macos', `${conf.productName}.app`),
