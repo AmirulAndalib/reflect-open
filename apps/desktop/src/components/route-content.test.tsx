@@ -200,12 +200,13 @@ describe('RouteContent', () => {
   })
 
   it('opens a note the editor cannot round-trip as read-only, never editable', async () => {
-    files['notes/tasks.md'] = '- [ ] a task\n'
-    const view = renderRoute({ kind: 'note', path: 'notes/tasks.md' })
+    // Setext heading text is a known meowdown converter gap (see roundtrip.ts).
+    files['notes/setext.md'] = 'A Title\n=======\n\nbody\n'
+    const view = renderRoute({ kind: 'note', path: 'notes/setext.md' })
 
     await view.findByText(/read-only to protect your file/)
     expect(view.queryByTestId('fake-editor')).toBeNull()
-    expect(view.getByText(/a task/)).toBeDefined()
+    expect(view.getByText(/A Title/)).toBeDefined()
     view.unmount()
   })
 

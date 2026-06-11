@@ -1,17 +1,12 @@
-import { defineEditorExtension, docToMarkdown, markdownToDoc, type TypedEditor } from '@meowdown/core'
-import { createEditor, union } from '@prosekit/core'
 import { describe, expect, it } from 'vitest'
 import { computeImageRanges, defineImages } from './images'
+import { createMeowdownEditor, serializeMarkdown } from './meowdown'
 
 function editorWith(markdown: string) {
-  const editor = createEditor({
-    extension: union(
-      defineEditorExtension(),
-      defineImages({ resolveUrl: (src) => (src.startsWith('assets/') ? `asset://${src}` : null) }),
-    ),
-  })
-  editor.setContent(markdownToDoc(editor as unknown as TypedEditor, markdown))
-  return editor
+  return createMeowdownEditor(
+    markdown,
+    defineImages({ resolveUrl: (src) => (src.startsWith('assets/') ? `asset://${src}` : null) }),
+  )
 }
 
 describe('image rendering', () => {
@@ -33,6 +28,6 @@ describe('image rendering', () => {
   it('never changes serialization (widgets only)', () => {
     const markdown = 'A pic ![shot](assets/s.png) and ![ext](https://x.com/i.jpg).'
     const editor = editorWith(markdown)
-    expect(docToMarkdown(editor.state.doc).replace(/\n$/, '')).toBe(markdown)
+    expect(serializeMarkdown(editor.state.doc).replace(/\n$/, '')).toBe(markdown)
   })
 })

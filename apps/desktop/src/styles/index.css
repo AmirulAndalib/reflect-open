@@ -163,20 +163,41 @@ body,
 }
 
 /* ---- Editor (Plan 05) ------------------------------------------------------
-   meowdown ships structural CSS only; visibility of markdown syntax and all
-   theming is ours. ProseKit mounts the ProseMirror view *on* our
-   `.reflect-editor` div (it is the `.ProseMirror` root, not an ancestor of
-   one), so root-level rules target `.reflect-editor` itself. Meowdown's
-   MarkMode plugin sets `data-mark-mode` on that same root and, in `focus`
-   mode, adds `.show` to syntax spans near the caret. Our wiki-link decorations
-   follow the same contract (`.md-wiki-mark` + `.show`). */
+   meowdown ships a default editor theme (`@meowdown/react/style.css`, imported
+   by the `editor/meowdown` bridge) driven by `--meowdown-*` variables —
+   including markdown-syntax visibility per the MarkMode `data-mark-mode` /
+   `.show` contract, tag pills, wikilink styling, and selection colors scoped
+   under the `.meowdown` wrapper the NoteEditor renders. We remap its variables
+   to Reflect tokens and keep only the deviations the V1 design calls for.
+   ProseKit mounts the ProseMirror view *on* our `.reflect-editor` div (it is
+   the `.ProseMirror` root, not an ancestor of one), so these rules target the
+   same element as the theme's `.ProseMirror` rules and win equal-specificity
+   ties by load order (this file is bundled after the theme). */
 
 .reflect-editor {
-  outline: none; /* the caret is the focus treatment */
+  --meowdown-text: var(--text);
+  --meowdown-heading: var(--text);
+  --meowdown-muted: var(--text-secondary);
+  --meowdown-accent: var(--accent);
+  --meowdown-mark: var(--text-muted);
+  --meowdown-border: var(--border);
+  --meowdown-code-bg: var(--surface-sunken, rgb(0 0 0 / 5%));
+  --meowdown-font-mono: var(--font-mono, monospace);
+  --meowdown-node-outline: var(--accent);
+  --meowdown-node-selection: var(--accent-soft, rgb(99 102 241 / 12%));
+  --meowdown-selection: var(--accent-soft, rgb(99 102 241 / 12%));
+
+  /* The panes own all spacing and sizing: cancel the theme's editor padding
+     (no floating UI of ours needs the `--meowdown-gutter`) and font size. */
+  padding: 0;
+  font-size: inherit;
   font-family: var(--font-reading, var(--font-sans));
-  line-height: var(--leading-relaxed, 1.7);
-  color: var(--text);
-  caret-color: var(--accent);
+}
+
+/* Block spacing comes from the element margins below, not the theme's
+   uniform sibling gap. */
+.reflect-editor > * + * {
+  margin-top: 0;
 }
 
 .reflect-editor h1,
@@ -207,6 +228,7 @@ body,
 .reflect-editor blockquote {
   border-left: 2px solid var(--accent-soft, var(--border));
   color: var(--text-secondary);
+  font-style: normal; /* the theme italicizes quotes; V1 keeps them upright */
   margin: 0.6em 0;
   padding-left: 1em;
 }
@@ -214,6 +236,7 @@ body,
 .reflect-editor code {
   font-family: var(--font-mono, monospace);
   font-size: 0.9em;
+  color: inherit; /* the theme tints code toward the accent; V1 keeps text color */
   background: var(--surface-sunken, rgb(0 0 0 / 5%));
   border-radius: var(--radius-sm, 4px);
   padding: 0.1em 0.3em;
@@ -230,20 +253,6 @@ body,
 .reflect-editor pre code {
   background: none;
   padding: 0;
-}
-
-/* Markdown syntax characters (meowdown's spans + our wiki-link syntax spans).
-   `hide`: never visible. `focus`: visible only with the caret-adjacent `.show`.
-   `show`: always visible, dimmed. */
-.reflect-editor .md-mark,
-.reflect-editor .md-link-uri,
-.reflect-editor .md-wiki-mark {
-  color: var(--text-muted);
-}
-.reflect-editor[data-mark-mode='hide'] :is(.md-mark, .md-link-uri, .md-wiki-mark),
-.reflect-editor[data-mark-mode='focus']
-  :is(.md-mark, .md-link-uri, .md-wiki-mark):not(.show) {
-  display: none;
 }
 
 /* Inline images: the literal `![alt](src)` text keeps a widget-rendered
@@ -271,19 +280,15 @@ body,
   }
 }
 
-/* Wiki-link chips (decorations over the literal `[[…]]` text). */
-.reflect-editor .md-wiki-link {
+/* Wiki links: chips over the engine's native `[[…]]` marks (the theme's
+   dashed underline reads as a draft affordance; V1 renders chips). */
+.reflect-editor .md-wikilink {
+  text-decoration: none;
   color: var(--accent-soft-text, var(--accent));
   background: var(--accent-soft, rgb(99 102 241 / 12%));
   border-radius: var(--radius-sm, 4px);
   padding: 0.05em 0.15em;
   cursor: pointer;
-}
-/* Caret inside the link: syntax is revealed for editing, so clicks place the
-   caret (navigation needs Mod+click here) — signal that with a text cursor. */
-.reflect-editor .md-wiki-link.is-active {
-  background: transparent;
-  cursor: text;
 }
 
 /* ---- [[ autocomplete (Plan 07) ---------------------------------------------

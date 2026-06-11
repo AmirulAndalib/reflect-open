@@ -7,27 +7,27 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
-import {
-  defineEditorExtension,
-  defineMarkMode,
-  docToMarkdown,
-  markdownToDoc,
-  type MarkMode,
-  type TypedEditor,
-} from '@meowdown/core'
-import { createEditor, defineDocChangeHandler, union, type Editor } from '@prosekit/core'
+import { defineDocChangeHandler, union, type Editor } from '@prosekit/core'
 import { ProseKit, useExtension } from '@prosekit/react'
-import '@meowdown/core/style.css'
 import { cn } from '@/lib/utils'
 import { defineImages, type ImageOptions } from './images'
 import { defineReflectKeymap } from './keymap'
+import {
+  createMeowdownEditor,
+  defineMarkMode,
+  parseMarkdown,
+  serializeMarkdown,
+  type MarkMode,
+  type MeowdownEditorHandle,
+} from './meowdown'
 import { selectFirstHeadingText } from './title-selection'
 import { defineWikiLinks } from './wiki-links'
 
 /**
- * Reflect's editor (Plan 05): meowdown's extension set composed with our own
- * (wiki-link chips, the central keymap). Mirrors `@meowdown/react`'s `<Editor>`
- * — which accepts no extra extensions — so we own the composition point.
+ * Reflect's editor (Plan 05): meowdown's engine (via the `./meowdown` bridge)
+ * composed with our own extensions (wiki-link navigation, images, the central
+ * keymap). Mirrors `@meowdown/react`'s `<Editor>` — which accepts no extra
+ * extensions — so we own the composition point.
  *
  * The component is **uncontrolled**: `initialContent` is read once. Showing a
  * different note or reloading after an external change goes through the
@@ -35,12 +35,14 @@ import { defineWikiLinks } from './wiki-links'
  * change — the Plan 05 contract.
  */
 
-/** Imperative surface for note switching, reload, and save flushes. */
-export interface NoteEditorHandle {
+/**
+ * Imperative surface for note switching, reload, and save flushes. Extends
+ * meowdown's own handle contract (`getMarkdown`) with what Reflect's document
+ * pipeline needs on top.
+ */
+export interface NoteEditorHandle extends MeowdownEditorHandle {
   /** Replace the document (note switch / external reload). */
   setMarkdown(markdown: string): void
-  /** Serialize the current document to markdown. */
-  getMarkdown(): string
   focus(): void
   /**
    * Focus with the first heading's text selected, so typing replaces it (the
@@ -64,7 +66,7 @@ interface NoteEditorProps {
   spellCheck?: boolean
   /** Image rendering + paste/drop persistence (Plan 05b). */
   images?: ImageOptions
-  /** Click on a `[[wiki link]]` chip (Plan 06 navigation). */
+  /** Click on a `[[wiki link]]` (Plan 06 navigation). */
   onWikiLinkClick?: (target: string) => void
   /**
    * Extra classes for the editable root. The mount div *is* the ProseMirror
@@ -86,20 +88,10 @@ function createNoteEditor(
   images: ImageOptions,
   onNavigate: (target: string) => void,
 ): Editor {
-  const editor = createEditor({
-    extension: union(
-      defineEditorExtension(),
-      defineWikiLinks({ onNavigate }),
-      defineImages(images),
-      defineReflectKeymap(),
-    ),
-  })
-  if (initialContent) {
-    // Our union schema is a superset of meowdown's; the converters only touch
-    // the meowdown-owned types, so the TypedEditor view of it is sound.
-    editor.setContent(markdownToDoc(editor as TypedEditor, initialContent))
-  }
-  return editor
+  return createMeowdownEditor(
+    initialContent,
+    union(defineWikiLinks({ onNavigate }), defineImages(images), defineReflectKeymap()),
+  )
 }
 
 export function NoteEditor({
@@ -140,7 +132,7 @@ export function NoteEditor({
       () =>
         onChange
           ? defineDocChangeHandler(() => {
-              onChange(docToMarkdown(editor.state.doc))
+              onChange(serializeMarkdown(editor.state.doc))
             })
           : null,
       [onChange, editor],
@@ -152,9 +144,9 @@ export function NoteEditor({
     handleRef,
     () => ({
       setMarkdown: (markdown: string) => {
-        editor.setContent(markdownToDoc(editor as TypedEditor, markdown))
+        editor.setContent(parseMarkdown(editor, markdown))
       },
-      getMarkdown: () => docToMarkdown(editor.state.doc),
+      getMarkdown: () => serializeMarkdown(editor.state.doc),
       focus: () => editor.focus(),
       selectTitle: () => {
         editor.focus()
@@ -166,7 +158,15 @@ export function NoteEditor({
 
   return (
     <ProseKit editor={editor}>
-      <div ref={editor.mount} spellCheck={spellCheck} className={cn('reflect-editor', className)} />
+      {/* The `.meowdown` wrapper opts into the meowdown stylesheet's editor
+          scope (selection styling); the mount div is the ProseMirror root. */}
+      <div className="meowdown">
+        <div
+          ref={editor.mount}
+          spellCheck={spellCheck}
+          className={cn('reflect-editor', className)}
+        />
+      </div>
       {children}
     </ProseKit>
   )

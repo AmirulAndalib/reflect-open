@@ -1,6 +1,7 @@
 import { defineKeymap, type PlainExtension } from '@prosekit/core'
 import { setBlockType } from '@prosekit/pm/commands'
-import { TextSelection, type Command } from '@prosekit/pm/state'
+import type { Command } from '@prosekit/pm/state'
+import { MEOWDOWN_BINDING_DESCRIPTIONS } from './meowdown'
 
 /**
  * The central keymap registry (Plan 05 step 9). Every shortcut the app binds —
@@ -40,51 +41,6 @@ export function listRegisteredBindings(): ReadonlyMap<string, KeymapScope> {
 }
 
 /**
- * Toggle an inline markdown marker (`**`, `_`, `` ` ``) around the selection.
- * meowdown keeps syntax as literal text, so toggling bold *is* inserting or
- * removing the marker characters — its inline pass restyles automatically.
- */
-function toggleInlineMarker(marker: string): Command {
-  return (state, dispatch) => {
-    const { selection } = state
-    if (!(selection instanceof TextSelection) || !selection.$from.sameParent(selection.$to)) {
-      return false
-    }
-    const block = selection.$from.parent
-    if (!block.isTextblock || block.type.spec.code) {
-      return false
-    }
-    const { from, to, empty } = selection
-    if (!dispatch) {
-      return true
-    }
-
-    if (empty) {
-      // Insert a marker pair and leave the caret between them.
-      const tr = state.tr.insertText(marker + marker, from)
-      tr.setSelection(TextSelection.create(tr.doc, from + marker.length))
-      dispatch(tr)
-      return true
-    }
-
-    const before = state.doc.textBetween(Math.max(0, from - marker.length), from)
-    const after = state.doc.textBetween(to, Math.min(state.doc.content.size, to + marker.length))
-    if (before === marker && after === marker) {
-      // Unwrap: remove the surrounding markers (right side first so positions hold).
-      const tr = state.tr.delete(to, to + marker.length).delete(from - marker.length, from)
-      dispatch(tr)
-      return true
-    }
-
-    // Wrap: insert at the end first so the start position is unaffected.
-    const tr = state.tr.insertText(marker, to).insertText(marker, from)
-    tr.setSelection(TextSelection.create(tr.doc, from + marker.length, to + marker.length))
-    dispatch(tr)
-    return true
-  }
-}
-
-/**
  * Toggle the current block between `heading` at `level` and `paragraph`.
  * Headings are real nodes in meowdown (block syntax is reconstructed by the
  * serializer), so a block-type change round-trips exactly.
@@ -103,7 +59,7 @@ function toggleHeading(level: number): Command {
 }
 
 interface EditorBindingDefinition {
-  /** The keybinding (ProseMirror key string, e.g. `Mod-b`). */
+  /** The keybinding (ProseMirror key string, e.g. `Mod-1`). */
   binding: string
   /** What the binding does — shown in the Keyboard settings section. */
   description: string
@@ -111,28 +67,28 @@ interface EditorBindingDefinition {
 }
 
 /**
- * The editor-scope bindings, one definition each: the keymap the editor
- * registers and the descriptions the shortcuts UI shows both derive from this
- * list, so a new binding can't ship without its settings row (and vice versa).
+ * The bindings Reflect adds on top of meowdown's, one definition each: the
+ * keymap the editor registers and the descriptions the shortcuts UI shows both
+ * derive from this list, so a new binding can't ship without its settings row
+ * (and vice versa).
  */
 const EDITOR_BINDING_DEFINITIONS: EditorBindingDefinition[] = [
-  { binding: 'Mod-b', description: 'Bold', command: toggleInlineMarker('**') },
-  { binding: 'Mod-i', description: 'Italic', command: toggleInlineMarker('_') },
-  { binding: 'Mod-e', description: 'Inline code', command: toggleInlineMarker('`') },
   { binding: 'Mod-1', description: 'Heading 1', command: toggleHeading(1) },
   { binding: 'Mod-2', description: 'Heading 2', command: toggleHeading(2) },
   { binding: 'Mod-3', description: 'Heading 3', command: toggleHeading(3) },
 ]
 
 /** Display descriptions for the editor-scope bindings (the shortcuts UI). */
-export const EDITOR_BINDING_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
-  EDITOR_BINDING_DEFINITIONS.map(({ binding, description }) => [binding, description]),
-)
+export const EDITOR_BINDING_DESCRIPTIONS: Record<string, string> = registerKeymap('editor', {
+  ...MEOWDOWN_BINDING_DESCRIPTIONS,
+  ...Object.fromEntries(
+    EDITOR_BINDING_DEFINITIONS.map(({ binding, description }) => [binding, description]),
+  ),
+})
 
-/** Reflect's editor-scope bindings — registered once, collision-checked. */
-export const EDITOR_BINDINGS: Record<string, Command> = registerKeymap(
-  'editor',
-  Object.fromEntries(EDITOR_BINDING_DEFINITIONS.map(({ binding, command }) => [binding, command])),
+/** Reflect's own editor-scope commands (meowdown's toggles live in the engine). */
+export const EDITOR_BINDINGS: Record<string, Command> = Object.fromEntries(
+  EDITOR_BINDING_DEFINITIONS.map(({ binding, command }) => [binding, command]),
 )
 
 /** The editor keymap extension, composed into the editor via `union`. */

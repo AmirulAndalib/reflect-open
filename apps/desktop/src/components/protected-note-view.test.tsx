@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { ProtectedNoteView } from './protected-note-view'
 
 const CONTENT = `---
-title: Checklist
+title: Setext
 ---
 
-# Checklist
+Unsupported Setext Heading
+==========================
 
-- [ ] unsupported task list
-- [x] another item
+body text
 `
 
 describe('ProtectedNoteView', () => {
