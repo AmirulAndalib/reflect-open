@@ -33,7 +33,7 @@ export async function applyIndexChanges(
       if (change.kind === 'remove') {
         await removeFromIndex(change.path, generation)
       } else {
-        await indexNote(change.path, { generation })
+        await indexNote(change.path, { generation, mtime: change.modifiedMs })
       }
     } catch (error) {
       onError(error, change)
