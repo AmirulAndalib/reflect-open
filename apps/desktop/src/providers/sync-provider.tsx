@@ -112,9 +112,16 @@ export function SyncProvider({ graph, children }: SyncProviderProps): ReactEleme
       engineRef.current = engine
       setBackup({ phase: 'connected', remoteUrl, repo, status: { state: 'idle' } })
 
-      unlisten = await subscribeFileChanges(() => {
+      const subscription = await subscribeFileChanges(() => {
         engine?.noteChanged()
       })
+      if (cancelled) {
+        // Teardown won the race against the subscribe — unhook the late
+        // arrival here or the index:changed handler leaks forever.
+        subscription()
+        return
+      }
+      unlisten = subscription
       onFocus = () => {
         void engine?.syncNow()
       }
@@ -142,8 +149,8 @@ export function SyncProvider({ graph, children }: SyncProviderProps): ReactEleme
   }, [generation, connectEpoch])
 
   const connectRemote = useCallback(
-    async (remoteUrl: string) => {
-      await gitSetup(remoteUrl, generation)
+    async (remoteUrl: string, branch: string) => {
+      await gitSetup(remoteUrl, branch, generation)
       setConnectEpoch((epoch) => epoch + 1)
     },
     [generation],
@@ -162,7 +169,9 @@ export function SyncProvider({ graph, children }: SyncProviderProps): ReactEleme
       const token = await requireToken()
       const repo = await createGithubRepo(token, name, { isPrivate: true, fetchFn: providerFetch })
       const [owner, repoName] = repo.fullName.split('/')
-      await connectRemote(githubRemoteUrl({ owner, name: repoName }))
+      // Align with the account's default branch for new repos so the first
+      // push creates the branch GitHub already considers the default.
+      await connectRemote(githubRemoteUrl({ owner, name: repoName }), repo.defaultBranch)
     },
     [connectRemote, requireToken],
   )
@@ -180,7 +189,10 @@ export function SyncProvider({ graph, children }: SyncProviderProps): ReactEleme
       if (!repo.isPrivate && options.allowPublic !== true) {
         return 'needsPublicConfirm'
       }
-      await connectRemote(githubRemoteUrl(ref))
+      // The repo's default branch is where its existing backup history lives —
+      // the local branch must match or sync would create a parallel branch
+      // and never integrate it.
+      await connectRemote(githubRemoteUrl(ref), repo.defaultBranch)
       return 'connected'
     },
     [connectRemote, requireToken],

@@ -60,10 +60,16 @@ export async function gitStatus(): Promise<GitStatus> {
 
 /**
  * Initialize (or adopt) the graph repository; `remoteUrl` points `origin` at
- * the backup remote. Idempotent.
+ * the backup remote and `branch` aligns the local branch with the remote's
+ * default (an existing repo on `master` must not end up shadowed by a
+ * parallel local `main`). Idempotent.
  */
-export async function gitSetup(remoteUrl: string | null, generation: number): Promise<GitStatus> {
-  return call('git_setup', { remoteUrl, generation }, gitStatusSchema)
+export async function gitSetup(
+  remoteUrl: string | null,
+  branch: string | null,
+  generation: number,
+): Promise<GitStatus> {
+  return call('git_setup', { remoteUrl, branch, generation }, gitStatusSchema)
 }
 
 /** Commit every pending change (no-op when the tree is clean). */

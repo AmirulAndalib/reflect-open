@@ -89,7 +89,7 @@ fn status(root: &Path) -> AppResult<GitStatus> {
     })
 }
 
-fn setup(root: &Path, remote_url: Option<String>) -> AppResult<GitStatus> {
+fn setup(root: &Path, remote_url: Option<String>, branch: Option<String>) -> AppResult<GitStatus> {
     let repo = repo::open_or_init(root)?;
     repo::ensure_reflect_ignored(root)?;
     if let Some(url) = remote_url {
@@ -98,6 +98,9 @@ fn setup(root: &Path, remote_url: Option<String>) -> AppResult<GitStatus> {
         } else {
             repo.remote("origin", &url)?;
         }
+    }
+    if let Some(branch) = branch {
+        repo::align_branch(&repo, &branch)?;
     }
     drop(repo);
     status(root)
@@ -120,16 +123,20 @@ pub async fn git_status(state: State<'_, GraphState>) -> AppResult<GitStatus> {
     run_blocking(move || status(&root)).await
 }
 
-/// Initialize (or adopt) the graph's repository and optionally point `origin`
-/// at `remote_url`. Idempotent.
+/// Initialize (or adopt) the graph's repository, optionally point `origin` at
+/// `remote_url`, and align the local branch with `branch` (the remote's
+/// default — fetch/merge/push must target the branch the backup repo actually
+/// uses, e.g. an existing repo on `master` while fresh graphs init `main`).
+/// Idempotent.
 #[tauri::command]
 pub async fn git_setup(
     remote_url: Option<String>,
+    branch: Option<String>,
     generation: u64,
     state: State<'_, GraphState>,
 ) -> AppResult<GitStatus> {
     let root = crate::fs::root_for_generation(&state, generation)?;
-    run_blocking(move || setup(&root, remote_url)).await
+    run_blocking(move || setup(&root, remote_url, branch)).await
 }
 
 /// Commit every pending change (no-op when clean). See [`commit::commit_all`].

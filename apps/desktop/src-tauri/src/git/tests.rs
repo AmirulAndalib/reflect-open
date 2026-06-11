@@ -53,7 +53,7 @@ fn fixture() -> Fixture {
 
     let graph_a = dir.path().join("graph-a");
     scaffold_graph(&graph_a);
-    setup(&graph_a, Some(remote_url.clone())).unwrap();
+    setup(&graph_a, Some(remote_url.clone()), None).unwrap();
 
     Fixture {
         _dir: dir,
@@ -190,6 +190,58 @@ fn first_sync_against_an_empty_remote_pushes() {
     let merged = merge_remote(root).unwrap();
     assert!(matches!(merged.kind, MergeKind::UpToDate), "{merged:?}");
     assert!(push(root, None).unwrap().pushed);
+}
+
+#[test]
+fn connecting_an_existing_backup_on_another_branch_pulls_its_history() {
+    let dir = tempdir().unwrap();
+    let bare = dir.path().join("remote.git");
+    let mut opts = RepositoryInitOptions::new();
+    opts.bare(true).initial_head("master");
+    Repository::init_opts(&bare, &opts).unwrap();
+    let remote_url = bare.to_string_lossy().into_owned();
+
+    // Seed the remote with existing history on `master` (the user's old repo).
+    let seed = dir.path().join("seed");
+    fs::create_dir_all(&seed).unwrap();
+    let mut seed_opts = RepositoryInitOptions::new();
+    seed_opts.initial_head("master");
+    Repository::init_opts(&seed, &seed_opts).unwrap();
+    setup(&seed, Some(remote_url.clone()), None).unwrap();
+    write(&seed, "notes/existing.md", "# Existing\n");
+    commit_all(&seed, "seed", MAX_FILE_BYTES).unwrap();
+    push(&seed, None).unwrap();
+
+    // A fresh graph (local default would be `main`) connects to it; the
+    // GitHub API reports `master` as the default branch and setup aligns the
+    // local branch — without this, merge looks for origin/main, sees nothing,
+    // and push creates a parallel branch instead of integrating the backup
+    // (PR #96 review).
+    let root = dir.path().join("graph");
+    scaffold_graph(&root);
+    setup(&root, Some(remote_url), Some("master".to_string())).unwrap();
+    assert_eq!(status(&root).unwrap().branch.as_deref(), Some("master"));
+
+    // The engine's launch cycle: the local root commit and the remote history
+    // are unrelated, and the merge must still integrate them.
+    commit_all(&root, "local notes", MAX_FILE_BYTES).unwrap();
+    fetch(&root, None).unwrap();
+    let merged = merge_remote(&root).unwrap();
+    assert!(
+        matches!(
+            merged.kind,
+            MergeKind::Merged | MergeKind::MergedWithConflicts
+        ),
+        "{merged:?}"
+    );
+    assert!(push(&root, None).unwrap().pushed);
+
+    let paths = head_tree_paths(&root);
+    assert!(
+        paths.contains(&"notes/existing.md".to_string()),
+        "{paths:?}"
+    );
+    assert!(paths.contains(&".gitignore".to_string()));
 }
 
 #[test]
@@ -334,7 +386,7 @@ fn fetch_without_remote_is_a_typed_error() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("graph");
     scaffold_graph(&root);
-    setup(&root, None).unwrap();
+    setup(&root, None, None).unwrap();
     let err = fetch(&root, None).unwrap_err();
     assert!(matches!(err, crate::error::AppError::NotFound { .. }));
 }
@@ -347,13 +399,13 @@ fn adopting_an_existing_repo_appends_reflect_ignore() {
     fs::write(root.join(".gitignore"), "node_modules/\n").unwrap();
     Repository::init(&root).unwrap();
 
-    setup(&root, None).unwrap();
+    setup(&root, None, None).unwrap();
     let gitignore = read(&root, ".gitignore");
     assert!(gitignore.contains("node_modules/"));
     assert!(gitignore.contains("/.reflect/"));
 
     // Idempotent: a second setup must not duplicate the entry.
-    setup(&root, None).unwrap();
+    setup(&root, None, None).unwrap();
     let again = read(&root, ".gitignore");
     assert_eq!(again.matches(".reflect").count(), 1, "{again}");
 }

@@ -56,6 +56,29 @@ pub(super) fn current_branch(repo: &Repository) -> AppResult<String> {
     }
 }
 
+/// Point the local branch at `name` so fetch/merge/push target the branch the
+/// backup repo actually uses. An unborn HEAD just retargets; an existing
+/// branch is renamed (history kept); if `name` already exists locally, HEAD
+/// switches to it.
+pub(super) fn align_branch(repo: &Repository, name: &str) -> AppResult<()> {
+    let current = current_branch(repo)?;
+    if current == name {
+        return Ok(());
+    }
+    let target = format!("refs/heads/{name}");
+    if repo.find_reference(&target).is_ok() {
+        repo.set_head(&target)?;
+        return Ok(());
+    }
+    if let Ok(reference) = repo.find_reference(&format!("refs/heads/{current}")) {
+        git2::Branch::wrap(reference).rename(name, false)?;
+    }
+    // With no current ref (unborn HEAD) there is nothing to rename — pointing
+    // HEAD at the new name is enough; the first commit creates the branch.
+    repo.set_head(&target)?;
+    Ok(())
+}
+
 /// Commit signature: the user's git identity when configured, else a Reflect
 /// fallback so backup works on machines with no global gitconfig.
 pub(super) fn signature(repo: &Repository) -> AppResult<Signature<'static>> {
