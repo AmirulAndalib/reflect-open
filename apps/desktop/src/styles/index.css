@@ -235,7 +235,7 @@ body {
    date as the note's subject) without living inside the editor DOM. */
 .reflect-daily-subject {
   font-family: var(--font-reading, var(--font-sans));
-  font-size: var(--text-2xl, 1.5rem);
+  font-size: var(--text-xl, 1.25rem);
   font-weight: 650;
   letter-spacing: var(--tracking-snug, -0.01em);
 }
