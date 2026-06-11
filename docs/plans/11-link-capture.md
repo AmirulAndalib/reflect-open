@@ -87,26 +87,34 @@ Every capture lands in two phases so saving never waits on the network or AI:
    screenshot (`captureVisibleTab`). Minimal UI: confirm + optional note. No keys, no AI.
    If the host is missing (app not installed) the extension explains + links the
    download, queues the capture in `chrome.storage`, and retries later. Status states
-   are honest: **saved** (drained), **queued** (spooled or stored locally), **failed**.
+   are honest: **queued** (spooled into inbox or held in `chrome.storage` — the host
+   cannot observe drain), **failed**. The extension never claims "saved" since it has
+   no visibility into when the desktop app processes the spool.
 
 2. **Native-messaging host (sidecar) + manifest registration.** Tiny Rust crate built in
    `beforeBuildCommand`, bundled via `externalBin`; pure-stdio discipline (log to
    stderr). Validates with zod, writes the capture envelope + screenshot into the inbox
-   atomically, acks saved/queued or a typed error. Desktop app registers/rewrites
+   atomically, acks **queued** on success or a typed error on failure. The host never
+   observes drain, so it never acks "saved". Desktop app registers/rewrites
    manifests for detected browsers on every launch.
 
 3. **Capture inbox + drain (core action).** A platform-agnostic capture envelope (zod)
    in `actions/capture` — `{url, title, selection?, screenshotRef?, note?, capturedAt,
    source}` — written identically by the desktop host today and by the future iOS
    share extension (app-group inbox) / Android intent handler. `drainCaptureInbox`
-   validates, writes the **raw** entry (phase 1), schedules enrichment (phase 2), and
-   removes the spool file. Extend the Rust watcher (currently `daily/`+`notes/` `.md`
-   only) to also report the inbox dir.
+   executes these steps **in order**:
+   1. Resolve the capture target (today's daily note, or a chosen note).
+   2. **Privacy gate:** if the target is `private: true`, skip all enrichment and all
+      outbound traffic (no URL fetch, no meta scrape, no screenshot/selection/note
+      content sent out) — write the raw link only.
+   3. Copy the screenshot from the spool into `assets/` (downscaled via `image`) and
+      record the asset path. **The spool is not removed until assets are safely written.**
+   4. Write the **raw** `[[Links]]` entry + provenance (phase 1 — the durable save).
+   5. Remove the spool file.
+   6. If not private: schedule async enrichment (phase 2).
 
-4. **Privacy gate first.** Resolve the capture target (today's daily note, or a chosen
-   note). If the target is `private: true`, **save the raw link locally and skip all
-   enrichment** (no URL fetch, no meta scrape, no screenshot/selection/note content sent
-   out). Otherwise proceed to enrichment.
+   Extend the Rust watcher (currently `daily/`+`notes/` `.md` only) to also report the
+   inbox dir.
 
 5. **Async enrichment (desktop-owned, never in the extension).** Runs after the raw
    entry is saved, queued + retried like any background job:
@@ -121,20 +129,18 @@ Every capture lands in two phases so saving never waits on the network or AI:
      the user already edited or removed it, skip rather than clobber. Record the
      provider/model used in provenance.
 
-6. **Write path (desktop-owned).** Default shape:
+6. **Write path (desktop-owned, executed inside drain step 3 above).** Default shape:
    - append a `[[Links]]` entry to **today's daily note** (Plan 06 append-under-heading);
    - create a **dedicated markdown note** when the capture is rich (description +
      highlights + screenshot worth preserving);
-   - store screenshots under `assets/` with relative links (Plan 02), downscaled via the
-     `image` crate;
    - write minimal **provenance** frontmatter/markdown: original URL, captured title,
-     captured time, source = extension, screenshot asset path, selection/highlights, and
-     the AI provider/model used.
+     captured time, source = extension, screenshot asset path (already written by drain
+     step 3.3), selection/highlights, and (after enrichment) the AI provider/model used.
    Then reindex (Plan 04). Basic dedup: re-capturing the same URL updates rather than
    duplicates.
 
 7. **Errors + retries.** Reviewable failures (offline, no key, provider error). The
-   extension surfaces saved/queued/failed; the raw link is always saved even if
+   extension surfaces queued/failed; the raw link is always saved even if
    enrichment fails; enrichment retries on next launch/online.
 
 8. **Tests.** Envelope schema validation; spool-drain round-trip including the

@@ -47,10 +47,11 @@ must-be-running flaw) is pure cost. Instead:
 - Host validates the payload, decodes the screenshot, and **atomically writes**
   (`tmp/` + `rename(2)`, Maildir discipline, one uniquely-named file per capture) into
   the inbox.
-- App running → its watcher sees the new file within ~1 s and runs the normal pipeline
-  (privacy gate → BYOK enrichment → daily-note `[[Links]]` append → assets →
-  provenance → reindex). App closed → the capture waits; the app drains the inbox on next
-  launch. Raw link is never lost — which Plan 11 step 6 requires anyway.
+- App running → its watcher sees the new file within ~1 s and runs the drain pipeline:
+  resolve target → privacy gate → copy assets to `assets/` → write raw `[[Links]]`
+  entry + provenance → remove spool file → schedule async enrichment (meta scrape +
+  BYOK AI description) → reindex. App closed → the capture waits; the app drains the
+  inbox on next launch. Raw link is never lost.
 - The host finds the inbox via a small pointer file the app maintains in a fixed app-data
   location (active graph path). No graph configured → the host replies with a typed error
   the extension can surface ("Open Reflect and pick a graph first").
