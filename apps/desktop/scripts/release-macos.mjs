@@ -73,8 +73,14 @@ function findSigningIdentity() {
   return identities[0]
 }
 
-/** Extract the 10-character team ID from an identity like "… (789ULN5MZB)". */
-function teamIdFromIdentity(identity) {
+/**
+ * Resolve the notarization team ID: APPLE_TEAM_ID wins, otherwise it's
+ * extracted from an identity like "… (789ULN5MZB)". Only called by the
+ * credential paths that actually need a team ID, so bare identities work
+ * with --no-notarize and API-key notarization.
+ */
+function resolveTeamId(identity) {
+  if (process.env.APPLE_TEAM_ID) return process.env.APPLE_TEAM_ID
   const teamId = identity.match(/\(([0-9A-Z]{10})\)$/)?.[1]
   if (!teamId) fail(`could not extract a team ID from identity "${identity}" — set APPLE_TEAM_ID explicitly`)
   return teamId
@@ -97,9 +103,8 @@ function readKeychainCredentials() {
  * buildEnv is merged into `tauri build`'s environment (Tauri notarizes the
  * .app itself); notarytoolArgs are used for the separate DMG submission.
  */
-function resolveNotaryCredentials(teamId) {
-  const { APPLE_API_KEY, APPLE_API_ISSUER, APPLE_API_KEY_PATH, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID } =
-    process.env
+function resolveNotaryCredentials(identity) {
+  const { APPLE_API_KEY, APPLE_API_ISSUER, APPLE_API_KEY_PATH, APPLE_ID, APPLE_PASSWORD } = process.env
 
   if (APPLE_API_KEY && APPLE_API_ISSUER) {
     if (!APPLE_API_KEY_PATH) fail('APPLE_API_KEY is set but APPLE_API_KEY_PATH (path to the .p8 file) is not')
@@ -111,16 +116,17 @@ function resolveNotaryCredentials(teamId) {
   }
 
   if (APPLE_ID && APPLE_PASSWORD) {
-    const team = APPLE_TEAM_ID ?? teamId
+    const teamId = resolveTeamId(identity)
     return {
-      buildEnv: { APPLE_TEAM_ID: team },
-      notarytoolArgs: ['--apple-id', APPLE_ID, '--password', APPLE_PASSWORD, '--team-id', team],
+      buildEnv: { APPLE_TEAM_ID: teamId },
+      notarytoolArgs: ['--apple-id', APPLE_ID, '--password', APPLE_PASSWORD, '--team-id', teamId],
       source: `Apple ID ${APPLE_ID} (environment)`,
     }
   }
 
   const stored = readKeychainCredentials()
   if (!stored) return null
+  const teamId = resolveTeamId(identity)
   return {
     buildEnv: { APPLE_ID: stored.account, APPLE_PASSWORD: stored.password, APPLE_TEAM_ID: teamId },
     notarytoolArgs: ['--apple-id', stored.account, '--password', stored.password, '--team-id', teamId],
@@ -223,7 +229,6 @@ function printArtifacts() {
 
 function build({ notarize }) {
   const identity = findSigningIdentity()
-  const teamId = teamIdFromIdentity(identity)
   log(`signing identity: ${identity}`)
 
   let credentials = null
@@ -231,7 +236,7 @@ function build({ notarize }) {
     if (run('xcrun', ['--find', 'notarytool']).status !== 0) {
       fail('notarytool not found — install the Xcode Command Line Tools (`xcode-select --install`)')
     }
-    credentials = resolveNotaryCredentials(teamId)
+    credentials = resolveNotaryCredentials(identity)
     if (!credentials) {
       fail(
         'no notarization credentials found.\n' +
