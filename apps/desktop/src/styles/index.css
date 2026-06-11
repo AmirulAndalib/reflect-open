@@ -231,8 +231,8 @@ body {
 .reflect-editor h3 { font-size: var(--text-lg, 1.125rem); }
 .reflect-editor h1:first-child { margin-top: 0; }
 
-/* The daily note's date heading shares the editor H1 metrics (V1 renders the
-   date as the note's subject) without living inside the editor DOM. */
+/* The daily note's date heading (V1 renders the date as the note's subject)
+   without living inside the editor DOM. */
 .reflect-daily-subject {
   font-family: var(--font-reading, var(--font-sans));
   font-size: var(--text-xl, 1.25rem);
