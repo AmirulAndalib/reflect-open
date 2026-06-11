@@ -133,7 +133,9 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
                     onClick={() => navigate({ kind: 'daily', date: cell.date })}
                     className={cn(
                       'relative cursor-default py-1.5 text-xs',
-                      !cell.inMonth && !isSelected && 'opacity-20',
+                      // Today stays fully visible even as an adjacent-month
+                      // padding cell (a fix over V1, which dims it there too).
+                      !cell.inMonth && !isSelected && !isToday && 'opacity-20',
                     )}
                   >
                     {isSelected || isToday ? (
