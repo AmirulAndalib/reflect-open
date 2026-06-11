@@ -35,7 +35,7 @@ export function SimilarNotesSection({ path }: SimilarNotesSectionProps): ReactEl
             <button
               type="button"
               onClick={() => navigate(routeForPath(hit.path))}
-              className="flex w-full cursor-pointer items-center space-x-1 px-4 text-left text-xs"
+              className="flex w-full cursor-pointer items-center space-x-1 rounded-lg px-3 py-2 text-left text-xs transition-colors duration-100 hover:bg-surface-hover"
             >
               <span className="min-w-0 flex-1 truncate">{hit.title}</span>
               <span aria-hidden className="flex-none -scale-x-100">
