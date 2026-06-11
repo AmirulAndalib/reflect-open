@@ -194,6 +194,15 @@ body,
   font-family: var(--font-reading, var(--font-sans));
 }
 
+/* The daily stream's horizontal gutter (STREAM_GUTTER in daily-stream.tsx),
+   shared by each row's day label, pane chrome, and the editor itself so they
+   align. An un-layered class — a `px-*` utility sits in `@layer utilities`
+   and would lose to the un-layered `padding: 0` reset above; this rule beats
+   it as the later equal-specificity declaration. Keep it below that reset. */
+.reflect-stream-gutter {
+  padding-inline: max(1.5rem, calc((100% - 42rem) / 2));
+}
+
 /* Block spacing comes from the element margins below, not the theme's
    uniform sibling gap. */
 .reflect-editor > * + * {

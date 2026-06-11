@@ -60,11 +60,12 @@ export function BacklinkSourceGroup({
             aria-expanded={expanded}
             aria-label={`${expanded ? 'Collapse' : 'Expand'} references from ${source.title}`}
             onClick={() => setExpanded(!expanded)}
-            className={`absolute -left-6 flex items-center text-text-muted opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 ${
-              expanded ? 'rotate-90' : ''
-            }`}
+            className="absolute inset-y-0 -left-5 flex items-center text-text-muted opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           >
-            <ChevronRight aria-hidden className="size-4" />
+            <ChevronRight
+              aria-hidden
+              className={`size-4 transition-transform ${expanded ? 'rotate-90' : ''}`}
+            />
           </button>
         ) : null}
       </div>

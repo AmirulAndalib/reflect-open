@@ -76,9 +76,13 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
           onClick={toggleExpanded}
           className="relative flex w-full items-center text-left"
         >
+          {/* V1 floats the chevron in the note gutter, vertically centered
+              (`inset-y-0 left-[15px]` inside its 40px gutter). The stream
+              gutter bottoms out at 1.5rem, so -left-5 keeps the 16px icon
+              centered there — -left-6 presses it flush against the pane edge. */}
           <ChevronRight
             aria-hidden
-            className={`absolute -left-6 size-4 text-text-muted transition-transform ${
+            className={`absolute inset-y-0 -left-5 my-auto size-4 text-text-muted transition-transform ${
               expanded ? 'rotate-90' : ''
             }`}
           />

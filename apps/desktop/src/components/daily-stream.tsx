@@ -21,8 +21,12 @@ interface DailyStreamProps {
  * Rows and the dividers between them span the pane's full width, and because
  * the editor's share of the gutter is its own padding, clicking anywhere
  * across the row focuses that day's note.
+ *
+ * An ordinary class (styles/index.css), not a `px-*` utility: on the editor it
+ * must out-cascade the un-layered `.reflect-editor` padding reset, which every
+ * `@layer utilities` rule loses to regardless of order.
  */
-const STREAM_GUTTER = 'px-[max(1.5rem,calc((100%-42rem)/2))]'
+const STREAM_GUTTER = 'reflect-stream-gutter'
 
 /**
  * Compensate the scroll position whenever a row **above** the viewport changes
