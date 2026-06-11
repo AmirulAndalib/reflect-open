@@ -63,18 +63,30 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
   }, [open])
   // Each new result set highlights its top note. Without this, cmdk keeps any
   // still-valid selection — and commands match synchronously while notes load
-  // async, so the first command would stay highlighted over the top hit. Read
-  // the selection through a ref: this must re-run on new results, not on
-  // arrow-key moves within the same set.
+  // async, so the first command would stay highlighted over the top hit. Keyed
+  // on the list's *content*, not array identity, so a refetch or deferred-query
+  // settle that reproduces the same list never moves a selection the user made;
+  // the selection rides in a ref for the same reason. With no notes at all, a
+  // stale note selection clears so cmdk's first-item default can highlight a
+  // matching command (Enter must always have a target).
   const selectedValueRef = useRef(selectedValue)
   selectedValueRef.current = selectedValue
-  const notes = sections.notes
+  const notesRef = useRef(sections.notes)
+  notesRef.current = sections.notes
+  const notesKey = sections.notes.map((entry) => entry.path).join('\n')
   useEffect(() => {
-    const selectionInNotes = notes.some((entry) => entry.path === selectedValueRef.current)
-    if (open && notes.length > 0 && !selectionInNotes) {
-      setSelectedValue(notes[0].path)
+    if (!open) {
+      return
     }
-  }, [open, notes])
+    const notes = notesRef.current
+    if (notes.length > 0) {
+      if (!notes.some((entry) => entry.path === selectedValueRef.current)) {
+        setSelectedValue(notes[0].path)
+      }
+    } else if (!selectedValueRef.current.startsWith('command:')) {
+      setSelectedValue('')
+    }
+  }, [open, notesKey])
 
   if (!open) {
     return null

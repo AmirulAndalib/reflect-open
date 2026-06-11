@@ -41,9 +41,21 @@ export function NotePreview({ entry }: NotePreviewProps): ReactElement {
   const { data, isError } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'note-preview', entry.path],
     queryFn: () => readNoteForPreview(entry.path),
+    enabled: graph !== null,
   })
 
   const body = data === null || data === undefined ? null : splitFrontmatter(data).body
+
+  let content: ReactElement | null
+  if (isError) {
+    content = <p className="text-sm text-text-muted">This note can’t be previewed.</p>
+  } else if (data === undefined) {
+    content = null // still loading; blank beats a flash of the wrong state
+  } else if (body === null || body.trim() === '') {
+    content = <p className="text-sm text-text-muted italic">Empty</p>
+  } else {
+    content = <MarkdownPreview content={body} resolveImageUrl={images.resolveUrl} />
+  }
 
   return (
     <div data-testid="palette-preview" className="h-full px-5 py-4">
@@ -52,13 +64,7 @@ export function NotePreview({ entry }: NotePreviewProps): ReactElement {
           {formatDayLabel(entry.date, settings.dateFormat)}
         </h2>
       ) : null}
-      {isError ? (
-        <p className="text-sm text-text-muted">This note can’t be previewed.</p>
-      ) : data === undefined ? null : body === null || body.trim() === '' ? (
-        <p className="text-sm text-text-muted italic">Empty</p>
-      ) : (
-        <MarkdownPreview content={body} resolveImageUrl={images.resolveUrl} />
-      )}
+      {content}
     </div>
   )
 }

@@ -191,8 +191,8 @@ describe('CommandPalette', () => {
     ])
     const { view, navigate } = renderPalette('#work is:daily')
     await view.findByText('Work log')
-    // The label renders in the row (and again as the preview pane's header).
-    expect(view.getAllByText('Mon, June 8th, 2026').length).toBeGreaterThan(0)
+    // The label renders in the row and again as the preview pane's header.
+    await waitFor(() => expect(view.getAllByText('Mon, June 8th, 2026')).toHaveLength(2))
     expect(searchWithFilters).toHaveBeenCalledWith(
       expect.objectContaining({
         filtered: true,
@@ -285,6 +285,17 @@ describe('CommandPalette', () => {
     expect(preview.textContent).toContain('Tue, June 16th, 2026')
   })
 
+  it('a query matching only commands still highlights one, so Enter runs it', async () => {
+    suggestWikiTargets.mockResolvedValue([])
+    searchWithFilters.mockResolvedValue([])
+    const toggleTheme = vi.fn()
+    const { view } = renderPalette('toggle theme', { toggleTheme })
+    await view.findByText('Toggle theme')
+
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(toggleTheme).toHaveBeenCalled())
+  })
+
   it('> command mode renders the single column without a preview pane', async () => {
     suggestWikiTargets.mockResolvedValue([])
     searchWithFilters.mockResolvedValue([])
@@ -306,8 +317,8 @@ describe('CommandPalette', () => {
     ])
     searchWithFilters.mockResolvedValue([])
     const { view, navigate } = renderPalette('2026-06-09')
-    // The label renders in the row (and again as the preview pane's header).
-    await view.findAllByText('Tue, June 9th, 2026')
+    // The label renders in the row and again as the preview pane's header.
+    await waitFor(() => expect(view.getAllByText('Tue, June 9th, 2026')).toHaveLength(2))
 
     await userEvent.keyboard('{Enter}')
     await waitFor(() =>
