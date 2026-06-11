@@ -315,6 +315,22 @@ describe('getAuthenticatedUser', () => {
     const fetchFn = vi.fn(async () => jsonResponse({ message: 'Bad credentials' }, 401))
     await expect(getAuthenticatedUser('ghp_bad', fetchFn)).rejects.toMatchObject({ kind: 'auth' })
   })
+
+  it('still treats a 403 that names bad credentials as an auth failure', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ message: 'Bad credentials' }, 403))
+    await expect(getAuthenticatedUser('ghp_bad', fetchFn)).rejects.toMatchObject({ kind: 'auth' })
+  })
+
+  it('classifies a rate-limit 403 as network, never auth', async () => {
+    // The desktop clears the stored credential on `auth` — a throttled but
+    // valid token landing there would delete it from the keychain.
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({ message: 'API rate limit exceeded for user ID 1.' }, 403),
+    )
+    await expect(getAuthenticatedUser('ghp_x', fetchFn)).rejects.toMatchObject({
+      kind: 'network',
+    })
+  })
 })
 
 describe('newRepoUrl', () => {

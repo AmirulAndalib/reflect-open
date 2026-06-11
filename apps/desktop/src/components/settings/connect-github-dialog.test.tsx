@@ -35,6 +35,7 @@ beforeEach(() => {
   )
   sync.connectNewRepo.mockResolvedValue('connected')
   sync.connectExistingRepo.mockResolvedValue('connected')
+  openedUrls.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -194,5 +195,49 @@ describe('ConnectGithubDialog', () => {
     expect(await screen.findByText(/was not found/i)).toBeTruthy()
     expect(sync.connectNewRepo).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('offers a way back to change the repository after a failed connect', async () => {
+    // A finish-step failure must never trap the user: the only alternative
+    // would be closing the whole dialog and starting over.
+    sync.connectExistingRepo.mockResolvedValueOnce('notFound')
+    const onClose = renderWizard()
+
+    fireEvent.click(screen.getByRole('radio', { name: /use an existing repository/i }))
+    fireEvent.change(screen.getByLabelText('Existing repository'), {
+      target: { value: 'alex/gone' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByText(/was not found/i)).toBeTruthy()
+
+    // Back, fix the name — the stored sign-in carries the retry through.
+    fireEvent.click(screen.getByRole('button', { name: 'Change repository' }))
+    fireEvent.change(await screen.findByLabelText('Existing repository'), {
+      target: { value: 'alex/notes' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+
+    await waitFor(() =>
+      expect(sync.connectExistingRepo).toHaveBeenLastCalledWith(
+        { owner: 'alex', name: 'notes' },
+        { allowPublic: false },
+      ),
+    )
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('surfaces the create URL when the browser cannot be opened', async () => {
+    sync.connectExistingRepo.mockResolvedValueOnce('notFound')
+    sync.connectNewRepo.mockResolvedValueOnce('manualCreateNeeded')
+    openedUrls.mockRejectedValueOnce(new Error('no handler for https'))
+    renderWizard()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Create on GitHub…' }))
+
+    // The handoff URL is the whole recovery — it must be readable, not lost
+    // in a silently rejected promise.
+    expect(await screen.findByText(/open the browser/i)).toBeTruthy()
+    expect(screen.getByText(/github\.com\/new\?name=g-backup/)).toBeTruthy()
   })
 })

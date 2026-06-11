@@ -70,6 +70,23 @@ describe('RestoreFromGithubDialog', () => {
     expect(cloned).toEqual([])
   })
 
+  it('rejects an invalid bare repo name instead of failing at the clone', async () => {
+    vi.mocked(open).mockResolvedValue('/backups')
+    await renderRepoStep()
+
+    fireEvent.change(screen.getByLabelText('Backup repository'), {
+      target: { value: 'my notes!' }, // bare, but not a legal repo name
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Restore into…' }))
+    await screen.findByText('/backups')
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }))
+
+    expect(
+      await screen.findByText('Enter the repository name (or owner/name for another account).'),
+    ).toBeTruthy()
+    expect(cloned).toEqual([])
+  })
+
   it('defaults a bare repo name to the signed-in account', async () => {
     vi.mocked(open).mockResolvedValue('/backups')
     await renderRepoStep()

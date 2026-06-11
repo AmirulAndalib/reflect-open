@@ -57,12 +57,14 @@ export function RestoreFromGithubDialog({ onClose }: RestoreFromGithubDialogProp
 
   async function restore(): Promise<void> {
     // A bare name belongs to the signed-in account — the common case never
-    // needs the owner typed.
+    // needs the owner typed. Normalize first so both spellings go through
+    // the same validation instead of failing later at the clone.
     const trimmed = repoInput.trim()
-    const ref =
+    const normalized =
       !trimmed.includes('/') && trimmed.length > 0 && user !== null
-        ? { owner: user.login, name: trimmed }
-        : parseRepoInput(trimmed)
+        ? `${user.login}/${trimmed}`
+        : trimmed
+    const ref = parseRepoInput(normalized)
     if (ref === null) {
       action.setError('Enter the repository name (or owner/name for another account).')
       return

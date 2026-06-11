@@ -403,8 +403,22 @@ export async function getAuthenticatedUser(
   const response = await fetchFn('https://api.github.com/user', {
     headers: apiHeaders(token),
   })
-  if (response.status === 401 || response.status === 403) {
-    throw new ReflectError('auth', `GitHub rejected the token (${response.status})`)
+  if (response.status === 401) {
+    throw new ReflectError('auth', 'GitHub rejected the token (401)')
+  }
+  if (response.status === 403) {
+    // `GET /user` works with every valid token type, so a 403 here is almost
+    // always rate limiting (or SSO/abuse throttling), not a dead credential —
+    // and callers clear the stored credential on `auth`, so a throttled valid
+    // token must classify as retryable instead.
+    const body = (await response.text()).toLowerCase()
+    if (body.includes('bad credentials')) {
+      throw new ReflectError('auth', 'GitHub rejected the token (403)')
+    }
+    throw new ReflectError(
+      'network',
+      'GitHub temporarily refused the signed-in user lookup (403, likely rate limiting)',
+    )
   }
   if (!response.ok) {
     throw new ReflectError('network', `looking up the signed-in user failed (${response.status})`)

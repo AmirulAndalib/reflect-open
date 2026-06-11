@@ -137,6 +137,21 @@ export function ConnectGithubDialog({
     void finish(authedUser)
   }
 
+  /** Back to the repo step — every finish-step dead end must offer this. */
+  function backToRepo(): void {
+    action.setError(null)
+    setPublicConfirm(null)
+    setShowCreateGuide(false)
+    setStep('repo')
+  }
+
+  /** Open in the browser; an opener failure surfaces the URL to visit by hand. */
+  function openExternal(url: string): void {
+    void openUrl(url).catch(() => {
+      action.setError(`Couldn’t open the browser — visit ${url} yourself.`)
+    })
+  }
+
   return (
     <Dialog
       open
@@ -156,7 +171,12 @@ export function ConnectGithubDialog({
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-2">
               <label className="flex items-center gap-2 text-sm text-text">
-                <input type="radio" checked={mode === 'create'} onChange={() => setMode('create')} />
+                <input
+                  type="radio"
+                  name="repo-mode"
+                  checked={mode === 'create'}
+                  onChange={() => setMode('create')}
+                />
                 Create a new private repository
               </label>
               {mode === 'create' ? (
@@ -176,6 +196,7 @@ export function ConnectGithubDialog({
               <label className="flex items-center gap-2 text-sm text-text">
                 <input
                   type="radio"
+                  name="repo-mode"
                   checked={mode === 'existing'}
                   onChange={() => setMode('existing')}
                 />
@@ -223,15 +244,7 @@ export function ConnectGithubDialog({
                   by anyone on the internet.
                 </InlineAlert>
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setPublicConfirm(null)
-                      setShowCreateGuide(false)
-                      setStep('repo')
-                    }}
-                  >
+                  <Button variant="outline" size="sm" onClick={backToRepo}>
                     Choose another repo
                   </Button>
                   <Button
@@ -259,7 +272,7 @@ export function ConnectGithubDialog({
                   there, then connect.
                 </p>
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={() => void openUrl(newRepoUrl(repoName.trim()))}>
+                  <Button size="sm" onClick={() => openExternal(newRepoUrl(repoName.trim()))}>
                     Create on GitHub…
                   </Button>
                   <Button
@@ -283,7 +296,17 @@ export function ConnectGithubDialog({
             )}
 
             {!action.pending && action.error !== null ? (
-              <InlineAlert tone="error">{action.error}</InlineAlert>
+              <>
+                <InlineAlert tone="error">{action.error}</InlineAlert>
+                {publicConfirm === null ? (
+                  // A failed connect must never strand the user here: this is
+                  // the way back to change the repository (the consent screen
+                  // above has its own "Choose another repo").
+                  <Button variant="outline" size="sm" onClick={backToRepo}>
+                    Change repository
+                  </Button>
+                ) : null}
+              </>
             ) : null}
 
             {isDeviceFlowConfigured() && publicConfirm === null ? (
@@ -294,7 +317,7 @@ export function ConnectGithubDialog({
               <button
                 type="button"
                 className="text-left text-xs text-text-muted underline"
-                onClick={() => void openUrl(githubAppInstallUrl())}
+                onClick={() => openExternal(githubAppInstallUrl())}
               >
                 Can’t see your repository? Grant the Reflect app access on GitHub…
               </button>
