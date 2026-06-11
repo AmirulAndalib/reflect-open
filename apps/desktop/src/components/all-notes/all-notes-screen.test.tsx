@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { setBridge } from '@reflect/core'
+import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { AllNotesScreen } from './all-notes-screen'
 
@@ -143,8 +144,9 @@ function ReArrive(): ReactElement {
   )
 }
 
-function renderScreen() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function renderScreen(
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <RouterProvider initialRoute={{ kind: 'allNotes', tag: null }}>
@@ -208,6 +210,44 @@ describe('AllNotesScreen', () => {
     fireEvent.click(view.getByTestId('re-arrive'))
 
     await waitFor(() => expect(scroller.scrollTop).toBe(0))
+    view.unmount()
+  })
+
+  it('renders rows from a warm cache without waiting for a refetch', () => {
+    // The app client uses staleTime: Infinity, so returning to All Notes with
+    // fresh cached data commits exactly one render — no fetch, no follow-up.
+    // The virtualizer must acquire the scroll container on that lone render
+    // (regression: it read a parent ref that attaches after its layout
+    // effect, leaving the list blank until something else re-rendered).
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
+    client.setQueryData(
+      [INDEX_QUERY_SCOPE, '/g', 'all-notes', null],
+      [
+        {
+          path: 'notes/health.md',
+          title: 'Health Stacked',
+          snippet: 'Shop your health goals.',
+          tags: ['link'],
+          mtime: HEALTH_MTIME,
+        },
+        {
+          path: 'notes/tokyo.md',
+          title: 'Tokyo Gâteau',
+          snippet: 'Dandelion chocolate.',
+          tags: ['link'],
+          mtime: TOKYO_MTIME,
+        },
+      ],
+    )
+    client.setQueryData([INDEX_QUERY_SCOPE, '/g', 'all-notes-tags'], facetRows)
+
+    const view = renderScreen(client)
+
+    // Deliberately synchronous: the rows must be in the first committed frame.
+    expect(view.getByText('Health Stacked')).toBeDefined()
+    expect(view.getByText('Tokyo Gâteau')).toBeDefined()
     view.unmount()
   })
 

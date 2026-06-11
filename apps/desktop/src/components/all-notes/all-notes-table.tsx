@@ -1,4 +1,4 @@
-import type { ReactElement, RefObject } from 'react'
+import type { ReactElement } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { NoteListEntry } from '@reflect/core'
 import { cn } from '@/lib/utils'
@@ -10,8 +10,13 @@ interface AllNotesTableProps {
   /** The active tag filter, for the empty state's wording. */
   tag: string | null
   onOpen: (path: string) => void
-  /** The screen's scroll container — the virtualizer windows against it. */
-  scrollRef: RefObject<HTMLDivElement | null>
+  /**
+   * The screen's scroll container — the virtualizer windows against it. An
+   * element (state in the screen), not a ref: the virtualizer only re-checks
+   * its scroll element on render, so it must re-render when the container
+   * attaches or a warm-cache mount leaves it permanently unmeasured (blank).
+   */
+  scrollElement: HTMLDivElement | null
 }
 
 const ESTIMATED_ROW_HEIGHT = 49
@@ -26,12 +31,12 @@ export function AllNotesTable({
   notes,
   tag,
   onOpen,
-  scrollRef,
+  scrollElement,
 }: AllNotesTableProps): ReactElement | null {
   const rows = notes ?? []
   const virtualizer = useVirtualizer({
     count: rows.length,
-    getScrollElement: () => scrollRef.current,
+    getScrollElement: () => scrollElement,
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
     overscan: 10,
   })
