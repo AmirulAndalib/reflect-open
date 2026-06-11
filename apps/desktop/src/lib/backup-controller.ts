@@ -176,6 +176,25 @@ export function createBackupController(options: BackupControllerOptions): Backup
         setState({ phase: 'disconnected' })
         return
       }
+      if (repo === null && /^https?:\/\//i.test(remoteUrl)) {
+        // Plan 16 V1 speaks SSH (and paths) to generic hosts, not HTTPS.
+        // Fail at adoption, not at the first push: a *public* HTTPS remote
+        // would pull anonymously and only 401 on push — the other device's
+        // edits arriving while this one's silently never leave. The engine
+        // never starts; `rejected` = acting (not retrying) is the fix.
+        setState({
+          phase: 'connected',
+          remoteUrl,
+          repo: null,
+          status: {
+            state: 'error',
+            errorKind: 'rejected',
+            message:
+              'HTTPS isn’t supported for this host yet — switch the remote to its SSH form: git remote set-url origin git@<host>:<owner>/<repo>.git',
+          },
+        })
+        return
+      }
       const next = createSyncEngine({
         generation,
         // The managed token is for github.com only — a generic host must

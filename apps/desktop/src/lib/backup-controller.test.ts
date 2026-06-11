@@ -139,7 +139,7 @@ describe('createBackupController', () => {
   it('never offers the GitHub token to a generic remote', async () => {
     // A GitHub credential in the keychain + a foreign origin: the token must
     // not ride along as basic auth to a host the user never authorized.
-    const { invocations } = fakeBridge({ remoteUrl: 'https://gitlab.com/alex/notes.git' })
+    const { invocations } = fakeBridge({ remoteUrl: 'git@gitlab.com:alex/notes.git' })
     const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
     await controller.start()
     await vi.waitFor(() => {
@@ -151,6 +151,32 @@ describe('createBackupController', () => {
         expect(args).toMatchObject({ token: null })
       }
     }
+    controller.dispose()
+  })
+
+  it('refuses a generic HTTPS remote at adoption with the SSH suggestion', async () => {
+    // A *public* generic HTTPS remote would pull anonymously and only fail
+    // on push — edits arriving while the user's own never leave. The guard
+    // surfaces the error before the engine ever starts.
+    const { calls } = fakeBridge({ remoteUrl: 'https://gitlab.com/alex/notes.git' })
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+
+    expect(controller.getState()).toMatchObject({
+      phase: 'connected',
+      repo: null,
+      status: { state: 'error', errorKind: 'rejected' },
+    })
+    const state = controller.getState()
+    if (state.phase === 'connected' && state.status.state === 'error') {
+      expect(state.status.message).toContain('git remote set-url')
+    }
+
+    // No engine: no git work now, and focus events stay inert.
+    window.dispatchEvent(new Event('focus'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls).not.toContain('git_commit_all')
+    expect(calls).not.toContain('git_fetch')
     controller.dispose()
   })
 
