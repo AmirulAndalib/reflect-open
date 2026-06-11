@@ -33,6 +33,8 @@ interface FakeOptions {
   failStatus?: boolean
   /** Scripted `git_merge_remote` outcome (defaults to up-to-date). */
   mergeOutcome?: unknown
+  /** The graph's origin (defaults to a GitHub HTTPS remote). */
+  remoteUrl?: string
 }
 
 /** Bridge fake with a mutable repo status, recording every command. */
@@ -43,7 +45,7 @@ function fakeBridge(options: FakeOptions = {}) {
   const status = {
     initialized: true,
     branch: 'main',
-    remoteUrl: 'https://github.com/alex/notes.git' as string | null,
+    remoteUrl: (options.remoteUrl ?? 'https://github.com/alex/notes.git') as string | null,
     ahead: 0,
     behind: 0,
     inProgress: false,
@@ -108,6 +110,47 @@ describe('createBackupController', () => {
 
     expect(controller.getState()).toEqual({ phase: 'disconnected' })
     expect(calls).not.toContain('git_commit_all')
+    controller.dispose()
+  })
+
+  it('adopts a hand-wired generic remote without any stored credential', async () => {
+    // Plan 16 V1: a non-GitHub origin (here SSH) needs no GitHub sign-in —
+    // its credentials live with the user's git tooling, resolved in Rust.
+    const { calls, invocations } = fakeBridge({
+      auth: null,
+      remoteUrl: 'git@gitlab.com:alex/notes.git',
+    })
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+    await vi.waitFor(() => {
+      expect(calls).toContain('git_fetch')
+    })
+
+    expect(controller.getState()).toMatchObject({
+      phase: 'connected',
+      remoteUrl: 'git@gitlab.com:alex/notes.git',
+      repo: null,
+    })
+    const fetch = invocations.find(({ command }) => command === 'git_fetch')
+    expect(fetch?.args).toMatchObject({ token: null })
+    controller.dispose()
+  })
+
+  it('never offers the GitHub token to a generic remote', async () => {
+    // A GitHub credential in the keychain + a foreign origin: the token must
+    // not ride along as basic auth to a host the user never authorized.
+    const { invocations } = fakeBridge({ remoteUrl: 'https://gitlab.com/alex/notes.git' })
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+    await vi.waitFor(() => {
+      expect(invocations.some(({ command }) => command === 'git_fetch')).toBe(true)
+    })
+
+    for (const { command, args } of invocations) {
+      if (command === 'git_fetch' || command === 'git_push') {
+        expect(args).toMatchObject({ token: null })
+      }
+    }
     controller.dispose()
   })
 

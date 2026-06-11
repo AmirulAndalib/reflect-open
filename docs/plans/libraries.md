@@ -50,6 +50,7 @@ first-party (owned by the team) and MIT-licensed, so there is no copyleft constr
 | Note IDs (ULID) | `ulid` | 02 |
 | Keychain / secrets | `keyring` | 10 / 12 |
 | Git (commits, merge, conflicts) | `git2` (libgit2) | 12 |
+| SSH transport for generic remotes (agent auth) | `git2` `ssh` feature (vendored libssh2 + openssl) | 16 |
 | Local embeddings | `fastembed` | 09 |
 | Image processing (screenshot downscale) | `image` | 11 |
 | CLI framework (derive) | `clap` v4 | 14 |

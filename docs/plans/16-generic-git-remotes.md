@@ -15,7 +15,11 @@ executing a helper program from a GUI app is the riskiest unknown in the whole p
 and deserves its own wave (and spike) rather than holding V1 hostage.
 
 **Depends on:** Plan 12 (the whole sync loop; this plan only widens its credential
-story). **Status:** proposed.
+story). **Status:** V1 implemented (SSH agent + path remotes; see
+[docs/generic-git-remotes.md](../generic-git-remotes.md) for the user contract).
+Outstanding V1 validation, manual by nature: agent auth from the *packaged* app
+against a real host (the Phase 0 spike items). V2 (HTTPS credential helpers) not
+started.
 
 **Explicitly not in scope:** host pickers, a "custom remote" wizard, per-host settings
 UI, or per-host REST sugar (repo creation, visibility checks, install links — those
