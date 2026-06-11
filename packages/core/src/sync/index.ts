@@ -42,14 +42,18 @@ export {
   getGithubToken,
   parseGithubRemote,
   githubRemoteUrl,
+  newRepoUrl,
+  BACKUP_REPO_DESCRIPTION,
   createGithubRepo,
   getGithubRepo,
+  getAuthenticatedUser,
   type GithubAuth,
   type DeviceFlowStart,
   type DevicePollResult,
   type RunDeviceFlowOptions,
   type GithubRepoRef,
   type GithubRepo,
+  type GithubUser,
 } from './github'
 export {
   createSyncEngine,

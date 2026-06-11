@@ -3,10 +3,12 @@ import { setBridge } from '../ipc/bridge'
 import {
   createGithubRepo,
   deviceFlowPoll,
+  getAuthenticatedUser,
   getGithubRepo,
   getGithubToken,
   githubRemoteUrl,
   loadGithubAuth,
+  newRepoUrl,
   parseGithubRemote,
   runDeviceFlow,
 } from './github'
@@ -294,6 +296,49 @@ describe('getGithubToken', () => {
       kind: 'auth',
     })
     expect(store.has('github-auth')).toBe(true)
+  })
+})
+
+describe('getAuthenticatedUser', () => {
+  it('returns the login (instant token validation + owner for the wizard)', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({ login: 'alex', avatar_url: 'https://a.example/alex.png' }),
+    )
+    expect(await getAuthenticatedUser('ghp_x', fetchFn)).toEqual({
+      login: 'alex',
+      avatarUrl: 'https://a.example/alex.png',
+    })
+  })
+
+  it('maps a rejected token to an auth error at entry time', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ message: 'Bad credentials' }, 401))
+    await expect(getAuthenticatedUser('ghp_bad', fetchFn)).rejects.toMatchObject({ kind: 'auth' })
+  })
+})
+
+describe('newRepoUrl', () => {
+  it('prefills name, private visibility, and the backup description', () => {
+    const url = new URL(newRepoUrl('my notes-backup'))
+    expect(url.origin + url.pathname).toBe('https://github.com/new')
+    expect(url.searchParams.get('name')).toBe('my notes-backup')
+    expect(url.searchParams.get('visibility')).toBe('private')
+    expect(url.searchParams.get('description')).toBe('Reflect notes backup')
+  })
+})
+
+describe('createGithubRepo', () => {
+  it('returns null when the token type cannot create repos (fine-grained 403)', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({ message: 'Resource not accessible by personal access token' }, 403),
+    )
+    expect(await createGithubRepo('github_pat_x', 'backup', { fetchFn })).toBeNull()
+  })
+
+  it('still throws auth for a genuinely rejected token', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ message: 'Bad credentials' }, 401))
+    await expect(createGithubRepo('ghp_bad', 'backup', { fetchFn })).rejects.toMatchObject({
+      kind: 'auth',
+    })
   })
 })
 

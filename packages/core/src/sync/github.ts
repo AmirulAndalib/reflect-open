@@ -362,11 +362,68 @@ export async function getGithubToken(
   return refreshed.kind === 'pat' ? refreshed.token : refreshed.accessToken
 }
 
+// ---- the signed-in user ------------------------------------------------------
+
+export interface GithubUser {
+  login: string
+  avatarUrl: string | null
+}
+
+const userResponseSchema = z.object({
+  login: z.string(),
+  avatar_url: z.string().optional(),
+})
+
+/**
+ * Who the token belongs to (`GET /user` — works with every token type,
+ * including fine-grained PATs). Doubles as instant token validation: the
+ * connect flow calls it right after the credential is stored, so a bad
+ * token fails at entry with "GitHub rejected the token", not minutes later
+ * at the first sync. The login also lets the wizard connect `owner/name`
+ * without ever asking for the owner.
+ */
+export async function getAuthenticatedUser(
+  token: string,
+  fetchFn: FetchFn = fetch,
+): Promise<GithubUser> {
+  const response = await fetchFn('https://api.github.com/user', {
+    headers: apiHeaders(token),
+  })
+  if (response.status === 401 || response.status === 403) {
+    throw new ReflectError('auth', `GitHub rejected the token (${response.status})`)
+  }
+  if (!response.ok) {
+    throw new ReflectError('network', `looking up the signed-in user failed (${response.status})`)
+  }
+  const parsed = await readJson(response, userResponseSchema, 'signed-in user lookup')
+  return { login: parsed.login, avatarUrl: parsed.avatar_url ?? null }
+}
+
 // ---- repositories ----------------------------------------------------------
 
 export interface GithubRepoRef {
   owner: string
   name: string
+}
+
+/** The description stamped on backup repos we create or prefill. */
+export const BACKUP_REPO_DESCRIPTION = 'Reflect notes backup'
+
+/**
+ * The prefilled github.com/new URL — the universal "create the repo on the
+ * user's behalf" path. `POST /user/repos` only works with classic PATs and
+ * OAuth tokens, **not** fine-grained PATs (and the backup repo can't be in a
+ * fine-grained token's scope before it exists), so the reliable flow is:
+ * open this URL, every field already filled in and private preselected, and
+ * the user clicks one button on GitHub.
+ */
+export function newRepoUrl(name: string): string {
+  const params = new URLSearchParams({
+    name,
+    visibility: 'private',
+    description: BACKUP_REPO_DESCRIPTION,
+  })
+  return `https://github.com/new?${params.toString()}`
 }
 
 /** Parse `https://github.com/owner/repo(.git)` → ref, or `null` for any other remote. */
@@ -415,12 +472,19 @@ function toRepo(parsed: z.infer<typeof repoResponseSchema>): GithubRepo {
   }
 }
 
-/** Create a repo for the signed-in user (private by default — the backup norm). */
+/**
+ * Create a repo for the signed-in user (private by default — the backup
+ * norm). Returns `null` when the token *type* cannot create repositories —
+ * `POST /user/repos` rejects fine-grained PATs with a 403 "Resource not
+ * accessible" — so callers fall back to the guided {@link newRepoUrl}
+ * handoff instead of surfacing a dead-end error. Real auth failures (401)
+ * and everything else still throw.
+ */
 export async function createGithubRepo(
   token: string,
   name: string,
   options: { isPrivate?: boolean; fetchFn?: FetchFn } = {},
-): Promise<GithubRepo> {
+): Promise<GithubRepo | null> {
   const fetchFn = options.fetchFn ?? fetch
   const response = await fetchFn('https://api.github.com/user/repos', {
     method: 'POST',
@@ -428,12 +492,19 @@ export async function createGithubRepo(
     body: JSON.stringify({
       name,
       private: options.isPrivate ?? true,
-      description: 'Reflect notes backup',
+      description: BACKUP_REPO_DESCRIPTION,
       auto_init: false,
     }),
   })
-  if (response.status === 401 || response.status === 403) {
-    throw new ReflectError('auth', `GitHub rejected the token (${response.status})`)
+  if (response.status === 403) {
+    const body = (await response.text()).toLowerCase()
+    if (body.includes('not accessible')) {
+      return null // the token type can't create repos — guide, don't error
+    }
+    throw new ReflectError('auth', 'GitHub rejected the token (403)')
+  }
+  if (response.status === 401) {
+    throw new ReflectError('auth', 'GitHub rejected the token (401)')
   }
   if (!response.ok) {
     const body = await response.text()
