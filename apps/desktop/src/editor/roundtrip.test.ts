@@ -8,21 +8,23 @@ describe('checkRoundTrip', () => {
       '> quote\n',
       '```\ncode [[not a link]]\n\nblank line inside fence\n```\n',
       '| a | b |\n| --- | --- |\n| 1 | 2 |\n',
+      '- item one\n- item two\n',
+      '- [ ] buy milk\n- [x] done\n',
     ]
     for (const markdown of cases) {
       expect(checkRoundTrip(markdown), markdown).toBe('exact')
     }
   })
 
-  it('classifies loose-list reformatting as normalizing (content preserved)', () => {
-    expect(checkRoundTrip('- item one\n- item two\n')).toBe('normalizing')
+  it('classifies tightened loose lists as normalizing (content preserved)', () => {
+    expect(checkRoundTrip('- item one\n\n- item two\n')).toBe('normalizing')
   })
 
-  it('classifies task lists as lossy — the meowdown converter gap', () => {
-    // meowdown's markdownToDoc currently drops task-item text entirely
-    // (`- [ ] todo` → empty list). The guard exists to catch exactly this; when
-    // the converter is fixed upstream, this test should start failing and the
-    // guard expectation can be relaxed.
-    expect(checkRoundTrip('- [ ] buy milk\n- [x] done\n')).toBe('lossy')
+  it('classifies remaining converter gaps as lossy', () => {
+    // Setext heading text is dropped (`Title\n=====` → empty heading), and raw
+    // HTML blocks vanish entirely. The guard exists to catch exactly this; when
+    // a gap is fixed upstream, its case starts failing and can move to exact.
+    expect(checkRoundTrip('Title\n=====\n\nbody\n')).toBe('lossy')
+    expect(checkRoundTrip('<div>raw html</div>\n')).toBe('lossy')
   })
 })

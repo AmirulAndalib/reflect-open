@@ -1,16 +1,14 @@
-import { createEditor } from '@prosekit/core'
-import { defineEditorExtension, docToMarkdown, markdownToDoc, type TypedEditor } from '@meowdown/core'
 import { describe, expect, it } from 'vitest'
+import { createMeowdownEditor, serializeMarkdown } from './meowdown'
 
 /**
- * Spike gate (Plan 01 step 8): does markdown — and specifically `[[wiki links]]`,
- * which meowdown has no dedicated support for — survive a markdownToDoc →
- * docToMarkdown round-trip without loss? meowdown keeps inline syntax as literal
- * text, so the expectation is yes.
+ * Spike gate (Plan 01 step 8): does markdown — including `[[wiki links]]`,
+ * which meowdown 0.3.0 parses into native marks over the literal text —
+ * survive a markdownToDoc → docToMarkdown round-trip without loss? meowdown
+ * keeps inline syntax as literal text, so the expectation is yes.
  */
 function roundtrip(markdown: string): string {
-  const editor: TypedEditor = createEditor({ extension: defineEditorExtension() })
-  return docToMarkdown(markdownToDoc(editor, markdown))
+  return serializeMarkdown(createMeowdownEditor(markdown).state.doc)
 }
 
 describe('meowdown markdown round-trip', () => {
@@ -21,6 +19,8 @@ describe('meowdown markdown round-trip', () => {
     'Link to [[2026-06-09]] daily note.',
     '**bold** and _em_ and `code`',
     '> a quote',
+    '- [ ] buy milk\n- [x] done',
+    '#tag in a paragraph',
   ]
 
   for (const markdown of cases) {
@@ -35,12 +35,10 @@ describe('meowdown markdown round-trip', () => {
     expect(roundtrip('# Heading')).toBe('# Heading\n')
   })
 
-  // KNOWN NORMALIZATION (Plan 05 follow-up): docToMarkdown emits "loose" lists,
-  // inserting a blank line between items. Not content loss, but it would create
-  // spurious sync diffs (Plan 12) against tight-list input, so the editor needs
-  // a tight-list serializer option or a normalize-on-import step before relying
-  // on byte-stable round-trips.
-  it('serializes lists as loose (documents the normalization)', () => {
-    expect(roundtrip('- item one\n- item two')).toBe('- item one\n\n- item two\n')
+  // KNOWN NORMALIZATION: docToMarkdown emits tight lists, so a loose source
+  // list loses its blank lines. Not content loss — checkRoundTrip classifies
+  // it 'normalizing' — but a save reformats such a note.
+  it('tightens loose lists (documents the normalization)', () => {
+    expect(roundtrip('- item one\n\n- item two')).toBe('- item one\n- item two\n')
   })
 })

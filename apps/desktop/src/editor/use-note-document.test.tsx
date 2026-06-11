@@ -481,8 +481,8 @@ describe('useNoteDocument', () => {
   it('opens a note the editor would corrupt in protected mode and never saves it', async () => {
     vi.useFakeTimers()
     try {
-      // meowdown's converter loses task-list text — the guard must catch it.
-      disk = '- [ ] buy milk\n- [x] done\n'
+      // meowdown's converter loses setext heading text — the guard must catch it.
+      disk = 'Title\n=====\n\nbody\n'
       const hook = renderHook(() => useNoteDocument('notes/tasks.md', 1))
       await act(() => vi.advanceTimersByTimeAsync(0))
       expect(hook.result.current.status).toBe('ready')

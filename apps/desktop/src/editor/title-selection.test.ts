@@ -1,7 +1,6 @@
-import { defineEditorExtension, docToMarkdown, markdownToDoc, type TypedEditor } from '@meowdown/core'
-import { createEditor } from '@prosekit/core'
 import type { EditorState } from '@prosekit/pm/state'
 import { describe, expect, it } from 'vitest'
+import { createMeowdownEditor, serializeMarkdown } from './meowdown'
 import { firstHeadingTextRange, selectFirstHeadingText } from './title-selection'
 
 /**
@@ -11,9 +10,7 @@ import { firstHeadingTextRange, selectFirstHeadingText } from './title-selection
  */
 
 function stateFor(markdown: string): EditorState {
-  const editor = createEditor({ extension: defineEditorExtension() })
-  editor.setContent(markdownToDoc(editor as unknown as TypedEditor, markdown))
-  return editor.state
+  return createMeowdownEditor(markdown).state
 }
 
 function selectedText(state: EditorState): string {
@@ -56,8 +53,8 @@ describe('selectFirstHeadingText', () => {
 
     // The first keystroke replaces the selection — the macOS rename pattern.
     state = state.apply(state.tr.insertText('My Note'))
-    expect(docToMarkdown(state.doc)).toContain('# My Note')
-    expect(docToMarkdown(state.doc)).not.toContain('Untitled')
+    expect(serializeMarkdown(state.doc)).toContain('# My Note')
+    expect(serializeMarkdown(state.doc)).not.toContain('Untitled')
   })
 
   it('returns false without dispatching when there is no titled heading', () => {
