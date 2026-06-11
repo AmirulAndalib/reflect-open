@@ -10,12 +10,21 @@ import { PaletteProvider, usePalette } from './palette-provider'
 const suggestWikiTargets = vi.hoisted(() => vi.fn())
 const searchWithFilters = vi.hoisted(() => vi.fn())
 const retrieve = vi.hoisted(() => vi.fn())
+const readNote = vi.hoisted(() => vi.fn<(path: string) => Promise<string>>())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   suggestWikiTargets,
   searchWithFilters,
   retrieve,
+  readNote,
+}))
+// jsdom can't host the ProseMirror contenteditable (same stub as the
+// route-content tests); the preview's data path stays real.
+vi.mock('@/editor/markdown-preview', () => ({
+  MarkdownPreview: ({ content }: { content: string }) => (
+    <div data-testid="markdown-preview">{content}</div>
+  ),
 }))
 // The model is absent by default: the palette is exactly the lexical surface
 // it was before Plan 09 (hybrid mode is additive). The gating tests flip both
@@ -49,6 +58,7 @@ afterEach(cleanup)
 beforeEach(() => {
   embedReady.value = false
   semanticSetting.enabled = false
+  readNote.mockReset().mockResolvedValue('')
 })
 
 // cmdk scrolls the selected item into view and observes list size; jsdom has
@@ -181,7 +191,8 @@ describe('CommandPalette', () => {
     ])
     const { view, navigate } = renderPalette('#work is:daily')
     await view.findByText('Work log')
-    expect(view.getByText('Mon, June 8th, 2026')).toBeDefined() // dailies keep labels
+    // The label renders in the row and again as the preview pane's header.
+    await waitFor(() => expect(view.getAllByText('Mon, June 8th, 2026')).toHaveLength(2))
     expect(searchWithFilters).toHaveBeenCalledWith(
       expect.objectContaining({
         filtered: true,
@@ -226,6 +237,74 @@ describe('CommandPalette', () => {
     expect(retrieve).toHaveBeenCalledWith('rust', { mode: 'hybrid' })
   })
 
+  it('previews the highlighted note and follows arrow-key selection', async () => {
+    suggestWikiTargets.mockResolvedValue([])
+    searchWithFilters.mockResolvedValue([
+      { path: 'notes/first.md', title: 'First', dailyDate: null, snippet: null },
+      { path: 'notes/second.md', title: 'Second', dailyDate: null, snippet: null },
+    ])
+    readNote.mockImplementation(async (path) =>
+      path === 'notes/first.md' ? '# First\n\nfirst body\n' : '# Second\n\nsecond body\n',
+    )
+    const { view } = renderPalette('note')
+    await view.findByText('First')
+
+    // cmdk highlights the top hit; its content renders in the preview pane.
+    const preview = await view.findByTestId('markdown-preview')
+    await waitFor(() => expect(preview.textContent).toContain('first body'))
+
+    await userEvent.keyboard('{ArrowDown}')
+    await waitFor(() =>
+      expect(view.getByTestId('markdown-preview').textContent).toContain('second body'),
+    )
+    expect(readNote).toHaveBeenCalledWith('notes/first.md')
+    expect(readNote).toHaveBeenCalledWith('notes/second.md')
+  })
+
+  it('frontmatter never reaches the preview', async () => {
+    suggestWikiTargets.mockResolvedValue([])
+    searchWithFilters.mockResolvedValue([
+      { path: 'notes/pinned.md', title: 'Pinned', dailyDate: null, snippet: null },
+    ])
+    readNote.mockResolvedValue('---\npinned: true\n---\n# Pinned\n\nbody\n')
+    const { view } = renderPalette('pinned')
+    const preview = await view.findByTestId('markdown-preview')
+    await waitFor(() => expect(preview.textContent).toContain('body'))
+    expect(preview.textContent).not.toContain('pinned: true')
+  })
+
+  it('a daily note without a file yet previews as Empty under its day label', async () => {
+    suggestWikiTargets.mockResolvedValue([
+      { target: '2026-06-16', path: null, title: '2026-06-16', alias: null, date: '2026-06-16' },
+    ])
+    searchWithFilters.mockResolvedValue([])
+    readNote.mockRejectedValue({ kind: 'notFound', message: 'no such note' })
+    const { view } = renderPalette('2026-06-16')
+    const preview = await view.findByTestId('palette-preview')
+    await waitFor(() => expect(preview.textContent).toContain('Empty'))
+    expect(preview.textContent).toContain('Tue, June 16th, 2026')
+  })
+
+  it('a query matching only commands still highlights one, so Enter runs it', async () => {
+    suggestWikiTargets.mockResolvedValue([])
+    searchWithFilters.mockResolvedValue([])
+    const toggleTheme = vi.fn()
+    const { view } = renderPalette('toggle theme', { toggleTheme })
+    await view.findByText('Toggle theme')
+
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(toggleTheme).toHaveBeenCalled())
+  })
+
+  it('> command mode renders the single column without a preview pane', async () => {
+    suggestWikiTargets.mockResolvedValue([])
+    searchWithFilters.mockResolvedValue([])
+    const { view } = renderPalette('> toggle theme')
+    await view.findByText('Toggle theme')
+    expect(view.queryByTestId('palette-preview')).toBeNull()
+    expect(view.queryByText('No note selected')).toBeNull()
+  })
+
   it('a daily suggestion renders its day label and opens the daily route', async () => {
     suggestWikiTargets.mockResolvedValue([
       {
@@ -238,7 +317,8 @@ describe('CommandPalette', () => {
     ])
     searchWithFilters.mockResolvedValue([])
     const { view, navigate } = renderPalette('2026-06-09')
-    await view.findByText('Tue, June 9th, 2026')
+    // The label renders in the row and again as the preview pane's header.
+    await waitFor(() => expect(view.getAllByText('Tue, June 9th, 2026')).toHaveLength(2))
 
     await userEvent.keyboard('{Enter}')
     await waitFor(() =>
