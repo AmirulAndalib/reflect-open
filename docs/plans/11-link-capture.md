@@ -93,7 +93,10 @@ Every capture lands in two phases so saving never waits on the network or AI:
 
 2. **Native-messaging host (sidecar) + manifest registration.** Tiny Rust crate built in
    `beforeBuildCommand`, bundled via `externalBin`; pure-stdio discipline (log to
-   stderr). Validates with zod, writes the capture envelope + screenshot into the inbox
+   stderr). Deserializes the capture envelope using typed Rust structs (generated from
+   or manually mirroring the shared `@reflect/core` zod schema — Zod does not run in
+   Rust; the TS schema is the single source of truth and the Rust structs must match it),
+   writes the validated envelope + screenshot into the inbox
    atomically, acks **queued** on success or a typed error on failure. The host never
    observes drain, so it never acks "saved". Desktop app registers/rewrites
    manifests for detected browsers on every launch.
@@ -142,8 +145,12 @@ Every capture lands in two phases so saving never waits on the network or AI:
    - write minimal **provenance** frontmatter/markdown: original URL, captured title,
      captured time, source = extension, screenshot asset path (already written by drain
      step 3.3), selection/highlights, and (after enrichment) the AI provider/model used.
-   Then reindex (Plan 04). Basic dedup: re-capturing the same URL updates rather than
-   duplicates.
+   Then reindex (Plan 04). **Dedup:** a re-capture is detected when the same URL already
+   has an entry in today's `[[Links]]` section (same day, same note). In that case the
+   existing entry is updated in place — enrichment/provenance/screenshot are refreshed,
+   not duplicated. A capture on a *different day*, or into a *different note*, or with a
+   *different selection* always creates a new entry. URL alone is not the dedup key when
+   the target note or day differs.
 
 7. **Errors + retries.** Reviewable failures (offline, no key, provider error). The
    extension surfaces queued/failed; the raw link is always saved even if
@@ -177,8 +184,8 @@ Every capture lands in two phases so saving never waits on the network or AI:
 ## Acceptance criteria
 
 - With the extension installed, capturing a page appends a `[[Links]]` entry to today's
-  daily note, then asynchronously gains an AI description + meta + screenshot under
-  `assets/`.
+  daily note with the screenshot already saved under `assets/` (phase 1, synchronous),
+  then asynchronously gains an AI description + scraped meta tags (phase 2).
 - **Capturing with the desktop app closed** queues the capture; it lands (raw, then
   enriched) on next app launch (test-asserted).
 - With no AI connection enabled, captures still get the raw entry + scraped meta tags;
