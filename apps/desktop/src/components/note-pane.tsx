@@ -4,6 +4,7 @@ import { BacklinksPanel } from '@/components/backlinks-panel'
 import { InlineAlert } from '@/components/inline-alert'
 import { NoteConflictBanner } from '@/components/note-conflict-banner'
 import { ProtectedNoteView } from '@/components/protected-note-view'
+import { SyncConflictNotice } from '@/components/sync-conflict-notice'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
@@ -176,6 +177,8 @@ export function NotePane({
             onLoadTheirs={document.loadTheirs}
           />
         ) : null}
+
+        <SyncConflictNotice path={path} className="mb-4" />
       </div>
 
       <NoteEditor

@@ -6,12 +6,14 @@
 //! primitive it exposes. Each module wires one capability:
 //! [`fs`] (graph file IO), [`db`] (SQLite index), [`watcher`] (file events),
 //! [`recents`] (recent-graphs store), [`settings`] (user settings store),
-//! [`secrets`] (OS keychain), [`error`] (the shared error contract).
+//! [`secrets`] (OS keychain), [`git`] (backup/sync primitives),
+//! [`error`] (the shared error contract).
 
 mod db;
 mod embed;
 mod error;
 mod fs;
+mod git;
 mod quit;
 mod recents;
 mod secrets;
@@ -81,6 +83,12 @@ pub fn run() {
             embed::embed_texts,
             watcher::watch_start,
             watcher::watch_stop,
+            git::git_status,
+            git::git_setup,
+            git::git_commit_all,
+            git::git_fetch,
+            git::git_merge_remote,
+            git::git_push,
             quit::quit_confirm,
         ])
         .build(tauri::generate_context!())

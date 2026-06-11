@@ -3,6 +3,7 @@ import type { GraphInfo } from '@reflect/core'
 import { PaletteProvider } from '@/components/command-palette/palette-provider'
 import { WorkspaceContent } from '@/components/workspace-content'
 import { SidebarProvider } from '@/providers/sidebar-provider'
+import { SyncProvider } from '@/providers/sync-provider'
 import { RouterProvider } from '@/routing/router'
 
 interface GraphWorkspaceProps {
@@ -19,11 +20,13 @@ interface GraphWorkspaceProps {
 export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
   return (
     <RouterProvider key={graph.root}>
-      <PaletteProvider>
-        <SidebarProvider>
-          <WorkspaceContent graph={graph} />
-        </SidebarProvider>
-      </PaletteProvider>
+      <SyncProvider graph={graph}>
+        <PaletteProvider>
+          <SidebarProvider>
+            <WorkspaceContent graph={graph} />
+          </SidebarProvider>
+        </PaletteProvider>
+      </SyncProvider>
     </RouterProvider>
   )
 }

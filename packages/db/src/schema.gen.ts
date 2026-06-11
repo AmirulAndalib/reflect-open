@@ -64,6 +64,7 @@ export interface NoteKeys {
 export interface Notes {
   dailyDate: string | null;
   fileHash: string;
+  hasConflict: Generated<number>;
   id: string | null;
   isPinned: Generated<number>;
   isPrivate: Generated<number>;

@@ -197,6 +197,8 @@ export interface NoteRow {
    * truthy number.
    */
   isPrivate: boolean
+  /** The file carries sync conflict markers (Plan 12) — surface `Needs review`. */
+  hasConflict: boolean
 }
 
 /** Fetch a single note's row by graph-relative path, or `undefined` if absent. */
@@ -204,9 +206,27 @@ export async function getNote(path: string): Promise<NoteRow | undefined> {
   const row = await db
     .selectFrom('notes')
     .where('path', '=', path)
-    .select(['path', 'title', 'dailyDate', 'isPrivate'])
+    .select(['path', 'title', 'dailyDate', 'isPrivate', 'hasConflict'])
     .executeTakeFirst()
-  return row ? { ...row, isPrivate: row.isPrivate !== 0 } : undefined
+  return row
+    ? { ...row, isPrivate: row.isPrivate !== 0, hasConflict: row.hasConflict !== 0 }
+    : undefined
+}
+
+/** A note flagged `Needs review`: its file carries sync conflict markers. */
+export interface ConflictedNote {
+  path: string
+  title: string
+}
+
+/** Every note whose file carries sync conflict markers, ordered by path. */
+export async function getConflictedNotes(): Promise<ConflictedNote[]> {
+  return db
+    .selectFrom('notes')
+    .where('hasConflict', '=', 1)
+    .select(['path', 'title'])
+    .orderBy('path')
+    .execute()
 }
 
 /**

@@ -11,6 +11,7 @@ describe('buildIndexedNote', () => {
     const indexed = buildIndexedNote(parseNote({ path: 'notes/project-x.md', source }), {
       fileHash: 'abc',
       mtime: 123,
+      source,
     })
 
     expect(indexed.path).toBe('notes/project-x.md')
@@ -42,20 +43,23 @@ describe('buildIndexedNote', () => {
   })
 
   it('derives the list preview and folded tag keys at index time', () => {
-    const indexed = buildIndexedNote(
-      parseNote({ path: 'notes/p.md', source: '# Plans\n\nFirst body line. #CAFÉ' }),
-      { fileHash: 'h', mtime: 0 },
-    )
+    const source = '# Plans\n\nFirst body line. #CAFÉ'
+    const indexed = buildIndexedNote(parseNote({ path: 'notes/p.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
     expect(indexed.preview).toBe('First body line. #CAFÉ')
     // Folding is Unicode-aware — exactly what SQLite's ASCII-only lower() misses.
     expect(indexed.tags).toEqual([{ tag: 'CAFÉ', tagKey: 'café' }])
   })
 
   it('marks daily notes with their date and carries no id', () => {
-    const indexed = buildIndexedNote(
-      parseNote({ path: 'daily/2026-06-09.md', source: 'today' }),
-      { fileHash: 'h', mtime: 0 },
-    )
+    const indexed = buildIndexedNote(parseNote({ path: 'daily/2026-06-09.md', source: 'today' }), {
+      fileHash: 'h',
+      mtime: 0,
+      source: 'today',
+    })
     expect(indexed.dailyDate).toBe('2026-06-09')
     expect(indexed.title).toBe('2026-06-09')
     expect(indexed.id).toBeNull()
@@ -64,12 +68,25 @@ describe('buildIndexedNote', () => {
   })
 
   it('projects an explicit pin order', () => {
-    const indexed = buildIndexedNote(
-      parseNote({ path: 'notes/n.md', source: '---\npinned: 2\n---\n# N' }),
-      { fileHash: 'h', mtime: 0 },
-    )
+    const source = '---\npinned: 2\n---\n# N'
+    const indexed = buildIndexedNote(parseNote({ path: 'notes/n.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
     expect(indexed.isPinned).toBe(true)
     expect(indexed.pinnedOrder).toBe(2)
+  })
+
+  it('flags notes carrying sync conflict markers', () => {
+    const source =
+      '# Shared\n\n<<<<<<< this device\nmine\n=======\ntheirs\n>>>>>>> other device\n'
+    const indexed = buildIndexedNote(parseNote({ path: 'notes/shared.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
+    expect(indexed.hasConflict).toBe(true)
   })
 
   it('produces a payload that satisfies the cross-language contract schema', () => {
@@ -80,6 +97,7 @@ describe('buildIndexedNote', () => {
     const indexed = buildIndexedNote(parseNote({ path: 'notes/n.md', source }), {
       fileHash: 'h',
       mtime: 1,
+      source,
     })
     expect(() => indexedNoteSchema.parse(indexed)).not.toThrow()
   })

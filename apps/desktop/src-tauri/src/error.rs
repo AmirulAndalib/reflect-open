@@ -23,6 +23,10 @@ pub enum AppError {
     NoGraph { message: String },
     /// Parse / validation failure.
     Parse { message: String },
+    /// A remote rejected our credentials (token invalid/expired/insufficient).
+    Auth { message: String },
+    /// The remote is unreachable (offline, DNS, timeout) — retryable.
+    Network { message: String },
     /// Anything not covered above.
     Unknown { message: String },
 }
@@ -56,6 +60,29 @@ impl AppError {
         Self::NoGraph {
             message: "No graph is open".into(),
         }
+    }
+}
+
+impl From<git2::Error> for AppError {
+    fn from(err: git2::Error) -> Self {
+        use git2::{ErrorClass, ErrorCode};
+        let message = err.message().to_string();
+        // libgit2 reports HTTP auth failures inconsistently (code vs class vs
+        // message), so classify with all three; Net class is reliably "couldn't
+        // reach the remote" and maps to the retryable Network kind.
+        let lowered = message.to_lowercase();
+        if err.code() == ErrorCode::Auth
+            || lowered.contains("401")
+            || lowered.contains("403")
+            || lowered.contains("authentication")
+            || lowered.contains("authorization")
+        {
+            return Self::Auth { message };
+        }
+        if err.class() == ErrorClass::Net {
+            return Self::Network { message };
+        }
+        Self::Io { message }
     }
 }
 

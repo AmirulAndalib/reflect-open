@@ -25,6 +25,7 @@ static MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
         M::up(include_str!(
             "../../migrations/0005_note_list_projection.sql"
         )),
+        M::up(include_str!("../../migrations/0006_conflicts.sql")),
     ])
 });
 

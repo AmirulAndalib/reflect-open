@@ -1,158 +1,181 @@
-# Plan 12 — Backup & Sync (GitHub-only)
+# Plan 12 — Backup & Sync (Git, GitHub-first)
 
-**Goal:** Free, understandable backup and light multi-device continuity over **GitHub
-(Git)** — the single supported remote — in plain product language with no Git jargon.
-File-sync providers (iCloud Drive, Dropbox, Google Drive) are **explicitly not** a Reflect
-sync mechanism.
+**Goal:** Continuous, invisible backup and multi-device continuity over **Git**, with
+**GitHub as the only remote in the product UX**. Edits are debounced into commits and
+pushed; pulls merge on launch/focus; merge conflicts are **committed into the note as
+standard Git conflict markers** so sync never wedges. Plain product language — no Git
+jargon in the UI.
 
-**Depends on:** Plan 02 (graph), Plan 04 (index + sync coordination), Plan 10 (keychain for
-the GitHub token; AI only for the *deferred* conflict-resolution path).
-**Unlocks:** multi-device durability via GitHub.
+**Depends on:** Plan 02 (graph, cloud-folder detection), Plan 04 (index + watcher
+suppression; adds `sync_state`/`conflicts` tables), Plan 05 (external-change
+reconciliation for open notes — load-bearing for conflicts), Plan 10 (keychain).
+**Unlocks:** multi-device durability; AI-assisted conflict resolution (deferred).
 
-**Architecture:** Git (libgit2) + keychain are Rust primitives; sync orchestration, state,
-and conflict policy live in `@reflect/core` (`actions/sync`). See
+**Architecture:** Git is a Rust primitive (`git2`/libgit2); sync orchestration, cadence,
+GitHub specifics, and conflict policy live in `@reflect/core` (`actions/sync`). See
 [Architecture & Conventions](architecture-conventions.md).
 
-**Libraries:** `git2` (libgit2), `keyring` (GitHub token) — Rust; `diff` (jsdiff) for
-conflict diffs — TS. See [Libraries](libraries.md).
+**Libraries:** `git2` (libgit2), `keyring` — Rust. (`diff`/jsdiff returns for the
+deferred conflict-widget/AI path.) See [Libraries](libraries.md).
 
-## Why GitHub-only (and why not iCloud / Dropbox / Drive)
+## Discovery decisions (2026-06)
 
-File-sync providers move *bytes*, not *intent*, so they can't give Reflect safe sync
-semantics:
+Re-derived with research; **supersedes this plan's earlier backup-only scoping.**
 
-- They replace files (including the SQLite index's `-wal`/`-shm`) underneath a running app
-  → corruption (Plan 04).
-- Their "conflict" handling is duplicate files (`note 2.md`) with **no base version**, so
-  no reliable three-way merge is possible.
-- No atomic multi-file commit, no merge base, no history Reflect controls.
+1. **Engine: libgit2 via `git2`.** Rejected: **system git** (a fresh Mac has none —
+   invoking it triggers the Xcode CLT install prompt; impossible on iOS; leaks the user's
+   gitconfig/hooks into our sync), **bundled git** (~50 MB of GPLv2 binaries to
+   sign/notarize; no iOS), **gitoxide** (no push support as of mid-2026),
+   **isomorphic-git** (wrong layer per conventions; weak merge), and **GitHub's Git Data
+   API with no local repo** (operationally simplest, but structural GitHub lock-in and no
+   local history — losing the free checkpoint primitive). libgit2 is maintained (1.9.x;
+   v2.0/SHA-256 upcoming — expect one breaking bump, isolated behind the Rust module).
+2. **GitHub-only surface, generic core.** The Rust layer speaks `remote URL + credential
+   callback` — nothing GitHub-specific. GitHub specifics (device flow, repo creation,
+   error taxonomy) are isolated in `actions/sync/github.ts`. "Custom Git remote
+   (advanced)" stays a future UX toggle, not an engineering project.
+3. **Auth: GitHub App device flow.** Fine-grained, per-repo permission ("Reflect can
+   touch one repo, nothing else"); 8-hour user tokens + 6-month refresh tokens; device
+   flow needs **no client secret**, even for refresh — consistent with no Reflect-hosted
+   APIs. Fallback: a manually created fine-grained PAT (also the GitHub Enterprise
+   story). Tokens live in the OS keychain (Plan 10), supplied via libgit2's credential
+   callback — **never embedded in the remote URL**, so never on disk.
+4. **Conflicts are committed, not blocking** (the Jujutsu model: conflicts are data). A
+   conflicted merge writes standard `<<<<<<<`/`=======`/`>>>>>>>` markers into the
+   affected notes, then **commits the merge and pushes** — the repo is never wedged,
+   other notes keep syncing, both devices converge on the same marked-up note. The user
+   resolves by editing the note, whenever, on either device. Future: a meowdown widget
+   renders marker blocks with keep-mine/keep-theirs buttons.
+5. **Full loop in the first wave** — debounced commit→push *and* pull/merge. Backup-only
+   was rejected: a second device needs pull-before-push anyway, so deferral bought little.
 
-Git gives a real **base/ours/theirs** merge model, atomic commits, controllable history,
-and free hosting. So **GitHub is the only supported remote sync/backup.** Reflect keeps a
-*thin internal seam* (for testability and to avoid painting into a corner) but ships and
-supports exactly one implementation — this is **not** a multi-provider adapter framework.
-Putting a graph *inside* a cloud-sync folder is unsupported and warned against (Plans 02 & 04).
+## Product states
 
-## First-wave commitment (scope honesty)
+`Backed up` · `Backing up` · `Pending` (offline; commits accumulate) · `Needs review`
+(conflict markers present) · `Backup failed` (action needed). Git mechanics never surface.
 
-First wave is **backup + manual conflict surfacing**, GitHub-only — not a full sync/merge
-engine:
+## Sync loop
 
-- GitHub **backup + restore** (push local → GitHub; restore on a new device);
-- **manual conflict surfacing**: on the rare pull/restore conflict, show the readable
-  base/local/remote diff and let the user choose a side or hand-merge — raw versions always
-  recoverable.
-
-**Deferred past first wave:** automatic bi-directional sync and **AI-assisted conflict
-resolution** (kept specified below as the design target, not built now).
-
-## Scope
-
-**In:** GitHub/Git backup + restore (user-chosen repo), the product state vocabulary, the
-Git-native base/local/remote conflict surface, local checkpoints, **manual** conflict
-review UI, attachment/GitHub guardrails, `.reflect/` ignore, a thin internal Git seam.
-**Out (unsupported by design):** any non-GitHub remote — **iCloud Drive, Dropbox, Google
-Drive, local-folder, protocol sync**. **Out (deferred):** AI-assisted resolution, automatic
-bi-directional sync, collaboration/multi-user.
+- **Commit cadence:** a watcher-settled edit marks the note dirty → commit all dirty
+  files after ~30 s idle (cap: 5 min of continuous editing) → push. One commit per
+  batch, auto-generated message ("Update 3 notes"). Commit on quit.
+- **Pull cadence:** on launch, on window focus, on a periodic timer, and always on push
+  rejection: push → non-fast-forward → fetch → merge → push again (bounded retries).
+- **Merge, not rebase.** Single branch; merge commits are fine — history is invisible
+  product-wise, and rewriting published history breaks multi-device.
+- **Checkpoints = commits.** Plan 10's "checkpoint before AI patch apply" becomes
+  "commit dirty files first" — one recovery mechanism; any version recoverable from
+  local or remote history.
+- **Mobile (iOS target): foreground-only sync** first wave.
 
 ## Steps
 
-1. **Thin internal seam (not a framework).** One `GitRemote` interface so the UI + tests
-   don't bind directly to libgit2. GitHub is the only implementation.
+1. **Rust git primitives** (`src-tauri/src/git/`): `git_init` / `git_open` /
+   adopt-existing-repo, `git_commit_all(message)`, `git_fetch`, `git_merge` (returns
+   per-file conflict info; writes marker files with labeled sides), `git_push`,
+   `git_log` / `git_show` (recovery), health checks (clear stale `index.lock` on
+   startup; refuse foreign states — detached HEAD, in-progress rebase — with a typed
+   error, never guess). Remote-agnostic; credentials via callback from the keychain.
+   `.reflect/` stays gitignored (Plan 02); `.git/` joins the watcher exclusion set.
 
-   ```ts
-   export interface GitRemote {
-     connect(repo: GitHubRepoRef): Promise<void>
-     push(): Promise<void>
-     pull(): Promise<SyncConflict[]>
-     checkpoint(label: string): Promise<void> // recovery, not a user Git concept
-     applyResolution(plan: ResolutionPlan): Promise<void> // deferred path
-   }
-   ```
+2. **GitHub module** (`actions/sync/github.ts`): device flow + silent token refresh,
+   guided private-repo creation, repo metadata (visibility), and an error taxonomy
+   (auth, secret-scanning push protection, size) mapped to product states. zod at the
+   boundary.
 
-2. **Git/GitHub backup (Rust, `git2`).** Map graph = repo, user-chosen GitHub repo =
-   destination, commit = internal checkpoint, pull/fetch/merge = sync op, merge
-   base/ours/theirs = base/local/remote, merge conflict = `SyncConflict`. Ignore `.reflect/`.
-   **Hide Git entirely** behind product states: `Backed up`, `Syncing`, `Needs review`,
-   `Resolved`, `Backup failed`. GitHub token in OS keychain (Plan 10) — never in
-   markdown/Git/`.reflect/`.
+3. **Sync engine** (`actions/sync/`): the state machine + debounce scheduler; consumes
+   watcher events for dirty tracking; orchestrates the Rust primitives; persists
+   `sync_state`; records conflicted notes in `conflicts`; maps **every** failure to a
+   product state (fail loud, never silent).
 
-3. **Conflict surface (Git-native).** A Git merge conflict becomes a
-   `SyncConflict { notePath, kind, base?, local, remote }` — base/local/remote come straight
-   from the merge, so there's nothing to "normalize across adapters." First wave: **manual
-   review** (choose a side or hand-merge); raw versions stay recoverable.
+4. **Conflict policy** (the load-bearing step):
+   - **Content conflicts** → marker blocks with readable labels (`<<<<<<< this device` /
+     `>>>>>>> other device`); merge committed + pushed; note flagged `Needs review`;
+     resolution detected when markers disappear on a later save/reindex.
+   - **Edit vs delete** → keep the edited version (never silently delete); record it.
+   - **Binary/asset conflicts** → keep both (suffix the incoming copy); newest wins links.
+   - **Known wrinkle:** raw markers parse oddly as markdown (`=======` after a text line
+     reads as a setext heading) and meowdown may escape `<` on round-trip. First wave
+     accepts the display oddity; **spike early** that editing elsewhere in a conflicted
+     note doesn't mangle the markers. The future meowdown conflict node fixes presentation.
+   - A pull can rewrite an **open** note — goes through Plan 05's external-change
+     reconciliation (clean buffer reloads; dirty buffer prompts).
+   - **Daily notes are the common collision** (two devices, same day). Markers are
+     acceptable first wave; future: a custom merge driver (libgit2 registers them in
+     code) for append-friendly merging of `daily/*.md`.
 
-   ```ts
-   export interface SyncConflict {
-     notePath: string
-     kind: 'content' | 'rename' | 'delete-edit' | 'binary' | 'unknown'
-     base?: NoteVersion   // merge base (Git provides it)
-     local: NoteVersion
-     remote: NoteVersion
-   }
-   ```
+5. **Guardrails:**
+   - Default to **creating a private repo**; choosing a public repo blocks on an explicit
+     confirmation (all notes — including `private: true` ones — would be public;
+     `private:` blocks AI/cloud-processing, **not** backup).
+   - Pre-flight file sizes at commit: warn ≥ 50 MB, exclude ≥ 95 MB with a warning —
+     GitHub rejects files > 100 MB and the **whole push** fails. Git LFS deferred.
+   - GitHub push protection can reject a push because a note contains a credential —
+     surface as "a note contains something GitHub blocks", with the path when derivable.
+   - Graph is already a Git repo → offer to adopt it (and its remote); never nest.
+   - Onboarding states plainly: backup history is permanent (deleted notes remain in
+     history); cloud-sync-folder graphs still warn (Plan 02).
 
-4. **Checkpoints (the recovery primitive).** Create checkpoints opportunistically after
-   meaningful changes and **before any risky sync write or AI patch apply** (shared with
-   Plan 10). Don't commit every keystroke (noisy history + churn). Raw conflicting versions
-   always remain recoverable.
+6. **Index coordination** (Plan 04): merges/pulls register written paths in the
+   suppression set and reindex after writes settle; our own commits must not re-mark
+   notes dirty (no commit loops).
 
-5. **Deferred — AI-assisted resolution (design target).** When built: parse base/local/
-   remote → **if the note isn't `private: true`**, ask the copilot (Plan 10) to propose a
-   merged note → reviewable patch → user accepts/edits/rejects → apply after checkpoint.
-   Note-body conflicts always require review; private notes never go to cloud AI.
+7. **Auth UX:** guided device flow ("enter this code on github.com"), app install scoped
+   to the backup repo; silent 8-hour refresh; a lapsed refresh token → `Backup failed —
+   reconnect` with a one-click re-run. Advanced path: paste a fine-grained PAT.
 
-   ```ts
-   export interface ResolutionPlan {
-     mergedMarkdown: string
-     summary: string
-     confidence: 'high' | 'medium' | 'low'
-     requiresReview: boolean
-     warnings: string[]
-   }
-   ```
+8. **Restore / second device:** "Connect existing backup" = clone → open as graph →
+   full index rebuild (Plan 04). Repair of last resort for a corrupt local repo:
+   re-clone from the remote (the remote *is* the backup).
 
-6. **Index coordination.** During pull/apply, signal the indexer (Plan 04) to suppress
-   watcher storms, then reindex changed files after writes settle. Conflicts recorded in the
-   `conflicts` table; sync state in `sync_state`.
-
-7. **Attachments + GitHub guardrails.** Attachments stay normal files under `assets/` with
-   relative links. **Warn** when binaries are likely to make GitHub backup slow/expensive/
-   unreliable (size threshold). Git LFS / object storage deferred — not first wave.
-
-8. **Tests.** Backup round-trips to a test repo; a hand-made merge conflict surfaces
-   base/local/remote; manual resolution applies after a checkpoint and preserves raw
-   versions; `.reflect/` excluded; large-binary warning fires; selecting a graph inside a
-   cloud-sync folder triggers the unsupported-location warning (cross-check Plan 02).
+9. **Tests:** round-trip backup to a local bare repo; two-clone divergence produces a
+   committed marker merge both sides converge on; non-fast-forward push retries;
+   edit/delete + binary policies; marker removal clears `Needs review`; size guardrail;
+   public-repo confirmation; echo suppression (a pull doesn't storm the indexer; commits
+   don't re-dirty); stale-lock recovery; `.reflect/` excluded; token never appears in
+   the remote URL or `.git/config` (asserted).
 
 ## Key decisions / contracts
 
-- **GitHub (Git) is the only supported remote sync/backup.** iCloud/Dropbox/Drive and
-  local-folder sync are unsupported *by design* (no safe conflict semantics).
-- **Thin internal seam, single implementation** — not an adapter framework.
-- **Git mechanics never surface** — only plain Reflect states.
-- **Git-native base/local/remote conflict; first-wave manual review;** AI resolution
-  deferred.
-- **Checkpoint before every risky write**; raw versions always recoverable.
-- **GitHub token in OS keychain; no Reflect-hosted sync.**
+- **libgit2 (`git2`) is the engine**; the Rust surface is remote-agnostic, GitHub
+  specifics live only in `actions/sync/github.ts`.
+- **GitHub is the only supported remote in the UX**; file-sync providers (iCloud/
+  Dropbox/Drive) remain unsupported by design (no safe conflict semantics).
+- **GitHub App device flow + keychain; PAT fallback; token never on disk.**
+- **Conflicts are committed as raw Git markers and sync continues** — no wedged states,
+  no modal resolution flow; resolution = editing the note.
+- **Checkpoint = commit** (shared recovery primitive with Plan 10).
+- **Git mechanics never surface** — only the five product states.
 
 ## Acceptance criteria
 
-- User connects a chosen GitHub repo; the graph backs up; UI shows `Backed up` / `Syncing`
-  / `Backup failed` — never commits/branches/rebases.
-- A conflict surfaces as `Needs review` with a readable base/local/remote diff; the user
-  picks a side or hand-merges; raw versions stay recoverable.
-- Selecting a graph **inside a cloud-sync folder** warns it's unsupported and recommends
-  GitHub sync + a non-synced local path.
-- `.reflect/` is excluded; large-binary backups warn.
-- `pnpm typecheck` + tests pass.
+- Editing a note passes through `Backing up` → `Backed up` within the debounce window;
+  the commit is visible on GitHub.
+- Two devices editing the same note converge on one note containing labeled conflict
+  markers; both show `Needs review`; resolving on either device clears it everywhere.
+- A conflict never blocks other notes from backing up.
+- Going offline shows `Pending`; reconnecting pushes without user action.
+- "Connect existing backup" on a fresh machine reproduces the graph; the index rebuilds.
+- Public-repo selection requires explicit confirmation; an oversized file warns/excludes
+  without failing the rest of the backup.
+- `pnpm typecheck` + targeted tests pass.
+
+## Deferred
+
+- meowdown conflict widget (parse marker blocks → keep-mine/keep-theirs UI).
+- AI-assisted resolution via the Plan 10 copilot (markers parse to base/ours/theirs;
+  `private: true` notes never go to cloud AI).
+- Custom merge driver for daily notes; Git LFS / asset offload; generic-remote UX
+  toggle; background sync on mobile; "purge history" escape hatch.
 
 ## Risks
 
-- **Users expecting iCloud/Dropbox to "just sync."** Set expectations explicitly in
-  onboarding (Plan 15) and guide them to GitHub; warn on cloud-folder graph placement.
-- **GitHub auth feeling developer-oriented.** Mitigate with a guided device-flow setup;
-  token in keychain.
-- **Hiding Git without trapping users** in broken states. Conservative auto-actions,
-  always-recoverable raw versions, "needs review" over silent merges.
-- **Watcher/sync write loops.** Suppression set + post-settle reindex (Plan 04).
+- **meowdown mangling markers** (escaping on round-trip) — spike first; if escaping
+  breaks markers, render the same merge output as an escaping-safe Reflect block instead.
+- **Markers confuse non-developers.** Mitigate with the `Needs review` state, labeled
+  sides, and the future editor widget.
+- **libgit2 v2.0 breaking bump** — absorbed behind the Rust module.
+- **Auth feeling developer-oriented.** Device flow mitigates; PAT is the escape hatch.
+- **History privacy** (deleted notes persist on GitHub) — onboarding honesty now;
+  "purge history" later.
+- **Watcher/sync write loops.** Suppression set + the no-re-dirty contract, both tested.

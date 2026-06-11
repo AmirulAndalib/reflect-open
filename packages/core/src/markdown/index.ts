@@ -32,6 +32,7 @@ export {
   type InlineImage,
 } from './scan'
 export { appendUnderHeading, renameWikiLink } from './edit'
+export { detectConflictMarkers } from './conflict-markers'
 export { foldKey, foldTag } from './keys'
 export {
   normalizeWikiTarget,

@@ -119,6 +119,41 @@ export {
 } from './ai/models'
 export { validateApiKey, type ApiKeyValidation } from './ai/validate-key'
 
+// Backup & sync (Plan 12)
+export {
+  gitStatus,
+  gitSetup,
+  gitCommitAll,
+  gitFetch,
+  gitMergeRemote,
+  gitPush,
+  isDeviceFlowConfigured,
+  saveGithubAuth,
+  loadGithubAuth,
+  clearGithubAuth,
+  deviceFlowStart,
+  deviceFlowPoll,
+  getGithubToken,
+  parseGithubRemote,
+  githubRemoteUrl,
+  createGithubRepo,
+  getGithubRepo,
+  createSyncEngine,
+  type GitStatus,
+  type CommitOutcome,
+  type MergeOutcome,
+  type PushOutcome,
+  type SkippedFile,
+  type GithubAuth,
+  type DeviceFlowStart,
+  type DevicePollResult,
+  type GithubRepoRef,
+  type GithubRepo,
+  type SyncEngine,
+  type SyncEngineOptions,
+  type SyncStatus,
+} from './sync'
+
 // Markdown document model (Plan 03)
 export {
   frontmatterSchema,
@@ -136,6 +171,7 @@ export {
   splitFrontmatter,
   parseFrontmatter,
   upsertFrontmatter,
+  detectConflictMarkers,
   parseBody,
   reflectMarkdownParser,
   wikiLinkExtension,
@@ -186,6 +222,7 @@ export {
   dailyDatesInRange,
   getBacklinks,
   getBacklinksWithContext,
+  getConflictedNotes,
   getLinkSources,
   getNote,
   getNotesByTag,
@@ -207,6 +244,7 @@ export {
   type IndexedAlias,
   type Backlink,
   type BacklinkContext,
+  type ConflictedNote,
   type NoteRow,
   type NoteListEntry,
   type NoteListOptions,

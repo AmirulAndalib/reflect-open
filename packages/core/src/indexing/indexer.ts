@@ -47,7 +47,7 @@ export async function indexNote(
   const parsed = parseNote({ path, source: content })
   const fileHash = await hashContent(content)
   await applyIndexedNote(
-    buildIndexedNote(parsed, { fileHash, mtime: options.mtime ?? 0 }),
+    buildIndexedNote(parsed, { fileHash, mtime: options.mtime ?? 0, source: content }),
     options.generation,
   )
 }
@@ -79,7 +79,7 @@ export async function rebuildIndex(options: IndexPassOptions): Promise<void> {
     const content = await readNote(file.path)
     const parsed = parseNote({ path: file.path, source: content })
     const fileHash = await hashContent(content)
-    batch.push(buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs }))
+    batch.push(buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs, source: content }))
     if (batch.length >= REBUILD_BATCH_SIZE) {
       await applyIndexedNotes(batch, generation)
       batch = []
@@ -149,7 +149,10 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
       return // re-check after the awaits — don't write for a superseded pass
     }
     const parsed = parseNote({ path: file.path, source: content })
-    await applyIndexedNote(buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs }), generation)
+    await applyIndexedNote(
+      buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs, source: content }),
+      generation,
+    )
   }
 
   for (const path of stored.keys()) {

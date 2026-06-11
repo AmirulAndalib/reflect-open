@@ -1,10 +1,26 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge, type EmbedStatus } from '@reflect/core'
 import { formatFullDate } from '@/lib/dates'
 import { SettingsProvider } from '@/providers/settings-provider'
 import { SettingsScreen } from './settings-screen'
+
+// The Backup section needs the per-graph sync + graph providers; this screen
+// test exercises the other sections, so both are stubbed to their inert
+// states (no graph open, backup disconnected).
+vi.mock('@/providers/graph-provider', () => ({
+  useGraph: () => ({ graph: null }),
+}))
+vi.mock('@/providers/sync-provider', () => ({
+  useSync: () => ({
+    backup: { phase: 'disconnected' },
+    connectNewRepo: async () => {},
+    connectExistingRepo: async () => 'connected',
+    disconnect: async () => {},
+    backUpNow: async () => {},
+  }),
+}))
 
 // jsdom doesn't implement this; Radix Select scrolls the selected option into
 // view when the listbox opens.

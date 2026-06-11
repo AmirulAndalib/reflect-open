@@ -43,6 +43,9 @@ keyring = { version = "3", features = [
   "windows-native",
   "sync-secret-service",
 ] }
+# Git backup/sync primitives (Plan 12). HTTPS-only remotes — SSH is deliberately
+# unsupported (token auth via credential callback), so the libssh2 feature is off.
+git2 = { version = "0.21", default-features = false, features = ["https", "vendored-libgit2"] }
 tauri-plugin-http = "2.5.9"
 tauri-plugin-window-state = "2"
 

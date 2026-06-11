@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { dateFromDailyPath, isDaily } from '../graph/paths'
 import {
+  detectConflictMarkers,
   foldKey,
   foldTag,
   isPinned,
@@ -30,9 +31,10 @@ import { previewSnippet } from './snippet'
  * new columns at their migration defaults forever.
  *
  * History: 1 — Plan 04 baseline · 2 — `notes.preview` + `tags.tag_key` (the
- * first stamped version; v2 rows also carry the 0004 pinned columns).
+ * first stamped version; v2 rows also carry the 0004 pinned columns) ·
+ * 3 — `notes.has_conflict` (sync conflict markers, Plan 12).
  */
-export const PROJECTION_VERSION = 2
+export const PROJECTION_VERSION = 3
 
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),
@@ -69,6 +71,8 @@ export const indexedNoteSchema = z.object({
   isPinned: z.boolean(),
   /** Explicit pin order (`pinned: <n>`); null for bare `pinned: true`. */
   pinnedOrder: z.number().nullable(),
+  /** The file carries Git conflict markers from a sync merge (Plan 12). */
+  hasConflict: z.boolean(),
   fileHash: z.string(),
   mtime: z.number(),
   text: z.string(),
@@ -81,10 +85,14 @@ export const indexedNoteSchema = z.object({
 })
 export type IndexedNote = z.infer<typeof indexedNoteSchema>
 
-/** Flatten a parsed note into the index payload. */
+/**
+ * Flatten a parsed note into the index payload. `meta.source` is the raw
+ * markdown the note was parsed from — conflict markers are detected on it
+ * (not on the extracted plain text, which may reshape marker lines).
+ */
 export function buildIndexedNote(
   parsed: ParsedNote,
-  meta: { fileHash: string; mtime: number },
+  meta: { fileHash: string; mtime: number; source: string },
 ): IndexedNote {
   const wikiLinks: IndexedLink[] = parsed.wikiLinks.map((link) => ({
     kind: 'wiki',
@@ -112,6 +120,7 @@ export function buildIndexedNote(
     isPrivate: parsed.frontmatter.private,
     isPinned: isPinned(parsed.frontmatter),
     pinnedOrder: pinnedOrder(parsed.frontmatter),
+    hasConflict: detectConflictMarkers(meta.source),
     fileHash: meta.fileHash,
     mtime: meta.mtime,
     text: parsed.text,

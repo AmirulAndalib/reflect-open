@@ -29,6 +29,7 @@ fn note(path: &str, title: &str, links: Vec<IndexedLink>) -> IndexedNote {
         is_private: false,
         is_pinned: false,
         pinned_order: None,
+        has_conflict: false,
         file_hash: "h".to_string(),
         mtime: 0,
         text: format!("{title} body"),
@@ -59,7 +60,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 5); // applied migrations (0001 through 0005)
+    assert_eq!(version, 6); // applied migrations (0001 through 0006)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -161,6 +162,23 @@ fn pinned_flag_and_order_round_trip_into_the_notes_row() {
 }
 
 #[test]
+fn conflict_flag_round_trips_into_the_notes_row() {
+    let conn = migrated();
+    let mut conflicted = note("notes/c.md", "C", vec![]);
+    conflicted.has_conflict = true;
+    apply_note(&conn, &conflicted).unwrap();
+    apply_note(&conn, &note("notes/clean.md", "Clean", vec![])).unwrap();
+    let rows = run_query(&conn, "SELECT path FROM notes WHERE has_conflict = 1", &[]).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["path"], Value::from("notes/c.md"));
+
+    // Re-indexing without markers clears the flag (resolution detection).
+    apply_note(&conn, &note("notes/c.md", "C", vec![])).unwrap();
+    let rows = run_query(&conn, "SELECT path FROM notes WHERE has_conflict = 1", &[]).unwrap();
+    assert!(rows.is_empty());
+}
+
+#[test]
 fn reapplying_a_note_replaces_its_rows() {
     let conn = migrated();
     apply_note(&conn, &note("notes/a.md", "A", vec![wiki("X"), wiki("Y")])).unwrap();
@@ -246,7 +264,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 6);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();

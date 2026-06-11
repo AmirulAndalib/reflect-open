@@ -1,0 +1,53 @@
+/**
+ * `@reflect/core` sync domain (Plan 12) — GitHub backup & sync over the Rust
+ * git primitives: typed command bindings, the GitHub module (device flow,
+ * token refresh, repo API), and the debounced sync engine.
+ */
+export {
+  gitStatus,
+  gitSetup,
+  gitCommitAll,
+  gitFetch,
+  gitMergeRemote,
+  gitPush,
+  gitStatusSchema,
+  commitOutcomeSchema,
+  remoteDeltaSchema,
+  mergeOutcomeSchema,
+  pushOutcomeSchema,
+  skippedFileSchema,
+  type GitStatus,
+  type CommitOutcome,
+  type RemoteDelta,
+  type MergeOutcome,
+  type PushOutcome,
+  type SkippedFile,
+} from './commands'
+export {
+  GITHUB_APP_CLIENT_ID,
+  GITHUB_AUTH_SECRET,
+  isDeviceFlowConfigured,
+  githubAuthSchema,
+  saveGithubAuth,
+  loadGithubAuth,
+  clearGithubAuth,
+  deviceFlowStart,
+  deviceFlowPoll,
+  refreshGithubAuth,
+  getGithubToken,
+  parseGithubRemote,
+  githubRemoteUrl,
+  createGithubRepo,
+  getGithubRepo,
+  type GithubAuth,
+  type DeviceFlowStart,
+  type DevicePollResult,
+  type GithubRepoRef,
+  type GithubRepo,
+} from './github'
+export {
+  createSyncEngine,
+  type SyncEngine,
+  type SyncEngineOptions,
+  type SyncStatus,
+} from './engine'

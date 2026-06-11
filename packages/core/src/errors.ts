@@ -13,6 +13,8 @@ export const appErrorSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('traversal'), message: z.string() }),
   z.object({ kind: z.literal('noGraph'), message: z.string() }),
   z.object({ kind: z.literal('parse'), message: z.string() }),
+  z.object({ kind: z.literal('auth'), message: z.string() }),
+  z.object({ kind: z.literal('network'), message: z.string() }),
   z.object({ kind: z.literal('unknown'), message: z.string() }),
 ])
 

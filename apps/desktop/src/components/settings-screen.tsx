@@ -3,6 +3,7 @@ import { AboutSection } from './settings/about-section'
 import { AiModelsSection } from './settings/ai-models-section'
 import { AllNotesSection } from './settings/all-notes-section'
 import { AppearanceSection } from './settings/appearance-section'
+import { BackupSection } from './settings/backup-section'
 import { DateTimeSection } from './settings/date-time-section'
 import { EditorSection } from './settings/editor-section'
 import { KeyboardSection } from './settings/keyboard-section'
@@ -23,6 +24,7 @@ export function SettingsScreen(): ReactElement {
         <EditorSection />
         <AllNotesSection />
         <SearchSection />
+        <BackupSection />
         <AiModelsSection />
         <KeyboardSection />
         <AboutSection />
