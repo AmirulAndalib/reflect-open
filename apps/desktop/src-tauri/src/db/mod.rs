@@ -179,7 +179,10 @@ pub fn note_move_indexed(
         // a failed compensation must surface the *original* error, and the
         // reconcile heals any residue by id.
         if let Err(comp) = move_rows(conn, &to, &from) {
-            tracing::error!(?comp, "rename compensation failed; reconcile will heal by id");
+            tracing::error!(
+                ?comp,
+                "rename compensation failed; reconcile will heal by id"
+            );
         }
         return Err(err);
     }

@@ -721,7 +721,11 @@ fn move_note_migrates_every_row_and_preserves_derived_state() {
     moved.pinned_order = Some(2.5);
     moved.has_conflict = true;
     apply_note(&conn, &moved).unwrap();
-    apply_note(&conn, &note("notes/src.md", "Src", vec![wiki("Kept Title")])).unwrap();
+    apply_note(
+        &conn,
+        &note("notes/src.md", "Src", vec![wiki("Kept Title")]),
+    )
+    .unwrap();
     apply_chunks(&conn, "notes/old.md", &[chunk("m1", Some(vec384(0.5)))]).unwrap();
     let vectors_before = vector_count(&conn);
 
@@ -747,14 +751,33 @@ fn move_note_migrates_every_row_and_preserves_derived_state() {
 
     // Children followed: text, outgoing links, FTS, embedding chunks (vectors kept).
     for (sql, expected) in [
-        ("SELECT count(*) AS n FROM note_text WHERE note_path = 'notes/kept-title.md'", 1),
-        ("SELECT count(*) AS n FROM links WHERE source_path = 'notes/kept-title.md'", 1),
-        ("SELECT count(*) AS n FROM search_fts WHERE path = 'notes/kept-title.md'", 1),
-        ("SELECT count(*) AS n FROM embedding_chunks WHERE note_path = 'notes/kept-title.md'", 1),
-        ("SELECT count(*) AS n FROM embedding_chunks WHERE note_path = 'notes/old.md'", 0),
+        (
+            "SELECT count(*) AS n FROM note_text WHERE note_path = 'notes/kept-title.md'",
+            1,
+        ),
+        (
+            "SELECT count(*) AS n FROM links WHERE source_path = 'notes/kept-title.md'",
+            1,
+        ),
+        (
+            "SELECT count(*) AS n FROM search_fts WHERE path = 'notes/kept-title.md'",
+            1,
+        ),
+        (
+            "SELECT count(*) AS n FROM embedding_chunks WHERE note_path = 'notes/kept-title.md'",
+            1,
+        ),
+        (
+            "SELECT count(*) AS n FROM embedding_chunks WHERE note_path = 'notes/old.md'",
+            0,
+        ),
     ] {
         let rows = run_query(&conn, sql, &[]).unwrap();
-        assert_eq!(rows[0].get("n").unwrap().as_i64().unwrap(), expected, "{sql}");
+        assert_eq!(
+            rows[0].get("n").unwrap().as_i64().unwrap(),
+            expected,
+            "{sql}"
+        );
     }
     assert_eq!(vector_count(&conn), vectors_before);
 

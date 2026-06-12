@@ -316,7 +316,10 @@ mod move_tests {
         fs::write(root.path().join("notes/a.md"), "# A\n").unwrap();
         move_note_file(root.path(), "notes/a.md", "notes/b.md").unwrap();
         assert!(!root.path().join("notes/a.md").exists());
-        assert_eq!(fs::read_to_string(root.path().join("notes/b.md")).unwrap(), "# A\n");
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/b.md")).unwrap(),
+            "# A\n"
+        );
     }
 
     #[test]
@@ -325,7 +328,11 @@ mod move_tests {
         // newer content. The stale source is dropped, never written over it.
         let root = graph();
         fs::write(root.path().join("notes/a.md"), "---\nid: 01x\n---\n# Old\n").unwrap();
-        fs::write(root.path().join("notes/b.md"), "---\nid: 01x\n---\n# Old\n\nnewest\n").unwrap();
+        fs::write(
+            root.path().join("notes/b.md"),
+            "---\nid: 01x\n---\n# Old\n\nnewest\n",
+        )
+        .unwrap();
         move_note_file(root.path(), "notes/a.md", "notes/b.md").unwrap();
         assert!(!root.path().join("notes/a.md").exists());
         assert!(fs::read_to_string(root.path().join("notes/b.md"))
@@ -338,8 +345,16 @@ mod move_tests {
         // A different note (different id) appeared after the collision probe:
         // consuming it would graft this note's identity onto foreign content.
         let root = graph();
-        fs::write(root.path().join("notes/a.md"), "---\nid: 01x\n---\n# Mine\n").unwrap();
-        fs::write(root.path().join("notes/b.md"), "---\nid: 01y\n---\n# Theirs\n").unwrap();
+        fs::write(
+            root.path().join("notes/a.md"),
+            "---\nid: 01x\n---\n# Mine\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("notes/b.md"),
+            "---\nid: 01y\n---\n# Theirs\n",
+        )
+        .unwrap();
         assert!(move_note_file(root.path(), "notes/a.md", "notes/b.md").is_err());
         // Both files intact — nothing was lost.
         assert!(root.path().join("notes/a.md").exists());

@@ -711,11 +711,19 @@ fn same_title_created_on_two_devices_surfaces_as_a_review_conflict() {
     push(root_a, None).unwrap();
 
     let root_b = second_device(&fixture);
-    write(&root_b, "notes/meeting.md", "# Meeting\n\nnotes from device b\n");
+    write(
+        &root_b,
+        "notes/meeting.md",
+        "# Meeting\n\nnotes from device b\n",
+    );
     commit_all(&root_b, "b creates", MAX_FILE_BYTES).unwrap();
     push(&root_b, None).unwrap();
 
-    write(root_a, "notes/meeting.md", "# Meeting\n\nnotes from device a\n");
+    write(
+        root_a,
+        "notes/meeting.md",
+        "# Meeting\n\nnotes from device a\n",
+    );
     commit_all(root_a, "a creates", MAX_FILE_BYTES).unwrap();
     fetch(root_a, None).unwrap();
     let merged = merge_remote(root_a).unwrap();
@@ -724,7 +732,10 @@ fn same_title_created_on_two_devices_surfaces_as_a_review_conflict() {
         matches!(merged.kind, MergeKind::MergedWithConflicts),
         "{merged:?}"
     );
-    assert_eq!(merged.conflicted_paths, vec!["notes/meeting.md".to_string()]);
+    assert_eq!(
+        merged.conflicted_paths,
+        vec!["notes/meeting.md".to_string()]
+    );
     let content = read(root_a, "notes/meeting.md");
     assert!(content.contains("notes from device a"), "{content}");
     assert!(content.contains("notes from device b"), "{content}");
