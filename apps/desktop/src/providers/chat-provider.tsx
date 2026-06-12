@@ -152,6 +152,11 @@ export function ChatProvider({ graph, children }: ChatProviderProps): ReactEleme
   // "this conversation is busy" and never clears a successor's slot.
   const sessionRef = useRef(0)
   const activeSendRef = useRef<{ controller: AbortController; session: number } | null>(null)
+  // The session of the most recent send — unlike `activeSendRef` this is not
+  // cleared when the turn settles, so a pending conversation switch can tell
+  // that the on-screen conversation received a message even after the stream
+  // finished.
+  const lastSendSessionRef = useRef(-1)
 
   // Conversations deleted this session: a settle-time save landing after its
   // conversation was deleted would re-create the row via the upsert.
@@ -295,6 +300,7 @@ export function ChatProvider({ graph, children }: ChatProviderProps): ReactEleme
       const controller = new AbortController()
       const activeSend = { controller, session: sessionRef.current }
       activeSendRef.current = activeSend
+      lastSendSessionRef.current = activeSend.session
 
       try {
         // The graph overview degrades to null (prompt without the block)
@@ -378,7 +384,10 @@ export function ChatProvider({ graph, children }: ChatProviderProps): ReactEleme
       // Superseded by another switch or New chat — or by a send: a message
       // composed while the rows loaded belongs to the conversation that was
       // on screen, so the user's turn must not be swapped out from under it.
-      if (session !== sessionRef.current || activeSendRef.current?.session === session) {
+      // Checked via the last send's session (not the in-flight slot, which
+      // is cleared on settle) — a turn that finished streaming before the
+      // rows arrived still anchors the switch to the conversation it's in.
+      if (session !== sessionRef.current || lastSendSessionRef.current === session) {
         return
       }
       setConversationId(id)

@@ -181,6 +181,40 @@ describe('ChatProvider persistence', () => {
     expect(session?.turns).toEqual([RESTORED_TURN])
   })
 
+  it('abandons a switch when a send settled while the rows loaded', async () => {
+    // The send both starts AND finishes during the load — the in-flight slot
+    // is already clear when the rows arrive, but the switch must still be
+    // abandoned: swapping the transcript would hide the turn the user just
+    // streamed into the on-screen conversation.
+    let releaseLoad: (turns: ChatTurn[]) => void = () => {}
+    core.loadChatMessages.mockImplementation(
+      () =>
+        new Promise<ChatTurn[]>((resolve) => {
+          releaseLoad = resolve
+        }),
+    )
+    scriptTurn([{ type: 'complete', messages: [{ role: 'assistant', content: 'Hi.' }] }])
+    renderProvider()
+    await waitFor(() => expect(core.listChatConversations).toHaveBeenCalled())
+    const homeConversation = session?.activeConversationId
+
+    let openDone: Promise<void> | undefined
+    await act(async () => {
+      openDone = session?.openConversation('conv-9')
+      await Promise.resolve()
+    })
+    await act(() => session?.send('hello'))
+    expect(session?.turns.at(-1)?.status).toBe('done')
+
+    releaseLoad([RESTORED_TURN])
+    await act(async () => {
+      await openDone
+    })
+
+    expect(session?.activeConversationId).toBe(homeConversation)
+    expect(session?.turns.map((turn) => turn.userText)).toEqual(['hello'])
+  })
+
   it('deleting the active conversation starts a fresh chat', async () => {
     core.listChatConversations.mockResolvedValue([conversation()])
     renderProvider()
