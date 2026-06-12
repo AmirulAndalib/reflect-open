@@ -99,7 +99,10 @@ pub fn list() -> AppResult<Vec<RecentGraph>> {
     load_from(&store_path()?)
 }
 
-/// Drop a graph from the recents list (by root path).
+/// Drop a graph from the recents list (by root path). Forgetting also resets
+/// first-open: a later open of this root reads as brand new (and, when empty,
+/// re-seeds the welcome note). Deliberate — "forget" means Reflect keeps no
+/// residual history of the folder.
 pub fn forget(root: &str) -> AppResult<()> {
     let path = store_path()?;
     let mut recents = load_from(&path)?;
