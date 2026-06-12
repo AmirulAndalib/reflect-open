@@ -4,9 +4,11 @@ import type { ReactElement } from 'react'
 import type {
   AiProviderConfig,
   ChatConversation,
+  ChatModelSelection,
   ChatStreamEvent,
   ChatTurn,
   GraphInfo,
+  Settings,
   StreamChatOptions,
 } from '@reflect/core'
 import { ChatProvider, useChatSession } from '@/providers/chat-provider'
@@ -37,13 +39,32 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 const settingsState = vi.hoisted(() => ({
   models: [] as AiProviderConfig[],
   defaultId: null as string | null,
+  selection: null as ChatModelSelection | null,
 }))
-vi.mock('@/providers/settings-provider', () => ({
-  useSettings: () => ({
-    settings: { aiProviders: settingsState.models, defaultAiProviderId: settingsState.defaultId },
-    updateSettings: () => {},
-  }),
-}))
+const updateSettings = vi.hoisted(() => vi.fn<(patch: Partial<Settings>) => void>())
+// Stateful like the real provider: a chatModelSelection patch re-renders with
+// the new value, so selectModel applies instantly here too.
+vi.mock('@/providers/settings-provider', async () => {
+  const { useState } = await import('react')
+  return {
+    useSettings: () => {
+      const [selection, setSelection] = useState(settingsState.selection)
+      return {
+        settings: {
+          aiProviders: settingsState.models,
+          defaultAiProviderId: settingsState.defaultId,
+          chatModelSelection: selection,
+        },
+        updateSettings: (patch: Partial<Settings>) => {
+          updateSettings(patch)
+          if (patch.chatModelSelection !== undefined) {
+            setSelection(patch.chatModelSelection)
+          }
+        },
+      }
+    },
+  }
+})
 
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ indexGeneration: 7, graph: { root: '/g' } }),
@@ -98,6 +119,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   settingsState.models = [MODEL]
   settingsState.defaultId = 'm1'
+  settingsState.selection = null
   core.hasBridge.mockReturnValue(true)
   core.getSecret.mockResolvedValue('sk-test')
   core.loadChatGraphContext.mockResolvedValue(null)
@@ -293,5 +315,36 @@ describe('ChatProvider persistence', () => {
       await deleteDone
     })
     expect(core.deleteChatConversation).toHaveBeenCalledWith(sentInto.conversation.id, 7)
+  })
+})
+
+describe('ChatProvider model selection', () => {
+  it('starts on the persisted model selection', async () => {
+    settingsState.selection = { configId: 'm1', modelId: 'gpt-5.5' }
+    renderProvider()
+    await waitFor(() => expect(core.listChatConversations).toHaveBeenCalled())
+
+    expect(session?.activeModel).toEqual({ ...MODEL, model: 'gpt-5.5' })
+  })
+
+  it('persists a picked model and applies it to the session', async () => {
+    renderProvider()
+    await waitFor(() => expect(core.listChatConversations).toHaveBeenCalled())
+    expect(session?.activeModel).toEqual(MODEL)
+
+    act(() => session?.selectModel({ configId: 'm1', modelId: 'gpt-5.5' }))
+
+    expect(updateSettings).toHaveBeenCalledWith({
+      chatModelSelection: { configId: 'm1', modelId: 'gpt-5.5' },
+    })
+    expect(session?.activeModel).toEqual({ ...MODEL, model: 'gpt-5.5' })
+  })
+
+  it('falls back to the default model when the persisted selection dangles', async () => {
+    settingsState.selection = { configId: 'gone', modelId: 'gpt-5.5' }
+    renderProvider()
+    await waitFor(() => expect(core.listChatConversations).toHaveBeenCalled())
+
+    expect(session?.activeModel).toEqual(MODEL)
   })
 })

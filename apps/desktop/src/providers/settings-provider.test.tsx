@@ -139,6 +139,7 @@ describe('SettingsProvider', () => {
           graphColors: {},
           aiProviders: [],
           defaultAiProviderId: null,
+          chatModelSelection: null,
         },
       ]),
     )
@@ -193,6 +194,7 @@ describe('SettingsProvider', () => {
           graphColors: {},
           aiProviders: [],
           defaultAiProviderId: null,
+          chatModelSelection: null,
           futureKey: true,
         },
       ]),
@@ -232,6 +234,7 @@ describe('SettingsProvider', () => {
           graphColors: {},
           aiProviders: [],
           defaultAiProviderId: null,
+          chatModelSelection: null,
           futureKey: true,
         },
       ]),
@@ -265,6 +268,7 @@ describe('SettingsProvider', () => {
           graphColors: {},
           aiProviders: [],
           defaultAiProviderId: null,
+          chatModelSelection: null,
         },
       ]),
     )
@@ -424,6 +428,7 @@ describe('SettingsProvider', () => {
           graphColors: {},
           aiProviders: [],
           defaultAiProviderId: null,
+          chatModelSelection: null,
         },
       ]),
     )
@@ -460,6 +465,7 @@ describe('SettingsProvider', () => {
         graphColors: {},
         aiProviders: [],
         defaultAiProviderId: null,
+        chatModelSelection: null,
       },
     ])
   })

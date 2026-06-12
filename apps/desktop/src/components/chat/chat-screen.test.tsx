@@ -6,11 +6,13 @@ import type { ReactElement } from 'react'
 import {
   cloudSafeGraphContext,
   type AiProviderConfig,
+  type ChatModelSelection,
   type ChatStreamEvent,
   type CloudGraphContext,
   type CloudSafe,
   type GraphContextDeps,
   type GraphInfo,
+  type Settings,
   type StreamChatOptions,
 } from '@reflect/core'
 import { ChatProvider, useChatSession } from '@/providers/chat-provider'
@@ -43,13 +45,30 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 const settingsState = vi.hoisted(() => ({
   models: [] as AiProviderConfig[],
   defaultId: null as string | null,
+  selection: null as ChatModelSelection | null,
 }))
-vi.mock('@/providers/settings-provider', () => ({
-  useSettings: () => ({
-    settings: { aiProviders: settingsState.models, defaultAiProviderId: settingsState.defaultId },
-    updateSettings: () => {},
-  }),
-}))
+// Stateful like the real provider: a chatModelSelection patch re-renders with
+// the new value, so picking a model in the UI applies instantly here too.
+vi.mock('@/providers/settings-provider', async () => {
+  const { useState } = await import('react')
+  return {
+    useSettings: () => {
+      const [selection, setSelection] = useState(settingsState.selection)
+      return {
+        settings: {
+          aiProviders: settingsState.models,
+          defaultAiProviderId: settingsState.defaultId,
+          chatModelSelection: selection,
+        },
+        updateSettings: (patch: Partial<Settings>) => {
+          if (patch.chatModelSelection !== undefined) {
+            setSelection(patch.chatModelSelection)
+          }
+        },
+      }
+    },
+  }
+})
 
 // No open index → the provider's persistence layer stays inert; these tests
 // cover the screen, chat-provider.test.tsx covers persistence.
@@ -89,6 +108,7 @@ const GRAPH_CONTEXT = cloudSafeGraphContext({
 beforeEach(() => {
   settingsState.models = []
   settingsState.defaultId = null
+  settingsState.selection = null
   streamChat.mockReset()
   getSecret.mockReset().mockResolvedValue('sk-test')
   loadChatGraphContext.mockReset().mockResolvedValue(GRAPH_CONTEXT)
@@ -210,6 +230,17 @@ describe('ChatScreen', () => {
     await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1))
     // Same entry (id → keychain key), with the picked model applied.
     expect(streamChat.mock.lastCall?.[0].config).toEqual({ ...MODEL, model: 'gpt-5.5' })
+  })
+
+  it('starts the picker on the model persisted from the last session', async () => {
+    configureModel()
+    settingsState.selection = { configId: 'm1', modelId: 'gpt-5.5' }
+    const view = renderChat()
+
+    fireEvent.keyDown(view.getByRole('combobox', { name: 'Model' }), { key: 'ArrowDown' })
+
+    const picked = await screen.findByRole('option', { name: 'GPT-5.5' })
+    expect(picked.getAttribute('aria-selected')).toBe('true')
   })
 
   it('sends the graph overview context with each turn', async () => {

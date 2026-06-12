@@ -1,12 +1,13 @@
-import type { AiProviderConfig, AiProviderId } from '../../settings/schema'
+import type { AiProviderConfig, AiProviderId, ChatModelSelection } from '../../settings/schema'
 import { aiProvider } from '../provider-catalog'
 import { defaultAiProvider, type AiProvidersState } from '../provider-config'
 
 /**
  * The chat screen's model picker (Plan 10): every configured provider offers
  * its full curated model list, not just the entry's default model. These are
- * pure derivations over the configured-provider state — the session's choice
- * itself lives in the chat provider and is never persisted.
+ * pure derivations over the configured-provider state — the choice itself is
+ * the `chatModelSelection` settings key, persisted so the next session starts
+ * on the model the user picked last.
  */
 
 /** One pick in the chat model picker: a configured provider entry + model. */
@@ -20,11 +21,7 @@ export interface ChatModelOption {
   label: string
 }
 
-/** A session's model choice — references a {@link ChatModelOption}. */
-export interface ChatModelSelection {
-  configId: string
-  modelId: string
-}
+export type { ChatModelSelection }
 
 /**
  * Every model the chat picker offers, grouped consecutively per configured

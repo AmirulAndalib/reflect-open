@@ -15,6 +15,7 @@ describe('settingsSchema', () => {
       graphColors: {},
       aiProviders: [],
       defaultAiProviderId: null,
+      chatModelSelection: null,
     })
     expect(DEFAULT_SETTINGS.editorMarkdownSyntax).toBe('focus')
     expect(DEFAULT_SETTINGS.editorSpellCheck).toBe(true)
@@ -27,6 +28,7 @@ describe('settingsSchema', () => {
     expect(DEFAULT_SETTINGS.graphColors).toEqual({})
     expect(DEFAULT_SETTINGS.aiProviders).toEqual([])
     expect(DEFAULT_SETTINGS.defaultAiProviderId).toBeNull()
+    expect(DEFAULT_SETTINGS.chatModelSelection).toBeNull()
   })
 
   it('accepts valid values', () => {
@@ -92,6 +94,7 @@ describe('settingsSchema', () => {
       graphColors: {},
       aiProviders: [],
       defaultAiProviderId: null,
+      chatModelSelection: null,
       futureKey: true,
     })
   })
@@ -152,6 +155,27 @@ describe('settingsSchema', () => {
       expect(settingsSchema.parse({ defaultAiProviderId: 'abc' }).defaultAiProviderId).toBe('abc')
       expect(settingsSchema.parse({ defaultAiProviderId: null }).defaultAiProviderId).toBeNull()
       expect(settingsSchema.parse({ defaultAiProviderId: 42 }).defaultAiProviderId).toBeNull()
+    })
+  })
+
+  describe('chatModelSelection', () => {
+    it('passes a valid selection through', () => {
+      const selection = { configId: 'abc', modelId: 'claude-opus-4-8' }
+      expect(settingsSchema.parse({ chatModelSelection: selection }).chatModelSelection).toEqual(
+        selection,
+      )
+      expect(settingsSchema.parse({ chatModelSelection: null }).chatModelSelection).toBeNull()
+    })
+
+    it('degrades an invalid value to null', () => {
+      expect(settingsSchema.parse({ chatModelSelection: 'gpt-5.5' }).chatModelSelection).toBeNull()
+      expect(
+        settingsSchema.parse({ chatModelSelection: { configId: 'abc' } }).chatModelSelection,
+      ).toBeNull()
+      expect(
+        settingsSchema.parse({ chatModelSelection: { configId: '', modelId: 'gpt-5.5' } })
+          .chatModelSelection,
+      ).toBeNull()
     })
   })
 })

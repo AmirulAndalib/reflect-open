@@ -102,6 +102,7 @@ export {
   aiProviderConfigSchema,
   aiProvidersSchema,
   defaultAiProviderIdSchema,
+  chatModelSelectionSchema,
   DEFAULT_SETTINGS,
   type Settings,
   type EditorMarkdownSyntax,

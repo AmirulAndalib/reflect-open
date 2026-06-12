@@ -161,6 +161,26 @@ export type AiProviderConfig = z.infer<typeof aiProviderConfigSchema>
 export const defaultAiProviderIdSchema = z.string().nullable().catch(null)
 
 /**
+ * The model the chat last used: a configured `aiProviders` entry (`configId`)
+ * plus a model id within it. Persisted so the next chat session starts on
+ * whatever the user picked last; null (the default) means the app default
+ * entry and its configured model. A dangling reference is legal (the entry
+ * may have been removed since) — readers resolve it through
+ * `resolveChatModel`, which falls back to the default entry — and an invalid
+ * value degrades to null.
+ */
+export const chatModelSelectionSchema = z
+  .object({
+    configId: z.string().min(1),
+    modelId: z.string().min(1),
+  })
+  .nullable()
+  .catch(null)
+
+/** A chat model choice — a configured provider entry + a model within it. */
+export type ChatModelSelection = NonNullable<z.infer<typeof chatModelSelectionSchema>>
+
+/**
  * The configured AI providers. Resilience is per entry, not per list: a
  * corrupt entry is dropped while the rest load, so one bad hand-edit can't
  * wipe every configured provider. A non-array value degrades to the empty
@@ -189,6 +209,7 @@ export const settingsSchema = z
     graphColors: graphColorsSchema,
     aiProviders: aiProvidersSchema,
     defaultAiProviderId: defaultAiProviderIdSchema,
+    chatModelSelection: chatModelSelectionSchema,
   })
   .passthrough()
 

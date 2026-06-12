@@ -73,10 +73,14 @@ interface ChatContextValue {
   modelOptions: ChatModelOption[]
   /**
    * The provider entry + model the next turn calls (`model` already carries
-   * the session's choice) — session override or the settings default.
+   * the picker's choice) — the persisted last pick or the settings default.
    */
   activeModel: AiProviderConfig | null
-  /** Override the session's model (null returns to the settings default). */
+  /**
+   * Pick the chat model. Persisted (`chatModelSelection` in the settings
+   * document), so later sessions start on it; null returns to the app
+   * default.
+   */
   selectModel: (selection: ChatModelSelection | null) => void
   /** Images queued for the next message (dropped or pasted onto the chat). */
   attachments: ChatAttachment[]
@@ -116,20 +120,21 @@ interface ChatProviderProps {
 }
 
 export function ChatProvider({ graph, children }: ChatProviderProps): ReactElement {
-  const { settings } = useSettings()
+  const { settings, updateSettings } = useSettings()
   const { indexGeneration } = useGraph()
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
-  const [selection, setSelection] = useState<ChatModelSelection | null>(null)
   const [conversationId, setConversationId] = useState<string>(() => crypto.randomUUID())
 
   const status: ChatStatus = turns.at(-1)?.status === 'streaming' ? 'streaming' : 'idle'
 
   const providers = settings.aiProviders
   const modelOptions = useMemo(() => chatModelOptions(providers), [providers])
+  // The picker's choice lives in the settings document, not session state, so
+  // the model used last is the one the next session starts on.
   const activeModel = resolveChatModel(
     { providers, defaultProviderId: settings.defaultAiProviderId },
-    selection,
+    settings.chatModelSelection,
   )
 
   // Read at call time, not captured: send() can fire long after the render
@@ -421,9 +426,12 @@ export function ChatProvider({ graph, children }: ChatProviderProps): ReactEleme
     [newChat],
   )
 
-  const selectModel = useCallback((next: ChatModelSelection | null) => {
-    setSelection(next)
-  }, [])
+  const selectModel = useCallback(
+    (next: ChatModelSelection | null) => {
+      updateSettings({ chatModelSelection: next })
+    },
+    [updateSettings],
+  )
 
   const attachImages = useCallback(async (files: File[]): Promise<void> => {
     // Reading files is async: a drop still in flight when New chat clears
