@@ -141,6 +141,33 @@ describe('useAudioRecorder', () => {
     expect(result.current.status).toBe('idle')
   })
 
+  it('overlapping starts acquire a single stream', async () => {
+    const track = { stop: vi.fn() }
+    let release: (stream: MediaStream) => void = () => {}
+    getUserMedia.mockImplementation(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          release = resolve
+        }),
+    )
+    const { result } = renderHook(() => useAudioRecorder())
+
+    let firstStart: Promise<void> = Promise.resolve()
+    let secondStart: Promise<void> = Promise.resolve()
+    act(() => {
+      firstStart = result.current.start()
+      secondStart = result.current.start()
+    })
+    await act(async () => {
+      release(fakeStream([track]))
+      await Promise.all([firstStart, secondStart])
+    })
+
+    expect(getUserMedia).toHaveBeenCalledTimes(1)
+    expect(FakeMediaRecorder.instances).toHaveLength(1)
+    expect(result.current.status).toBe('recording')
+  })
+
   it('a cancel during the permission prompt releases the stream it resolves into', async () => {
     const track = { stop: vi.fn() }
     let release: (stream: MediaStream) => void = () => {}

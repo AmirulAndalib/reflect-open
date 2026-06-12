@@ -173,13 +173,28 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   }, [stopRecorder, runSave])
   stopAndSaveRef.current = () => void stopAndSave()
 
+  const discard = useCallback((): void => {
+    setError(null)
+    setResume(null)
+  }, [])
+
   const toggle = useCallback((): void => {
     if (recorder.status === 'recording') {
       void stopAndSave()
-    } else if (recorder.status === 'idle' && !saving && error === null) {
+    } else if (error !== null) {
+      // A parked error must never invisibly block recording. Collapsed, the
+      // error UI doesn't exist — surface it; visible, it was on screen and a
+      // fresh record request acknowledges it (the same click the red mic
+      // anchor handles).
+      if (collapsedRef.current) {
+        toggleSidebar()
+      } else {
+        discard()
+      }
+    } else if (recorder.status === 'idle' && !saving) {
       void start()
     }
-  }, [recorder.status, saving, error, stopAndSave, start])
+  }, [recorder.status, saving, error, stopAndSave, start, toggleSidebar, discard])
 
   const cancel = useCallback((): void => {
     cancelRecorder()
@@ -192,11 +207,6 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       void runSave(resume)
     }
   }, [resume, runSave])
-
-  const discard = useCallback((): void => {
-    setError(null)
-    setResume(null)
-  }, [])
 
   // Collapsing the sidebar mid-flow: stop-and-save a live recording, and
   // abandon a pending permission request — a grant arriving after the

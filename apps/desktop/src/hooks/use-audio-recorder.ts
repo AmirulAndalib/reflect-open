@@ -82,9 +82,13 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
   // Bumped by cancel/unmount so an in-flight getUserMedia resolves into a dead
   // session and releases the mic instead of recording into the void.
   const sessionRef = useRef(0)
+  // Guards start()'s await gap: a second start() arriving while getUserMedia
+  // is pending must not acquire a second stream and orphan the first.
+  const requestingRef = useRef(false)
 
   const teardown = useCallback((): void => {
     sessionRef.current += 1
+    requestingRef.current = false
     recorderRef.current = null
     chunksRef.current = []
     if (intervalRef.current !== null) {
@@ -105,24 +109,30 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
   }, [])
 
   const start = useCallback(async (): Promise<void> => {
-    if (recorderRef.current !== null || streamRef.current !== null) {
+    if (requestingRef.current || recorderRef.current !== null || streamRef.current !== null) {
       return
     }
+    requestingRef.current = true
     const session = sessionRef.current
     setStatus('requesting')
     let input: MediaStream
     try {
       input = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch (cause) {
-      setStatus('idle')
+      if (sessionRef.current === session) {
+        requestingRef.current = false
+        setStatus('idle')
+      }
       throw cause
     }
     if (sessionRef.current !== session) {
+      // Cancelled while pending; a newer start() may own requestingRef now.
       for (const track of input.getTracks()) {
         track.stop()
       }
       return
     }
+    requestingRef.current = false
 
     const mimeType = pickMimeType()
     const recorder = new MediaRecorder(input, mimeType ? { mimeType } : undefined)

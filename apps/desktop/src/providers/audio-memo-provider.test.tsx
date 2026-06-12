@@ -289,6 +289,46 @@ describe('AudioMemoProvider', () => {
     await waitFor(() => expect(failOperation).toHaveBeenCalledWith('provider down'))
   })
 
+  it('a parked error never invisibly blocks recording: toggle surfaces, then clears it', async () => {
+    saveAudioMemo.mockResolvedValue({ ok: false, message: 'provider down', resume: null })
+    const { result, rerender } = renderHook(() => useAudioMemo(), { wrapper })
+
+    // Fail a save, then collapse — the error popover unmounts with the mic.
+    await act(async () => {
+      result.current.toggle()
+    })
+    await act(async () => {
+      result.current.toggle()
+    })
+    await waitFor(() => expect(result.current.phase).toBe('error'))
+    sidebarState.collapsed = true
+    await act(async () => {
+      rerender()
+    })
+
+    // Collapsed: toggle re-surfaces the error instead of doing nothing.
+    toggleSidebar.mockClear()
+    await act(async () => {
+      result.current.toggle()
+    })
+    expect(toggleSidebar).toHaveBeenCalled()
+    expect(result.current.phase).toBe('error')
+
+    // Visible: toggle acknowledges the error; the next one records.
+    sidebarState.collapsed = false
+    await act(async () => {
+      rerender()
+    })
+    await act(async () => {
+      result.current.toggle()
+    })
+    expect(result.current.phase).toBe('idle')
+    await act(async () => {
+      result.current.toggle()
+    })
+    expect(result.current.phase).toBe('recording')
+  })
+
   it('starting from a collapsed sidebar expands it first', async () => {
     sidebarState.collapsed = true
     const { result } = renderHook(() => useAudioMemo(), { wrapper })
