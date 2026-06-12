@@ -105,10 +105,13 @@ export function useAppShortcuts(): CommandContext {
       if (paletteOpenRef.current) {
         return // modal palette owns the keyboard; Esc closes, then keys resume
       }
-      if (!isModKey(event) || event.altKey || event.shiftKey || event.repeat) {
+      if (!isModKey(event) || event.altKey || event.repeat) {
         return // held keys must not spam navigations (e.g. a stack of new notes)
       }
-      const id = BINDING_TO_ID.get(`Mod-${event.key.toLowerCase()}`)
+      const bindingKey = event.shiftKey
+        ? `Mod-Shift-${event.key.toLowerCase()}`
+        : `Mod-${event.key.toLowerCase()}`
+      const id = BINDING_TO_ID.get(bindingKey)
       if (shortcutsOpenRef.current) {
         // The cheat-sheet is modal too: nothing may navigate behind it, but
         // the key that opened it closes it again.

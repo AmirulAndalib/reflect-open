@@ -63,6 +63,10 @@ describe('keybindingFor', () => {
     expect(keybindingFor('theme.toggle')).toBeNull() // a real command, no binding
     expect(keybindingFor('no.such.command')).toBeNull()
   })
+
+  it('audioMemo.toggle is bound to Mod-Shift-r', () => {
+    expect(keybindingFor('audioMemo.toggle')).toBe('Mod-Shift-r')
+  })
 })
 
 describe('app commands', () => {
