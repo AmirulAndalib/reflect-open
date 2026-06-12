@@ -32,18 +32,27 @@ export function CaptureProvider({ graph, children }: CaptureProviderProps): Reac
   }
 
   useEffect(() => {
-    if (hasBridge()) {
-      // Best-effort: a failed registration must not block the workspace —
-      // the extension reports "host not found" with install guidance instead.
-      captureHostRegister().catch((cause: unknown) => {
-        console.error('capture host registration failed:', cause)
-      })
-    }
     const controller = createCaptureController({
       generation: graph.generation,
       getProviders: () => providersRef.current,
     })
-    controller.start()
+    // Registration (the pointer-file rewrite) completes BEFORE the first
+    // drain: on a graph switch this repoints the host at the new graph as
+    // early as possible, instead of draining here while the pointer still
+    // names the old one. (The host reads the pointer per capture in its own
+    // process, so a capture racing the rewrite can still spool to the
+    // previous graph's inbox — it drains when that graph next opens.)
+    // Best-effort: a failed registration must not block the drain — captures
+    // already spooled must land regardless, and the extension surfaces
+    // "host not found" with install guidance on its side.
+    const registered = hasBridge()
+      ? captureHostRegister().catch((cause: unknown) => {
+          console.error('capture host registration failed:', cause)
+        })
+      : Promise.resolve()
+    void registered.then(() => {
+      controller.start() // a no-op if the effect tore down while registering
+    })
     return () => {
       controller.dispose()
     }
