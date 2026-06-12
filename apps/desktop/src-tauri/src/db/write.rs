@@ -137,6 +137,16 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
     Ok(())
 }
 
+/// The frontmatter `id` of the note row at `path`: outer `None` when no row
+/// exists, inner `None` when the row carries no id.
+fn note_row_id(conn: &Connection, path: &str) -> AppResult<Option<Option<String>>> {
+    use rusqlite::OptionalExtension;
+    Ok(conn
+        .prepare_cached("SELECT id FROM notes WHERE path = ?1")?
+        .query_row(params![path], |row| row.get::<_, Option<String>>(0))
+        .optional()?)
+}
+
 /// Move every row keyed by `from` to `to` — the projection half of a file
 /// rename (Plan 17). The row *moves* rather than being re-created so nothing
 /// derived is lost: pinned state, conflict flags, and (critically) embedding
@@ -147,19 +157,42 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
 /// tables reference `notes(path)` and SQLite would otherwise reject updating
 /// the parent key while children point at it.
 ///
-/// Refuses (loudly) when `to` already has a `notes` row — overwriting another
-/// note's projection means the collision probe raced a create; the caller's
-/// transaction rolls back and the file is left in place. A missing `from` row
-/// is fine: an unindexed file can still be renamed, and the watcher indexes it
-/// at the new path.
+/// An occupied destination is resolved exactly like the filesystem half
+/// (`move_note_file`): when both rows carry the **same id**, the destination
+/// is the note's own racing save already indexed at the new path — the
+/// fresher row is *adopted* (the stale source row drops; its embedding
+/// chunks carry over when the destination has none, so vectors survive).
+/// Anything else refuses (loudly): overwriting a foreign note's projection
+/// means the collision probe raced a create; the caller's transaction rolls
+/// back and the file is left in place. A missing `from` row is fine: an
+/// unindexed file can still be renamed, and the watcher indexes it at the
+/// new path.
 pub(super) fn move_note(conn: &Connection, from: &str, to: &str) -> AppResult<()> {
-    let occupied: bool = conn
-        .prepare_cached("SELECT 1 FROM notes WHERE path = ?1")?
-        .exists(params![to])?;
-    if occupied {
-        return Err(crate::error::AppError::io(format!(
-            "cannot move note: {to} is already indexed"
-        )));
+    if let Some(dest_id) = note_row_id(conn, to)? {
+        let source_id = note_row_id(conn, from)?.flatten();
+        let same_note = match (&source_id, &dest_id) {
+            (Some(source), Some(dest)) => source == dest,
+            _ => false, // id-less rows can't prove identity — refuse, the safe direction
+        };
+        if !same_note {
+            return Err(crate::error::AppError::io(format!(
+                "cannot move note: {to} is already indexed"
+            )));
+        }
+        let dest_has_chunks: bool = conn
+            .prepare_cached("SELECT 1 FROM embedding_chunks WHERE note_path = ?1 LIMIT 1")?
+            .exists(params![to])?;
+        if dest_has_chunks {
+            // Both sides embedded already (rare — the race window is small):
+            // the destination's chunks win; drop the source's so no ghost
+            // rows linger at a path without a note.
+            super::embed_write::remove_chunks(conn, from)?;
+        } else {
+            conn.prepare_cached("UPDATE embedding_chunks SET note_path = ?2 WHERE note_path = ?1")?
+                .execute(params![from, to])?;
+        }
+        remove_note(conn, from)?;
+        return Ok(());
     }
     conn.prepare_cached("UPDATE notes SET path = ?2 WHERE path = ?1")?
         .execute(params![from, to])?;

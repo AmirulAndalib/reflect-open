@@ -857,3 +857,82 @@ fn watcher_echo_after_a_move_is_benign_and_vectors_survive() {
     );
     assert_eq!(vector_count(&conn), 1);
 }
+
+#[test]
+fn move_note_adopts_a_same_id_destination_row_and_carries_chunks() {
+    // The racing-save shape: after the session retargets, a debounced save +
+    // watcher upsert indexed the note at its NEW path before the move ran.
+    // Same id on both rows ⇒ the fresher destination row is adopted; the
+    // stale source row drops and its embedding vectors carry over.
+    let mut conn = migrated();
+    let mut stale = note("notes/old.md", "Old Title", vec![]);
+    stale.id = Some("01samenote".to_string());
+    apply_note(&conn, &stale).unwrap();
+    apply_chunks(&conn, "notes/old.md", &[chunk("c1", Some(vec384(0.5)))]).unwrap();
+    let mut fresh = note("notes/new-title.md", "New Title", vec![]);
+    fresh.id = Some("01samenote".to_string());
+    apply_note(&conn, &fresh).unwrap();
+
+    move_in_txn(&mut conn, "notes/old.md", "notes/new-title.md").unwrap();
+
+    // One note left — the fresh row, untouched.
+    let rows = run_query(&conn, "SELECT path, title FROM notes ORDER BY path", &[]).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].get("path").unwrap().as_str().unwrap(),
+        "notes/new-title.md"
+    );
+    assert_eq!(rows[0].get("title").unwrap().as_str().unwrap(), "New Title");
+    // The chunks moved with the note; the vector survived.
+    assert_eq!(
+        chunk_rows(&conn),
+        vec![("notes/new-title.md".to_string(), "c1".to_string())]
+    );
+    assert_eq!(vector_count(&conn), 1);
+}
+
+#[test]
+fn move_note_keeps_destination_chunks_and_drops_the_stale_sources() {
+    // Both sides embedded before the move resolved (rare): the destination's
+    // chunks win and the source's are removed — no ghost rows at a path
+    // without a note.
+    let mut conn = migrated();
+    let mut stale = note("notes/old.md", "Old", vec![]);
+    stale.id = Some("01samenote".to_string());
+    apply_note(&conn, &stale).unwrap();
+    apply_chunks(&conn, "notes/old.md", &[chunk("stale", Some(vec384(0.1)))]).unwrap();
+    let mut fresh = note("notes/new.md", "New", vec![]);
+    fresh.id = Some("01samenote".to_string());
+    apply_note(&conn, &fresh).unwrap();
+    apply_chunks(&conn, "notes/new.md", &[chunk("fresh", Some(vec384(0.9)))]).unwrap();
+
+    move_in_txn(&mut conn, "notes/old.md", "notes/new.md").unwrap();
+
+    assert_eq!(
+        chunk_rows(&conn),
+        vec![("notes/new.md".to_string(), "fresh".to_string())]
+    );
+    assert_eq!(vector_count(&conn), 1);
+}
+
+#[test]
+fn move_note_still_refuses_a_destination_with_a_different_id() {
+    let mut conn = migrated();
+    let mut source = note("notes/a.md", "A", vec![]);
+    source.id = Some("01aaa".to_string());
+    apply_note(&conn, &source).unwrap();
+    let mut foreign = note("notes/b.md", "B", vec![]);
+    foreign.id = Some("01bbb".to_string());
+    apply_note(&conn, &foreign).unwrap();
+
+    assert!(move_in_txn(&mut conn, "notes/a.md", "notes/b.md").is_err());
+    for path in ["notes/a.md", "notes/b.md"] {
+        let rows = run_query(
+            &conn,
+            "SELECT title FROM notes WHERE path = ?1",
+            &[Value::String(path.to_string())],
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1, "{path}");
+    }
+}
