@@ -130,9 +130,7 @@ const APP_COMMANDS: AppCommand[] = [
     id: 'audioMemo.toggle',
     title: 'Record audio memo',
     keywords: ['voice', 'mic', 'dictate', 'transcribe', 'speech', 'capture'],
-    // Starts a memo (or stops-and-saves the one recording). No default
-    // keybinding: the palette keeps it keyboard-reachable without spending a
-    // shortcut.
+    keybinding: 'Mod-Shift-r',
     run: (context) => context.toggleAudioMemo(),
   },
   {
