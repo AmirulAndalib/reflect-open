@@ -143,13 +143,11 @@ describe('ChatProvider persistence', () => {
     const first = core.saveChatMessage.mock.calls[0][0]
     const second = core.saveChatMessage.mock.calls[1][0]
     expect(first).toMatchObject({
-      seq: 0,
       generation: 7,
       conversation: { id: session?.activeConversationId, title: 'hello there' },
       turn: { userText: 'hello there', responseMessages: [] },
     })
     expect(second).toMatchObject({
-      seq: 0,
       turn: {
         status: 'done',
         responseMessages: [{ role: 'assistant', content: 'Hi.' }],
@@ -158,7 +156,7 @@ describe('ChatProvider persistence', () => {
     })
   })
 
-  it('numbers turns after restored history', async () => {
+  it('saves later turns into the restored conversation', async () => {
     core.listChatConversations.mockResolvedValue([conversation()])
     scriptTurn([{ type: 'complete', messages: [{ role: 'assistant', content: 'More.' }] }])
     renderProvider()
@@ -167,8 +165,8 @@ describe('ChatProvider persistence', () => {
     await act(() => session?.send('and today?'))
 
     expect(core.saveChatMessage.mock.calls[0][0]).toMatchObject({
-      seq: 1,
       conversation: { id: 'conv-1', title: 'what did I write yesterday?' },
+      turn: { userText: 'and today?' },
     })
   })
 
@@ -229,5 +227,37 @@ describe('ChatProvider persistence', () => {
     })
 
     expect(core.saveChatMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets an in-flight save land before deleting its conversation', async () => {
+    // The delete and a dispatched save are independent IPC commands with no
+    // ordering guarantee — the provider must hold the delete until the
+    // conversation's save chain settles, or the upsert could resurrect it.
+    let releaseSave: () => void = () => {}
+    core.saveChatMessage.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSave = resolve
+        }),
+    )
+    scriptTurn([{ type: 'complete', messages: [{ role: 'assistant', content: 'Hi.' }] }])
+    renderProvider()
+    await waitFor(() => expect(core.listChatConversations).toHaveBeenCalled())
+
+    await act(() => session?.send('hello'))
+    const sentInto = core.saveChatMessage.mock.calls[0][0] as { conversation: { id: string } }
+
+    let deleteDone: Promise<void> | undefined
+    await act(async () => {
+      deleteDone = session?.deleteConversation(sentInto.conversation.id)
+      await Promise.resolve()
+    })
+    expect(core.deleteChatConversation).not.toHaveBeenCalled()
+
+    releaseSave()
+    await act(async () => {
+      await deleteDone
+    })
+    expect(core.deleteChatConversation).toHaveBeenCalledWith(sentInto.conversation.id, 7)
   })
 })
