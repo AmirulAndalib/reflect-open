@@ -47,7 +47,8 @@ can still build unsigned bundles with plain `pnpm tauri build`.
 ## What `pnpm release:macos` does
 
 1. Auto-detects the Developer ID identity from the keychain and derives the team ID.
-2. Loads notarization credentials (keychain item, or environment variables — see CI below).
+2. Loads notarization credentials (keychain item, or environment variables — see
+   [Releasing from CI](#releasing-from-ci) below).
 3. Runs `pnpm tauri build`, which stages the `reflect` CLI sidecar, then signs inside-out
    (sidecar → main binary → `.app`) with hardened runtime, notarizes the `.app` via
    `notarytool`, staples the ticket, and builds + signs the DMG.
@@ -97,21 +98,45 @@ than after notarization:
 Pass `--draft` to create the release without publishing it, then review and publish it
 from the GitHub UI.
 
-## CI
+## Releasing from CI
 
-Everything the script auto-detects can be supplied via environment variables instead,
-which take precedence over the keychain:
+`.github/workflows/release.yml` runs `pnpm release:macos publish` on a GitHub-hosted
+macOS runner — the same pipeline as a local release, including DMG notarization, the
+Gatekeeper checks, and the updater artifacts. Trigger it from **Actions → Release →
+Run workflow** (tick *draft* to review the release before publishing), or by pushing
+the matching `v<version>` tag. The publish preflights apply unchanged, so bump
+`version` in `tauri.conf.json` (and `src-tauri/Cargo.toml`) on the released branch
+first.
 
-| Variable | Purpose |
+The script reads all signing material from environment variables, which take
+precedence over the keychain (exporting them works for local releases too); the
+workflow wires them from repository Actions secrets of the same names. Create these
+under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
 | --- | --- |
-| `APPLE_SIGNING_IDENTITY` | Full identity string, e.g. `Developer ID Application: … (TEAMID)` |
-| `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | Apple ID notarization (app-specific password) |
-| `APPLE_API_KEY` / `APPLE_API_ISSUER` / `APPLE_API_KEY_PATH` | App Store Connect API key notarization (preferred for CI — not tied to a personal Apple ID) |
-| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` | base64 `.p12` + password; Tauri imports it into a temporary keychain on runners with no cert installed |
-| `TAURI_SIGNING_PRIVATE_KEY` (or `…_PATH`) / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The updater signing key (content or path) + its password; overrides the `reflect-updater` keychain item |
+| `APPLE_SIGNING_IDENTITY` | Full identity string, e.g. `Developer ID Application: … (TEAMID)` — from `security find-identity -v -p codesigning` |
+| `APPLE_CERTIFICATE` | The Developer ID certificate + private key: export a `.p12` from Keychain Access, then `base64 -i certificate.p12`. Tauri imports it into a temporary keychain on the runner |
+| `APPLE_CERTIFICATE_PASSWORD` | The password set on that `.p12` export |
+| `APPLE_API_KEY` | App Store Connect API key ID, for notarization (preferred in CI — not tied to a personal Apple ID) |
+| `APPLE_API_ISSUER` | The API key's issuer UUID |
+| `APPLE_API_KEY_CONTENT` | The `.p8` key file's content; the workflow stages it on disk and sets `APPLE_API_KEY_PATH`, the variable the script reads |
+| `TAURI_SIGNING_PRIVATE_KEY` | The updater private key: `security find-generic-password -s reflect-updater -w \| base64 --decode` |
 
-See the [Tauri macOS signing docs](https://v2.tauri.app/distribute/sign/macos/) for the
-runner keychain setup.
+Notes:
+
+- Apple ID notarization works instead of the API key: set `APPLE_ID` +
+  `APPLE_PASSWORD` (an app-specific password), plus `APPLE_TEAM_ID` if the signing
+  identity doesn't end in `(TEAMID)`.
+- Leave `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` unset: the key has no password, GitHub
+  rejects empty-string secrets, and the workflow defaults it to empty. (Locally,
+  `TAURI_SIGNING_PRIVATE_KEY_PATH` also works in place of the key content.)
+- No PAT is needed — the release is created with the workflow's own `GITHUB_TOKEN`.
+
+The workflow verifies the secrets before building, so a misconfigured runner fails in
+seconds rather than after the build and notarization. See the
+[Tauri macOS signing docs](https://v2.tauri.app/distribute/sign/macos/) for background
+on the runner keychain setup.
 
 ## Troubleshooting
 
