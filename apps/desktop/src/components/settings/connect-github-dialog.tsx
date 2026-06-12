@@ -2,7 +2,7 @@ import { useState, type ReactElement } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import {
   githubAppInstallUrl,
-  isDeviceFlowConfigured,
+  loadGithubAuth,
   newRepoUrl,
   type GithubRepoRef,
   type GithubUser,
@@ -31,6 +31,9 @@ interface ConnectGithubDialogProps {
 
 type Step = 'repo' | 'auth' | 'finish'
 
+/** Which credential the sign-in stored — decides the can't-find-repo remedy. */
+type AuthKind = 'app' | 'pat' | null
+
 const STEP_DESCRIPTIONS: Record<Step, string> = {
   repo: 'Back up this graph to a private GitHub repository of your own.',
   auth: 'Sign in so Reflect can push your backups.',
@@ -50,6 +53,11 @@ const STEP_DESCRIPTIONS: Record<Step, string> = {
  * yet and the user never clicked "Create on GitHub". Connecting a public
  * repo demands explicit confirmation — every note in the graph, including
  * `private: true` ones, would be world-readable.
+ *
+ * "Can't find the repo" has one remedy per credential kind, never both at
+ * once: app sign-ins route to the GitHub App install page (authorization ≠
+ * installation — the token only reaches repositories the app is installed
+ * on), while PAT users get token-scope guidance.
  */
 export function ConnectGithubDialog({
   suggestedRepoName,
@@ -62,9 +70,18 @@ export function ConnectGithubDialog({
   const [repoName, setRepoName] = useState(suggestedRepoName)
   const [existingRepo, setExistingRepo] = useState('')
   const [user, setUser] = useState<GithubUser | null>(null)
+  const [authKind, setAuthKind] = useState<AuthKind>(null)
   const [publicConfirm, setPublicConfirm] = useState<GithubRepoRef | null>(null)
   /** The finish step's "repo not found yet" guidance (create-mode only). */
   const [showCreateGuide, setShowCreateGuide] = useState(false)
+  /** App sign-in couldn't see the repo → offer the install-access remedy. */
+  const [showGrantHint, setShowGrantHint] = useState(false)
+  /**
+   * The user clicked "I created it — connect". From here on a 404 means
+   * "can't see it", not "doesn't exist": the remedy is access (install the
+   * app / widen the token), never the create guide again.
+   */
+  const [claimedCreated, setClaimedCreated] = useState(false)
 
   useRestoreFocus()
 
@@ -76,12 +93,21 @@ export function ConnectGithubDialog({
     return name.length === 0 ? null : { owner: forUser.login, name }
   }
 
-  async function finish(forUser: GithubUser, allowPublic = false): Promise<void> {
+  async function finish(
+    forUser: GithubUser,
+    options: { allowPublic?: boolean; kind?: AuthKind; claimedCreated?: boolean } = {},
+  ): Promise<void> {
+    // Two values are read at call time because their setters fire in the
+    // same tick as the call (state hasn't committed): the credential kind on
+    // the first run, and the created-it claim on its button's click.
+    const kind = options.kind ?? authKind
+    const claimed = options.claimedCreated ?? claimedCreated
     await action.run(async () => {
-      // Each attempt re-derives the guide from its own outcome — a stale
-      // "can't create repositories" panel from an earlier path must not
-      // outlive the detour (e.g. consent screen → choose another repo).
+      // Each attempt re-derives the guidance from its own outcome — a stale
+      // "can't create repositories" or "grant access" panel from an earlier
+      // path must not outlive the detour (e.g. consent → choose another repo).
       setShowCreateGuide(false)
+      setShowGrantHint(false)
       const ref = publicConfirm ?? targetRef(forUser)
       if (ref === null) {
         action.setError(
@@ -92,7 +118,7 @@ export function ConnectGithubDialog({
         setStep('repo')
         return
       }
-      const result = await connectExistingRepo(ref, { allowPublic })
+      const result = await connectExistingRepo(ref, { allowPublic: options.allowPublic ?? false })
       if (result === 'connected') {
         onClose()
         return
@@ -101,12 +127,27 @@ export function ConnectGithubDialog({
         setPublicConfirm(ref)
         return
       }
-      // Not found. For an existing repo that's the answer; for a new one,
-      // create it — by API when the token can, by guided handoff otherwise.
-      if (mode === 'existing') {
-        action.setError(
-          'That repository was not found (check the name and the token’s repo access).',
-        )
+      // Not found. For an existing repo — or one the user says they already
+      // created — that means "can't see it"; for a new one, create it, by
+      // API when the token can and by guided handoff otherwise.
+      if (mode === 'existing' || claimed) {
+        // GitHub's 404 can't distinguish "doesn't exist" from "no access".
+        // App sign-ins almost always mean the latter (the app isn't
+        // installed on the repo), so that's the remedy they get.
+        if (kind === 'app') {
+          setShowGrantHint(true)
+          action.setError(
+            claimed
+              ? 'Reflect still can’t see the new repository — grant it access on GitHub.'
+              : 'Reflect can’t see that repository — grant it access on GitHub, or check the name.',
+          )
+        } else {
+          action.setError(
+            claimed
+              ? 'Still not found — make sure the new repository is included in your token’s repository access.'
+              : 'That repository was not found (check the name and the token’s repo access).',
+          )
+        }
         return
       }
       const created = await connectNewRepo(ref.name)
@@ -134,7 +175,11 @@ export function ConnectGithubDialog({
   function onAuthed(authedUser: GithubUser): void {
     setUser(authedUser)
     setStep('finish')
-    void finish(authedUser)
+    void loadGithubAuth().then((auth) => {
+      const kind = auth?.kind ?? null
+      setAuthKind(kind)
+      return finish(authedUser, { kind })
+    })
   }
 
   /** Back to the repo step — every finish-step dead end must offer this. */
@@ -142,6 +187,8 @@ export function ConnectGithubDialog({
     action.setError(null)
     setPublicConfirm(null)
     setShowCreateGuide(false)
+    setShowGrantHint(false)
+    setClaimedCreated(false)
     setStep('repo')
   }
 
@@ -253,7 +300,7 @@ export function ConnectGithubDialog({
                     disabled={action.pending || user === null}
                     onClick={() => {
                       if (user !== null) {
-                        void finish(user, true)
+                        void finish(user, { allowPublic: true })
                       }
                     }}
                   >
@@ -264,7 +311,9 @@ export function ConnectGithubDialog({
             ) : showCreateGuide && user !== null ? (
               <>
                 <p className="text-sm text-text">
-                  Your token can’t create repositories, but GitHub can — everything is
+                  {authKind === 'app'
+                    ? 'Reflect can’t create the repository itself, but GitHub can — everything is'
+                    : 'Your token can’t create repositories, but GitHub can — everything is'}{' '}
                   pre-filled, so it’s one click. Create{' '}
                   <strong>
                     {user.login}/{repoName.trim()}
@@ -279,15 +328,32 @@ export function ConnectGithubDialog({
                     variant="outline"
                     size="sm"
                     disabled={action.pending}
-                    onClick={() => void finish(user)}
+                    onClick={() => {
+                      setClaimedCreated(true)
+                      void finish(user, { claimedCreated: true })
+                    }}
                   >
                     I created it — connect
                   </Button>
                 </div>
-                <p className="text-xs text-text-muted">
-                  If connecting still can’t find it, make sure the new repository is included in
-                  your token’s repository access.
-                </p>
+                {authKind === 'app' ? (
+                  <p className="text-xs text-text-muted">
+                    If connecting still can’t find it,{' '}
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => openExternal(githubAppInstallUrl())}
+                    >
+                      grant the Reflect app access
+                    </button>{' '}
+                    to the new repository.
+                  </p>
+                ) : (
+                  <p className="text-xs text-text-muted">
+                    If connecting still can’t find it, make sure the new repository is included in
+                    your token’s repository access.
+                  </p>
+                )}
               </>
             ) : (
               <p className="text-sm text-text-muted">
@@ -299,28 +365,28 @@ export function ConnectGithubDialog({
               <>
                 <InlineAlert tone="error">{action.error}</InlineAlert>
                 {publicConfirm === null ? (
-                  // A failed connect must never strand the user here: this is
-                  // the way back to change the repository (the consent screen
-                  // above has its own "Choose another repo").
-                  <Button variant="outline" size="sm" onClick={backToRepo}>
-                    Change repository
-                  </Button>
+                  // A failed connect must never strand the user here: change
+                  // the repository, or — for app sign-ins that can't see the
+                  // repo — grant the app access (authorization and
+                  // installation are separate GitHub App concepts; the token
+                  // only reaches repositories the app is installed on).
+                  <div className="flex flex-wrap gap-2">
+                    {showGrantHint && user !== null ? (
+                      <>
+                        <Button size="sm" onClick={() => openExternal(githubAppInstallUrl())}>
+                          Grant access on GitHub…
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => void finish(user)}>
+                          I granted it — try again
+                        </Button>
+                      </>
+                    ) : null}
+                    <Button variant="outline" size="sm" onClick={backToRepo}>
+                      Change repository
+                    </Button>
+                  </div>
                 ) : null}
               </>
-            ) : null}
-
-            {isDeviceFlowConfigured() && publicConfirm === null ? (
-              // Authorization and installation are separate GitHub App
-              // concepts: a signed-in token only reaches repositories the
-              // app is installed on. When the repo can't be seen, this is
-              // usually why.
-              <button
-                type="button"
-                className="text-left text-xs text-text-muted underline"
-                onClick={() => openExternal(githubAppInstallUrl())}
-              >
-                Can’t see your repository? Grant the Reflect app access on GitHub…
-              </button>
             ) : null}
           </div>
         ) : null}
