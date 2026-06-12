@@ -164,7 +164,7 @@ describe('reconcileAudioMemos', () => {
 
     expect(outcome).toEqual({ pending: 1, transcribed: 1, rejected: 0, stopped: null })
     expect(getSecretMock).toHaveBeenCalledWith('ai-api-key:cfg-openai')
-    expect(readAssetMock).toHaveBeenCalledWith(MEMO.audioPath)
+    expect(readAssetMock).toHaveBeenCalledWith(MEMO.audioPath, 3)
     expect(transcribeMock).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'openai',
@@ -378,7 +378,14 @@ describe('reconcileAudioMemos', () => {
   it('the abort gate stops between memos', async () => {
     const earlier = audioMemoIdentity(new Date(2026, 5, 10, 9, 0, 0, 0), 'audio/mp4')
     listDirMock.mockResolvedValue([fileMeta(earlier.audioPath), fileMeta(MEMO.audioPath)])
-    const isStale = vi.fn().mockReturnValueOnce(false).mockReturnValue(true)
+    // The gate is consulted three times per memo (loop top, post-read,
+    // post-transcribe): let the first memo through, stop the second.
+    const isStale = vi
+      .fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false)
+      .mockReturnValue(true)
 
     const outcome = await reconcile({ isStale })
 
@@ -388,6 +395,24 @@ describe('reconcileAudioMemos', () => {
       stopped: { reason: 'stale' },
     })
     expect(transcribeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('a graph switch during transcription stops before any write', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    let closed = false
+    transcribeMock.mockImplementation(async () => {
+      closed = true // the switch lands while the provider call is in flight
+      return 'memo transcript'
+    })
+
+    const outcome = await reconcile({ isStale: () => closed })
+
+    expect(outcome).toMatchObject({
+      pending: 1,
+      transcribed: 0,
+      stopped: { reason: 'stale' },
+    })
+    expect(writeNoteMock).not.toHaveBeenCalled()
   })
 
   it('a listing failure is reported, never thrown — reconcile runs unattended', async () => {

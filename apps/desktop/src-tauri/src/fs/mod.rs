@@ -128,7 +128,7 @@ pub(crate) fn root_for_generation(
     let inner = lock_graph(state)?;
     if inner.generation != generation {
         return Err(AppError::io(
-            "the graph changed since this write was issued; dropping it",
+            "the graph changed since this command was issued; dropping it",
         ));
     }
     inner.root.clone().ok_or_else(AppError::no_graph)
@@ -216,21 +216,26 @@ pub fn asset_write(
 }
 
 /// Read a binary asset's bytes, base64-encoded for the JSON IPC (e.g. audio
-/// memos read back for transcription).
+/// memos read back for transcription). Pinned to `generation`, unlike
+/// `note_read`: the caller is a background pass that can span a graph
+/// switch, and an unpinned read would resolve against the *new* root —
+/// handing back (and possibly sending to a provider) another graph's file.
 #[tauri::command]
-pub fn asset_read(path: String, state: State<GraphState>) -> AppResult<String> {
+pub fn asset_read(path: String, generation: u64, state: State<GraphState>) -> AppResult<String> {
     use base64::Engine;
-    let root = current_root(&state)?;
+    let root = root_for_generation(&state, generation)?;
     let bytes = fs::read(resolve(&root, &path)?)?;
     Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
 /// List every file (any extension) under a graph-relative directory, e.g.
 /// `audio-memos`. Which directory means what is the TypeScript layer's policy;
-/// a missing directory lists as empty.
+/// a missing directory lists as empty. Pinned to `generation` for the same
+/// reason as `asset_read` — the listing seeds a background pass that must
+/// never mix graphs.
 #[tauri::command]
-pub fn dir_list(dir: String, state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
-    let root = current_root(&state)?;
+pub fn dir_list(dir: String, generation: u64, state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
+    let root = root_for_generation(&state, generation)?;
     resolve(&root, &dir)?; // traversal guard; the walk itself skips symlinks
     let mut out = Vec::new();
     collect_files(&root, &dir, None, &mut out)?;

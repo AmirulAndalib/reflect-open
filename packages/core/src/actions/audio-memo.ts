@@ -202,10 +202,12 @@ function hasBacklink(source: string, memo: AudioMemoIdentity): boolean {
 /**
  * Memos awaiting transcription, oldest first: a recording under
  * `audio-memos/` with no same-named transcription note and no daily-note
- * backlink (the backlink is the tombstone — see the module doc).
+ * backlink (the backlink is the tombstone — see the module doc). The listing
+ * is pinned to `generation` so a pass can never seed itself from a graph
+ * opened after it was triggered.
  */
-export async function listPendingAudioMemos(): Promise<AudioMemoIdentity[]> {
-  const [recordings, notes] = await Promise.all([listDir(AUDIO_MEMOS_DIR), listFiles()])
+export async function listPendingAudioMemos(generation: number): Promise<AudioMemoIdentity[]> {
+  const [recordings, notes] = await Promise.all([listDir(AUDIO_MEMOS_DIR, generation), listFiles()])
   const existingNotes = new Set(notes.map((file) => file.path))
   const candidates = recordings
     .map((file) => audioMemoFromPath(file.path))
@@ -320,7 +322,7 @@ export async function reconcileAudioMemos(
 ): Promise<ReconcileAudioMemosOutcome> {
   let pending: AudioMemoIdentity[]
   try {
-    pending = await listPendingAudioMemos()
+    pending = await listPendingAudioMemos(input.generation)
   } catch (cause) {
     return {
       pending: 0,
@@ -360,19 +362,29 @@ export async function reconcileAudioMemos(
 
   let transcribed = 0
   let rejected = 0
+  // The gate is consulted again after every slow await (the asset read, the
+  // provider call), not just per memo: a graph switch mid-transcription must
+  // not bill another provider call or touch any note. Reads and writes are
+  // additionally generation-pinned in Rust, so even the unguardable gap
+  // between a gate check and the IPC call cannot cross graphs.
+  const stale = (): boolean => input.isStale?.() === true
+  const stalled = (): ReconcileAudioMemosOutcome => ({
+    pending: pending.length,
+    transcribed,
+    rejected,
+    stopped: { reason: 'stale', message: 'the graph session ended mid-pass' },
+  })
   for (const memo of pending) {
-    if (input.isStale?.() === true) {
-      return {
-        pending: pending.length,
-        transcribed,
-        rejected,
-        stopped: { reason: 'stale', message: 'the graph session ended mid-pass' },
-      }
+    if (stale()) {
+      return stalled()
     }
     try {
-      const audio = new Blob([base64ToBytes(await readAsset(memo.audioPath))], {
+      const audio = new Blob([base64ToBytes(await readAsset(memo.audioPath, input.generation))], {
         type: memo.mimeType,
       })
+      if (stale()) {
+        return stalled()
+      }
       const note = await memoNoteBody({
         audio,
         memo,
@@ -380,6 +392,9 @@ export async function reconcileAudioMemos(
         apiKey,
         fetchFn: input.fetchFn,
       })
+      if (stale()) {
+        return stalled()
+      }
       await writeNote(memo.notePath, transcriptionNote(memo, note.body), input.generation)
       await ensureDailyBacklink(memo, input.generation)
       if (note.rejected) {

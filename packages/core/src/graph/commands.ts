@@ -50,18 +50,21 @@ export async function writeAsset(
 
 /**
  * Read a binary asset's bytes by graph-relative path, base64-encoded (the IPC
- * is JSON). E.g. an audio memo read back for transcription.
+ * is JSON). E.g. an audio memo read back for transcription. `generation` pins
+ * the read: background passes can span a graph switch, and an unpinned read
+ * would resolve against the new graph's same-named file.
  */
-export async function readAsset(path: string): Promise<string> {
-  return call('asset_read', { path }, z.string())
+export async function readAsset(path: string, generation: number): Promise<string> {
+  return call('asset_read', { path, generation }, z.string())
 }
 
 /**
  * List every file (any extension) under a graph-relative directory, e.g.
- * `audio-memos`. A missing directory lists as empty.
+ * `audio-memos`. A missing directory lists as empty. Pinned to `generation`
+ * for the same reason as {@link readAsset}.
  */
-export async function listDir(dir: string): Promise<FileMeta[]> {
-  return call('dir_list', { dir }, z.array(fileMetaSchema))
+export async function listDir(dir: string, generation: number): Promise<FileMeta[]> {
+  return call('dir_list', { dir, generation }, z.array(fileMetaSchema))
 }
 
 /**
