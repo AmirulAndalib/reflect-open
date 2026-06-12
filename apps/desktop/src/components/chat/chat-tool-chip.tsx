@@ -1,8 +1,9 @@
 import type { ReactElement, ReactNode } from 'react'
-import { CalendarDays, FileText, History, LoaderCircle, Search } from 'lucide-react'
+import { CalendarDays, FileText, History, Search } from 'lucide-react'
 import { isToolPending, type AssistantPart } from '@/lib/chat-transcript'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
+import { Spinner } from '@/components/ui/spinner'
 
 interface ChatToolChipProps {
   part: Extract<AssistantPart, { kind: 'tool' }>
@@ -23,7 +24,7 @@ interface ChipFrameProps {
 function ChipFrame({ pending, icon, children }: ChipFrameProps): ReactElement {
   return (
     <span className="flex items-center gap-1.5 text-xs text-text-muted">
-      {pending ? <LoaderCircle aria-hidden className="size-3.5 animate-spin" /> : icon}
+      {pending ? <Spinner /> : icon}
       {children}
     </span>
   )

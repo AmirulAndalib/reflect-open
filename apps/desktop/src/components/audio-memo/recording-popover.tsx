@@ -1,8 +1,8 @@
 import type { ReactElement } from 'react'
-import { Loader2 } from 'lucide-react'
 import { RecordingWaveform } from '@/components/audio-memo/recording-waveform'
 import { Button } from '@/components/ui/button'
 import { PopoverContent } from '@/components/ui/popover'
+import { Spinner } from '@/components/ui/spinner'
 import { useAudioMemo } from '@/providers/audio-memo-provider'
 
 /**
@@ -51,7 +51,7 @@ export function RecordingPopover(): ReactElement {
         </div>
       ) : memo.phase === 'transcribing' ? (
         <div className="flex items-center gap-2 text-sm text-text-muted">
-          <Loader2 aria-hidden className="size-4 animate-spin" />
+          <Spinner />
           Transcribing…
         </div>
       ) : (
