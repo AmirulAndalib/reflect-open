@@ -11,7 +11,8 @@ interface ChatTurnProps {
 
 /**
  * One conversation turn: the user's message as a compact right-aligned
- * bubble, then the assistant's parts in order — text interleaved with the
+ * bubble — attached images above the text, which a photo-only message
+ * omits — then the assistant's parts in order: text interleaved with the
  * tool activity that grounded it.
  *
  * Text still streaming renders as plain text; once it settles it re-renders
@@ -30,8 +31,20 @@ export function ChatTurn({ turn }: ChatTurnProps): ReactElement {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl bg-surface-hover px-4 py-2 text-sm whitespace-pre-wrap text-text">
-          {turn.userText}
+        <div className="flex max-w-[85%] flex-col items-end gap-2">
+          {turn.attachments.map((attachment) => (
+            <img
+              key={attachment.id}
+              src={attachment.dataUrl}
+              alt={attachment.name}
+              className="max-h-48 max-w-full rounded-2xl"
+            />
+          ))}
+          {turn.userText !== '' ? (
+            <div className="rounded-2xl bg-surface-hover px-4 py-2 text-sm whitespace-pre-wrap text-text">
+              {turn.userText}
+            </div>
+          ) : null}
         </div>
       </div>
 

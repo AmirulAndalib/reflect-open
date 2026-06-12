@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from 'react'
 import { aiModelLabel, aiProvider } from '@reflect/core'
-import { ArrowUp, Plus, Square } from 'lucide-react'
+import { ArrowUp, Plus, Square, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -9,21 +9,37 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { imageFilesFrom } from '@/lib/chat-attachments'
 import { useChatSession } from '@/providers/chat-provider'
 
 /**
  * The composer: a textarea (Enter sends, Shift-Enter breaks, Esc stops a
  * streaming turn), the session's model picker, and a send button that turns
- * into stop while a turn streams. "New chat" appears once there's a
- * conversation to clear.
+ * into stop while a turn streams. Pasted images queue as attachments and
+ * preview above the textarea — a message can be a photo alone, so Enter
+ * sends whenever there is text *or* something attached. "New chat" appears
+ * once there's a conversation to clear.
  */
 export function ChatInput(): ReactElement {
-  const { turns, status, models, activeModel, selectModel, send, stop, newChat } = useChatSession()
+  const {
+    turns,
+    status,
+    models,
+    activeModel,
+    selectModel,
+    attachments,
+    attachImages,
+    removeAttachment,
+    send,
+    stop,
+    newChat,
+  } = useChatSession()
   const [text, setText] = useState('')
   const streaming = status === 'streaming'
+  const empty = text.trim() === '' && attachments.length === 0
 
   const submit = () => {
-    if (streaming || text.trim() === '') {
+    if (streaming || empty) {
       return
     }
     void send(text)
@@ -33,6 +49,27 @@ export function ChatInput(): ReactElement {
   return (
     <div className="flex-none px-6 pb-6">
       <div className="mx-auto w-full max-w-2xl rounded-xl border border-border bg-surface focus-within:border-ring">
+        {attachments.length > 0 ? (
+          <div className="flex flex-wrap gap-2 px-3.5 pt-3">
+            {attachments.map((attachment) => (
+              <div key={attachment.id} className="relative">
+                <img
+                  src={attachment.dataUrl}
+                  alt={attachment.name}
+                  className="size-14 rounded-lg border border-border object-cover"
+                />
+                <button
+                  type="button"
+                  aria-label={`Remove ${attachment.name}`}
+                  onClick={() => removeAttachment(attachment.id)}
+                  className="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full border border-border bg-surface text-text-muted hover:text-text"
+                >
+                  <X aria-hidden className="size-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <textarea
           value={text}
           onChange={(event) => setText(event.target.value)}
@@ -45,6 +82,14 @@ export function ChatInput(): ReactElement {
               event.preventDefault()
               stop()
             }
+          }}
+          onPaste={(event) => {
+            const files = imageFilesFrom(event.clipboardData)
+            if (files.length === 0) {
+              return
+            }
+            event.preventDefault()
+            void attachImages(files)
           }}
           placeholder="Ask about your notes…"
           aria-label="Chat message"
@@ -89,7 +134,7 @@ export function ChatInput(): ReactElement {
             <Button
               size="icon-sm"
               aria-label="Send"
-              disabled={text.trim() === '' || activeModel === null}
+              disabled={empty || activeModel === null}
               onClick={submit}
             >
               <ArrowUp aria-hidden />

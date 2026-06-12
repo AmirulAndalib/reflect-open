@@ -4,14 +4,15 @@ import type {
   NoteToolCall,
   NoteToolResult,
 } from '@reflect/core'
+import type { ChatAttachment } from '@/lib/chat-attachments'
 
 /**
  * The chat view's conversation model (Plan 10). A {@link ChatTurn} is the
- * single source of truth for one exchange: the user's text, the assistant's
- * renderable parts, and the model-facing messages the turn contributed. The
- * provider stores only turns — the history a new turn resends is *derived*
- * via {@link buildHistory}, so the transcript and the model's view can never
- * drift apart.
+ * single source of truth for one exchange: the user's text and image
+ * attachments, the assistant's renderable parts, and the model-facing
+ * messages the turn contributed. The provider stores only turns — the
+ * history a new turn resends is *derived* via {@link buildHistory}, so the
+ * transcript and the model's view can never drift apart.
  *
  * Parts are built by folding the engine's {@link ChatStreamEvent}s with
  * {@link appendEvent} (pure, so the fold is unit-testable without
@@ -29,6 +30,8 @@ export type AssistantPart =
 export interface ChatTurn {
   id: string
   userText: string
+  /** Images attached to the user message (possibly its whole content). */
+  attachments: ChatAttachment[]
   parts: AssistantPart[]
   /** The model-facing messages this turn contributed once it settled. */
   responseMessages: ChatModelMessage[]
@@ -100,6 +103,31 @@ function settleTools(
 }
 
 /**
+ * The model-facing user message for one turn: plain text when nothing is
+ * attached, otherwise image parts (the data URL is the payload) followed by
+ * the text — which may be absent entirely for a photo-only message.
+ */
+export function userMessage(
+  text: string,
+  attachments: readonly ChatAttachment[],
+): ChatModelMessage {
+  if (attachments.length === 0) {
+    return { role: 'user', content: text }
+  }
+  return {
+    role: 'user',
+    content: [
+      ...attachments.map((attachment) => ({
+        type: 'image' as const,
+        image: attachment.dataUrl,
+        mediaType: attachment.mediaType,
+      })),
+      ...(text === '' ? [] : [{ type: 'text' as const, text }]),
+    ],
+  }
+}
+
+/**
  * The model-facing history a new turn resends: every user message followed
  * by the messages its turn contributed (tool calls and results included —
  * settled turns carry them even when stopped or failed part-way).
@@ -114,7 +142,7 @@ export function buildHistory(turns: readonly ChatTurn[]): ChatModelMessage[] {
   return turns
     .filter((turn) => turn.responseMessages.length > 0)
     .flatMap((turn): ChatModelMessage[] => [
-      { role: 'user', content: turn.userText },
+      userMessage(turn.userText, turn.attachments),
       ...turn.responseMessages,
     ])
 }

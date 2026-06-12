@@ -18,7 +18,8 @@ import {
   type AiModelConfig,
   type ChatStreamEvent,
 } from '@reflect/core'
-import { appendEvent, buildHistory, type ChatTurn } from '@/lib/chat-transcript'
+import { toChatAttachment, type ChatAttachment } from '@/lib/chat-attachments'
+import { appendEvent, buildHistory, userMessage, type ChatTurn } from '@/lib/chat-transcript'
 import { todayIso } from '@/lib/dates'
 import { providerFetch } from '@/lib/provider-fetch'
 import { useSettings } from '@/providers/settings-provider'
@@ -43,7 +44,13 @@ interface ChatContextValue {
   activeModel: AiModelConfig | null
   /** Override the session's model (null returns to the settings default). */
   selectModel: (id: string | null) => void
-  /** Send one user message and stream the assistant's turn. */
+  /** Images queued for the next message (dropped or pasted onto the chat). */
+  attachments: ChatAttachment[]
+  /** Queue image files for the next message. */
+  attachImages: (files: File[]) => Promise<void>
+  /** Drop one queued image. */
+  removeAttachment: (id: string) => void
+  /** Send one user message (text, queued images, or both) and stream the turn. */
   send: (text: string) => Promise<void>
   /** Abort the in-flight turn (partial text stays in the transcript). */
   stop: () => void
@@ -56,6 +63,7 @@ const ChatContext = createContext<ChatContextValue | null>(null)
 export function ChatProvider({ children }: { children: ReactNode }): ReactElement {
   const { settings } = useSettings()
   const [turns, setTurns] = useState<ChatTurn[]>([])
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [modelId, setModelId] = useState<string | null>(null)
 
   const status: ChatStatus = turns.at(-1)?.status === 'streaming' ? 'streaming' : 'idle'
@@ -69,6 +77,8 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
   // that created it.
   const turnsRef = useRef(turns)
   turnsRef.current = turns
+  const attachmentsRef = useRef(attachments)
+  attachmentsRef.current = attachments
   const activeModelRef = useRef<AiModelConfig | null>(activeModel)
   activeModelRef.current = activeModel
 
@@ -92,20 +102,19 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
 
   const send = useCallback(async (text: string): Promise<void> => {
     const trimmed = text.trim()
+    const attached = attachmentsRef.current
     const model = activeModelRef.current
     if (
-      trimmed === '' ||
+      (trimmed === '' && attached.length === 0) ||
       model === null ||
       activeSendRef.current?.session === sessionRef.current
     ) {
       return
     }
+    setAttachments([])
 
     const turnId = crypto.randomUUID()
-    const messages = [
-      ...buildHistory(turnsRef.current),
-      { role: 'user' as const, content: trimmed },
-    ]
+    const messages = [...buildHistory(turnsRef.current), userMessage(trimmed, attached)]
     const updateTurn = (updater: (turn: ChatTurn) => ChatTurn) => {
       setTurns((current) =>
         current.map((turn) => (turn.id === turnId ? updater(turn) : turn)),
@@ -117,7 +126,14 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
 
     setTurns((current) => [
       ...current,
-      { id: turnId, userText: trimmed, parts: [], responseMessages: [], status: 'streaming' },
+      {
+        id: turnId,
+        userText: trimmed,
+        attachments: attached,
+        parts: [],
+        responseMessages: [],
+        status: 'streaming',
+      },
     ])
     const controller = new AbortController()
     const activeSend = { controller, session: sessionRef.current }
@@ -176,15 +192,49 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
     activeSendRef.current?.controller.abort()
     sessionRef.current += 1
     setTurns([])
+    setAttachments([])
   }, [])
 
   const selectModel = useCallback((id: string | null) => {
     setModelId(id)
   }, [])
 
+  const attachImages = useCallback(async (files: File[]): Promise<void> => {
+    const queued = await Promise.all(files.map(toChatAttachment))
+    setAttachments((current) => [...current, ...queued])
+  }, [])
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+  }, [])
+
   const value = useMemo<ChatContextValue>(
-    () => ({ turns, status, models, activeModel, selectModel, send, stop, newChat }),
-    [turns, status, models, activeModel, selectModel, send, stop, newChat],
+    () => ({
+      turns,
+      status,
+      models,
+      activeModel,
+      selectModel,
+      attachments,
+      attachImages,
+      removeAttachment,
+      send,
+      stop,
+      newChat,
+    }),
+    [
+      turns,
+      status,
+      models,
+      activeModel,
+      selectModel,
+      attachments,
+      attachImages,
+      removeAttachment,
+      send,
+      stop,
+      newChat,
+    ],
   )
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }

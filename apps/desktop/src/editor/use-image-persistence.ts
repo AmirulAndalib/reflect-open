@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { assetPath, errorMessage, writeAsset } from '@reflect/core'
+import { base64Of } from '@/lib/base64'
 import type { ImageOptions } from './images'
 
 /** Asset file extension for each image MIME type the editor accepts on paste/drop. */
@@ -29,18 +30,6 @@ function isSafeAssetSource(sourcePath: string): boolean {
         ? segment === 'assets'
         : segment.length > 0 && segment !== '.' && segment !== '..',
     )
-}
-
-function base64Of(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer)
-  let binary = ''
-  // Encode in 32 KiB chunks: spreading the whole buffer into String.fromCharCode
-  // would exceed the engine's argument-count limit on large images.
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  }
-  return btoa(binary)
 }
 
 export interface ImagePersistence {

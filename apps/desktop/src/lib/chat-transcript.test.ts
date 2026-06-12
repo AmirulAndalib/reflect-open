@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatStreamEvent } from '@reflect/core'
-import { appendEvent, buildHistory, type AssistantPart, type ChatTurn } from './chat-transcript'
+import type { ChatAttachment } from './chat-attachments'
+import {
+  appendEvent,
+  buildHistory,
+  userMessage,
+  type AssistantPart,
+  type ChatTurn,
+} from './chat-transcript'
 
 function fold(events: ChatStreamEvent[]): AssistantPart[] {
   return events.reduce<AssistantPart[]>(appendEvent, [])
@@ -121,6 +128,7 @@ describe('buildHistory', () => {
       {
         id: 'turn-1',
         userText: 'where is the plan?',
+        attachments: [],
         parts: [],
         responseMessages: [
           { role: 'assistant', content: 'In [[Atlas]].' },
@@ -130,6 +138,7 @@ describe('buildHistory', () => {
       {
         id: 'turn-2',
         userText: 'and the budget?',
+        attachments: [],
         parts: [],
         responseMessages: [{ role: 'assistant', content: 'In [[Q3 Budget]].' }],
         status: 'done',
@@ -150,6 +159,7 @@ describe('buildHistory', () => {
         // Failed before the provider replied (e.g. missing API key): the
         // transcript shows the error, the model history never saw it.
         userText: 'this one failed',
+        attachments: [],
         parts: [{ kind: 'notice', tone: 'error', text: 'No API key found' }],
         responseMessages: [],
         status: 'done',
@@ -157,6 +167,7 @@ describe('buildHistory', () => {
       {
         id: 'turn-2',
         userText: 'this one worked',
+        attachments: [],
         parts: [],
         responseMessages: [{ role: 'assistant', content: 'Answer.' }],
         status: 'done',
@@ -166,5 +177,61 @@ describe('buildHistory', () => {
       { role: 'user', content: 'this one worked' },
       { role: 'assistant', content: 'Answer.' },
     ])
+  })
+
+  it('resends attached images as image parts, text part only when present', () => {
+    const photo: ChatAttachment = {
+      id: 'att-1',
+      name: 'cat.png',
+      mediaType: 'image/png',
+      dataUrl: 'data:image/png;base64,iVBORw==',
+    }
+    const turns: ChatTurn[] = [
+      {
+        id: 'turn-1',
+        userText: '',
+        attachments: [photo],
+        parts: [],
+        responseMessages: [{ role: 'assistant', content: 'A cat.' }],
+        status: 'done',
+      },
+    ]
+    expect(buildHistory(turns)).toEqual([
+      {
+        role: 'user',
+        content: [{ type: 'image', image: photo.dataUrl, mediaType: 'image/png' }],
+      },
+      { role: 'assistant', content: 'A cat.' },
+    ])
+  })
+})
+
+describe('userMessage', () => {
+  const photo: ChatAttachment = {
+    id: 'att-1',
+    name: 'cat.png',
+    mediaType: 'image/png',
+    dataUrl: 'data:image/png;base64,iVBORw==',
+  }
+
+  it('is plain text when nothing is attached', () => {
+    expect(userMessage('hello', [])).toEqual({ role: 'user', content: 'hello' })
+  })
+
+  it('puts images before the text', () => {
+    expect(userMessage('what is this?', [photo])).toEqual({
+      role: 'user',
+      content: [
+        { type: 'image', image: photo.dataUrl, mediaType: 'image/png' },
+        { type: 'text', text: 'what is this?' },
+      ],
+    })
+  })
+
+  it('omits the text part for a photo-only message', () => {
+    expect(userMessage('', [photo])).toEqual({
+      role: 'user',
+      content: [{ type: 'image', image: photo.dataUrl, mediaType: 'image/png' }],
+    })
   })
 })
