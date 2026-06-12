@@ -41,6 +41,8 @@ export function GithubAuthStep({ onAuthed, repoName }: GithubAuthStepProps): Rea
   // click away (some users prefer a scoped token; GHES needs it).
   const [usePat, setUsePat] = useState(!isDeviceFlowConfigured())
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  /** Opening the browser failed — show the URL, the only way left to get there. */
+  const [openFailed, setOpenFailed] = useState(false)
   const authedRef = useRef(false)
 
   // Auth can complete twice — the mount-time probe of a stored credential
@@ -85,6 +87,7 @@ export function GithubAuthStep({ onAuthed, repoName }: GithubAuthStepProps): Rea
 
   async function signIn(): Promise<void> {
     setCopyState('idle') // each attempt mints a fresh code
+    setOpenFailed(false)
     if (await deviceFlow.signIn()) {
       await pat.run(verifyAndFinish)
     }
@@ -106,8 +109,9 @@ export function GithubAuthStep({ onAuthed, repoName }: GithubAuthStepProps): Rea
         return
       }
     }
+    setOpenFailed(false)
     void openUrl(flow.verificationUri).catch(() => {
-      // The URI is shown in the dialog; the user can browse there directly.
+      setOpenFailed(true)
     })
   }
 
@@ -205,17 +209,11 @@ export function GithubAuthStep({ onAuthed, repoName }: GithubAuthStepProps): Rea
               Couldn’t copy automatically — select the code above and copy it first.
             </p>
           ) : null}
-          <p className="text-center text-xs text-text-muted">
-            Waiting for you to enter it at{' '}
-            <button
-              type="button"
-              className="underline"
-              onClick={() => void openUrl(flowView.verificationUri).catch(() => {})}
-            >
-              {flowView.verificationUri}
-            </button>
-            …
-          </p>
+          {openFailed ? (
+            <p className="select-text text-xs text-text-muted">
+              Couldn’t open the browser — visit {flowView.verificationUri} yourself.
+            </p>
+          ) : null}
         </div>
       )}
       {error !== null ? <InlineAlert tone="error">{error}</InlineAlert> : null}
