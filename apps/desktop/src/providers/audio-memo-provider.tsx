@@ -140,6 +140,8 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   const parkedRef = useRef<AudioMemoResume | null>(null)
   /** Re-entry guard for the stop click's await gap. */
   const stoppingRef = useRef(false)
+  /** The in-flight stop, so a mic click in the gap can chain the next memo. */
+  const stopSettledRef = useRef<Promise<void>>(Promise.resolve())
 
   const pump = useCallback(async (): Promise<void> => {
     if (pumpingRef.current) {
@@ -211,21 +213,25 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
     // settles, so an Esc landing in the await gap can't read a lingering
     // 'recording' phase and cancel a recording the user just saved.
     setStopping(true)
-    try {
-      const recording = await stopRecorder()
-      if (recording !== null) {
-        queueRef.current.push({
-          kind: 'transcribe',
-          audio: recording.blob,
-          mimeType: recording.mimeType,
-        })
-        setPendingCount((count) => count + 1)
-        void pump()
+    const settled = (async (): Promise<void> => {
+      try {
+        const recording = await stopRecorder()
+        if (recording !== null) {
+          queueRef.current.push({
+            kind: 'transcribe',
+            audio: recording.blob,
+            mimeType: recording.mimeType,
+          })
+          setPendingCount((count) => count + 1)
+          void pump()
+        }
+      } finally {
+        stoppingRef.current = false
+        setStopping(false)
       }
-    } finally {
-      stoppingRef.current = false
-      setStopping(false)
-    }
+    })()
+    stopSettledRef.current = settled
+    return settled
   }, [stopRecorder, pump])
   stopAndSaveRef.current = () => void stopAndSave()
 
@@ -238,7 +244,14 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
 
   const toggle = useCallback((): void => {
     if (recorder.status === 'recording') {
-      void stopAndSave()
+      if (stoppingRef.current) {
+        // The click landed in the stop's await gap, where the button already
+        // reads as the idle mic — honor it as "record the next memo" once
+        // the recorder frees, instead of swallowing it on the re-entry guard.
+        void stopSettledRef.current.then(() => start())
+      } else {
+        void stopAndSave()
+      }
     } else if (recorder.status === 'requesting') {
       // A second press while the OS prompt is up aborts the request — the
       // alternative is a click that visibly does nothing.

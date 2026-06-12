@@ -255,6 +255,34 @@ describe('AudioMemoProvider', () => {
     expect(saveAudioMemo).toHaveBeenCalledTimes(1)
   })
 
+  it('a mic click landing in the stop gap starts the next memo once the recorder frees', async () => {
+    recorderControls.holdStop = true
+    const { result } = renderHook(() => useAudioMemo(), { wrapper })
+
+    await act(async () => {
+      result.current.toggle()
+    })
+    act(() => {
+      void result.current.toggle()
+    })
+    expect(result.current.phase).toBe('transcribing')
+
+    // The button already reads as the idle mic — the click must not be
+    // swallowed by the stop's re-entry guard.
+    await act(async () => {
+      result.current.toggle()
+    })
+    expect(recorderControls.startSpy).toHaveBeenCalledTimes(1)
+
+    recorderControls.holdStop = false
+    await act(async () => {
+      recorderControls.releaseStop()
+    })
+    await waitFor(() => expect(result.current.phase).toBe('recording'))
+    expect(recorderControls.startSpy).toHaveBeenCalledTimes(2)
+    expect(saveAudioMemo).toHaveBeenCalledTimes(1)
+  })
+
   it('a new recording can start while a save is pending, and saves run serially in order', async () => {
     let releaseFirst: (outcome: SaveAudioMemoOutcome) => void = () => {}
     saveAudioMemo.mockImplementationOnce(
