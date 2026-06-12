@@ -20,6 +20,7 @@ import {
 } from '@reflect/core'
 import { followHealedMove } from '@/editor/move-note'
 import { invalidateIndexQueries } from '@/lib/query-client'
+import { ensureWelcomeNote } from '@/lib/welcome-note'
 import { createGraphIndex } from './graph-index'
 
 /** Lifecycle of the active graph (Plan 02 loading gate). */
@@ -42,7 +43,7 @@ interface GraphContextValue {
   error: string | null
   /** Show the OS folder picker, then open (and bootstrap) the chosen graph. */
   pickAndOpen: () => Promise<void>
-  /** Open a previously-used graph by its root path. */
+  /** Open a graph by its root path. */
   openRecent: (root: string) => Promise<void>
   /** Drop a graph from the recents list. */
   forget: (root: string) => Promise<void>
@@ -125,6 +126,19 @@ export function GraphProvider({ children }: { children: ReactNode }) {
           const generation = await index.open()
           if (seq !== openSeq.current) {
             return
+          }
+          // Onboarding, considered exactly once per graph (the `welcomeSeeded`
+          // meta marker): an empty graph gets the pinned "How to use Reflect"
+          // note, seeded before the index pass starts so the reconcile indexes
+          // it like any other file. Needs the index for the marker, so a graph
+          // whose index failed to open simply tries again next time.
+          // Best-effort — a failed seed must never block opening.
+          if (generation !== null) {
+            try {
+              await ensureWelcomeNote({ fileGeneration: info.generation, indexGeneration: generation })
+            } catch (err) {
+              console.error('welcome seed failed:', errorMessage(err))
+            }
           }
           setGraph(info)
           setIndexGeneration(generation)
