@@ -12,6 +12,7 @@ import {
   gitDisconnect,
   gitSetup,
   gitStatus,
+  isNotePath,
   loadGithubAuth,
   parseGithubRemote,
   ReflectError,
@@ -97,10 +98,6 @@ export interface BackupController {
   dispose(): void
 }
 
-/** Pull-changed paths the index tracks (mirrors the watcher's filter). */
-function isIndexablePath(path: string): boolean {
-  return (path.startsWith('daily/') || path.startsWith('notes/')) && path.endsWith('.md')
-}
 
 export function createBackupController(options: BackupControllerOptions): BackupController {
   const generation = options.graph.generation
@@ -136,18 +133,19 @@ export function createBackupController(options: BackupControllerOptions): Backup
   }
 
   function onRemoteChanges(changes: ChangedFile[]): void {
-    const indexable = changes.filter((change) => isIndexablePath(change.path))
-    if (indexable.length === 0) {
+    if (changes.length === 0) {
       return
     }
     // Pull-applied writes must not depend on the file watcher being up (the
-    // launch pull can land before watch start), so both consumers are
-    // notified directly: open editors via the local file-changes channel —
-    // an unnotified open note would overwrite the merged content on its next
-    // save — and the index via a direct apply (idempotent if a live watcher
-    // subscription double-applies).
-    emitFileChanges(indexable)
-    if (indexGeneration !== null) {
+    // launch pull can land before watch start), so consumers are notified
+    // directly. The whole batch goes to the local file-changes channel —
+    // every subscriber filters by path (open editors match their own note,
+    // the index and embeddings take markdown notes, the audio-memo
+    // reconciler takes recordings) — and the index additionally gets a
+    // direct apply (idempotent if a live watcher subscription double-applies).
+    emitFileChanges(changes)
+    const indexable = changes.filter((change) => isNotePath(change.path))
+    if (indexGeneration !== null && indexable.length > 0) {
       void applyIndexChanges(indexable, indexGeneration).then(invalidateIndexQueries)
     }
   }

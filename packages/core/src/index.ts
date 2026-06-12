@@ -52,10 +52,13 @@ export {
   DAILY_DIR,
   NOTES_DIR,
   ASSETS_DIR,
+  AUDIO_MEMOS_DIR,
   dailyPath,
   notePath,
   assetPath,
+  audioMemoPath,
   isDaily,
+  isNotePath,
   dateFromDailyPath,
 } from './graph/paths'
 export {
@@ -72,6 +75,8 @@ export {
   readNote,
   writeNote,
   writeAsset,
+  readAsset,
+  listDir,
   noteExists,
   deleteNote,
   listFiles,
@@ -177,16 +182,26 @@ export {
 export type { ModelMessage as ChatModelMessage } from 'ai'
 // The fixed per-provider model ids stay internal to `ai/transcribe` —
 // exporting them would let callers couple to vendor model names.
-export { transcribeAudio, type TranscriptionRequest } from './ai/transcribe'
+export {
+  isTranscriptionRejected,
+  transcribeAudio,
+  TranscriptionRejectedError,
+  type TranscriptionRequest,
+} from './ai/transcribe'
 
 // Capture actions (audio memos; Plan 11's link capture joins here)
 export {
-  appendToDailyNote,
-  saveAudioMemo,
-  type AppendToDailyNoteInput,
-  type AudioMemoResume,
-  type SaveAudioMemoInput,
-  type SaveAudioMemoOutcome,
+  audioMemoFromPath,
+  audioMemoIdentity,
+  captureAudioMemo,
+  listPendingAudioMemos,
+  reconcileAudioMemos,
+  type AudioMemoIdentity,
+  type CaptureAudioMemoInput,
+  type CaptureAudioMemoOutcome,
+  type ReconcileAudioMemosInput,
+  type ReconcileAudioMemosOutcome,
+  type ReconcileStop,
 } from './actions/audio-memo'
 
 // Backup & sync (Plan 12)

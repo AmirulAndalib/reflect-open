@@ -1,4 +1,5 @@
 import type { Unlisten } from '../ipc/bridge'
+import { isNotePath } from '../graph/paths'
 import { moveIndexedRows, removeFromIndex } from './commands'
 import { subscribeFileChanges, type FileChange } from './file-changes'
 import { indexNote } from './indexer'
@@ -94,16 +95,22 @@ export async function applyIndexChanges(
   onError: ApplyErrorHandler = logApplyError,
   onMoved?: MovedHandler,
 ): Promise<void> {
+  // The change stream carries more than notes (the watcher also reports
+  // audio-memo recordings); only markdown notes reach the index.
+  const notes = changes.filter((change) => isNotePath(change.path))
+  if (notes.length === 0) {
+    return
+  }
   let handled: Set<string>
   try {
-    handled = await healBatchMoves(changes, generation, onError, onMoved)
+    handled = await healBatchMoves(notes, generation, onError, onMoved)
   } catch (error) {
     // Healing is best-effort: a failure here (e.g. the id lookup) must not
     // cost the batch — everything degrades to the plain path below.
     console.error('move healing failed; applying the batch plainly:', error)
     handled = new Set()
   }
-  for (const change of changes) {
+  for (const change of notes) {
     if (handled.has(change.path)) {
       continue
     }
@@ -137,10 +144,14 @@ export function subscribeIndexChanges(
   // (e.g. an upsert landing after a later remove, leaving a ghost row).
   let applyQueue: Promise<void> = Promise.resolve()
   return subscribeFileChanges((changes) => {
+    const notes = changes.filter((change) => isNotePath(change.path))
+    if (notes.length === 0) {
+      return // e.g. a batch of audio-memo recordings — nothing the index tracks
+    }
     applyQueue = applyQueue
-      .then(() => applyIndexChanges(changes, generation, undefined, onMoved))
+      .then(() => applyIndexChanges(notes, generation, undefined, onMoved))
       .then(() => {
-        onApplied?.(changes)
+        onApplied?.(notes)
       })
       .catch((error) => {
         console.error('failed to apply watcher batch:', error)

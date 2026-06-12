@@ -62,6 +62,24 @@ describe('applyIndexChanges', () => {
     await applyIndexChanges([{ path: 'notes/gone.md', kind: 'remove' }], 9)
     expect(calls).toEqual([['index_remove', { path: 'notes/gone.md', generation: 9 }]])
   })
+
+  it('skips non-note paths — the watcher also reports audio-memo recordings', async () => {
+    const invoked: string[] = []
+    fakeBridge(async (command) => {
+      invoked.push(command)
+      return command === 'note_read' ? '# ok' : null
+    })
+
+    await applyIndexChanges(
+      [
+        { path: 'audio-memos/audio-memo-2026-06-12-090000-000.m4a', kind: 'upsert' },
+        { path: 'audio-memos/audio-memo-2026-06-12-090000-000.m4a', kind: 'remove' },
+      ],
+      3,
+    )
+
+    expect(invoked).toEqual([])
+  })
 })
 
 describe('subscribeIndexChanges', () => {
@@ -120,7 +138,13 @@ describe('subscribeIndexChanges', () => {
     await subscribeIndexChanges(1, (changes) => {
       order.push(`applied:${changes.map((change) => change.path).join(',')}`)
     })
-    emitChanges([{ path: 'notes/a.md', kind: 'upsert' }])
+    // A recordings-only batch never reaches the queue or onApplied; a mixed
+    // batch applies (and reports) only its notes.
+    emitChanges([{ path: 'audio-memos/audio-memo-2026-06-12-090000-000.m4a', kind: 'upsert' }])
+    emitChanges([
+      { path: 'notes/a.md', kind: 'upsert' },
+      { path: 'audio-memos/audio-memo-2026-06-12-091500-000.m4a', kind: 'upsert' },
+    ])
     await vi.waitFor(() => {
       expect(order).toContain('applied:notes/a.md')
     })

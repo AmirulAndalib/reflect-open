@@ -70,8 +70,15 @@ pub(crate) fn modified_ms(meta: &fs::Metadata) -> Option<u64> {
         .map(|dur| dur.as_millis() as u64)
 }
 
-/// Collect markdown files under `root/dir` into `out` (recursive).
-pub(super) fn collect_markdown(root: &Path, dir: &str, out: &mut Vec<FileMeta>) -> AppResult<()> {
+/// Collect files under `root/dir` into `out` (recursive). `extension` filters
+/// by file extension when set (`Some("md")` for notes); `None` collects every
+/// regular file (assets).
+pub(super) fn collect_files(
+    root: &Path,
+    dir: &str,
+    extension: Option<&str>,
+    out: &mut Vec<FileMeta>,
+) -> AppResult<()> {
     let base = root.join(dir);
     if !base.is_dir() {
         return Ok(());
@@ -90,7 +97,9 @@ pub(super) fn collect_markdown(root: &Path, dir: &str, out: &mut Vec<FileMeta>) 
                 stack.push(path);
                 continue;
             }
-            if file_type.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("md") {
+            let matches = extension
+                .is_none_or(|ext| path.extension().and_then(|found| found.to_str()) == Some(ext));
+            if file_type.is_file() && matches {
                 // Skip anything that isn't actually under the root rather than
                 // leaking an absolute path.
                 let Ok(rel) = path.strip_prefix(root) else {
@@ -143,11 +152,38 @@ mod tests {
 
         let mut out = Vec::new();
         for d in NOTE_DIRS {
-            collect_markdown(dir.path(), d, &mut out).unwrap();
+            collect_files(dir.path(), d, Some("md"), &mut out).unwrap();
         }
         let paths: Vec<&str> = out.iter().map(|f| f.path.as_str()).collect();
         assert!(paths.contains(&"notes/a.md"));
         assert!(paths.contains(&"daily/2026-06-09.md"));
         assert!(!paths.iter().any(|p| p.ends_with(".txt")));
+    }
+
+    #[test]
+    fn unfiltered_collect_lists_every_file_in_a_dir() {
+        let dir = tempdir().unwrap();
+        bootstrap(dir.path()).unwrap();
+        // `audio-memos/` is not bootstrapped — the first write creates it.
+        atomic_write_bytes(&dir.path().join("audio-memos/memo.webm"), b"audio").unwrap();
+        atomic_write_bytes(&dir.path().join("audio-memos/memo.m4a"), b"audio").unwrap();
+        atomic_write(&dir.path().join("notes/a.md"), "a").unwrap();
+
+        let mut out = Vec::new();
+        collect_files(dir.path(), "audio-memos", None, &mut out).unwrap();
+        let paths: Vec<&str> = out.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths.len(), 2);
+        assert!(paths.contains(&"audio-memos/memo.webm"));
+        assert!(paths.contains(&"audio-memos/memo.m4a"));
+    }
+
+    #[test]
+    fn collect_of_a_missing_dir_lists_empty() {
+        let dir = tempdir().unwrap();
+        bootstrap(dir.path()).unwrap();
+
+        let mut out = Vec::new();
+        collect_files(dir.path(), "audio-memos", None, &mut out).unwrap();
+        assert!(out.is_empty());
     }
 }

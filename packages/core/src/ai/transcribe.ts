@@ -56,11 +56,16 @@ export async function transcribeAudio(request: TranscriptionRequest): Promise<st
 }
 
 /** `audio/webm;codecs=opus` → `audio/webm` — parameters confuse provider sniffing. */
-function baseMimeType(mimeType: string): string {
+export function baseMimeType(mimeType: string): string {
   return (mimeType.split(';')[0] ?? mimeType).trim().toLowerCase()
 }
 
-const EXTENSION_BY_MIME: Record<string, string> = {
+/**
+ * File extension per audio MIME type — shared by the provider upload filename
+ * and the on-disk naming of saved memos (`actions/audio-memo`), which must
+ * agree so a stored recording round-trips back into transcription.
+ */
+export const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
   // An audio-only MP4 *is* an M4A — and whisper-1 sniffs by extension, so a
   // WKWebView recording named `.mp4` is rejected while `.m4a` is accepted.
   'audio/mp4': 'm4a',
@@ -71,7 +76,7 @@ const EXTENSION_BY_MIME: Record<string, string> = {
 }
 
 function uploadFilename(mimeType: string): string {
-  return `memo.${EXTENSION_BY_MIME[baseMimeType(mimeType)] ?? 'm4a'}`
+  return `memo.${AUDIO_EXTENSION_BY_MIME[baseMimeType(mimeType)] ?? 'm4a'}`
 }
 
 /** The provider's own error message when the body carries one, else the raw body. */
@@ -90,9 +95,43 @@ function safeJson(body: string): unknown {
   }
 }
 
+/**
+ * The provider refused this specific recording (unsupported container,
+ * oversized payload): the same bytes would be refused again, so callers must
+ * tombstone the recording rather than retry — treating this as a transient
+ * failure would wedge a retry queue forever. Connectivity failures, rate
+ * limits, and retired-model 404s stay plain `network` errors; those heal on
+ * a later attempt.
+ */
+export class TranscriptionRejectedError extends ReflectError {
+  constructor(message: string) {
+    super('parse', message)
+    this.name = 'TranscriptionRejectedError'
+  }
+}
+
+/** Type guard for {@link TranscriptionRejectedError}. */
+export function isTranscriptionRejected(value: unknown): value is TranscriptionRejectedError {
+  return value instanceof TranscriptionRejectedError
+}
+
+/**
+ * A 4xx that condemns the recording itself — never auth (401/403), a
+ * missing model/endpoint (404), a timeout (408), or a rate limit (429),
+ * all of which a later attempt can survive.
+ */
+function isRecordingRejection(status: number): boolean {
+  return status >= 400 && status < 500 && ![401, 403, 404, 408, 429].includes(status)
+}
+
 function httpError(provider: TranscriptionProvider, status: number, body: string): ReflectError {
   if (status === 401 || status === 403) {
     return new ReflectError('auth', `${provider} rejected the API key (${status})`)
+  }
+  if (isRecordingRejection(status)) {
+    return new TranscriptionRejectedError(
+      `${provider} rejected the recording (${status}): ${providerErrorMessage(body)}`,
+    )
   }
   return new ReflectError(
     'network',
@@ -194,6 +233,16 @@ export function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + CHUNK_SIZE))
   }
   return btoa(binary)
+}
+
+/** Decode {@link bytesToBase64}'s output (a stored recording read back). */
+export function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return bytes
 }
 
 const GEMINI_INSTRUCTION =

@@ -338,7 +338,7 @@ describe('createBackupController', () => {
     expect(calls.filter((command) => command === 'git_commit_all')).toHaveLength(3)
   })
 
-  it('fans a pull’s indexable writes to the local file-changes channel', async () => {
+  it('fans a pull’s writes whole to the local file-changes channel — consumers filter by path', async () => {
     fakeBridge({
       mergeOutcome: {
         kind: 'merged',
@@ -346,7 +346,13 @@ describe('createBackupController', () => {
         changedFiles: [
           { path: 'notes/from-b.md', kind: 'upsert', modifiedMs: 123 },
           { path: 'daily/2026-06-11.md', kind: 'remove' },
-          { path: 'assets/photo.png', kind: 'upsert', modifiedMs: 456 }, // not indexable
+          // Not a note — but a pulled recording must still reach the
+          // audio-memo reconciler, which subscribes to this same channel.
+          {
+            path: 'audio-memos/audio-memo-2026-06-11-090000-000.m4a',
+            kind: 'upsert',
+            modifiedMs: 456,
+          },
         ],
       },
     })
@@ -361,6 +367,7 @@ describe('createBackupController', () => {
     expect(batches[0]).toEqual([
       { path: 'notes/from-b.md', kind: 'upsert', modifiedMs: 123 },
       { path: 'daily/2026-06-11.md', kind: 'remove' },
+      { path: 'audio-memos/audio-memo-2026-06-11-090000-000.m4a', kind: 'upsert', modifiedMs: 456 },
     ])
     controller.dispose()
     unlisten()

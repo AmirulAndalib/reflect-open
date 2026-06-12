@@ -18,7 +18,7 @@ use tauri::State;
 
 use crate::error::{AppError, AppResult};
 
-use self::io::{atomic_write, atomic_write_bytes, bootstrap, collect_markdown, NOTE_DIRS};
+use self::io::{atomic_write, atomic_write_bytes, bootstrap, collect_files, NOTE_DIRS};
 use self::resolve::resolve;
 
 pub(crate) use self::io::modified_ms;
@@ -128,10 +128,21 @@ pub(crate) fn root_for_generation(
     let inner = lock_graph(state)?;
     if inner.generation != generation {
         return Err(AppError::io(
-            "the graph changed since this write was issued; dropping it",
+            "the graph changed since this command was issued; dropping it",
         ));
     }
     inner.root.clone().ok_or_else(AppError::no_graph)
+}
+
+/// `current_root`, or `root_for_generation` when the caller pinned the
+/// command. Read commands take an optional pin: UI reads for the open graph
+/// omit it, background passes (audio-memo reconcile) that can span a graph
+/// switch must supply it so every step of a pass sees one graph.
+fn root_for(state: &State<GraphState>, generation: Option<u64>) -> AppResult<PathBuf> {
+    match generation {
+        Some(generation) => root_for_generation(state, generation),
+        None => current_root(state),
+    }
 }
 
 // ---- commands --------------------------------------------------------------
@@ -177,10 +188,15 @@ pub fn graph_open(
     Ok(info)
 }
 
-/// Read a note's markdown by graph-relative path.
+/// Read a note's markdown by graph-relative path. `generation`, when given,
+/// pins the read to the issuing graph session (see [`root_for`]).
 #[tauri::command]
-pub fn note_read(path: String, state: State<GraphState>) -> AppResult<String> {
-    let root = current_root(&state)?;
+pub fn note_read(
+    path: String,
+    generation: Option<u64>,
+    state: State<GraphState>,
+) -> AppResult<String> {
+    let root = root_for(&state, generation)?;
     Ok(fs::read_to_string(resolve(&root, &path)?)?)
 }
 
@@ -213,6 +229,37 @@ pub fn asset_write(
         .decode(contents_base64.as_bytes())
         .map_err(|err| AppError::io(format!("invalid base64 asset payload: {err}")))?;
     atomic_write_bytes(&resolve(&root, &path)?, &bytes)
+}
+
+/// Read a binary asset's bytes, base64-encoded for the JSON IPC (e.g. audio
+/// memos read back for transcription). Pinned to `generation`, unlike
+/// `note_read`: the caller is a background pass that can span a graph
+/// switch, and an unpinned read would resolve against the *new* root —
+/// handing back (and possibly sending to a provider) another graph's file.
+#[tauri::command]
+pub fn asset_read(path: String, generation: u64, state: State<GraphState>) -> AppResult<String> {
+    use base64::Engine;
+    let root = root_for_generation(&state, generation)?;
+    let bytes = fs::read(resolve(&root, &path)?)?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+/// List every file (any extension) under a graph-relative directory, e.g.
+/// `audio-memos`. Which directory means what is the TypeScript layer's policy;
+/// a missing directory lists as empty. Pinned to `generation` for the same
+/// reason as `asset_read` — the listing seeds a background pass that must
+/// never mix graphs.
+#[tauri::command]
+pub fn dir_list(
+    dir: String,
+    generation: u64,
+    state: State<GraphState>,
+) -> AppResult<Vec<FileMeta>> {
+    let root = root_for_generation(&state, generation)?;
+    resolve(&root, &dir)?; // traversal guard; the walk itself skips symlinks
+    let mut out = Vec::new();
+    collect_files(&root, &dir, None, &mut out)?;
+    Ok(out)
 }
 
 /// Does a graph-relative path currently exist as a file? The collision picker
@@ -255,13 +302,14 @@ pub fn note_delete(path: String, generation: u64, state: State<GraphState>) -> A
     Ok(())
 }
 
-/// List markdown notes under `daily/` and `notes/`.
+/// List markdown notes under `daily/` and `notes/`. `generation`, when given,
+/// pins the listing to the issuing graph session (see [`root_for`]).
 #[tauri::command]
-pub fn list_files(state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
-    let root = current_root(&state)?;
+pub fn list_files(generation: Option<u64>, state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
+    let root = root_for(&state, generation)?;
     let mut out = Vec::new();
     for dir in NOTE_DIRS {
-        collect_markdown(&root, dir, &mut out)?;
+        collect_files(&root, dir, Some("md"), &mut out)?;
     }
     Ok(out)
 }

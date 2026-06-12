@@ -7,6 +7,8 @@
 export const DAILY_DIR = 'daily'
 export const NOTES_DIR = 'notes'
 export const ASSETS_DIR = 'assets'
+/** Audio-memo recordings live apart from pasted/dropped `assets/` files. */
+export const AUDIO_MEMOS_DIR = 'audio-memos'
 
 /** Matches a daily-note path and captures its ISO date. */
 const DAILY_PATH_RE = /^daily\/(\d{4}-\d{2}-\d{2})\.md$/
@@ -42,9 +44,26 @@ export function assetPath(name: string): string {
   return `${ASSETS_DIR}/${name}`
 }
 
+/** Graph-relative path to a stored recording under `audio-memos/`. */
+export function audioMemoPath(name: string): string {
+  return `${AUDIO_MEMOS_DIR}/${name}`
+}
+
 /** Is this graph-relative path a daily note (`daily/YYYY-MM-DD.md`)? */
 export function isDaily(path: string): boolean {
   return DAILY_PATH_RE.test(path)
+}
+
+/**
+ * Is this graph-relative path an indexable markdown note (`.md` under
+ * `daily/` or `notes/`)? The file-change stream carries more than notes —
+ * the watcher also reports `audio-memos/` recordings — so consumers that
+ * read or index note *content* gate on this.
+ */
+export function isNotePath(path: string): boolean {
+  return (
+    (path.startsWith(`${DAILY_DIR}/`) || path.startsWith(`${NOTES_DIR}/`)) && path.endsWith('.md')
+  )
 }
 
 /** Extract the ISO date from a daily-note path, or `null` if it isn't one. */

@@ -22,9 +22,13 @@ export async function createGraph(path: string): Promise<GraphInfo> {
   return call('graph_create', { path }, graphInfoSchema)
 }
 
-/** Read a note's markdown by graph-relative path. */
-export async function readNote(path: string): Promise<string> {
-  return call('note_read', { path }, z.string())
+/**
+ * Read a note's markdown by graph-relative path. `generation`, when given,
+ * pins the read to the issuing graph session — background passes that can
+ * span a graph switch must pin every read; UI reads of the open graph omit it.
+ */
+export async function readNote(path: string, generation?: number): Promise<string> {
+  return call('note_read', { path, generation }, z.string())
 }
 
 /**
@@ -49,6 +53,25 @@ export async function writeAsset(
 }
 
 /**
+ * Read a binary asset's bytes by graph-relative path, base64-encoded (the IPC
+ * is JSON). E.g. an audio memo read back for transcription. `generation` pins
+ * the read: background passes can span a graph switch, and an unpinned read
+ * would resolve against the new graph's same-named file.
+ */
+export async function readAsset(path: string, generation: number): Promise<string> {
+  return call('asset_read', { path, generation }, z.string())
+}
+
+/**
+ * List every file (any extension) under a graph-relative directory, e.g.
+ * `audio-memos`. A missing directory lists as empty. Pinned to `generation`
+ * for the same reason as {@link readAsset}.
+ */
+export async function listDir(dir: string, generation: number): Promise<FileMeta[]> {
+  return call('dir_list', { dir, generation }, z.array(fileMetaSchema))
+}
+
+/**
  * Does a graph-relative path currently exist as a file on disk? Probes the
  * filesystem directly — unlike an index lookup, this can't lag the watcher.
  */
@@ -61,9 +84,12 @@ export async function deleteNote(path: string, generation: number): Promise<void
   await call('note_delete', { path, generation }, voidSchema)
 }
 
-/** List markdown notes under `daily/` and `notes/`. */
-export async function listFiles(): Promise<FileMeta[]> {
-  return call('list_files', {}, z.array(fileMetaSchema))
+/**
+ * List markdown notes under `daily/` and `notes/`. `generation` pins the
+ * listing like {@link readNote}'s.
+ */
+export async function listFiles(generation?: number): Promise<FileMeta[]> {
+  return call('list_files', { generation }, z.array(fileMetaSchema))
 }
 
 /** The recently-opened graphs, newest first. */

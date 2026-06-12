@@ -33,6 +33,9 @@ layout:
 ├── daily/YYYY-MM-DD.md      # daily notes; date derivable from path
 ├── notes/<slug>.md          # regular notes; readable filenames
 ├── assets/                  # attachments; referenced via relative md links
+├── audio-memos/             # raw memo recordings (created on demand, not
+│                            #   bootstrapped); each pairs with a same-named
+│                            #   transcription note under notes/
 └── .reflect/                # ignored: SQLite index, caches, local app state
     ├── index.sqlite
     └── ...

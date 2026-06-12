@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   assetPath,
+  audioMemoPath,
   dailyPath,
   dateFromDailyPath,
   isDaily,
+  isNotePath,
   notePath,
 } from './paths'
 
@@ -22,9 +24,20 @@ describe('graph paths', () => {
     expect(() => dailyPath('2026-02-31')).toThrow()
   })
 
-  it('builds note and asset paths', () => {
+  it('builds note, asset, and recording paths', () => {
     expect(notePath('charlotte-maccaw')).toBe('notes/charlotte-maccaw.md')
     expect(assetPath('screenshot.png')).toBe('assets/screenshot.png')
+    expect(audioMemoPath('memo.m4a')).toBe('audio-memos/memo.m4a')
+  })
+
+  it('recognizes indexable note paths, never recordings or assets', () => {
+    expect(isNotePath('notes/a.md')).toBe(true)
+    expect(isNotePath('daily/2026-06-12.md')).toBe(true)
+    expect(isNotePath('notes/sub/deep.md')).toBe(true)
+    expect(isNotePath('notes/a.txt')).toBe(false)
+    expect(isNotePath('audio-memos/audio-memo-2026-06-12-090000-000.m4a')).toBe(false)
+    expect(isNotePath('assets/pasted.png')).toBe(false)
+    expect(isNotePath('README.md')).toBe(false)
   })
 
   it('recognizes daily-note paths', () => {
