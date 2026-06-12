@@ -5,6 +5,7 @@ import { isRecordingSupported, useAudioRecorder } from './use-audio-recorder'
 class FakeMediaRecorder {
   static instances: FakeMediaRecorder[] = []
   static supported = ['audio/mp4']
+  static failConstruction = false
 
   static isTypeSupported(type: string): boolean {
     return FakeMediaRecorder.supported.includes(type)
@@ -17,6 +18,9 @@ class FakeMediaRecorder {
   readonly mimeType: string
 
   constructor(_stream: MediaStream, options?: { mimeType?: string }) {
+    if (FakeMediaRecorder.failConstruction) {
+      throw new Error('NotSupportedError')
+    }
     this.mimeType = options?.mimeType ?? ''
     FakeMediaRecorder.instances.push(this)
   }
@@ -46,6 +50,7 @@ const getUserMedia = vi.fn<() => Promise<MediaStream>>()
 beforeEach(() => {
   FakeMediaRecorder.instances = []
   FakeMediaRecorder.supported = ['audio/mp4']
+  FakeMediaRecorder.failConstruction = false
   vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
   vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } })
   getUserMedia.mockReset()
@@ -127,6 +132,34 @@ describe('useAudioRecorder', () => {
     expect(result.current.status).toBe('idle')
     expect(result.current.stream).toBeNull()
     expect(track.stop).toHaveBeenCalled()
+  })
+
+  it('a recorder that fails to set up releases the stream and recovers to idle', async () => {
+    const track = { stop: vi.fn() }
+    getUserMedia.mockResolvedValue(fakeStream([track]))
+    FakeMediaRecorder.failConstruction = true
+    const { result } = renderHook(() => useAudioRecorder())
+
+    // Catch inside act: a rejection crossing the act boundary breaks the
+    // shared act scope for every later call.
+    let failure: unknown = null
+    await act(async () => {
+      await result.current.start().catch((cause: unknown) => {
+        failure = cause
+      })
+    })
+    expect(failure).toBeInstanceOf(Error)
+    expect(track.stop).toHaveBeenCalled()
+    expect(result.current.status).toBe('idle')
+
+    // The failure must not wedge the hook: a later start records normally.
+    FakeMediaRecorder.failConstruction = false
+    const freshTrack = { stop: vi.fn() }
+    getUserMedia.mockResolvedValue(fakeStream([freshTrack]))
+    await act(async () => {
+      await result.current.start()
+    })
+    expect(result.current.status).toBe('recording')
   })
 
   it('rethrows a permission denial and returns to idle', async () => {

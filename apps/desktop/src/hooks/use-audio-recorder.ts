@@ -135,14 +135,25 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
     requestingRef.current = false
 
     const mimeType = pickMimeType()
-    const recorder = new MediaRecorder(input, mimeType ? { mimeType } : undefined)
-    chunksRef.current = []
-    recorder.ondataavailable = (event: BlobEvent) => {
-      if (event.data.size > 0) {
-        chunksRef.current.push(event.data)
+    let recorder: MediaRecorder
+    try {
+      recorder = new MediaRecorder(input, mimeType ? { mimeType } : undefined)
+      chunksRef.current = []
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data)
+        }
       }
+      recorder.start()
+    } catch (cause) {
+      // A recorder that failed to set up must not strand the acquired stream
+      // hot or the status at 'requesting'.
+      for (const track of input.getTracks()) {
+        track.stop()
+      }
+      setStatus('idle')
+      throw cause
     }
-    recorder.start()
 
     recorderRef.current = recorder
     streamRef.current = input
