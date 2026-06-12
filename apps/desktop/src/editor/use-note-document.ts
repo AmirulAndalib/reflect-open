@@ -142,14 +142,22 @@ export function useNoteDocument(
     return () => binding.unbind(path)
   }, [binding, path, canWrite, createIfMissing, trackRenames, missingSeed])
 
-  // External-change reconciliation via the watcher (Plan 04b events).
+  // External-change reconciliation via the watcher (Plan 04b events). The
+  // comparison reads the session's CURRENT path, not the route prop: a rename
+  // retargets the session before React re-renders the pane (Plan 17), and an
+  // external change landing at the new path inside that window must still
+  // reconcile — matching the prop would leave the editor stale against disk.
   const onFileChanges = useCallback(
     (changes: FileChange[]) => {
-      if (changes.some((change) => change.path === path && change.kind === 'upsert')) {
-        binding.session()?.externalChanged()
+      const session = binding.session()
+      if (session === null) {
+        return
+      }
+      if (changes.some((change) => change.path === session.path && change.kind === 'upsert')) {
+        session.externalChanged()
       }
     },
-    [binding, path],
+    [binding],
   )
   useFileChanges(path ? onFileChanges : null)
 

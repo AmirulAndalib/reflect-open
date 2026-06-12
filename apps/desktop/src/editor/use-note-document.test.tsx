@@ -420,6 +420,33 @@ describe('useNoteDocument', () => {
     }
   })
 
+  it('watcher upserts at the retargeted path reconcile before React catches up (Plan 17)', async () => {
+    vi.useFakeTimers()
+    try {
+      const files: Record<string, string> = { 'notes/a.md': '# Old Title\n' }
+      installGraphFake({ files })
+      const hook = renderHook(() => useNoteDocument('notes/a.md', 1, { trackRenames: true }))
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      act(() => hook.result.current.onEditorChange('# New Title\n'))
+      await act(() => vi.advanceTimersByTimeAsync(1000))
+      await act(() => vi.runAllTimersAsync()) // rename + move settle; session retargeted
+
+      // An external edit lands at the NEW path while the pane still renders
+      // the old route path (no rerender yet) — it must reconcile against the
+      // session's current path, not the stale prop.
+      files['notes/new-title.md'] = '# New Title\n\nedited elsewhere\n'
+      act(() => {
+        emitChange?.([{ path: 'notes/new-title.md', kind: 'upsert' }])
+      })
+      await act(() => vi.runAllTimersAsync())
+
+      expect(hook.result.current.initialContent).toContain('edited elsewhere')
+      hook.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('an unadopted retargeted session still tears down on unmount (no orphan flush)', async () => {
     vi.useFakeTimers()
     try {
