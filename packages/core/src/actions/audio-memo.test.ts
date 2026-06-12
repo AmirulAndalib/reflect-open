@@ -324,6 +324,33 @@ describe('reconcileAudioMemos', () => {
     expect(writeNoteMock).not.toHaveBeenCalled()
   })
 
+  it('a memo that failed to transcribe drains on the next pass — e.g. the next app launch', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    transcribeMock.mockRejectedValueOnce({ kind: 'network', message: 'offline' })
+
+    const offline = await reconcile()
+
+    expect(offline).toMatchObject({ pending: 1, transcribed: 0, stopped: { reason: 'network' } })
+    expect(writeNoteMock).not.toHaveBeenCalled()
+
+    // Nothing about the pending memo lives in memory: a later pass — the next
+    // trigger, or the mount pass after an app restart — recomputes it from
+    // the same on-disk state and drains it.
+    const relaunched = await reconcile()
+
+    expect(relaunched).toEqual({ pending: 1, transcribed: 1, rejected: 0, stopped: null })
+    expect(writeNoteMock).toHaveBeenCalledWith(
+      MEMO.notePath,
+      expect.stringContaining('memo transcript'),
+      3,
+    )
+    expect(writeNoteMock).toHaveBeenCalledWith(
+      'daily/2026-06-11.md',
+      expect.stringContaining('[[audio-memo-2026-06-11-153022-845|Audio memo 15:30]]'),
+      3,
+    )
+  })
+
   it('reports a missing provider as config — the pass retries after settings change', async () => {
     listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
 
