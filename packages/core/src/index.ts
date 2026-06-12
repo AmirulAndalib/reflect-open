@@ -205,6 +205,7 @@ export {
   foldKey,
   foldTag,
   isTagName,
+  hasAuthoredTitle,
   normalizeWikiTarget,
   slugForTitle,
   type ConflictResolution,

@@ -2,22 +2,66 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '@reflect/core'
 import { registerOpenDocument } from '@/editor/open-documents'
 import type { NoteSession } from '@/editor/note-session'
-import { findMigrationCandidates, migrateUlidNotes } from './filename-migration'
 
 /**
  * The 17c migration runner over a fake graph: a files map behind the bridge,
  * with `db_query` answering both the candidate list (note rows) and the
- * collision probe (path lookups) from the same map.
+ * collision probe (path lookups) from the same map. Git commands answer from
+ * a configurable `repo` state so `runFilenameMigration`'s checkpoint
+ * behavior is exercised end-to-end.
  */
+
+const operations = vi.hoisted(() => ({
+  log: [] as Array<{ label: string; outcome: string; message: string | null }>,
+}))
+vi.mock('./operations', () => ({
+  startOperation: (label: string) => {
+    const record = { label, outcome: 'running', message: null as string | null }
+    operations.log.push(record)
+    return {
+      progress: () => {},
+      done: () => {
+        record.outcome = 'done'
+      },
+      fail: (message: string) => {
+        record.outcome = 'failed'
+        record.message = message
+      },
+    }
+  },
+}))
+
+const { findMigrationCandidates, migrateUlidNotes, runFilenameMigration } = await import(
+  './filename-migration'
+)
 
 const ULID_A = '01arz3ndektsv4rrffq69g5fav'
 const ULID_B = '01brz3ndektsv4rrffq69g5fbw'
 
 let files: Record<string, string>
+let repo: { initialized: boolean; failCommit?: boolean }
+let commits: string[]
 
 function bindBridge(): void {
   setBridge({
     invoke: async (command: string, args?: Record<string, unknown>) => {
+      if (command === 'git_status') {
+        return {
+          initialized: repo.initialized,
+          branch: null,
+          remoteUrl: null,
+          ahead: 0,
+          behind: 0,
+          inProgress: false,
+        }
+      }
+      if (command === 'git_commit_all') {
+        if (repo.failCommit) {
+          throw { kind: 'io', message: 'index locked' }
+        }
+        commits.push(String(args?.message))
+        return { committed: true, sha: 'abc', ahead: 1, skippedLargeFiles: [] }
+      }
       if (command === 'note_read') {
         const content = files[String(args?.path)]
         if (content === undefined) {
@@ -66,6 +110,9 @@ function bindBridge(): void {
 
 beforeEach(() => {
   files = {}
+  repo = { initialized: false }
+  commits = []
+  operations.log = []
   bindBridge()
 })
 
@@ -181,6 +228,72 @@ describe('migrateUlidNotes', () => {
       expect(result.failed).toHaveLength(1)
       expect(result.failed[0].path).toBe(`notes/${ULID_A}.md`)
       expect(files['notes/survivor.md']).toContain('# Survivor')
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+})
+
+describe('runFilenameMigration', () => {
+  const CANDIDATE = { path: `notes/${ULID_A}.md`, title: 'Real Title' }
+
+  it('checkpoints an initialized repo, migrates, reports done', async () => {
+    repo = { initialized: true }
+    files[CANDIDATE.path] = '# Real Title\n'
+
+    await runFilenameMigration({ candidates: [CANDIDATE], generation: 3 })
+
+    expect(commits).toEqual(['Checkpoint before readable filenames'])
+    expect(files['notes/real-title.md']).toContain('# Real Title')
+    expect(operations.log).toEqual([
+      expect.objectContaining({
+        label: 'Renaming 1 note to readable filenames',
+        outcome: 'done',
+      }),
+    ])
+  })
+
+  it('skips the checkpoint when the graph has no repo — the standing choice', async () => {
+    files[CANDIDATE.path] = '# Real Title\n'
+
+    await runFilenameMigration({ candidates: [CANDIDATE], generation: 3 })
+
+    expect(commits).toEqual([])
+    expect(operations.log[0]?.outcome).toBe('done')
+  })
+
+  it('aborts before renaming anything when the checkpoint commit fails', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      repo = { initialized: true, failCommit: true }
+      files[CANDIDATE.path] = '# Real Title\n'
+
+      await runFilenameMigration({ candidates: [CANDIDATE], generation: 3 })
+
+      expect(operations.log[0]?.outcome).toBe('failed')
+      expect(operations.log[0]?.message).toContain('nothing was renamed')
+      expect(files[CANDIDATE.path]).toBe('# Real Title\n') // untouched
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('summarizes partial failure: how many renamed, how many keep their names', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      files[`notes/${ULID_B}.md`] = '# Survivor\n'
+
+      await runFilenameMigration({
+        candidates: [
+          { path: CANDIDATE.path, title: 'Ghost' }, // file vanished
+          { path: `notes/${ULID_B}.md`, title: 'Survivor' },
+        ],
+        generation: 3,
+      })
+
+      expect(operations.log[0]?.outcome).toBe('failed')
+      expect(operations.log[0]?.message).toContain('renamed 1 of 2')
+      expect(operations.log[0]?.message).toContain('reopening the graph offers the rest again')
     } finally {
       errorSpy.mockRestore()
     }

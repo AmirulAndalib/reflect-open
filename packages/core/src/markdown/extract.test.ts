@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isTagName, parseNote } from './extract'
+import { hasAuthoredTitle, isTagName, parseNote } from './extract'
 
 function parse(source: string, path = 'notes/test.md') {
   return parseNote({ path, source })
@@ -44,6 +44,15 @@ describe('parseNote — headings & title', () => {
     expect(parse('# The H1\n\nbody').title).toBe('The H1')
     expect(parse('no heading', 'notes/charlotte-maccaw.md').title).toBe('charlotte-maccaw')
     expect(parse('no heading', 'daily/2026-06-09.md').title).toBe('2026-06-09')
+  })
+
+  it('hasAuthoredTitle mirrors the derivation: true iff the title is not a path fallback', () => {
+    expect(hasAuthoredTitle(parse('---\ntitle: From FM\n---\nbody'))).toBe(true)
+    expect(hasAuthoredTitle(parse('# The H1\n\nbody'))).toBe(true)
+    expect(hasAuthoredTitle(parse('no heading', 'notes/charlotte-maccaw.md'))).toBe(false)
+    expect(hasAuthoredTitle(parse('## only a section', 'notes/x.md'))).toBe(false)
+    expect(hasAuthoredTitle(parse('---\ntitle: "  "\n---\nbody'))).toBe(false)
+    expect(hasAuthoredTitle(parse('no heading', 'daily/2026-06-09.md'))).toBe(false)
   })
 })
 

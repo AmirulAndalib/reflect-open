@@ -1,6 +1,9 @@
 import {
   detectConflictMarkers,
   getConflictedNotes,
+  gitCommitAll,
+  gitStatus,
+  hasAuthoredTitle,
   listNotes,
   parseNote,
   readNote,
@@ -11,6 +14,7 @@ import {
 import { moveNoteCarryingSession } from '@/editor/move-note'
 import { openSession } from '@/editor/open-documents'
 import { newNoteId } from './create-note'
+import { startOperation } from './operations'
 
 /**
  * The one-time ULID→slug migration (Plan 17c): existing `notes/<ulid>.md`
@@ -90,10 +94,7 @@ export async function migrateUlidNotes(options: MigrateOptions): Promise<Migrati
         continue
       }
       const parsed = parseNote({ path: candidate.path, source: content })
-      const titled =
-        parsed.headings.some((heading) => heading.level === 1 && heading.text !== '') ||
-        typeof (parsed.frontmatter as Record<string, unknown>).title === 'string'
-      if (!titled) {
+      if (!hasAuthoredTitle(parsed)) {
         result.skipped += 1
         continue
       }
@@ -117,4 +118,56 @@ export async function migrateUlidNotes(options: MigrateOptions): Promise<Migrati
     }
   }
   return result
+}
+
+export interface RunMigrationOptions {
+  candidates: MigrationCandidate[]
+  /** The graph write generation (`GraphInfo.generation`). */
+  generation: number
+}
+
+/**
+ * The accept path of the readable-filenames offer (Plan 17c): checkpoint,
+ * migrate, and report through the operations status — so the prompt
+ * component stays pure UI. With a repo, the whole rename pass is one commit
+ * away from undoable; a graph without git has no checkpoint to take — the
+ * user's standing choice, proceed. A repo that exists but can't commit
+ * aborts the run: renaming without the safety net is not our call to make.
+ */
+export async function runFilenameMigration(options: RunMigrationOptions): Promise<void> {
+  const { candidates, generation } = options
+  const count = candidates.length
+  const operation = startOperation(
+    `Renaming ${count} ${count === 1 ? 'note' : 'notes'} to readable filenames`,
+  )
+  try {
+    const status = await gitStatus(generation)
+    if (status.initialized) {
+      await gitCommitAll('Checkpoint before readable filenames', generation)
+    }
+  } catch (cause) {
+    console.error('readable-filenames checkpoint failed:', cause)
+    operation.fail('the pre-rename checkpoint commit failed; nothing was renamed')
+    return
+  }
+  const result = await migrateUlidNotes({
+    candidates,
+    generation,
+    onProgress: operation.progress,
+  })
+  if (result.failed.length > 0) {
+    console.error('readable-filenames migration failures:', result.failed)
+    const skippedToo =
+      result.skipped > 0
+        ? `; ${result.skipped} ${result.skipped === 1 ? 'was' : 'were'} skipped (opened or edited mid-run)`
+        : ''
+    operation.fail(
+      `renamed ${result.moved} of ${count} — ${result.failed.length} failed and keep their old filenames${skippedToo}; reopening the graph offers the rest again`,
+    )
+  } else {
+    // Pure skips need no alarm: the scan excludes open/conflicted notes up
+    // front, so a skip here is a mid-run race, and the next graph open
+    // simply offers the remainder.
+    operation.done()
+  }
 }

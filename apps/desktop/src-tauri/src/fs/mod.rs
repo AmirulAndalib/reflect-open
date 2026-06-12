@@ -227,7 +227,10 @@ pub fn note_exists(path: String, state: State<GraphState>) -> AppResult<bool> {
 /// The frontmatter `id:` of a note file, by cheap line scan — just enough to
 /// tell whether two files are the *same note* for the move guard below. Full
 /// YAML parsing is TS's job; this only reads a `id: <value>` line inside a
-/// leading `---` block.
+/// leading `---` block. Deliberately literal: a quoted value (`id: "x"`) or a
+/// BOM-prefixed fence doesn't match what Reflect writes (always unquoted,
+/// never a BOM), so those mismatches fail toward *refusing* the move — the
+/// safe direction (see the tests freezing this).
 fn frontmatter_id(path: &Path) -> Option<String> {
     let content = fs::read_to_string(path).ok()?;
     let mut lines = content.lines();
@@ -368,6 +371,39 @@ mod move_tests {
         let root = graph();
         fs::write(root.path().join("notes/a.md"), "# Mine\n").unwrap();
         fs::write(root.path().join("notes/b.md"), "# Theirs\n").unwrap();
+        assert!(move_note_file(root.path(), "notes/a.md", "notes/b.md").is_err());
+        assert!(root.path().join("notes/a.md").exists());
+    }
+
+    #[test]
+    fn a_quoted_id_does_not_match_an_unquoted_one_so_the_move_refuses() {
+        // Reflect always writes ids unquoted; a hand-quoted copy is treated
+        // as a different note and the move refuses — the safe direction.
+        // This freezes the scanner's literal matching: loosening it must be
+        // a deliberate change, not a side effect.
+        let root = graph();
+        fs::write(root.path().join("notes/a.md"), "---\nid: 01x\n---\n# A\n").unwrap();
+        fs::write(
+            root.path().join("notes/b.md"),
+            "---\nid: \"01x\"\n---\n# A\n",
+        )
+        .unwrap();
+        assert!(move_note_file(root.path(), "notes/a.md", "notes/b.md").is_err());
+        assert!(root.path().join("notes/a.md").exists());
+        assert!(root.path().join("notes/b.md").exists());
+    }
+
+    #[test]
+    fn a_bom_prefixed_destination_never_reads_as_the_same_note() {
+        // A BOM defeats the `---` fence check, so the destination scans as
+        // id-less and the move refuses rather than consuming it.
+        let root = graph();
+        fs::write(root.path().join("notes/a.md"), "---\nid: 01x\n---\n# A\n").unwrap();
+        fs::write(
+            root.path().join("notes/b.md"),
+            "\u{feff}---\nid: 01x\n---\n# A\n",
+        )
+        .unwrap();
         assert!(move_note_file(root.path(), "notes/a.md", "notes/b.md").is_err());
         assert!(root.path().join("notes/a.md").exists());
     }

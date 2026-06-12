@@ -1,10 +1,8 @@
-import { readNote } from '../graph/commands'
 import type { Unlisten } from '../ipc/bridge'
-import { parseNote } from '../markdown'
 import { moveIndexedRows, removeFromIndex } from './commands'
 import { subscribeFileChanges, type FileChange } from './file-changes'
 import { indexNote } from './indexer'
-import { pairMovesById } from './move-detection'
+import { detectExternalMoves } from './move-healing'
 import { getNoteIdsByPath } from './queries'
 
 /**
@@ -48,32 +46,20 @@ async function healBatchMoves(
   // Orphans: removed paths that still have rows. Arrivals: upserted paths
   // that don't — an upsert of an indexed note is an ordinary edit, never a
   // move target.
-  const orphanIds = await getNoteIdsByPath(removes.map((change) => change.path))
-  const indexedUpserts = await getNoteIdsByPath(upserts.map((change) => change.path))
-  const arrivalIds = new Map<string, string | null>()
-  const arrivalContent = new Map<string, string>()
-  const arrivalMtime = new Map<string, number | undefined>()
-  for (const upsert of upserts) {
-    if (indexedUpserts.has(upsert.path)) {
-      continue
-    }
-    try {
-      const content = await readNote(upsert.path)
-      arrivalContent.set(upsert.path, content)
-      arrivalMtime.set(upsert.path, upsert.modifiedMs)
-      const parsed = parseNote({ path: upsert.path, source: content })
-      arrivalIds.set(upsert.path, parsed.frontmatter.id ?? null)
-    } catch {
-      // Unreadable arrival: it can't pair; the plain path retries the read.
-    }
-  }
-  for (const move of pairMovesById(orphanIds, arrivalIds)) {
+  const indexed = await getNoteIdsByPath(upserts.map((change) => change.path))
+  const arrivals = upserts.filter((upsert) => !indexed.has(upsert.path))
+  const { moves, content } = await detectExternalMoves(
+    removes.map((change) => change.path),
+    arrivals.map((change) => change.path),
+  )
+  const mtimeByPath = new Map(arrivals.map((change) => [change.path, change.modifiedMs]))
+  for (const move of moves) {
     try {
       await moveIndexedRows(move.from, move.to, generation)
       await indexNote(move.to, {
         generation,
-        content: arrivalContent.get(move.to),
-        mtime: arrivalMtime.get(move.to),
+        content: content.get(move.to),
+        mtime: mtimeByPath.get(move.to),
       })
       handled.add(move.from)
       handled.add(move.to)

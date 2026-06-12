@@ -163,14 +163,35 @@ function collectTags(body: string, excluded: Span[], into: Map<string, string>):
   }
 }
 
-function deriveTitle(frontmatter: Frontmatter, headings: Heading[], path: string): string {
+/**
+ * The title the note's *content* authors — explicit frontmatter `title:`,
+ * else the first non-empty H1 — or `null` when {@link deriveTitle} would fall
+ * back to the path (daily date or filename stem). The one definition both
+ * derivation and the {@link hasAuthoredTitle} predicate share, so "is this
+ * note titled?" can never drift from how the title is actually derived.
+ */
+function authoredTitle(frontmatter: Frontmatter, headings: Heading[]): string | null {
   const fmTitle = stringField(frontmatter, 'title')
   if (fmTitle && fmTitle.trim()) {
     return fmTitle.trim()
   }
   const h1 = headings.find((heading) => heading.level === 1 && heading.text)
-  if (h1) {
-    return h1.text
+  return h1 ? h1.text : null
+}
+
+/**
+ * Does the note carry an authored title (frontmatter `title:` or a non-empty
+ * H1), rather than falling back to its filename? E.g. the Plan 17c migration
+ * skips unauthored ULID notes — there is nothing readable to rename them to.
+ */
+export function hasAuthoredTitle(note: Pick<ParsedNote, 'frontmatter' | 'headings'>): boolean {
+  return authoredTitle(note.frontmatter, note.headings) !== null
+}
+
+function deriveTitle(frontmatter: Frontmatter, headings: Heading[], path: string): string {
+  const authored = authoredTitle(frontmatter, headings)
+  if (authored !== null) {
+    return authored
   }
   if (isDaily(path)) {
     const date = dateFromDailyPath(path)

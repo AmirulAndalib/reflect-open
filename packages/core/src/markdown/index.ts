@@ -24,7 +24,7 @@ export {
   type ParsedFrontmatter,
 } from './frontmatter'
 export { parseBody, reflectMarkdownParser, wikiLinkExtension } from './grammar'
-export { parseNote, isTagName } from './extract'
+export { parseNote, isTagName, hasAuthoredTitle } from './extract'
 export {
   scanInlineWikiLinks,
   scanInlineImages,

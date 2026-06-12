@@ -41,12 +41,18 @@ const WINDOWS_RESERVED = new Set([
 ])
 
 /**
- * Maximum slug length in code points. Titles can be sentences; filenames have
- * byte budgets (255 on APFS/ext4/NTFS). 80 code points caps the worst case
- * (every point 3 UTF-8 bytes) comfortably under the limit with the `notes/`
- * prefix, `.md` suffix, and a collision suffix to spare.
+ * Maximum slug length in code points — a readability cap. Titles can be
+ * sentences; a filename shouldn't be.
  */
 const MAX_SLUG_CHARS = 80
+
+/**
+ * Maximum slug length in UTF-8 bytes — the safety cap. Filesystems budget
+ * basenames in bytes (255 on APFS/ext4/NTFS), and `\p{L}` admits astral-plane
+ * letters at 4 bytes each, so a code-point cap alone can overflow: 80 × 4 +
+ * `.md` > 255. 200 leaves room for the extension and a collision suffix.
+ */
+const MAX_SLUG_BYTES = 200
 
 /** Anything that isn't a letter, number, or separator is dropped outright. */
 const STRIP_RE = /[^\p{L}\p{N}\s_-]+/gu
@@ -54,13 +60,49 @@ const STRIP_RE = /[^\p{L}\p{N}\s_-]+/gu
 const SEPARATOR_RE = /[\s_-]+/gu
 const EDGE_DASHES_RE = /^-+|-+$/g
 
+/** UTF-8 encoded size of one code point. */
+function utf8Size(codePoint: number): number {
+  if (codePoint <= 0x7f) {
+    return 1
+  }
+  if (codePoint <= 0x7ff) {
+    return 2
+  }
+  if (codePoint <= 0xffff) {
+    return 3
+  }
+  return 4
+}
+
+/**
+ * Cut `value` to at most {@link MAX_SLUG_CHARS} code points **and**
+ * {@link MAX_SLUG_BYTES} UTF-8 bytes, always on a code-point boundary (never
+ * splitting a surrogate pair).
+ */
+function capSlug(value: string): string {
+  let chars = 0
+  let bytes = 0
+  let end = 0
+  for (const char of value) {
+    const codePoint = char.codePointAt(0)
+    const size = codePoint === undefined ? 1 : utf8Size(codePoint)
+    if (chars + 1 > MAX_SLUG_CHARS || bytes + size > MAX_SLUG_BYTES) {
+      break
+    }
+    chars += 1
+    bytes += size
+    end += char.length
+  }
+  return value.slice(0, end)
+}
+
 /**
  * Derive the filename slug for a note title: NFC-normalize, lowercase
  * (Unicode-aware), drop everything but letters/numbers/separators, collapse
  * separator runs to single `-`, trim edge dashes, cap at
- * {@link MAX_SLUG_CHARS} code points on a character boundary. Never empty
- * (`untitled`), never a Windows reserved device name. Idempotent: a slug
- * slugs to itself.
+ * {@link MAX_SLUG_CHARS} code points and {@link MAX_SLUG_BYTES} UTF-8 bytes
+ * on a code-point boundary. Never empty (`untitled`), never a Windows
+ * reserved device name. Idempotent: a slug slugs to itself.
  */
 export function slugForTitle(title: string): string {
   const folded = title.normalize('NFC').toLowerCase()
@@ -68,9 +110,8 @@ export function slugForTitle(title: string): string {
     .replace(STRIP_RE, '')
     .replace(SEPARATOR_RE, '-')
     .replace(EDGE_DASHES_RE, '')
-  // Cap on code points (never split a surrogate pair), then re-trim: the cut
-  // can land right after a dash.
-  const capped = [...dashed].slice(0, MAX_SLUG_CHARS).join('').replace(EDGE_DASHES_RE, '')
+  // Cap, then re-trim: the cut can land right after a dash.
+  const capped = capSlug(dashed).replace(EDGE_DASHES_RE, '')
   if (capped === '') {
     return 'untitled'
   }

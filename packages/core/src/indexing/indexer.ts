@@ -11,8 +11,8 @@ import {
 } from './commands'
 import { hashContent } from './hash'
 import { buildIndexedNote, PROJECTION_VERSION, type IndexedNote } from './indexed-note'
-import { pairMovesById } from './move-detection'
-import { getIndexedHashes, getIndexMeta, getNoteIdsByPath } from './queries'
+import { detectExternalMoves } from './move-healing'
+import { getIndexedHashes, getIndexMeta } from './queries'
 
 /**
  * The indexing pipeline (Plan 04): read (Plan 02) → parse/extract in TS
@@ -137,30 +137,16 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
   // file carrying the same frontmatter id is a rename observed after the
   // fact — an external tool or a sync pull moved it while Reflect wasn't
   // looking. Move the rows instead of delete+create, so embedding vectors
-  // survive (re-embedding identical content costs the user BYOK money).
-  // Ambiguous ids (a rename/rename fork) never pair — the duplicate-id
-  // surface reports those for review.
+  // survive. Best-effort throughout: any failure degrades to the plain pass
+  // below (the arrival is indexed fresh, the cleanup loop drops the orphan).
   const orphanPaths = [...stored.keys()].filter((path) => !onDisk.has(path))
-  const arrivalFiles = files.filter((file) => !stored.has(file.path))
+  const arrivalPaths = files.filter((file) => !stored.has(file.path)).map((file) => file.path)
   /** Arrival content read for pairing — the main pass below reuses it. */
-  const arrivalContent = new Map<string, string>()
-  if (orphanPaths.length > 0 && arrivalFiles.length > 0) {
-    const orphanIds = await getNoteIdsByPath(orphanPaths)
-    const arrivalIds = new Map<string, string | null>()
-    for (const file of arrivalFiles) {
-      if (signal?.aborted) {
-        return
-      }
-      try {
-        const content = await readNote(file.path)
-        arrivalContent.set(file.path, content)
-        const parsed = parseNote({ path: file.path, source: content })
-        arrivalIds.set(file.path, parsed.frontmatter.id ?? null)
-      } catch {
-        // Unreadable arrival: it can't pair; the main pass retries the read.
-      }
-    }
-    for (const move of pairMovesById(orphanIds, arrivalIds)) {
+  let arrivalContent = new Map<string, string>()
+  try {
+    const scan = await detectExternalMoves(orphanPaths, arrivalPaths, { signal })
+    arrivalContent = scan.content
+    for (const move of scan.moves) {
       if (signal?.aborted) {
         return
       }
@@ -168,8 +154,7 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
         await moveIndexedRows(move.from, move.to, generation)
       } catch (err) {
         // A refused/failed move (e.g. a row appeared at the destination in a
-        // race) degrades to today's delete+create: the main pass indexes the
-        // arrival, the cleanup loop drops the orphan. Healing is best-effort.
+        // race) degrades to today's delete+create.
         console.error(`id-based move failed (${move.from} → ${move.to}):`, err)
         continue
       }
@@ -181,6 +166,12 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
         stored.set(move.to, hash)
       }
     }
+  } catch (err) {
+    // A failed detection (e.g. the id lookup) must not cost the reconcile.
+    console.error('id-based move healing failed; reconciling plainly:', err)
+  }
+  if (signal?.aborted) {
+    return
   }
 
   for (const file of files) {

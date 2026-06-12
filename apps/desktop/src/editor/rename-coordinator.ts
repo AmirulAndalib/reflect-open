@@ -1,18 +1,16 @@
 import {
   errorMessage,
   getLinkSources,
-  nextAliases,
-  parseNote,
   readNote,
   resolveWikiTarget,
   rewriteLinksForTitleChange,
   slugPathForTitle,
-  upsertFrontmatter,
   writeNote,
 } from '@reflect/core'
+import { placeOldTitleAlias } from './alias-placement'
 import { moveNoteCarryingSession } from './move-note'
 import type { NoteContentOrigin } from './note-session'
-import { openSession } from './open-documents'
+import { composeRenameFailure, type RenamePhaseFailures } from './rename-failure'
 import { startOperation } from '@/lib/operations'
 import { createTitleRenameTracker } from './title-rename'
 import type { TitleRename } from './title-rename'
@@ -111,21 +109,17 @@ export function createRenameCoordinator(options: RenameCoordinatorOptions): Rena
         }
         return
       }
-      const operation = startOperation(`Renaming "${rename.from}" → "${rename.to}"`)
-      // The phases fail independently, and the operation reports which held:
-      // a failed rewrite with a placed alias still resolves every old link,
-      // while a failed alias after a clean rewrite breaks none — only both
-      // failing leaves links dangling. A failed move is cosmetic (filename
-      // drift). One combined "failure" string can't say any of that.
-      let rewriteFailure: string | null = null
-      let aliasFailure: string | null = null
-      let moveFailure: string | null = null
+      const from = rename.from
+      const operation = startOperation(`Renaming "${from}" → "${rename.to}"`)
+      // The phases fail independently and the report says what held — the
+      // permutations live in `composeRenameFailure`.
+      const failures: RenamePhaseFailures = { rewrite: null, alias: null, move: null }
       try {
         let collision = false
         try {
           const result = await rewriteLinksForTitleChange({
             path: currentPath,
-            from: rename.from,
+            from,
             to: rename.to,
             io: {
               sources: getLinkSources,
@@ -141,54 +135,14 @@ export function createRenameCoordinator(options: RenameCoordinatorOptions): Rena
           // baseline has already advanced (re-arming would re-fire with a
           // stale `from` after further edits), so the alias is the safety
           // net that keeps every un-rewritten link resolving to this note.
-          rewriteFailure = errorMessage(cause)
+          failures.rewrite = errorMessage(cause)
           console.error('rename link rewrite failed:', cause)
         }
         if (!collision) {
-          // Compute against the note's *current* aliases at placement time —
-          // `aliases` replaces the whole key, and the settle-time snapshot can
-          // be stale (an external edit adopted mid-rewrite, a racing chained
-          // rename): replacing from it would drop concurrently-gained entries.
-          const aliasesOf = (source: string): string[] =>
-            parseNote({ path: currentPath, source }).frontmatter.aliases
-          const from = rename.from
-          const renameForAlias = { ...rename, from }
           try {
-            // Route through the live session whenever the note is open — in
-            // this pane or a *reopened* one (the open-documents service is the
-            // one liveness signal). A direct disk write under a reopened dirty
-            // buffer would park a conflict caused by our own background work,
-            // and "keep mine" would silently drop the alias.
-            const owner = openSession(currentPath)
-            let placed = false
-            if (owner !== null) {
-              // Read and patch in the same tick (no await between): atomic
-              // against the session. Through its frontmatter channel — the
-              // editor view never churns — and flushed rather than riding the
-              // debounce: a settle is exactly the moment to persist, and
-              // quit-time teardown awaits this chain.
-              const aliases = nextAliases(aliasesOf(owner.content()), renameForAlias)
-              placed = aliases === null || owner.updateFrontmatter({ aliases })
-              if (placed && aliases !== null) {
-                await owner.flush()
-              }
-            }
-            if (!placed) {
-              // No live session (or it can't take patches — e.g. still
-              // loading): write directly to disk; a loading/clean session
-              // reconciles it like any external change, and a header-only
-              // patch is body-safe even for protected notes.
-              const content = await readNote(currentPath)
-              const aliases = nextAliases(aliasesOf(content), renameForAlias)
-              if (aliases !== null) {
-                const patched = upsertFrontmatter(content, { aliases })
-                if (patched !== content) {
-                  await writeNote(currentPath, patched, gen)
-                }
-              }
-            }
+            await placeOldTitleAlias(currentPath, { ...rename, from }, gen)
           } catch (cause) {
-            aliasFailure = errorMessage(cause)
+            failures.alias = errorMessage(cause)
             console.error('rename alias placement failed:', cause)
           }
         }
@@ -199,30 +153,13 @@ export function createRenameCoordinator(options: RenameCoordinatorOptions): Rena
         try {
           await runMove(rename.to, gen)
         } catch (cause) {
-          moveFailure = errorMessage(cause)
+          failures.move = errorMessage(cause)
           console.error('note file move failed:', cause)
         }
       } finally {
-        // The label already names the rename; the message says what held.
-        const failures: string[] = []
-        if (rewriteFailure !== null && aliasFailure !== null) {
-          failures.push(
-            `${rewriteFailure}; the old-title alias also failed (${aliasFailure}) — links to "${rename.from}" may no longer resolve`,
-          )
-        } else if (rewriteFailure !== null) {
-          failures.push(
-            `${rewriteFailure} — links were not rewritten, but "${rename.from}" was kept as an alias so they still resolve`,
-          )
-        } else if (aliasFailure !== null) {
-          failures.push(
-            `links were rewritten, but recording "${rename.from}" as an alias failed: ${aliasFailure}`,
-          )
-        }
-        if (moveFailure !== null) {
-          failures.push(`the file keeps its old name (${moveFailure})`)
-        }
-        if (failures.length > 0) {
-          operation.fail(failures.join('; '))
+        const failure = composeRenameFailure(from, failures)
+        if (failure !== null) {
+          operation.fail(failure)
         } else {
           operation.done()
         }

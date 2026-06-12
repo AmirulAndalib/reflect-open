@@ -1,5 +1,5 @@
-import { errorMessage, notePath, randomNotePath } from '@reflect/core'
-import { ulid } from 'ulidx'
+import { errorMessage, randomNotePath } from '@reflect/core'
+import { untitledNotePath } from '@/lib/create-note'
 import { todayIso } from '@/lib/dates'
 import { toggleNotePinned } from '@/lib/note-pin'
 import { toggleNotePrivate } from '@/lib/note-private'
@@ -21,7 +21,7 @@ import type { AppCommand } from './types'
  * New note button so "what a new note is" stays one definition.
  */
 export function newNoteRoute(): Route {
-  return { kind: 'note', path: notePath(ulid().toLowerCase()) }
+  return { kind: 'note', path: untitledNotePath() }
 }
 
 const APP_COMMANDS: AppCommand[] = [

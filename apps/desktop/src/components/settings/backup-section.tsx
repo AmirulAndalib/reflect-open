@@ -4,6 +4,7 @@ import { getConflictedNotes, getDuplicateNoteIds, hasBridge } from '@reflect/cor
 import { ConnectGithubDialog } from '@/components/settings/connect-github-dialog'
 import { SettingsField } from '@/components/settings/field'
 import { SettingsSection } from '@/components/settings/section'
+import { SyncForkNotice } from '@/components/settings/sync-fork-notice'
 import { Button } from '@/components/ui/button'
 import { useAsyncAction } from '@/hooks/use-async-action'
 import { suggestRepoName } from '@/lib/github-repos'
@@ -102,21 +103,7 @@ export function BackupSection(): ReactElement {
                   — open it to keep the version you want.
                 </p>
               ) : null}
-              {forkGroups.length > 0 ? (
-                <div className="text-xs text-amber-700 dark:text-amber-300">
-                  <p>
-                    {forkGroups.length === 1
-                      ? '1 note was renamed differently on two devices and now exists as separate files'
-                      : `${forkGroups.length} notes were renamed differently on two devices and now exist as separate files`}{' '}
-                    — merge by hand, then delete the copy you don’t want:
-                  </p>
-                  <ul className="mt-1 list-disc pl-4">
-                    {forkGroups.map((group) => (
-                      <li key={group.id}>{group.paths.join('  ·  ')}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+              <SyncForkNotice groups={forkGroups} />
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"

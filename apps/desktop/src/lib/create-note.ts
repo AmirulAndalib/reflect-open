@@ -1,6 +1,7 @@
 import { ulid } from 'ulidx'
 import {
   availableNotePath,
+  notePath,
   slugForTitle,
   upsertFrontmatter,
   writeNote,
@@ -30,6 +31,15 @@ export function newNoteSource(title: string): string {
  */
 export function untitledNoteSeed(): string {
   return upsertFrontmatter('# Untitled\n', { id: newNoteId() })
+}
+
+/**
+ * The birth path for a ⌘N note: no title exists yet, so the filename is a
+ * ULID placeholder — the first settled title replaces it with the slug
+ * (Plan 17's birth rename). The one author of the ULID-path convention.
+ */
+export function untitledNotePath(): string {
+  return notePath(newNoteId())
 }
 
 /**

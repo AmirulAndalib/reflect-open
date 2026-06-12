@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { gitCommitAll, gitStatus } from '@reflect/core'
 import {
   Dialog,
   DialogContent,
@@ -10,21 +9,19 @@ import {
 } from '@/components/ui/dialog'
 import {
   findMigrationCandidates,
-  migrateUlidNotes,
+  runFilenameMigration,
   type MigrationCandidate,
 } from '@/lib/filename-migration'
-import { startOperation } from '@/lib/operations'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
 
 /**
  * The one-time readable-filenames offer (Plan 17c). Mounted once per
  * workspace; renders nothing until the open-time reconcile finishes and
- * ULID-named notes exist. Accepting checkpoints (a git commit, when the
- * graph has a repo) and renames every titled ULID note onto its slug path,
- * reporting through the operations status. Declining is sticky per graph —
- * recorded in settings, never re-asked — while new notes get slug filenames
- * regardless.
+ * ULID-named notes exist. Accepting hands the candidates to
+ * {@link runFilenameMigration} (checkpoint, rename, report — all through the
+ * operations status). Declining is sticky per graph — recorded in settings,
+ * never re-asked — while new notes get slug filenames regardless.
  */
 export function FilenameMigrationPrompt(): ReactElement | null {
   const { graph, indexing } = useGraph()
@@ -79,46 +76,7 @@ export function FilenameMigrationPrompt(): ReactElement | null {
 
   const accept = (): void => {
     setDismissed(true)
-    void (async () => {
-      const operation = startOperation(
-        `Renaming ${count} ${count === 1 ? 'note' : 'notes'} to readable filenames`,
-      )
-      try {
-        // Checkpoint first (Plan 12): with a repo, the whole rename pass is
-        // one commit away from undoable. A graph without git has no
-        // checkpoint to take — the user's standing choice, proceed.
-        const status = await gitStatus(generation)
-        if (status.initialized) {
-          await gitCommitAll('Checkpoint before readable filenames', generation)
-        }
-      } catch (cause) {
-        // A repo exists but can't commit: running without the safety net is
-        // not our call to make. Keep the prompt dismissible-only this session.
-        console.error('readable-filenames checkpoint failed:', cause)
-        operation.fail('the pre-rename checkpoint commit failed; nothing was renamed')
-        return
-      }
-      const result = await migrateUlidNotes({
-        candidates,
-        generation,
-        onProgress: operation.progress,
-      })
-      if (result.failed.length > 0) {
-        console.error('readable-filenames migration failures:', result.failed)
-        const skippedToo =
-          result.skipped > 0
-            ? `; ${result.skipped} ${result.skipped === 1 ? 'was' : 'were'} skipped (opened or edited mid-run)`
-            : ''
-        operation.fail(
-          `renamed ${result.moved} of ${count} — ${result.failed.length} failed and keep their old filenames${skippedToo}; reopening the graph offers the rest again`,
-        )
-      } else {
-        // Pure skips need no alarm: the scan excludes open/conflicted notes
-        // up front, so a skip here is a mid-run race, and the next graph
-        // open simply offers the remainder.
-        operation.done()
-      }
-    })()
+    void runFilenameMigration({ candidates, generation })
   }
 
   return (
