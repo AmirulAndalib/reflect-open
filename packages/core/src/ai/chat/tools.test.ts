@@ -22,6 +22,7 @@ const PRIVATE_TITLE = 'sentinel-title-01jxq3'
 const PRIVATE_PATH = 'notes/sentinel-path-01jxq3.md'
 const PRIVATE_BODY = 'sentinel-body-01jxq3'
 
+/** A public retrieval hit, overridable per test. */
 function hit(overrides: Partial<RetrievalHit>): RetrievalHit {
   return {
     path: 'notes/public.md',
@@ -34,6 +35,7 @@ function hit(overrides: Partial<RetrievalHit>): RetrievalHit {
   }
 }
 
+/** A public recents query row, overridable per test. */
 function recentRow(overrides: Partial<RecentNoteRow>): RecentNoteRow {
   return {
     path: 'notes/public.md',
@@ -45,6 +47,7 @@ function recentRow(overrides: Partial<RecentNoteRow>): RecentNoteRow {
   }
 }
 
+/** A public daily query row for `date`, overridable per test. */
 function dailyRow(date: string, overrides: Partial<DailyNoteRow> = {}): DailyNoteRow {
   return {
     path: `daily/${date}.md`,
@@ -61,6 +64,7 @@ function isAsyncIterable(value: object): value is AsyncIterable<unknown> {
   return Symbol.asyncIterator in value
 }
 
+/** Execute `search_notes` directly, asserting a non-streaming output. */
 async function runSearch(
   tools: NoteTools,
   input: { query: string; limit?: number },
@@ -76,6 +80,7 @@ async function runSearch(
   return output
 }
 
+/** Execute `read_note` directly, asserting a non-streaming output. */
 async function runRead(tools: NoteTools, path: string): Promise<ReadNoteOutput> {
   const execute = tools.read_note.execute
   if (!execute) {
@@ -88,6 +93,7 @@ async function runRead(tools: NoteTools, path: string): Promise<ReadNoteOutput> 
   return output
 }
 
+/** Execute `list_recent_notes` directly, asserting a non-streaming output. */
 async function runRecents(
   tools: NoteTools,
   input: { limit?: number; tag?: string },
@@ -103,6 +109,7 @@ async function runRecents(
   return output
 }
 
+/** Execute `list_daily_notes` directly, asserting a non-streaming output. */
 async function runDailies(
   tools: NoteTools,
   input: { start: string; end: string },
