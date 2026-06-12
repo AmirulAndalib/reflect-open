@@ -7,6 +7,7 @@ import {
   AutocompletePopup,
   AutocompletePositioner,
   AutocompleteRoot,
+  type AutocompleteRootProps,
 } from '@prosekit/react/autocomplete'
 import { hasBridge, suggestWikiTargets } from '@reflect/core'
 import { formatDayLabel } from '@/lib/dates'
@@ -26,6 +27,9 @@ import { buildAutocompleteEntries } from './wiki-autocomplete-entries'
 
 /** `[[` plus a partial target; a typed `]` or `[` ends the match. */
 const WIKI_TRIGGER = /\[\[([^[\]]*)$/u
+
+type QueryChangeEvent = Parameters<NonNullable<AutocompleteRootProps['onQueryChange']>>[0]
+type OpenChangeEvent = Parameters<NonNullable<AutocompleteRootProps['onOpenChange']>>[0]
 
 interface WikiAutocompleteProps {
   /**
@@ -71,8 +75,8 @@ export function WikiAutocomplete({ onCreate }: WikiAutocompleteProps): ReactElem
       editor={editor}
       regex={WIKI_TRIGGER}
       filter={null} // ranking is the index's job; the popup must not re-filter
-      onQueryChange={(event) => setQuery(event.detail)}
-      onOpenChange={(event) => setOpen(event.detail)}
+      onQueryChange={(event: QueryChangeEvent) => setQuery(event.detail)}
+      onOpenChange={(event: OpenChangeEvent) => setOpen(event.detail)}
     >
       <AutocompletePositioner>
         <AutocompletePopup className="reflect-autocomplete">

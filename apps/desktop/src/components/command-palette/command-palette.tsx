@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
 import { Command } from 'cmdk'
 import { parseHighlights } from '@reflect/core'
 import { CalendarDays, FileText } from 'lucide-react'
@@ -123,7 +123,7 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
           shouldFilter={false}
           value={selectedValue}
           onValueChange={setSelectedValue}
-          onKeyDown={(event) => {
+          onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
             if (event.key === 'Escape') {
               event.preventDefault()
               closePalette()
