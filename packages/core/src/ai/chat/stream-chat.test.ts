@@ -6,6 +6,7 @@ import type {
   LanguageModelV3Usage,
 } from '@ai-sdk/provider'
 import type { RetrievalHit } from '../../embeddings/retrieve'
+import { cloudSafeGraphContext } from '../checkers'
 import { streamChatTurn, type ChatStreamEvent } from './stream-chat'
 
 const USAGE: LanguageModelV3Usage = {
@@ -101,6 +102,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'where is the launch plan?' }],
         today: '2026-06-11',
+        context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
     )
@@ -138,6 +140,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'what do my notes say?' }],
         today: '2026-06-11',
+        context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT, PRIVATE_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
     )
@@ -149,6 +152,30 @@ describe('streamChatTurn', () => {
     expect(outbound).not.toContain(PRIVATE_TITLE)
     expect(outbound).not.toContain(PRIVATE_PATH)
     expect(outbound).toContain('notes/atlas.md')
+  })
+
+  it('carries the graph overview in the outbound system prompt', async () => {
+    const model = new MockLanguageModelV3({ doStream: sequence([textTurn('hi')]) })
+    await collect(
+      streamChatTurn(model, {
+        messages: [{ role: 'user', content: 'hi' }],
+        today: '2026-06-11',
+        context: cloudSafeGraphContext({
+          graphName: 'atlas-graph',
+          noteCount: 7,
+          dailyNoteCount: 2,
+          earliestDailyDate: '2026-06-01',
+          latestDailyDate: '2026-06-10',
+          tags: [{ tag: 'book', count: 2 }],
+          tagsTruncated: false,
+        }),
+      }),
+    )
+
+    const outbound = JSON.stringify(model.doStreamCalls[0]?.prompt)
+    expect(outbound).toContain('atlas-graph')
+    expect(outbound).toContain('#book (2)')
+    expect(outbound).toContain('Daily notes span 2026-06-01 to 2026-06-10.')
   })
 
   it('yields a terminal error event when the stream errors', async () => {
@@ -164,6 +191,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'hi' }],
         today: '2026-06-11',
+        context: null,
       }),
     )
     expect(events.at(-1)).toEqual({ type: 'error', message: 'rate limited', messages: [] })
@@ -186,6 +214,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'where is the launch plan?' }],
         today: '2026-06-11',
+        context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
     )
@@ -222,6 +251,7 @@ describe('streamChatTurn', () => {
       streamChatTurn(model, {
         messages: [{ role: 'user', content: 'plan and budget?' }],
         today: '2026-06-11',
+        context: null,
         toolDeps: { retrieveFn: async () => [PUBLIC_HIT], readNoteFn: async () => 'launch plan\n' },
       }),
     )

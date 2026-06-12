@@ -148,11 +148,13 @@ export {
 export { validateApiKey, type ApiKeyValidation } from './ai/validate-key'
 export {
   assertCloudAllowed,
+  cloudSafeGraphContext,
   cloudSafeNoteContent,
   cloudSafeNoteListings,
   cloudSafeSearchHits,
   isPrivateNoteError,
   PrivateNoteError,
+  type CloudGraphContext,
   type CloudNoteContent,
   type CloudNoteListing,
   type CloudSafe,
@@ -174,6 +176,11 @@ export {
   type SearchNotesOutput,
 } from './ai/chat/tools'
 export { chatSystemPrompt, type SystemPromptInput } from './ai/chat/system-prompt'
+export {
+  loadChatGraphContext,
+  MAX_CONTEXT_TAGS,
+  type GraphContextDeps,
+} from './ai/chat/graph-context'
 export {
   streamChat,
   type ChatStreamEvent,

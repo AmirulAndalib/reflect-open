@@ -2,7 +2,16 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
-import type { AiProviderConfig, ChatStreamEvent, StreamChatOptions } from '@reflect/core'
+import {
+  cloudSafeGraphContext,
+  type AiProviderConfig,
+  type ChatStreamEvent,
+  type CloudGraphContext,
+  type CloudSafe,
+  type GraphContextDeps,
+  type GraphInfo,
+  type StreamChatOptions,
+} from '@reflect/core'
 import { ChatProvider, useChatSession } from '@/providers/chat-provider'
 import { RouterProvider } from '@/routing/router'
 
@@ -18,10 +27,16 @@ const streamChat = vi.hoisted(() =>
   vi.fn<(options: StreamChatOptions) => AsyncGenerator<ChatStreamEvent>>(),
 )
 const getSecret = vi.hoisted(() => vi.fn<(name: string) => Promise<string | null>>())
+const loadChatGraphContext = vi.hoisted(() =>
+  vi.fn<
+    (graphName: string, deps?: GraphContextDeps) => Promise<CloudSafe<CloudGraphContext>>
+  >(),
+)
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   streamChat,
   getSecret,
+  loadChatGraphContext,
 }))
 
 const settingsState = vi.hoisted(() => ({
@@ -52,11 +67,24 @@ const { ChatScreen } = await import('./chat-screen')
 
 afterEach(cleanup)
 
+const GRAPH: GraphInfo = { root: '/graphs/test', name: 'test-graph', cloudSync: null, generation: 1 }
+
+const GRAPH_CONTEXT = cloudSafeGraphContext({
+  graphName: 'test-graph',
+  noteCount: 3,
+  dailyNoteCount: 1,
+  earliestDailyDate: '2026-06-01',
+  latestDailyDate: '2026-06-01',
+  tags: [{ tag: 'book', count: 2 }],
+  tagsTruncated: false,
+})
+
 beforeEach(() => {
   settingsState.models = []
   settingsState.defaultId = null
   streamChat.mockReset()
   getSecret.mockReset().mockResolvedValue('sk-test')
+  loadChatGraphContext.mockReset().mockResolvedValue(GRAPH_CONTEXT)
 })
 
 const MODEL: AiProviderConfig = { id: 'm1', provider: 'openai', model: 'gpt-5.1', keyHint: '12345' }
@@ -93,7 +121,7 @@ function renderChat() {
   probedSend = null
   return render(
     <RouterProvider>
-      <ChatProvider>
+      <ChatProvider graph={GRAPH}>
         <ChatScreen />
         <SendProbe />
       </ChatProvider>
@@ -172,6 +200,37 @@ describe('ChatScreen', () => {
     await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1))
     // Same entry (id → keychain key), with the picked model applied.
     expect(streamChat.mock.lastCall?.[0].config).toEqual({ ...MODEL, model: 'gpt-5.5' })
+  })
+
+  it('sends the graph overview context with each turn', async () => {
+    configureModel()
+    scriptTurn([
+      { type: 'text-delta', text: 'Hi.' },
+      { type: 'complete', messages: [{ role: 'assistant', content: 'Hi.' }] },
+    ])
+    const view = renderChat()
+
+    await userEvent.type(view.getByLabelText('Chat message'), 'hi{Enter}')
+
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1))
+    expect(loadChatGraphContext).toHaveBeenCalledWith('test-graph')
+    expect(streamChat.mock.lastCall?.[0].context).toEqual(GRAPH_CONTEXT)
+  })
+
+  it('still sends the turn, without an overview, when the context load fails', async () => {
+    configureModel()
+    loadChatGraphContext.mockRejectedValue(new Error('index not open'))
+    scriptTurn([
+      { type: 'text-delta', text: 'Hi.' },
+      { type: 'complete', messages: [{ role: 'assistant', content: 'Hi.' }] },
+    ])
+    const view = renderChat()
+
+    await userEvent.type(view.getByLabelText('Chat message'), 'hi{Enter}')
+
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1))
+    expect(streamChat.mock.lastCall?.[0].context).toBeNull()
+    expect(await view.findByText('Hi.')).toBeDefined()
   })
 
   it('renders listing chips: recent notes by tag and a daily range', async () => {
