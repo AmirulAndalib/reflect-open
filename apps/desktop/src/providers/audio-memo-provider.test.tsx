@@ -5,6 +5,7 @@ import type {
   AudioMemoIdentity,
   CaptureAudioMemoInput,
   CaptureAudioMemoOutcome,
+  FileChange,
   GraphInfo,
   ReconcileAudioMemosInput,
   ReconcileAudioMemosOutcome,
@@ -17,9 +18,12 @@ const captureAudioMemo = vi.hoisted(() =>
 const reconcileAudioMemos = vi.hoisted(() =>
   vi.fn<(input: ReconcileAudioMemosInput) => Promise<ReconcileAudioMemosOutcome>>(),
 )
-const backUpNow = vi.hoisted(() => vi.fn<() => Promise<void>>())
 const failOperation = vi.hoisted(() => vi.fn<(message: string) => void>())
 const toggleSidebar = vi.hoisted(() => vi.fn())
+/** The handler the provider registered with useFileChanges (null = off). */
+const fileChangesHandler = vi.hoisted(() => ({
+  current: null as ((changes: FileChange[]) => void) | null,
+}))
 
 const recorderControls = vi.hoisted(() => ({
   startSpy: vi.fn(),
@@ -92,8 +96,10 @@ vi.mock('@/providers/settings-provider', () => ({
 vi.mock('@/providers/sidebar-provider', () => ({
   useSidebar: () => ({ collapsed: sidebarState.collapsed, toggleSidebar }),
 }))
-vi.mock('@/providers/sync-provider', () => ({
-  useSync: () => ({ backUpNow }),
+vi.mock('@/lib/use-file-changes', () => ({
+  useFileChanges: (handler: ((changes: FileChange[]) => void) | null) => {
+    fileChangesHandler.current = handler
+  },
 }))
 vi.mock('@/lib/provider-fetch', () => ({
   providerFetch: vi.fn(),
@@ -148,7 +154,7 @@ beforeEach(() => {
   }
   captureAudioMemo.mockResolvedValue({ ok: true, memo: MEMO })
   reconcileAudioMemos.mockResolvedValue(DRAINED)
-  backUpNow.mockResolvedValue(undefined)
+  fileChangesHandler.current = null
 })
 
 afterEach(cleanup)
@@ -176,7 +182,7 @@ describe('AudioMemoProvider', () => {
     })
   })
 
-  it('a saved capture commits the recording and schedules transcription', async () => {
+  it('a saved capture schedules transcription without waiting on the watcher', async () => {
     const { result } = renderHook(() => useAudioMemo(), { wrapper })
     await waitFor(() => expect(reconcileAudioMemos).toHaveBeenCalledTimes(1))
 
@@ -188,9 +194,23 @@ describe('AudioMemoProvider', () => {
     })
     await waitFor(() => expect(result.current.phase).toBe('idle'))
 
-    // The Rust watcher only tracks markdown, so the asset write would never
-    // reach the sync engine's debounce — the capture commits explicitly.
-    expect(backUpNow).toHaveBeenCalled()
+    expect(reconcileAudioMemos).toHaveBeenCalledTimes(2)
+  })
+
+  it('a recording reported by the watcher (e.g. pulled by sync) triggers transcription', async () => {
+    renderHook(() => useAudioMemo(), { wrapper })
+    await waitFor(() => expect(reconcileAudioMemos).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      fileChangesHandler.current?.([{ path: MEMO.audioPath, kind: 'upsert' }])
+    })
+    await waitFor(() => expect(reconcileAudioMemos).toHaveBeenCalledTimes(2))
+
+    // Note edits ride the same stream — they must not spin the reconciler.
+    await act(async () => {
+      fileChangesHandler.current?.([{ path: 'notes/some-note.md', kind: 'upsert' }])
+      fileChangesHandler.current?.([{ path: MEMO.audioPath, kind: 'remove' }])
+    })
     expect(reconcileAudioMemos).toHaveBeenCalledTimes(2)
   })
 
@@ -224,7 +244,6 @@ describe('AudioMemoProvider', () => {
     await waitFor(() => expect(result.current.phase).toBe('error'))
     expect(result.current.error).toBe('disk full')
     expect(result.current.canRetry).toBe(true)
-    expect(backUpNow).not.toHaveBeenCalled()
 
     await act(async () => {
       result.current.retry()
@@ -588,6 +607,8 @@ describe('AudioMemoProvider', () => {
     expect(result.current.phase).toBe('idle')
     expect(recorderControls.startSpy).not.toHaveBeenCalled()
     expect(reconcileAudioMemos).not.toHaveBeenCalled()
+    // The watcher subscription is off too — nothing to transcribe with.
+    expect(fileChangesHandler.current).toBeNull()
   })
 
   it('cancel discards the recording without saving', async () => {

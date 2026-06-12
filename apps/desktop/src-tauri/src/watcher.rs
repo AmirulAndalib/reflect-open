@@ -4,8 +4,11 @@
 //! for incremental re-indexing: an edit (ours or external) writes the markdown
 //! file, the watcher fires, and the frontend re-indexes that file. The index
 //! lives under `.reflect/`, which is filtered out here, so index writes can't
-//! loop back. The watcher only reports `.md` under `daily/` and `notes/`; the
-//! frontend resolves create-vs-delete and re-indexes (content-hash gated).
+//! loop back. The watcher reports `.md` under `daily/` and `notes/`, plus
+//! anything under `audio-memos/` (recordings feed the sync debounce and the
+//! transcription reconciler, not the index — frontend consumers filter by
+//! path). The frontend resolves create-vs-delete and re-indexes
+//! (content-hash gated).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -42,14 +45,16 @@ pub struct FileChange {
     pub modified_ms: Option<u64>,
 }
 
-/// Graph-relative path if `path` is a tracked markdown note (`.md` under `daily/`
-/// or `notes/`), else `None`. Pure — the filtering rule, unit-tested.
+/// Graph-relative path if `path` is tracked: a markdown note (`.md` under
+/// `daily/` or `notes/`) or an audio-memo recording (anything under
+/// `audio-memos/`), else `None`. Pure — the filtering rule, unit-tested.
 fn tracked_relpath(path: &Path, root: &Path) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
     let rel_str = rel.to_string_lossy().replace('\\', "/");
-    let tracked = (rel_str.starts_with("daily/") || rel_str.starts_with("notes/"))
+    let note = (rel_str.starts_with("daily/") || rel_str.starts_with("notes/"))
         && rel_str.ends_with(".md");
-    tracked.then_some(rel_str)
+    let recording = rel_str.starts_with("audio-memos/");
+    (note || recording).then_some(rel_str)
 }
 
 /// Reduce a debounced batch of paths to unique tracked changes (last kind wins).
@@ -153,7 +158,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tracks_only_markdown_under_note_dirs() {
+    fn tracks_markdown_under_note_dirs_and_audio_memo_recordings() {
         let root = Path::new("/g");
         assert_eq!(
             tracked_relpath(Path::new("/g/notes/a.md"), root).as_deref(),
@@ -163,7 +168,18 @@ mod tests {
             tracked_relpath(Path::new("/g/daily/2026-06-09.md"), root).as_deref(),
             Some("daily/2026-06-09.md")
         );
-        // Not tracked: the index, assets, non-markdown, dotfiles, outside root.
+        // Recordings are tracked whole-directory: they feed the sync debounce
+        // and the transcription reconciler.
+        assert_eq!(
+            tracked_relpath(
+                Path::new("/g/audio-memos/audio-memo-2026-06-09-090000-000.m4a"),
+                root
+            )
+            .as_deref(),
+            Some("audio-memos/audio-memo-2026-06-09-090000-000.m4a")
+        );
+        // Not tracked: the index, assets, non-markdown, dotfiles, outside root,
+        // or the audio-memos directory entry itself.
         assert_eq!(
             tracked_relpath(Path::new("/g/.reflect/index.sqlite"), root),
             None
@@ -171,6 +187,7 @@ mod tests {
         assert_eq!(tracked_relpath(Path::new("/g/assets/x.png"), root), None);
         assert_eq!(tracked_relpath(Path::new("/g/notes/x.txt"), root), None);
         assert_eq!(tracked_relpath(Path::new("/g/README.md"), root), None);
+        assert_eq!(tracked_relpath(Path::new("/g/audio-memos"), root), None);
         assert_eq!(tracked_relpath(Path::new("/other/notes/a.md"), root), None);
     }
 

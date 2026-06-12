@@ -10,19 +10,21 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  audioMemoFromPath,
   captureAudioMemo,
   errorMessage,
   pickTranscriptionConfig,
   reconcileAudioMemos,
+  type FileChange,
   type GraphInfo,
   type ReconcileStop,
 } from '@reflect/core'
 import { isRecordingSupported, useAudioRecorder } from '@/hooks/use-audio-recorder'
 import { startOperation } from '@/lib/operations'
 import { providerFetch } from '@/lib/provider-fetch'
+import { useFileChanges } from '@/lib/use-file-changes'
 import { useSettings } from '@/providers/settings-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
-import { useSync } from '@/providers/sync-provider'
 
 /**
  * The React surface for audio memos: recording state + the bridge to the
@@ -106,7 +108,6 @@ interface AudioMemoProviderProps {
 export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): ReactElement {
   const { settings } = useSettings()
   const { collapsed, toggleSidebar } = useSidebar()
-  const { backUpNow } = useSync()
 
   const [pendingCount, setPendingCount] = useState(0)
   /** True while a reconcile pass has memos to transcribe. */
@@ -232,6 +233,22 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
     }
   }, [transcriptionConfig, runReconcile])
 
+  // The watcher tracks `audio-memos/` too: a recording reported there — one a
+  // sync merge pulled from another device, or dropped in externally — gets
+  // transcribed live instead of waiting for the next focus or launch pass.
+  const onFileChanges = useCallback(
+    (changes: FileChange[]): void => {
+      const hasNewRecording = changes.some(
+        (change) => change.kind === 'upsert' && audioMemoFromPath(change.path) !== null,
+      )
+      if (hasNewRecording) {
+        void runReconcile()
+      }
+    },
+    [runReconcile],
+  )
+  useFileChanges(transcriptionConfig === null ? null : onFileChanges)
+
   const pump = useCallback(async (): Promise<void> => {
     if (pumpingRef.current) {
       return
@@ -271,15 +288,13 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       pumpingRef.current = false
     }
     if (captured) {
-      // Commit the recording now — it's a complete capture, and the Rust
-      // watcher only tracks markdown so the recording write alone would
-      // never reach the sync engine's debounce. Best-effort: disconnected or
-      // still-initializing backup has no engine to commit with, and the
-      // recording is already safe on disk; the next launch cycle picks it up.
-      void backUpNow().catch(() => {})
+      // The watcher reports the recording write (it tracks `audio-memos/`),
+      // which feeds the sync engine's commit debounce like any note edit.
+      // Transcription is kicked directly rather than waiting on the
+      // watcher's own debounce to echo our write back.
       void runReconcile()
     }
-  }, [graph.generation, runReconcile, backUpNow])
+  }, [graph.generation, runReconcile])
 
   const start = useCallback(async (): Promise<void> => {
     if (!supported || transcriptionConfig === null) {

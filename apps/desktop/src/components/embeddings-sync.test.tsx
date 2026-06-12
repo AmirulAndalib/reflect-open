@@ -80,6 +80,19 @@ describe('EmbeddingsSync', () => {
     )
   })
 
+  it('never embeds audio-memo recordings riding the same stream', async () => {
+    render(<EmbeddingsSync />)
+    await waitFor(() => expect(onFileChanges).not.toBeNull())
+
+    onFileChanges?.([
+      { kind: 'upsert', path: 'audio-memos/audio-memo-2026-06-12-090000-000.m4a' },
+      { kind: 'remove', path: 'audio-memos/audio-memo-2026-06-12-091500-000.m4a' },
+    ])
+    await flushQueue()
+    expect(core.embedNote).not.toHaveBeenCalled()
+    expect(core.embedRemove).not.toHaveBeenCalled()
+  })
+
   it('starts no embedding work while semantic search is disabled', async () => {
     semanticSetting.enabled = false
     render(<EmbeddingsSync />)

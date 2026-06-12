@@ -54,6 +54,18 @@ export function isDaily(path: string): boolean {
   return DAILY_PATH_RE.test(path)
 }
 
+/**
+ * Is this graph-relative path an indexable markdown note (`.md` under
+ * `daily/` or `notes/`)? The file-change stream carries more than notes —
+ * the watcher also reports `audio-memos/` recordings — so consumers that
+ * read or index note *content* gate on this.
+ */
+export function isNotePath(path: string): boolean {
+  return (
+    (path.startsWith(`${DAILY_DIR}/`) || path.startsWith(`${NOTES_DIR}/`)) && path.endsWith('.md')
+  )
+}
+
 /** Extract the ISO date from a daily-note path, or `null` if it isn't one. */
 export function dateFromDailyPath(path: string): string | null {
   return DAILY_PATH_RE.exec(path)?.[1] ?? null

@@ -58,6 +58,7 @@ export {
   assetPath,
   audioMemoPath,
   isDaily,
+  isNotePath,
   dateFromDailyPath,
 } from './graph/paths'
 export {

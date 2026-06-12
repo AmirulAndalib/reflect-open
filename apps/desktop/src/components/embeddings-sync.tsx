@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { embedNote, embedRemove, subscribeFileChanges } from '@reflect/core'
+import { embedNote, embedRemove, isNotePath, subscribeFileChanges } from '@reflect/core'
 import {
   backfillEmbeddingsVisibly,
   consumeLegacySemanticOptIn,
@@ -89,6 +89,9 @@ export function EmbeddingsSync(): null {
         return
       }
       for (const change of changes) {
+        if (!isNotePath(change.path)) {
+          continue // audio-memo recordings ride the same stream — never embedded
+        }
         queue.current = queue.current
           .then(() => {
             if (!active) {
