@@ -1,11 +1,11 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { useState, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { GraphInfo, Settings } from '@reflect/core'
+import type { GraphInfo, SaveAudioMemoInput, SaveAudioMemoOutcome, Settings } from '@reflect/core'
 
-const getSecret = vi.hoisted(() => vi.fn<(name: string) => Promise<string | null>>())
-const transcribeAudio = vi.hoisted(() => vi.fn<() => Promise<string>>())
-const appendToDailyNote = vi.hoisted(() => vi.fn<() => Promise<void>>())
+const saveAudioMemo = vi.hoisted(() =>
+  vi.fn<(input: SaveAudioMemoInput) => Promise<SaveAudioMemoOutcome>>(),
+)
 const failOperation = vi.hoisted(() => vi.fn<(message: string) => void>())
 const toggleSidebar = vi.hoisted(() => vi.fn())
 
@@ -14,26 +14,25 @@ const recorderControls = vi.hoisted(() => ({
   stopSpy: vi.fn(),
   cancelSpy: vi.fn(),
   stopResult: null as { blob: Blob; mimeType: string; durationMs: number } | null,
-  elapsedMs: 0,
   supported: true,
+  options: null as { maxDurationMs?: number; onMaxDuration?: () => void } | null,
 }))
 
 const sidebarState = vi.hoisted(() => ({ collapsed: false }))
 
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
-  getSecret,
-  transcribeAudio,
-  appendToDailyNote,
+  saveAudioMemo,
 }))
 
 vi.mock('@/hooks/use-audio-recorder', () => ({
   isRecordingSupported: () => recorderControls.supported,
-  useAudioRecorder: () => {
+  useAudioRecorder: (options: { maxDurationMs?: number; onMaxDuration?: () => void }) => {
+    recorderControls.options = options
     const [status, setStatus] = useState<'idle' | 'requesting' | 'recording'>('idle')
     return {
       status,
-      elapsedMs: recorderControls.elapsedMs,
+      elapsedMs: 0,
       stream: null,
       start: async () => {
         recorderControls.startSpy()
@@ -89,22 +88,20 @@ const RECORDING = {
 beforeEach(() => {
   vi.clearAllMocks()
   recorderControls.stopResult = RECORDING
-  recorderControls.elapsedMs = 0
   recorderControls.supported = true
+  recorderControls.options = null
   sidebarState.collapsed = false
   SETTINGS.current = {
     aiModels: [{ id: 'cfg-openai', provider: 'openai', model: 'gpt-5.1', keyHint: 'wxyz1' }],
     defaultAiModelId: 'cfg-openai',
   }
-  getSecret.mockResolvedValue('sk-live-key')
-  transcribeAudio.mockResolvedValue('memo transcript')
-  appendToDailyNote.mockResolvedValue(undefined)
+  saveAudioMemo.mockResolvedValue({ ok: true, text: 'memo transcript' })
 })
 
 afterEach(cleanup)
 
 describe('AudioMemoProvider', () => {
-  it('toggle records, then stops, transcribes with the configured key, and appends to today', async () => {
+  it('toggle records, then stops and hands the recording to the core action', async () => {
     const { result } = renderHook(() => useAudioMemo(), { wrapper })
     expect(result.current.available).toBe(true)
 
@@ -118,23 +115,17 @@ describe('AudioMemoProvider', () => {
     })
     await waitFor(() => expect(result.current.phase).toBe('idle'))
 
-    expect(getSecret).toHaveBeenCalledWith('ai-api-key:cfg-openai')
-    expect(transcribeAudio).toHaveBeenCalledWith(
+    expect(saveAudioMemo).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: 'openai',
-        apiKey: 'sk-live-key',
-        audio: RECORDING.blob,
-        mimeType: 'audio/mp4',
+        payload: { kind: 'transcribe', audio: RECORDING.blob, mimeType: 'audio/mp4' },
+        models: { models: SETTINGS.current.aiModels, defaultModelId: 'cfg-openai' },
+        date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        generation: 3,
       }),
     )
-    expect(appendToDailyNote).toHaveBeenCalledWith({
-      date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      text: 'memo transcript',
-      generation: 3,
-    })
   })
 
-  it('a too-short recording is discarded without transcription', async () => {
+  it('a too-short recording is discarded without saving', async () => {
     recorderControls.stopResult = null
     const { result } = renderHook(() => useAudioMemo(), { wrapper })
 
@@ -146,11 +137,14 @@ describe('AudioMemoProvider', () => {
     })
 
     expect(result.current.phase).toBe('idle')
-    expect(transcribeAudio).not.toHaveBeenCalled()
+    expect(saveAudioMemo).not.toHaveBeenCalled()
   })
 
-  it('a transcription failure parks an error whose retry re-transcribes', async () => {
-    transcribeAudio.mockRejectedValueOnce({ kind: 'network', message: 'provider down' })
+  it('a resumable failure parks an error whose retry re-runs the returned step', async () => {
+    const resumePayload = { kind: 'append' as const, text: 'memo transcript' }
+    saveAudioMemo
+      .mockResolvedValueOnce({ ok: false, message: 'disk full', resume: resumePayload })
+      .mockResolvedValueOnce({ ok: true, text: 'memo transcript' })
     const { result } = renderHook(() => useAudioMemo(), { wrapper })
 
     await act(async () => {
@@ -160,42 +154,21 @@ describe('AudioMemoProvider', () => {
       result.current.toggle()
     })
     await waitFor(() => expect(result.current.phase).toBe('error'))
-    expect(result.current.error).toBe('provider down')
+    expect(result.current.error).toBe('disk full')
     expect(result.current.canRetry).toBe(true)
 
     await act(async () => {
       result.current.retry()
     })
     await waitFor(() => expect(result.current.phase).toBe('idle'))
-    expect(transcribeAudio).toHaveBeenCalledTimes(2)
-    expect(appendToDailyNote).toHaveBeenCalledTimes(1)
-  })
-
-  it('an append failure retries the append only — transcription is never paid twice', async () => {
-    appendToDailyNote.mockRejectedValueOnce({ kind: 'io', message: 'disk full' })
-    const { result } = renderHook(() => useAudioMemo(), { wrapper })
-
-    await act(async () => {
-      result.current.toggle()
-    })
-    await act(async () => {
-      result.current.toggle()
-    })
-    await waitFor(() => expect(result.current.phase).toBe('error'))
-
-    await act(async () => {
-      result.current.retry()
-    })
-    await waitFor(() => expect(result.current.phase).toBe('idle'))
-    expect(transcribeAudio).toHaveBeenCalledTimes(1)
-    expect(appendToDailyNote).toHaveBeenCalledTimes(2)
-    expect(appendToDailyNote).toHaveBeenLastCalledWith(
-      expect.objectContaining({ text: 'memo transcript' }),
+    expect(saveAudioMemo).toHaveBeenCalledTimes(2)
+    expect(saveAudioMemo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ payload: resumePayload }),
     )
   })
 
-  it('an empty transcript surfaces as a non-retryable error', async () => {
-    transcribeAudio.mockResolvedValue('')
+  it('a non-resumable failure offers no retry; discard returns to idle', async () => {
+    saveAudioMemo.mockResolvedValue({ ok: false, message: 'came back empty', resume: null })
     const { result } = renderHook(() => useAudioMemo(), { wrapper })
 
     await act(async () => {
@@ -206,12 +179,25 @@ describe('AudioMemoProvider', () => {
     })
     await waitFor(() => expect(result.current.phase).toBe('error'))
     expect(result.current.canRetry).toBe(false)
-    expect(appendToDailyNote).not.toHaveBeenCalled()
 
     act(() => {
       result.current.discard()
     })
     expect(result.current.phase).toBe('idle')
+  })
+
+  it('arms the recorder cap and saves when it fires', async () => {
+    const { result } = renderHook(() => useAudioMemo(), { wrapper })
+    expect(recorderControls.options?.maxDurationMs).toBe(10 * 60_000)
+
+    await act(async () => {
+      result.current.toggle()
+    })
+    await act(async () => {
+      recorderControls.options?.onMaxDuration?.()
+    })
+
+    await waitFor(() => expect(saveAudioMemo).toHaveBeenCalled())
   })
 
   it('collapsing the sidebar mid-recording stops and saves', async () => {
@@ -227,11 +213,11 @@ describe('AudioMemoProvider', () => {
       rerender()
     })
 
-    await waitFor(() => expect(appendToDailyNote).toHaveBeenCalled())
+    await waitFor(() => expect(saveAudioMemo).toHaveBeenCalled())
   })
 
   it('a failure while the sidebar is collapsed surfaces through operations', async () => {
-    transcribeAudio.mockRejectedValueOnce({ kind: 'network', message: 'provider down' })
+    saveAudioMemo.mockResolvedValue({ ok: false, message: 'provider down', resume: null })
     const { result, rerender } = renderHook(() => useAudioMemo(), { wrapper })
 
     await act(async () => {
@@ -288,6 +274,6 @@ describe('AudioMemoProvider', () => {
 
     expect(result.current.phase).toBe('idle')
     expect(recorderControls.cancelSpy).toHaveBeenCalled()
-    expect(transcribeAudio).not.toHaveBeenCalled()
+    expect(saveAudioMemo).not.toHaveBeenCalled()
   })
 })

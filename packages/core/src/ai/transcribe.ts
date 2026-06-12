@@ -22,6 +22,13 @@ export const OPENAI_TRANSCRIPTION_FALLBACK_MODEL = 'whisper-1'
 
 export const GOOGLE_TRANSCRIPTION_MODEL = 'gemini-3.5-flash'
 
+/**
+ * Retried once when the primary model 404s. Google retires models on a short
+ * clock (the spike caught `gemini-3-pro-preview` dying within months of
+ * release), and a retired transcription model must degrade, not hard-fail.
+ */
+export const GOOGLE_TRANSCRIPTION_FALLBACK_MODEL = 'gemini-2.5-flash'
+
 export interface TranscriptionRequest {
   provider: TranscriptionProvider
   apiKey: string
@@ -177,10 +184,8 @@ const GEMINI_INSTRUCTION =
 async function transcribeWithGemini(request: TranscriptionRequest): Promise<string> {
   const fetchFn = request.fetchFn ?? fetch
   const data = bytesToBase64(new Uint8Array(await request.audio.arrayBuffer()))
-  const response = await send(
-    fetchFn,
-    `https://generativelanguage.googleapis.com/v1beta/models/${GOOGLE_TRANSCRIPTION_MODEL}:generateContent`,
-    {
+  const attempt = (model: string): Promise<Response> =>
+    send(fetchFn, `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST',
       headers: { 'x-goog-api-key': request.apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -193,9 +198,15 @@ async function transcribeWithGemini(request: TranscriptionRequest): Promise<stri
           },
         ],
       }),
-    },
-  )
-  const body = await response.text()
+    })
+
+  let response = await attempt(GOOGLE_TRANSCRIPTION_MODEL)
+  let body = await response.text()
+  // A 404 on the model path means Google retired the model.
+  if (response.status === 404) {
+    response = await attempt(GOOGLE_TRANSCRIPTION_FALLBACK_MODEL)
+    body = await response.text()
+  }
   if (!response.ok) {
     throw httpError('google', response.status, body)
   }

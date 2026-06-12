@@ -10,12 +10,10 @@ import {
   type ReactNode,
 } from 'react'
 import {
-  aiKeySecretName,
-  appendToDailyNote,
   errorMessage,
-  getSecret,
   pickTranscriptionConfig,
-  transcribeAudio,
+  saveAudioMemo,
+  type AudioMemoResume,
   type GraphInfo,
 } from '@reflect/core'
 import { isRecordingSupported, useAudioRecorder } from '@/hooks/use-audio-recorder'
@@ -26,22 +24,15 @@ import { useSettings } from '@/providers/settings-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
 
 /**
- * Audio memos: record speech, transcribe it through the user's own OpenAI or
- * Gemini key, and append the text to today's daily note. State lives here —
- * above the sidebar — because the mic button unmounts with the sidebar
- * (`Mod-\`), and a recording must never outlive its UI invisibly: collapsing
- * mid-recording stops and saves instead of leaving a hidden hot microphone.
- *
- * Recording is allowed even when today's note is `private: true`: only the
- * freshly captured audio is sent to the provider, never any note content, and
- * the transcript itself is written locally.
+ * The React surface for audio memos: recording state + the bridge to the
+ * core capture action (`saveAudioMemo`, which owns transcription, privacy,
+ * and the daily-note append). State lives here — above the sidebar — because
+ * the mic button unmounts with the sidebar (`Mod-\`), and a recording must
+ * never outlive its UI invisibly: collapsing mid-recording stops and saves
+ * instead of leaving a hidden hot microphone.
  */
 
 export type AudioMemoPhase = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'error'
-
-type RetryPayload =
-  | { kind: 'transcribe'; blob: Blob; mimeType: string }
-  | { kind: 'append'; text: string }
 
 interface AudioMemoContextValue {
   phase: AudioMemoPhase
@@ -55,7 +46,7 @@ interface AudioMemoContextValue {
   unavailableReason: string | null
   /** The failure shown in the error phase. */
   error: string | null
-  /** True when retrying the failure is possible without re-recording. */
+  /** True when a retry can pick up where the failure left off. */
   canRetry: boolean
   /** Idle → start recording (expanding a collapsed sidebar); recording → stop & save. */
   toggle: () => void
@@ -81,13 +72,18 @@ interface AudioMemoProviderProps {
 }
 
 export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): ReactElement {
-  const recorder = useAudioRecorder()
   const { settings } = useSettings()
   const { collapsed, toggleSidebar } = useSidebar()
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [failed, setFailed] = useState<RetryPayload | null>(null)
+  const [resume, setResume] = useState<AudioMemoResume | null>(null)
+
+  const stopAndSaveRef = useRef<() => void>(() => {})
+  const recorder = useAudioRecorder({
+    maxDurationMs: MAX_DURATION_MS,
+    onMaxDuration: () => stopAndSaveRef.current(),
+  })
 
   const supported = isRecordingSupported()
   const transcriptionConfig = useMemo(
@@ -102,56 +98,29 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   const collapsedRef = useRef(collapsed)
   collapsedRef.current = collapsed
 
-  const save = useCallback(
-    async (payload: RetryPayload): Promise<void> => {
+  const runSave = useCallback(
+    async (payload: AudioMemoResume): Promise<void> => {
       setSaving(true)
       setError(null)
-      setFailed(payload)
       try {
-        let text: string
-        if (payload.kind === 'transcribe') {
-          const config = pickTranscriptionConfig({
-            models: settings.aiModels,
-            defaultModelId: settings.defaultAiModelId,
-          })
-          if (config === null) {
-            setFailed(null)
-            throw new Error('No OpenAI or Gemini model is configured.')
-          }
-          const apiKey = await getSecret(aiKeySecretName(config.id))
-          if (apiKey === null) {
-            setFailed(null)
-            throw new Error(
-              `The API key for the configured ${config.provider} model is missing from the keychain.`,
-            )
-          }
-          text = await transcribeAudio({
-            provider: config.provider,
-            apiKey,
-            audio: payload.blob,
-            mimeType: payload.mimeType,
-            fetchFn: providerFetch,
-          })
-          if (text === '') {
-            setFailed(null)
-            throw new Error('The recording came back empty — nothing to append.')
-          }
-          // Transcription succeeded: a later failure retries the append only.
-          setFailed({ kind: 'append', text })
+        const outcome = await saveAudioMemo({
+          payload,
+          models: { models: settings.aiModels, defaultModelId: settings.defaultAiModelId },
+          date: todayIso(),
+          generation: graph.generation,
+          fetchFn: providerFetch,
+        })
+        if (outcome.ok) {
+          setResume(null)
         } else {
-          text = payload.text
+          setError(outcome.message)
+          setResume(outcome.resume)
+          if (collapsedRef.current) {
+            // The mic button (and its popover) unmounted with the sidebar —
+            // the failure must still surface somewhere.
+            startOperation('Saving audio memo').fail(outcome.message)
+          }
         }
-        await appendToDailyNote({ date: todayIso(), text, generation: graph.generation })
-        setFailed(null)
-      } catch (cause) {
-        const message = errorMessage(cause)
-        setError(message)
-        if (collapsedRef.current) {
-          // The mic button (and its popover) unmounted with the sidebar — the
-          // failure must still surface somewhere.
-          startOperation('Saving audio memo').fail(message)
-        }
-        return
       } finally {
         setSaving(false)
       }
@@ -164,7 +133,7 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       return
     }
     setError(null)
-    setFailed(null)
+    setResume(null)
     if (collapsedRef.current) {
       // Never record without visible recording UI.
       toggleSidebar()
@@ -185,8 +154,9 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
     if (recording === null) {
       return
     }
-    await save({ kind: 'transcribe', blob: recording.blob, mimeType: recording.mimeType })
-  }, [recorder, save])
+    await runSave({ kind: 'transcribe', audio: recording.blob, mimeType: recording.mimeType })
+  }, [recorder, runSave])
+  stopAndSaveRef.current = () => void stopAndSave()
 
   const toggle = useCallback((): void => {
     if (recorder.status === 'recording') {
@@ -199,18 +169,18 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   const cancel = useCallback((): void => {
     recorder.cancel()
     setError(null)
-    setFailed(null)
+    setResume(null)
   }, [recorder])
 
   const retry = useCallback((): void => {
-    if (failed !== null) {
-      void save(failed)
+    if (resume !== null) {
+      void runSave(resume)
     }
-  }, [failed, save])
+  }, [resume, runSave])
 
   const discard = useCallback((): void => {
     setError(null)
-    setFailed(null)
+    setResume(null)
   }, [])
 
   // Collapsing the sidebar mid-recording: stop and save rather than keep a
@@ -220,12 +190,6 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       void stopAndSave()
     }
   }, [collapsed, recorder.status, stopAndSave])
-
-  useEffect(() => {
-    if (recorder.status === 'recording' && recorder.elapsedMs >= MAX_DURATION_MS) {
-      void stopAndSave()
-    }
-  }, [recorder.status, recorder.elapsedMs, stopAndSave])
 
   const phase: AudioMemoPhase =
     error !== null
@@ -250,7 +214,7 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       available: unavailableReason === null,
       unavailableReason,
       error,
-      canRetry: failed !== null,
+      canRetry: resume !== null,
       toggle,
       cancel,
       retry,
@@ -262,7 +226,7 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       recorder.stream,
       unavailableReason,
       error,
-      failed,
+      resume,
       toggle,
       cancel,
       retry,

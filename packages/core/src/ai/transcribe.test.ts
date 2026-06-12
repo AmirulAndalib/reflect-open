@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  GOOGLE_TRANSCRIPTION_FALLBACK_MODEL,
   GOOGLE_TRANSCRIPTION_MODEL,
   OPENAI_TRANSCRIPTION_FALLBACK_MODEL,
   OPENAI_TRANSCRIPTION_MODEL,
@@ -161,6 +162,35 @@ describe('transcribeAudio (google)', () => {
       contents: { parts: { inline_data?: { mime_type: string } }[] }[]
     }
     expect(payload.contents[0].parts[1].inline_data?.mime_type).toBe('audio/webm')
+  })
+
+  it('falls back to the stable model when the primary one is retired (404)', async () => {
+    const calls: RecordedCall[] = []
+    const fetchFn = recordingFetch(calls, (call) =>
+      call.url.includes(GOOGLE_TRANSCRIPTION_FALLBACK_MODEL)
+        ? geminiResponse('fallback transcript')
+        : jsonResponse(404, { error: { message: 'This model is no longer available.' } }),
+    )
+
+    const text = await transcribeAudio(request({ provider: 'google', fetchFn }))
+
+    expect(text).toBe('fallback transcript')
+    expect(calls).toHaveLength(2)
+    expect(calls[0].url).toContain(GOOGLE_TRANSCRIPTION_MODEL)
+    expect(calls[1].url).toContain(GOOGLE_TRANSCRIPTION_FALLBACK_MODEL)
+  })
+
+  it('does not retry non-404 failures', async () => {
+    const calls: RecordedCall[] = []
+    const fetchFn = recordingFetch(calls, () =>
+      jsonResponse(429, { error: { message: 'quota exhausted' } }),
+    )
+
+    await expect(transcribeAudio(request({ provider: 'google', fetchFn }))).rejects.toMatchObject({
+      kind: 'network',
+      message: expect.stringContaining('quota exhausted'),
+    })
+    expect(calls).toHaveLength(1)
   })
 
   it('returns an empty transcript when no candidates come back', async () => {

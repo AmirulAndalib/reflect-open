@@ -144,7 +144,14 @@ export {
 } from './ai/transcribe'
 
 // Capture actions (audio memos; Plan 11's link capture joins here)
-export { appendToDailyNote, type AppendToDailyNoteInput } from './actions/audio-memo'
+export {
+  appendToDailyNote,
+  saveAudioMemo,
+  type AppendToDailyNoteInput,
+  type AudioMemoResume,
+  type SaveAudioMemoInput,
+  type SaveAudioMemoOutcome,
+} from './actions/audio-memo'
 
 // Backup & sync (Plan 12)
 export {

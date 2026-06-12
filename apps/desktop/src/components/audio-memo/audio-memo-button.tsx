@@ -46,6 +46,13 @@ export function AudioMemoButton(): ReactElement {
     )
   }
 
+  const activeLabel =
+    memo.phase === 'recording'
+      ? 'Stop recording'
+      : memo.phase === 'error'
+        ? 'Discard audio memo'
+        : 'Transcribing audio memo'
+
   return (
     <Popover open>
       <PopoverAnchor asChild>
@@ -53,7 +60,7 @@ export function AudioMemoButton(): ReactElement {
           variant="destructive"
           size="icon-sm"
           className="rounded-full"
-          aria-label={memo.phase === 'recording' ? 'Stop recording' : 'Audio memo status'}
+          aria-label={activeLabel}
           disabled={memo.phase === 'transcribing'}
           onClick={() => {
             if (memo.phase === 'recording') {

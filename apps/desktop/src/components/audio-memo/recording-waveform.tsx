@@ -58,15 +58,17 @@ export function RecordingWaveform({ stream }: RecordingWaveformProps): ReactElem
         context.fillStyle = color
         bars.forEach((amplitude, index) => {
           const height = Math.max(BAR_WIDTH, amplitude * CSS_HEIGHT)
-          context.beginPath()
-          context.roundRect(
-            index * (BAR_WIDTH + BAR_GAP),
-            (CSS_HEIGHT - height) / 2,
-            BAR_WIDTH,
-            height,
-            BAR_WIDTH / 2,
-          )
-          context.fill()
+          const left = index * (BAR_WIDTH + BAR_GAP)
+          const top = (CSS_HEIGHT - height) / 2
+          // roundRect is Safari 16+; an un-updated older WebKit still records,
+          // it just gets square bars instead of a crash.
+          if (typeof context.roundRect === 'function') {
+            context.beginPath()
+            context.roundRect(left, top, BAR_WIDTH, height, BAR_WIDTH / 2)
+            context.fill()
+          } else {
+            context.fillRect(left, top, BAR_WIDTH, height)
+          }
         })
       }
       frame = requestAnimationFrame(loop)

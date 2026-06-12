@@ -16,6 +16,13 @@ export interface RecorderResult {
   durationMs: number
 }
 
+export interface UseAudioRecorderOptions {
+  /** Auto-stop guard: `onMaxDuration` fires once when a recording reaches this. */
+  maxDurationMs?: number
+  /** Called when the cap is hit — the host decides what stopping means. */
+  onMaxDuration?: () => void
+}
+
 export interface UseAudioRecorderValue {
   status: RecorderStatus
   /** Live while recording; 0 otherwise. */
@@ -57,7 +64,7 @@ export function isRecordingSupported(): boolean {
   )
 }
 
-export function useAudioRecorder(): UseAudioRecorderValue {
+export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudioRecorderValue {
   const [status, setStatus] = useState<RecorderStatus>('idle')
   const [elapsedMs, setElapsedMs] = useState(0)
   const [stream, setStream] = useState<MediaStream | null>(null)
@@ -67,6 +74,11 @@ export function useAudioRecorder(): UseAudioRecorderValue {
   const chunksRef = useRef<Blob[]>([])
   const startedAtRef = useRef(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const maxTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Read at fire time, not captured at start — the host's callback identity
+  // changes across renders.
+  const optionsRef = useRef(options)
+  optionsRef.current = options
   // Bumped by cancel/unmount so an in-flight getUserMedia resolves into a dead
   // session and releases the mic instead of recording into the void.
   const sessionRef = useRef(0)
@@ -78,6 +90,10 @@ export function useAudioRecorder(): UseAudioRecorderValue {
     if (intervalRef.current !== null) {
       clearInterval(intervalRef.current)
       intervalRef.current = null
+    }
+    if (maxTimeoutRef.current !== null) {
+      clearTimeout(maxTimeoutRef.current)
+      maxTimeoutRef.current = null
     }
     for (const track of streamRef.current?.getTracks() ?? []) {
       track.stop()
@@ -124,6 +140,12 @@ export function useAudioRecorder(): UseAudioRecorderValue {
     intervalRef.current = setInterval(() => {
       setElapsedMs(Date.now() - startedAtRef.current)
     }, ELAPSED_TICK_MS)
+    const maxDurationMs = optionsRef.current.maxDurationMs
+    if (maxDurationMs !== undefined) {
+      maxTimeoutRef.current = setTimeout(() => {
+        optionsRef.current.onMaxDuration?.()
+      }, maxDurationMs)
+    }
     setStream(input)
     setStatus('recording')
   }, [])
