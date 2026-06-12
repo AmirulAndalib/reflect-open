@@ -63,10 +63,11 @@ describe('slugForTitle', () => {
     (title) => {
       const slug = slugForTitle(title)
       expect(slug).not.toBe('')
-      expect([...slug].length).toBeLessThanOrEqual(80)
+      expect([...slug].length).toBeLessThanOrEqual(60)
       // The byte budget is the real filesystem constraint: basenames cap at
-      // 255 *bytes* (APFS/ext4/NTFS), and astral letters cost 4 each.
-      expect(new TextEncoder().encode(slug).length).toBeLessThanOrEqual(200)
+      // 255 *bytes* (APFS/ext4/NTFS), and astral letters cost 4 each — the
+      // 60-point cap must keep every slug inside it.
+      expect(new TextEncoder().encode(slug).length).toBeLessThanOrEqual(240)
       expect(slug).toBe(slug.toLowerCase())
       expect(slug).toBe(slug.normalize('NFC'))
       // No path separators, no Windows-reserved characters, no whitespace,
@@ -77,26 +78,14 @@ describe('slugForTitle', () => {
   )
 
   it('caps astral-plane titles without splitting surrogate pairs', () => {
+    // 4-byte letters are the worst case the single cap must absorb:
+    // 60 points × 4 bytes + `.md` stays inside the 255-byte basename limit.
     const slug = slugForTitle('𝒜'.repeat(100))
-    expect([...slug].length).toBeLessThanOrEqual(80)
+    expect([...slug].length).toBeLessThanOrEqual(60)
+    expect(new TextEncoder().encode(slug).length).toBeLessThanOrEqual(240)
     // Round-trips through code points cleanly (no lone surrogates).
     expect(slug).toBe([...slug].join(''))
     expect(slug.includes('�')).toBe(false)
-  })
-
-  it('caps by bytes when every code point is 4 UTF-8 bytes', () => {
-    // 80 astral letters fit the code-point cap but would be 320 bytes —
-    // over the 255-byte basename limit once `.md` is appended. The byte
-    // budget must cut first.
-    const slug = slugForTitle('𝒜'.repeat(80))
-    expect(new TextEncoder().encode(slug).length).toBeLessThanOrEqual(200)
-    expect(slugForTitle(slug)).toBe(slug)
-  })
-
-  it('caps 3-byte scripts by bytes too', () => {
-    const slug = slugForTitle('日'.repeat(80))
-    expect(new TextEncoder().encode(slug).length).toBeLessThanOrEqual(200)
-    expect([...slug].every((char) => char === '日')).toBe(true)
     expect(slugForTitle(slug)).toBe(slug)
   })
 })

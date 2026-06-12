@@ -99,9 +99,8 @@ function installGraphFake({ files, linkSources, resolveTitleTo }: GraphFakeOptio
     }
     if (command === 'note_move_indexed') {
       const { from, to } = args as { from: string; to: string }
-      // Mirrors the Rust command: an occupied destination keeps its (newest)
-      // bytes only when it's the same note's own racing save — these tests
-      // never stage a foreign file there, so the fake just renames.
+      // Mirrors the Rust command for the paths these tests exercise: a free
+      // destination renames (occupied ones refuse, but no test stages that).
       if (files[to] === undefined && files[from] !== undefined) {
         files[to] = files[from]
       }

@@ -224,56 +224,20 @@ pub fn note_exists(path: String, state: State<GraphState>) -> AppResult<bool> {
     Ok(resolve(&root, &path)?.is_file())
 }
 
-/// The frontmatter `id:` of a note file, by cheap line scan — just enough to
-/// tell whether two files are the *same note* for the move guard below. Full
-/// YAML parsing is TS's job; this only reads a `id: <value>` line inside a
-/// leading `---` block. Deliberately literal: a quoted value (`id: "x"`) or a
-/// BOM-prefixed fence doesn't match what Reflect writes (always unquoted,
-/// never a BOM), so those mismatches fail toward *refusing* the move — the
-/// safe direction (see the tests freezing this).
-fn frontmatter_id(path: &Path) -> Option<String> {
-    let content = fs::read_to_string(path).ok()?;
-    let mut lines = content.lines();
-    if lines.next()?.trim_end() != "---" {
-        return None;
-    }
-    for line in lines {
-        let trimmed = line.trim_end();
-        if trimmed == "---" {
-            return None;
-        }
-        if let Some(value) = trimmed.strip_prefix("id:") {
-            let value = value.trim();
-            return (!value.is_empty()).then(|| value.to_string());
-        }
-    }
-    None
-}
-
 /// Rename `from` → `to` on disk (both graph-relative, traversal-guarded).
 ///
-/// An occupied destination is consumed **only when both files carry the same
-/// frontmatter `id`** — the note's own just-retargeted save landing first;
-/// that file holds the *newest* content, and overwriting it with the stale
-/// source would lose the very keystrokes the save persisted. Anything else
-/// at the destination (a foreign file that appeared after the collision
-/// probe) refuses the move: deleting the source for it would graft this
-/// note's identity onto another file's content.
+/// An occupied destination refuses (loudly), matching the projection half
+/// (`db::write::move_note`): the collision probe raced something — nothing is
+/// deleted or overwritten, the caller compensates, and the rename simply
+/// reports failed. One rule, no adoption heuristics; the filename drifts
+/// until the next settled rename retries.
 pub(crate) fn move_note_file(root: &Path, from: &str, to: &str) -> AppResult<()> {
     let from_abs = resolve(root, from)?;
     let to_abs = resolve(root, to)?;
     if to_abs.is_file() {
-        let same_note = match (frontmatter_id(&from_abs), frontmatter_id(&to_abs)) {
-            (Some(from_id), Some(to_id)) => from_id == to_id,
-            _ => false,
-        };
-        if !same_note {
-            return Err(AppError::io(format!(
-                "cannot move note: {to} already exists on disk"
-            )));
-        }
-        fs::remove_file(from_abs)?;
-        return Ok(());
+        return Err(AppError::io(format!(
+            "cannot move note: {to} already exists on disk"
+        )));
     }
     if let Some(parent) = to_abs.parent() {
         fs::create_dir_all(parent)?;
@@ -326,85 +290,20 @@ mod move_tests {
     }
 
     #[test]
-    fn same_note_at_the_destination_keeps_its_newer_bytes() {
-        // The note's own retargeted save landed first: same frontmatter id,
-        // newer content. The stale source is dropped, never written over it.
-        let root = graph();
-        fs::write(root.path().join("notes/a.md"), "---\nid: 01x\n---\n# Old\n").unwrap();
-        fs::write(
-            root.path().join("notes/b.md"),
-            "---\nid: 01x\n---\n# Old\n\nnewest\n",
-        )
-        .unwrap();
-        move_note_file(root.path(), "notes/a.md", "notes/b.md").unwrap();
-        assert!(!root.path().join("notes/a.md").exists());
-        assert!(fs::read_to_string(root.path().join("notes/b.md"))
-            .unwrap()
-            .contains("newest"));
-    }
-
-    #[test]
-    fn a_foreign_file_at_the_destination_refuses_the_move() {
-        // A different note (different id) appeared after the collision probe:
-        // consuming it would graft this note's identity onto foreign content.
-        let root = graph();
-        fs::write(
-            root.path().join("notes/a.md"),
-            "---\nid: 01x\n---\n# Mine\n",
-        )
-        .unwrap();
-        fs::write(
-            root.path().join("notes/b.md"),
-            "---\nid: 01y\n---\n# Theirs\n",
-        )
-        .unwrap();
-        assert!(move_note_file(root.path(), "notes/a.md", "notes/b.md").is_err());
-        // Both files intact — nothing was lost.
-        assert!(root.path().join("notes/a.md").exists());
-        assert!(fs::read_to_string(root.path().join("notes/b.md"))
-            .unwrap()
-            .contains("Theirs"));
-    }
-
-    #[test]
-    fn files_without_ids_never_treat_an_occupied_destination_as_their_own() {
+    fn an_occupied_destination_refuses_with_both_files_intact() {
+        // Whatever appeared at the destination after the collision probe,
+        // nothing is deleted or overwritten — the rename just fails.
         let root = graph();
         fs::write(root.path().join("notes/a.md"), "# Mine\n").unwrap();
         fs::write(root.path().join("notes/b.md"), "# Theirs\n").unwrap();
         assert!(move_note_file(root.path(), "notes/a.md", "notes/b.md").is_err());
-        assert!(root.path().join("notes/a.md").exists());
-    }
-
-    #[test]
-    fn a_quoted_id_does_not_match_an_unquoted_one_so_the_move_refuses() {
-        // Reflect always writes ids unquoted; a hand-quoted copy is treated
-        // as a different note and the move refuses — the safe direction.
-        // This freezes the scanner's literal matching: loosening it must be
-        // a deliberate change, not a side effect.
-        let root = graph();
-        fs::write(root.path().join("notes/a.md"), "---\nid: 01x\n---\n# A\n").unwrap();
-        fs::write(
-            root.path().join("notes/b.md"),
-            "---\nid: \"01x\"\n---\n# A\n",
-        )
-        .unwrap();
-        assert!(move_note_file(root.path(), "notes/a.md", "notes/b.md").is_err());
-        assert!(root.path().join("notes/a.md").exists());
-        assert!(root.path().join("notes/b.md").exists());
-    }
-
-    #[test]
-    fn a_bom_prefixed_destination_never_reads_as_the_same_note() {
-        // A BOM defeats the `---` fence check, so the destination scans as
-        // id-less and the move refuses rather than consuming it.
-        let root = graph();
-        fs::write(root.path().join("notes/a.md"), "---\nid: 01x\n---\n# A\n").unwrap();
-        fs::write(
-            root.path().join("notes/b.md"),
-            "\u{feff}---\nid: 01x\n---\n# A\n",
-        )
-        .unwrap();
-        assert!(move_note_file(root.path(), "notes/a.md", "notes/b.md").is_err());
-        assert!(root.path().join("notes/a.md").exists());
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/a.md")).unwrap(),
+            "# Mine\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/b.md")).unwrap(),
+            "# Theirs\n"
+        );
     }
 }

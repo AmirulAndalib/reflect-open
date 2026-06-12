@@ -72,8 +72,10 @@ later surface), daily notes (untouched in every respect — `daily/YYYY-MM-DD.md
 1. **Slugger** (`@reflect/core` `markdown/slug.ts`). `slugForTitle(title): string`:
    NFC-normalize → lowercase (Unicode-aware) → keep `\p{L}\p{N}`, map whitespace
    and separator runs to single `-` → strip everything else (covers `/ \ : * ? "
-   < > |`, control chars) → trim leading/trailing `-`/`.` → cap at 80 chars on a
-   char boundary → if empty, `untitled` → if a Windows reserved device name
+   < > |`, control chars) → trim leading/trailing `-`/`.` → cap at 60 code
+   points (one cap covers readability *and* the 255-byte basename limit:
+   60 × 4-byte astral letters stays inside it) → if empty, `untitled` → if a
+   Windows reserved device name
    (`con`, `prn`, `aux`, `nul`, `com1-9`, `lpt1-9`), append `-note`. Lowercase-only
    output is load-bearing: it makes APFS/NTFS case-insensitivity and git
    case-sensitivity agree by construction. CJK and other scripts pass through
@@ -214,7 +216,11 @@ later surface), daily notes (untouched in every respect — `daily/YYYY-MM-DD.md
   highest-severity correctness risk — a lost race recreates the old file and
   forks the note. Mitigate: the move only fires from the settled-title tracker
   (already save-quiet), the session path-swap is synchronous before any
-  subsequent save, and an integration test hammers save-during-move.
+  subsequent save, and an occupied destination — db row or disk file — simply
+  **refuses the move** (decided 2026-06-11, replacing an earlier same-id
+  adoption heuristic: the race window is sub-millisecond after a 5s quiet
+  period, and a refused rename costs only cosmetic filename drift that the
+  next settled rename retries).
 - **Add/add collisions are new** (impossible under ULID filenames). Two offline
   devices creating "Meeting" produce one conflicted file merging unrelated
   notes. Accepted: rare, surfaced by the existing conflict UI, recoverable from
