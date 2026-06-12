@@ -73,7 +73,13 @@ function Probe(): ReactElement | null {
   return null
 }
 
-const GRAPH: GraphInfo = { root: '/g', name: 'test-graph', cloudSync: null, generation: 1 }
+const GRAPH: GraphInfo = {
+  root: '/g',
+  name: 'test-graph',
+  cloudSync: null,
+  generation: 1,
+  firstOpen: false,
+}
 
 function renderProvider() {
   session = null
