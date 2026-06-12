@@ -327,6 +327,29 @@ function ensureReleaseIsNew(tag) {
 }
 
 /**
+ * Assert that if the tag already exists on origin, it points at the commit
+ * being released. `gh release create` silently reuses an existing tag and
+ * ignores --target, which would attach the release to whatever old commit
+ * the tag names instead of the code that was just built.
+ */
+function ensureTagMatchesCommit(tag, commit) {
+  // The "^{}" pattern makes ls-remote include the peeled line for annotated
+  // tags; gh-created tags are lightweight and resolve to the commit directly.
+  const output = capture('git', ['ls-remote', '--tags', 'origin', tag, `${tag}^{}`]).trim()
+  if (output === '') return
+  const refs = output.split('\n').map((line) => line.split('\t'))
+  const peeled = refs.find(([, name]) => name === `refs/tags/${tag}^{}`)
+  const taggedCommit = (peeled ?? refs[0])[0]
+  if (taggedCommit !== commit) {
+    fail(
+      `tag ${tag} already exists on origin at ${taggedCommit.slice(0, 7)} but HEAD is ${commit.slice(0, 7)}.\n` +
+        '  gh would attach the release to the existing tag, not the commit being built —\n' +
+        '  delete the remote tag or bump "version" in apps/desktop/src-tauri/tauri.conf.json.',
+    )
+  }
+}
+
+/**
  * Build a signed + notarized DMG and upload it to a new GitHub release tagged
  * v<version> (from tauri.conf.json). All preflight checks run before the
  * build so a doomed publish fails in seconds, not after notarization.
@@ -337,6 +360,7 @@ function publish({ draft }) {
   const { productName, version } = readTauriConf()
   const tag = `v${version}`
   ensureReleaseIsNew(tag)
+  ensureTagMatchesCommit(tag, commit)
 
   build({ notarize: true })
 

@@ -75,8 +75,10 @@ than after notarization:
 
 - the working tree is clean and `HEAD` is on a remote branch — the release tag is
   created at that exact commit;
-- no release for `v<version>` exists yet. Publishing a new release means bumping
-  `version` in `tauri.conf.json` first (keep `src-tauri/Cargo.toml` in step).
+- no release for `v<version>` exists yet, and any existing `v<version>` tag on origin
+  points at `HEAD` (`gh` reuses an existing tag, which would release the wrong commit).
+  Publishing a new release means bumping `version` in `tauri.conf.json` first (keep
+  `src-tauri/Cargo.toml` in step).
 
 Pass `--draft` to create the release without publishing it, then review and publish it
 from the GitHub UI.
