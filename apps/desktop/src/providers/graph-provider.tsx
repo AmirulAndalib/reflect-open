@@ -20,6 +20,7 @@ import {
 } from '@reflect/core'
 import { followHealedMove } from '@/editor/move-note'
 import { invalidateIndexQueries } from '@/lib/query-client'
+import { seedWelcomeNote } from '@/lib/welcome-note'
 import { createGraphIndex } from './graph-index'
 
 /** Lifecycle of the active graph (Plan 02 loading gate). */
@@ -114,6 +115,15 @@ export function GraphProvider({ children }: { children: ReactNode }) {
           const info = await openGraph(root)
           if (seq !== openSeq.current) {
             return // superseded by a newer open
+          }
+          // First run on a brand-new graph: seed the pinned "How to use
+          // Reflect" note before the index pass starts, so the reconcile
+          // indexes it like any other file. Best-effort — a failed seed must
+          // never block opening.
+          try {
+            await seedWelcomeNote(info.generation)
+          } catch (err) {
+            console.error('welcome seed failed:', errorMessage(err))
           }
           const index = indexRef.current
           // Stop any prior reconcile and wait for it to fully settle before the
