@@ -1,5 +1,6 @@
 import {
   detectConflictMarkers,
+  errorMessage,
   getConflictedNotes,
   gitCommitAll,
   gitStatus,
@@ -108,10 +109,9 @@ export async function migrateUlidNotes(options: MigrateOptions): Promise<Migrati
       }
       result.moved += 1
     } catch (cause) {
-      result.failed.push({
-        path: candidate.path,
-        message: cause instanceof Error ? cause.message : String(cause),
-      })
+      // errorMessage, not String(cause): Tauri IPC errors are plain
+      // `{ kind, message }` objects, which stringify to "[object Object]".
+      result.failed.push({ path: candidate.path, message: errorMessage(cause) })
     } finally {
       done += 1
       onProgress?.(done, candidates.length)

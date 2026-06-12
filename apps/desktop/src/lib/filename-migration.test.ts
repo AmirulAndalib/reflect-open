@@ -231,6 +231,9 @@ describe('migrateUlidNotes', () => {
       expect(result.moved).toBe(1)
       expect(result.failed).toHaveLength(1)
       expect(result.failed[0].path).toBe(`notes/${ULID_A}.md`)
+      // The thrown error is the plain `{ kind, message }` IPC shape — the
+      // recorded message must be its message, never "[object Object]".
+      expect(result.failed[0].message).toBe('missing')
       expect(files['notes/survivor.md']).toContain('# Survivor')
     } finally {
       errorSpy.mockRestore()
