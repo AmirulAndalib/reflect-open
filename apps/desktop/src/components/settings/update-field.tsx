@@ -30,6 +30,12 @@ export function UpdateField(): ReactElement {
         }
       case 'ready':
         return { label: 'Restart to update', icon: RotateCw, run: restart }
+      case 'error':
+        // Retry what actually failed: a failed install still has its found
+        // update (same contract as the sidebar row); a failed check re-checks.
+        return state.during === 'install'
+          ? { label: 'Retry install', icon: ArrowDownToLine, run: install }
+          : { label: 'Check for updates', icon: RefreshCw, run: checkNow }
       default:
         return { label: 'Check for updates', icon: RefreshCw, run: checkNow }
     }
