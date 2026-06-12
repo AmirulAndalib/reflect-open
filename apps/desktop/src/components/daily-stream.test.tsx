@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useEffect, useState, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useState, type ReactElement, type ReactNode } from 'react'
 import { setBridge } from '@reflect/core'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { todayIso } from '@/lib/dates'
@@ -55,6 +55,17 @@ Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
   },
 })
 
+// jsdom's scrollHeight is also always 0, which would clamp every
+// `scrollToIndex`/`scrollToOffset` command to `top: 0`. Give the stream a
+// scroll range taller than the day window so anchor commands keep their
+// real offsets.
+Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+  configurable: true,
+  get(this: HTMLElement) {
+    return this.dataset['testid'] === 'daily-stream' ? 10_000_000 : 0
+  },
+})
+
 setBridge({
   // Reads never resolve: every day stays a loading placeholder.
   invoke: () => new Promise(() => {}),
@@ -82,6 +93,18 @@ function SaveScrollProbe({ offset }: { offset: number }): ReactElement | null {
   useEffect(() => {
     saveScrollState(offset)
   }, [saveScrollState, offset])
+  return null
+}
+
+/**
+ * Runs `onLayout` in the layout phase of every commit it participates in.
+ * Mounted as a sibling *after* the stream, its layout effect runs once all of
+ * the stream's layout effects have — the end of the commit's layout phase.
+ */
+function LayoutPhaseProbe({ onLayout }: { onLayout: () => void }): null {
+  useLayoutEffect(() => {
+    onLayout()
+  }, [onLayout])
   return null
 }
 
@@ -117,6 +140,37 @@ describe('DailyStream', () => {
 
     expect(scrollToSpy.mock.calls.length).toBeGreaterThan(0)
     expect(scrollToSpy.mock.calls[0][0]).toMatchObject({ top: 4321 })
+    view.unmount()
+  })
+
+  it('issues the anchor scroll inside the mount commit’s layout phase', () => {
+    // Pins the layout-phase anchoring that fixes the entry flicker: rows
+    // measure during the mount commit itself (their refs fire before the
+    // virtualizer has attached the scroll element, so its above-viewport
+    // resize compensation is a silent no-op), which moves the target day's
+    // true start away from the estimate-derived `initialOffset` before first
+    // paint. An anchor deferred to a passive effect corrects the offset only
+    // after the mis-anchored frame has painted. By the end of the mount
+    // commit's layout phase, both the virtualizer's element-attach apply and
+    // the anchor's own command must therefore already be issued.
+    let commandsDuringLayout = -1
+    const today = todayIso()
+    const view = render(
+      <StreamProviders>
+        <DailyStream targetDate={today} />
+        <LayoutPhaseProbe
+          onLayout={() => {
+            if (commandsDuringLayout === -1) {
+              commandsDuringLayout = scrollToSpy.mock.calls.length
+            }
+          }}
+        />
+      </StreamProviders>,
+    )
+
+    const expected = indexOfDate(createDayWindow(today), today) * ESTIMATED_DAY_HEIGHT
+    expect(commandsDuringLayout).toBeGreaterThanOrEqual(2)
+    expect(scrollToSpy.mock.calls[commandsDuringLayout - 1][0]).toMatchObject({ top: expected })
     view.unmount()
   })
 

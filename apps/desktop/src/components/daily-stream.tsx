@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
 import { useVirtualizer, type VirtualItem, type Virtualizer } from '@tanstack/react-virtual'
 import { dailyPath } from '@reflect/core'
 import { NotePane } from '@/components/note-pane'
@@ -88,9 +88,9 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
     // The mount-time anchor. The virtualizer applies this to the scroll
     // element inside its own layout effect — before first paint — so the
     // stream never paints the top of the window and then visibly lurches
-    // down to the target day (the anchor effect below runs post-paint). A
-    // remount of an entry the user navigated back to restores its saved
-    // offset the same jump-free way.
+    // down to the target day, and it decides which rows the first render
+    // mounts at all. A remount of an entry the user navigated back to
+    // restores its saved offset the same jump-free way.
     initialOffset: () =>
       savedScroll() ?? indexOfDate(dayWindow, targetDateRef.current) * ESTIMATED_DAY_HEIGHT,
   })
@@ -111,11 +111,19 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
   // pressed while already on today — the router clears the entry's saved
   // offset for that case; `entryId` covers back/forward between entries whose
   // routes resolve to the same day). A back/forward-restored entry carries its
-  // offset; a fresh navigation anchors to the target day. On mount this lands
-  // where `initialOffset` already put the viewport — but `scrollToIndex` also
-  // installs the virtualizer's index-pinning reconcile, which keeps the target
-  // day at the viewport top while the surrounding rows measure in.
-  useEffect(() => {
+  // offset; a fresh navigation anchors to the target day.
+  //
+  // A layout effect, not a passive one: rows measure during the mount commit
+  // itself — their `measureElement` refs fire before the virtualizer's own
+  // layout effect has attached the scroll element, so its above-viewport
+  // resize compensation is a silent no-op — and that moves the target day's
+  // true start away from the estimate-derived `initialOffset` before first
+  // paint. A post-paint anchor let that mis-anchored frame become visible: a
+  // one-frame flicker on every entry into the stream. Anchoring in the layout
+  // phase installs `scrollToIndex`'s index-pinning reconcile (rAF, still
+  // pre-paint), which pins the target day to the viewport top before the
+  // frame is shown and holds it there while the surrounding rows measure in.
+  useLayoutEffect(() => {
     const restored = savedScroll()
     if (restored !== null) {
       // A restored arrival also cancels any focus still pending from a prior
