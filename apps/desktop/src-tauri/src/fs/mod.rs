@@ -18,7 +18,7 @@ use tauri::State;
 
 use crate::error::{AppError, AppResult};
 
-use self::io::{atomic_write, atomic_write_bytes, bootstrap, collect_markdown, NOTE_DIRS};
+use self::io::{atomic_write, atomic_write_bytes, bootstrap, collect_files, NOTE_DIRS};
 use self::resolve::resolve;
 
 pub(crate) use self::io::modified_ms;
@@ -215,6 +215,28 @@ pub fn asset_write(
     atomic_write_bytes(&resolve(&root, &path)?, &bytes)
 }
 
+/// Read a binary asset's bytes, base64-encoded for the JSON IPC (e.g. audio
+/// memos read back for transcription).
+#[tauri::command]
+pub fn asset_read(path: String, state: State<GraphState>) -> AppResult<String> {
+    use base64::Engine;
+    let root = current_root(&state)?;
+    let bytes = fs::read(resolve(&root, &path)?)?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+/// List every file (any extension) under a graph-relative directory, e.g.
+/// `audio-memos`. Which directory means what is the TypeScript layer's policy;
+/// a missing directory lists as empty.
+#[tauri::command]
+pub fn dir_list(dir: String, state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
+    let root = current_root(&state)?;
+    resolve(&root, &dir)?; // traversal guard; the walk itself skips symlinks
+    let mut out = Vec::new();
+    collect_files(&root, &dir, None, &mut out)?;
+    Ok(out)
+}
+
 /// Move/rename a note within the graph (pinned to `generation`).
 #[tauri::command]
 pub fn note_move(
@@ -247,7 +269,7 @@ pub fn list_files(state: State<GraphState>) -> AppResult<Vec<FileMeta>> {
     let root = current_root(&state)?;
     let mut out = Vec::new();
     for dir in NOTE_DIRS {
-        collect_markdown(&root, dir, &mut out)?;
+        collect_files(&root, dir, Some("md"), &mut out)?;
     }
     Ok(out)
 }

@@ -1,120 +1,339 @@
-import { errorMessage, isAppError } from '../errors'
+import { errorMessage, isAppError, toAppError, type AppError } from '../errors'
 import { pickTranscriptionConfig, type AiModelsState } from '../ai/models'
 import { aiKeySecretName } from '../ai/secrets'
-import { transcribeAudio } from '../ai/transcribe'
-import { readNote, writeNote } from '../graph/commands'
-import { dailyPath } from '../graph/paths'
+import {
+  AUDIO_EXTENSION_BY_MIME,
+  base64ToBytes,
+  baseMimeType,
+  bytesToBase64,
+  transcribeAudio,
+} from '../ai/transcribe'
+import { listDir, listFiles, readAsset, readNote, writeAsset, writeNote } from '../graph/commands'
+import { AUDIO_MEMOS_DIR, audioMemoPath, dailyPath, notePath } from '../graph/paths'
 import { appendBlock } from '../markdown/edit'
 import { getSecret } from '../secrets/keychain'
 
 /**
  * Capture actions for audio memos (the first of the `actions/` capture
- * family — Plan 11's link capture will sit alongside). The whole flow lives
- * here, not in the UI: record (host) → transcribe (BYOK provider) → append
- * to today's daily note.
+ * family — Plan 11's link capture will sit alongside). The pipeline is
+ * raw-first, like the capture-inbox spool (see
+ * `docs/spikes/link-capture-bridge.md`): the recording itself is the durable
+ * artifact, transcription is async enrichment that can fail and retry freely.
  *
- * Privacy: only the freshly captured audio is sent to the provider — never
- * any note content — and the transcript is written locally, so recording is
- * allowed even when today's note is `private: true`.
+ * 1. **Capture** ({@link captureAudioMemo}): the recording is written to
+ *    `audio-memos/audio-memo-<date>-<time>.<ext>` — local, instant, no
+ *    network. The sync engine commits it like any other change.
+ * 2. **Reconcile** ({@link reconcileAudioMemos}): a memo's transcription is a
+ *    note with the **same basename** (`notes/<base>.md`). Any memo without
+ *    one is transcribed (BYOK provider), backlinked from its day's daily
+ *    note, and the transcription note written — in that order, so the note's
+ *    existence marks the memo fully done. A failed pass (offline, bad key)
+ *    leaves the memo pending; the next trigger retries. Nothing is ever lost
+ *    to a network error.
+ *
+ * Deleting a transcription note does **not** resurrect it: the daily-note
+ * backlink doubles as the tombstone (a memo is only pending while *neither*
+ * its note nor its backlink exists). Deleting both regenerates the
+ * transcription on the next pass — the documented way to redo one.
+ *
+ * Privacy: only the captured audio is sent to the provider — never any note
+ * content — and all transcription output is written locally, so recording is
+ * allowed even when the daily note is `private: true`.
  */
+
+/** Everything derivable from a memo's shared basename. */
+export interface AudioMemoIdentity {
+  /** The shared basename, e.g. `audio-memo-2026-06-11-153022-845`. */
+  base: string
+  /** Local ISO day it was recorded — the daily note that backlinks it. */
+  date: string
+  /** The transcription note's title (its H1, the wikilink target). */
+  title: string
+  /** Short display alias for the daily-note link, e.g. `Audio memo 15:30`. */
+  alias: string
+  /** Graph-relative path of the recording under `audio-memos/`. */
+  audioPath: string
+  /** Graph-relative path of the transcription note, `notes/<base>.md`. */
+  notePath: string
+  /** The recording's MIME type, as stored (derived from the extension). */
+  mimeType: string
+}
+
+/** `audio/mp4` ← `m4a` etc. — the inverse of the storage-naming map. */
+const MIME_BY_EXTENSION: Record<string, string> = Object.fromEntries(
+  Object.entries(AUDIO_EXTENSION_BY_MIME).map(([mime, extension]) => [extension, mime]),
+)
 
 /**
- * The step to (re-)run. A failure hands back the payload for the step that
- * failed, so a retry after a successful transcription re-runs the append
- * only — transcription is never paid for twice.
+ * `audio-memos/(audio-memo-<date>-<hhmmss>-<ms>).<ext>`. Milliseconds make
+ * back-to-back recordings collision-free; the title drops them.
  */
-export type AudioMemoResume =
-  | { kind: 'transcribe'; audio: Blob; mimeType: string }
-  | { kind: 'append'; text: string }
+const MEMO_PATH_RE =
+  /^audio-memos\/(audio-memo-(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})(\d{2})-\d{3})\.([a-z0-9]+)$/
+
+function pad(value: number, width: number): string {
+  return String(value).padStart(width, '0')
+}
+
+function buildIdentity(
+  base: string,
+  date: string,
+  hours: string,
+  minutes: string,
+  seconds: string,
+  extension: string,
+): AudioMemoIdentity {
+  return {
+    base,
+    date,
+    title: `Audio memo ${date} ${hours}:${minutes}:${seconds}`,
+    alias: `Audio memo ${hours}:${minutes}`,
+    audioPath: audioMemoPath(`${base}.${extension}`),
+    notePath: notePath(base),
+    mimeType: MIME_BY_EXTENSION[extension] ?? 'audio/mp4',
+  }
+}
+
+/** The identity a fresh recording will be stored under (local time). */
+export function audioMemoIdentity(recordedAt: Date, mimeType: string): AudioMemoIdentity {
+  const date = `${recordedAt.getFullYear()}-${pad(recordedAt.getMonth() + 1, 2)}-${pad(recordedAt.getDate(), 2)}`
+  const hours = pad(recordedAt.getHours(), 2)
+  const minutes = pad(recordedAt.getMinutes(), 2)
+  const seconds = pad(recordedAt.getSeconds(), 2)
+  const base = `audio-memo-${date}-${hours}${minutes}${seconds}-${pad(recordedAt.getMilliseconds(), 3)}`
+  const extension = AUDIO_EXTENSION_BY_MIME[baseMimeType(mimeType)] ?? 'm4a'
+  return buildIdentity(base, date, hours, minutes, seconds, extension)
+}
 
 /**
- * Every expected failure is data, not a throw: `resume` is what a retry
- * should re-run, or `null` when retrying cannot help (an empty transcript).
+ * Recover a memo's identity from its recording path, or `null` for anything
+ * that isn't a well-formed memo recording (a stray file dropped into
+ * `audio-memos/` is never touched — reconciliation must not transcribe
+ * arbitrary user files).
  */
-export type SaveAudioMemoOutcome =
-  | { ok: true; text: string }
-  | { ok: false; message: string; resume: AudioMemoResume | null }
+export function audioMemoFromPath(path: string): AudioMemoIdentity | null {
+  const match = MEMO_PATH_RE.exec(path)
+  if (match === null) {
+    return null
+  }
+  const [, base, date, hours, minutes, seconds, extension] = match
+  if (Number(hours) > 23 || Number(minutes) > 59 || Number(seconds) > 59) {
+    return null
+  }
+  try {
+    dailyPath(date) // calendar-validates the date the same way the backlink will
+  } catch {
+    return null
+  }
+  return buildIdentity(base, date, hours, minutes, seconds, extension)
+}
 
-export interface SaveAudioMemoInput {
-  /** A fresh recording, or the resume payload from a prior failure. */
-  payload: AudioMemoResume
+export interface CaptureAudioMemoInput {
+  /** The recording, as the recorder produced it. */
+  audio: Blob
+  /** The recording's MIME type, possibly with codec parameters. */
+  mimeType: string
+  /** When the recording stopped — names the asset and picks the daily note. */
+  recordedAt: Date
+  /** `GraphInfo.generation` — pins the write to the issuing graph. */
+  generation: number
+}
+
+/** Expected failures are data: the caller retries with the same recording. */
+export type CaptureAudioMemoOutcome =
+  | { ok: true; memo: AudioMemoIdentity }
+  | { ok: false; message: string }
+
+/**
+ * Persist one recording into the graph — the durable step, no network. The
+ * transcription happens later, in {@link reconcileAudioMemos}.
+ */
+export async function captureAudioMemo(
+  input: CaptureAudioMemoInput,
+): Promise<CaptureAudioMemoOutcome> {
+  const memo = audioMemoIdentity(input.recordedAt, input.mimeType)
+  try {
+    const encoded = bytesToBase64(new Uint8Array(await input.audio.arrayBuffer()))
+    await writeAsset(memo.audioPath, encoded, input.generation)
+  } catch (cause) {
+    return { ok: false, message: errorMessage(cause) }
+  }
+  return { ok: true, memo }
+}
+
+/** The daily note's source, where "no note yet" reads as empty. */
+async function dailyNoteSource(date: string): Promise<string> {
+  try {
+    return await readNote(dailyPath(date))
+  } catch (cause) {
+    if (isAppError(cause) && cause.kind === 'notFound') {
+      return ''
+    }
+    throw cause
+  }
+}
+
+/** Matches the plain and aliased form of the memo's backlink. */
+function hasBacklink(source: string, memo: AudioMemoIdentity): boolean {
+  return source.includes(`[[${memo.title}`)
+}
+
+/**
+ * Memos awaiting transcription, oldest first: a recording under
+ * `audio-memos/` with no same-named transcription note and no daily-note
+ * backlink (the backlink is the tombstone — see the module doc).
+ */
+export async function listPendingAudioMemos(): Promise<AudioMemoIdentity[]> {
+  const [recordings, notes] = await Promise.all([listDir(AUDIO_MEMOS_DIR), listFiles()])
+  const existingNotes = new Set(notes.map((file) => file.path))
+  const candidates = recordings
+    .map((file) => audioMemoFromPath(file.path))
+    .filter((memo): memo is AudioMemoIdentity => memo !== null)
+    .filter((memo) => !existingNotes.has(memo.notePath))
+    .sort((first, second) => first.base.localeCompare(second.base))
+  const pending: AudioMemoIdentity[] = []
+  for (const memo of candidates) {
+    if (!hasBacklink(await dailyNoteSource(memo.date), memo)) {
+      pending.push(memo)
+    }
+  }
+  return pending
+}
+
+function transcriptionNote(memo: AudioMemoIdentity, text: string): string {
+  const body = text === '' ? 'No speech detected.' : text
+  return `# ${memo.title}\n\n[Recording](${memo.audioPath})\n\n${body}\n`
+}
+
+/** Append the memo's wikilink to its day's daily note, once. */
+async function ensureDailyBacklink(memo: AudioMemoIdentity, generation: number): Promise<void> {
+  const source = await dailyNoteSource(memo.date)
+  if (hasBacklink(source, memo)) {
+    return
+  }
+  const link = `[[${memo.title}|${memo.alias}]]`
+  await writeNote(dailyPath(memo.date), appendBlock(source, link), generation)
+}
+
+/**
+ * Why a reconcile pass ended with memos still pending. `config` = no capable
+ * provider/key (self-heals when settings change); `stale` = the caller's
+ * abort gate fired; anything else is the failing step's error kind
+ * (`network` while offline is the expected, silent case).
+ */
+export interface ReconcileStop {
+  reason: 'config' | 'stale' | AppError['kind']
+  message: string
+}
+
+export interface ReconcileAudioMemosInput {
   /** The configured-models state — decides the provider and keychain entry. */
   models: AiModelsState
-  /** The target day (local ISO date) — resolved at save time, not record time. */
-  date: string
-  /** `GraphInfo.generation` — pins the write to the issuing graph. */
+  /** `GraphInfo.generation` — pins every write to the issuing graph. */
   generation: number
   /** Host transport for the provider call (the Tauri HTTP plugin's fetch). */
   fetchFn?: typeof fetch
+  /** Abort gate, checked between memos (graph switch / unmount). */
+  isStale?: () => boolean
+  /** Observes how many memos need transcription, before work starts. */
+  onPending?: (count: number) => void
 }
 
-/** Transcribe + append one audio memo, reporting failures as resumable data. */
-export async function saveAudioMemo(input: SaveAudioMemoInput): Promise<SaveAudioMemoOutcome> {
-  let step = input.payload
-  if (step.kind === 'transcribe') {
-    const transcribed = await transcribeStep(step, input.models, input.fetchFn)
-    if (!transcribed.ok) {
-      return transcribed
-    }
-    step = { kind: 'append', text: transcribed.text }
-  }
+export interface ReconcileAudioMemosOutcome {
+  /** Memos that had no transcription when the pass started. */
+  pending: number
+  /** Memos this pass transcribed and backlinked. */
+  transcribed: number
+  /** Why memos remain pending, or `null` when the pass drained. */
+  stopped: ReconcileStop | null
+}
+
+/**
+ * Transcribe every pending memo: read the recording back, transcribe, append
+ * the daily-note backlink, then write the transcription note. The note is
+ * written **last** so its existence marks the memo fully done; the backlink
+ * append is idempotent, so a crash between the two writes costs at most one
+ * re-transcription. The first failure stops the pass — one memo's network or
+ * auth error means the rest would fail the same way. Never throws.
+ */
+export async function reconcileAudioMemos(
+  input: ReconcileAudioMemosInput,
+): Promise<ReconcileAudioMemosOutcome> {
+  let pending: AudioMemoIdentity[]
   try {
-    await appendToDailyNote({ date: input.date, text: step.text, generation: input.generation })
+    pending = await listPendingAudioMemos()
   } catch (cause) {
-    return { ok: false, message: errorMessage(cause), resume: step }
+    return {
+      pending: 0,
+      transcribed: 0,
+      stopped: { reason: toAppError(cause).kind, message: errorMessage(cause) },
+    }
   }
-  return { ok: true, text: step.text }
-}
+  input.onPending?.(pending.length)
+  if (pending.length === 0) {
+    return { pending: 0, transcribed: 0, stopped: null }
+  }
 
-type TranscribeStepOutcome =
-  | { ok: true; text: string }
-  | { ok: false; message: string; resume: AudioMemoResume | null }
-
-async function transcribeStep(
-  payload: AudioMemoResume & { kind: 'transcribe' },
-  models: AiModelsState,
-  fetchFn: typeof fetch | undefined,
-): Promise<TranscribeStepOutcome> {
-  // Re-picked on every run (not once at record time): a retry after the user
-  // fixes their model configuration should see the fix.
-  const config = pickTranscriptionConfig(models)
+  // Re-picked on every pass (not once at record time): a pass after the user
+  // fixes their model configuration must see the fix.
+  const config = pickTranscriptionConfig(input.models)
   if (config === null) {
-    return { ok: false, message: 'No OpenAI or Gemini model is configured.', resume: payload }
+    return {
+      pending: pending.length,
+      transcribed: 0,
+      stopped: { reason: 'config', message: 'No OpenAI or Gemini model is configured.' },
+    }
   }
-  const apiKey = await getSecret(aiKeySecretName(config.id))
+  const apiKey = await getSecret(aiKeySecretName(config.id)).catch(() => null)
   if (apiKey === null) {
     return {
-      ok: false,
-      message: `The API key for the configured ${config.provider} model is missing from the keychain.`,
-      resume: payload,
+      pending: pending.length,
+      transcribed: 0,
+      stopped: {
+        reason: 'config',
+        message: `The API key for the configured ${config.provider} model is missing from the keychain.`,
+      },
     }
   }
-  let text: string
-  try {
-    text = await transcribeAudio({
-      provider: config.provider,
-      apiKey,
-      audio: payload.audio,
-      mimeType: payload.mimeType,
-      fetchFn,
-    })
-  } catch (cause) {
-    return { ok: false, message: errorMessage(cause), resume: payload }
-  }
-  if (text === '') {
-    return {
-      ok: false,
-      message: 'The recording came back empty — nothing to append.',
-      resume: null,
+
+  let transcribed = 0
+  for (const memo of pending) {
+    if (input.isStale?.() === true) {
+      return {
+        pending: pending.length,
+        transcribed,
+        stopped: { reason: 'stale', message: 'the graph session ended mid-pass' },
+      }
+    }
+    try {
+      const audio = new Blob([base64ToBytes(await readAsset(memo.audioPath))], {
+        type: memo.mimeType,
+      })
+      const text = await transcribeAudio({
+        provider: config.provider,
+        apiKey,
+        audio,
+        mimeType: memo.mimeType,
+        fetchFn: input.fetchFn,
+      })
+      await ensureDailyBacklink(memo, input.generation)
+      await writeNote(memo.notePath, transcriptionNote(memo, text), input.generation)
+      transcribed += 1
+    } catch (cause) {
+      return {
+        pending: pending.length,
+        transcribed,
+        stopped: { reason: toAppError(cause).kind, message: errorMessage(cause) },
+      }
     }
   }
-  return { ok: true, text }
+  return { pending: pending.length, transcribed, stopped: null }
 }
 
 export interface AppendToDailyNoteInput {
   /** The target day, as a local ISO date (`YYYY-MM-DD`). */
   date: string
-  /** The block to append (an audio-memo transcript). */
+  /** The block to append. */
   text: string
   /** `GraphInfo.generation` — pins the write to the issuing graph. */
   generation: number

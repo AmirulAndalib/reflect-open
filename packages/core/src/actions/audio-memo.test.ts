@@ -1,12 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AiModelsState } from '../ai/models'
-import { appendToDailyNote, saveAudioMemo, type AudioMemoResume } from './audio-memo'
-import { readNote, writeNote } from '../graph/commands'
+import {
+  appendToDailyNote,
+  audioMemoFromPath,
+  audioMemoIdentity,
+  captureAudioMemo,
+  reconcileAudioMemos,
+  type ReconcileAudioMemosInput,
+} from './audio-memo'
+import {
+  listDir,
+  listFiles,
+  readAsset,
+  readNote,
+  writeAsset,
+  writeNote,
+} from '../graph/commands'
 import { transcribeAudio } from '../ai/transcribe'
 import { getSecret } from '../secrets/keychain'
 
 vi.mock('../graph/commands', () => ({
+  listDir: vi.fn(),
+  listFiles: vi.fn(),
+  readAsset: vi.fn(),
   readNote: vi.fn(),
+  writeAsset: vi.fn(),
   writeNote: vi.fn(),
 }))
 vi.mock('../ai/transcribe', async (importOriginal) => ({
@@ -17,7 +35,11 @@ vi.mock('../secrets/keychain', () => ({
   getSecret: vi.fn(),
 }))
 
+const listDirMock = vi.mocked(listDir)
+const listFilesMock = vi.mocked(listFiles)
+const readAssetMock = vi.mocked(readAsset)
 const readNoteMock = vi.mocked(readNote)
+const writeAssetMock = vi.mocked(writeAsset)
 const writeNoteMock = vi.mocked(writeNote)
 const transcribeMock = vi.mocked(transcribeAudio)
 const getSecretMock = vi.mocked(getSecret)
@@ -27,101 +49,265 @@ const MODELS: AiModelsState = {
   defaultModelId: 'cfg-openai',
 }
 
-const RECORDING: AudioMemoResume & { kind: 'transcribe' } = {
-  kind: 'transcribe',
-  audio: new Blob(['audio'], { type: 'audio/mp4' }),
-  mimeType: 'audio/mp4',
+/** 2026-06-11 15:30:22.845 local — every derived name is asserted from it. */
+const RECORDED_AT = new Date(2026, 5, 11, 15, 30, 22, 845)
+const MEMO = audioMemoIdentity(RECORDED_AT, 'audio/webm;codecs=opus')
+
+function fileMeta(path: string): { path: string; size: number; modifiedMs: number } {
+  return { path, size: 1, modifiedMs: 0 }
 }
 
-function save(payload: AudioMemoResume, models: AiModelsState = MODELS) {
-  return saveAudioMemo({ payload, models, date: '2026-06-11', generation: 3 })
+function reconcile(overrides: Partial<ReconcileAudioMemosInput> = {}) {
+  return reconcileAudioMemos({ models: MODELS, generation: 3, ...overrides })
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  listDirMock.mockResolvedValue([])
+  listFilesMock.mockResolvedValue([])
+  readAssetMock.mockResolvedValue(btoa('audio-bytes'))
   readNoteMock.mockResolvedValue('morning thoughts\n')
+  writeAssetMock.mockResolvedValue(undefined)
   writeNoteMock.mockResolvedValue(undefined)
   getSecretMock.mockResolvedValue('sk-live-key')
   transcribeMock.mockResolvedValue('memo transcript')
 })
 
-describe('saveAudioMemo', () => {
-  it('transcribes with the picked entry’s key and appends to the day’s note', async () => {
-    const outcome = await save(RECORDING)
-
-    expect(outcome).toEqual({ ok: true, text: 'memo transcript' })
-    expect(getSecretMock).toHaveBeenCalledWith('ai-api-key:cfg-openai')
-    expect(transcribeMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider: 'openai',
-        apiKey: 'sk-live-key',
-        audio: RECORDING.audio,
-        mimeType: 'audio/mp4',
-      }),
-    )
-    expect(writeNoteMock).toHaveBeenCalledWith(
-      'daily/2026-06-11.md',
-      'morning thoughts\n\nmemo transcript\n',
-      3,
-    )
+describe('audioMemoIdentity', () => {
+  it('derives every name from the recording moment, in local time', () => {
+    expect(MEMO).toEqual({
+      base: 'audio-memo-2026-06-11-153022-845',
+      date: '2026-06-11',
+      title: 'Audio memo 2026-06-11 15:30:22',
+      alias: 'Audio memo 15:30',
+      audioPath: 'audio-memos/audio-memo-2026-06-11-153022-845.webm',
+      notePath: 'notes/audio-memo-2026-06-11-153022-845.md',
+      mimeType: 'audio/webm',
+    })
   })
 
-  it('an append payload skips transcription entirely', async () => {
-    const outcome = await save({ kind: 'append', text: 'already transcribed' })
+  it('stores an audio-only MP4 as .m4a — whisper sniffs by extension', () => {
+    const memo = audioMemoIdentity(RECORDED_AT, 'audio/mp4')
+    expect(memo.audioPath).toBe('audio-memos/audio-memo-2026-06-11-153022-845.m4a')
+    expect(memo.mimeType).toBe('audio/mp4')
+  })
+})
 
-    expect(outcome).toEqual({ ok: true, text: 'already transcribed' })
+describe('audioMemoFromPath', () => {
+  it('round-trips the identity from the recording path', () => {
+    expect(audioMemoFromPath(MEMO.audioPath)).toEqual(MEMO)
+  })
+
+  it('rejects everything that is not a well-formed memo recording', () => {
+    expect(audioMemoFromPath('audio-memos/voice-note.mp3')).toBeNull()
+    expect(audioMemoFromPath('audio-memos/audio-memo-2026-13-40-153022-845.webm')).toBeNull()
+    expect(audioMemoFromPath('audio-memos/audio-memo-2026-06-11-993022-845.webm')).toBeNull()
+    expect(audioMemoFromPath('assets/audio-memo-2026-06-11-153022-845.webm')).toBeNull()
+    expect(audioMemoFromPath('notes/audio-memo-2026-06-11-153022-845.md')).toBeNull()
+  })
+})
+
+describe('captureAudioMemo', () => {
+  it('writes the recording base64-encoded under audio-memos/, pinned to the generation', async () => {
+    const outcome = await captureAudioMemo({
+      audio: new Blob(['audio'], { type: 'audio/webm' }),
+      mimeType: 'audio/webm;codecs=opus',
+      recordedAt: RECORDED_AT,
+      generation: 3,
+    })
+
+    expect(outcome).toEqual({ ok: true, memo: MEMO })
+    expect(writeAssetMock).toHaveBeenCalledWith(MEMO.audioPath, btoa('audio'), 3)
+  })
+
+  it('reports a write failure as data — the caller retries with the same recording', async () => {
+    writeAssetMock.mockRejectedValue({ kind: 'io', message: 'disk full' })
+
+    const outcome = await captureAudioMemo({
+      audio: new Blob(['audio'], { type: 'audio/webm' }),
+      mimeType: 'audio/webm',
+      recordedAt: RECORDED_AT,
+      generation: 3,
+    })
+
+    expect(outcome).toEqual({ ok: false, message: 'disk full' })
+  })
+})
+
+describe('reconcileAudioMemos', () => {
+  it('does nothing when every memo already has its transcription note', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    listFilesMock.mockResolvedValue([fileMeta(MEMO.notePath)])
+
+    const onPending = vi.fn()
+    const outcome = await reconcile({ onPending })
+
+    expect(outcome).toEqual({ pending: 0, transcribed: 0, stopped: null })
+    expect(onPending).toHaveBeenCalledWith(0)
     expect(transcribeMock).not.toHaveBeenCalled()
     expect(getSecretMock).not.toHaveBeenCalled()
   })
 
-  it('reports a missing provider as resumable — a retry sees fixed settings', async () => {
-    const outcome = await save(RECORDING, { models: [], defaultModelId: null })
+  it('ignores stray files in audio-memos/ that are not memo recordings', async () => {
+    listDirMock.mockResolvedValue([fileMeta('audio-memos/voice-note.mp3')])
 
-    expect(outcome).toEqual({
-      ok: false,
-      message: 'No OpenAI or Gemini model is configured.',
-      resume: RECORDING,
-    })
+    const outcome = await reconcile()
+
+    expect(outcome).toEqual({ pending: 0, transcribed: 0, stopped: null })
+    expect(transcribeMock).not.toHaveBeenCalled()
+  })
+
+  it('transcribes a pending memo, backlinks the daily note, then writes the note', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+
+    const outcome = await reconcile()
+
+    expect(outcome).toEqual({ pending: 1, transcribed: 1, stopped: null })
+    expect(getSecretMock).toHaveBeenCalledWith('ai-api-key:cfg-openai')
+    expect(readAssetMock).toHaveBeenCalledWith(MEMO.audioPath)
+    expect(transcribeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'openai',
+        apiKey: 'sk-live-key',
+        mimeType: 'audio/webm',
+      }),
+    )
+    const sent = transcribeMock.mock.calls[0]?.[0].audio
+    expect(new TextDecoder().decode(await sent?.arrayBuffer())).toBe('audio-bytes')
+    // The backlink lands first; the transcription note is the done marker.
+    expect(writeNoteMock.mock.calls).toEqual([
+      [
+        'daily/2026-06-11.md',
+        'morning thoughts\n\n[[Audio memo 2026-06-11 15:30:22|Audio memo 15:30]]\n',
+        3,
+      ],
+      [
+        MEMO.notePath,
+        '# Audio memo 2026-06-11 15:30:22\n\n[Recording](audio-memos/audio-memo-2026-06-11-153022-845.webm)\n\nmemo transcript\n',
+        3,
+      ],
+    ])
+  })
+
+  it('creates the daily note when the day has none yet', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    readNoteMock.mockRejectedValue({ kind: 'notFound', message: 'no such note' })
+
+    await reconcile()
+
+    expect(writeNoteMock).toHaveBeenCalledWith(
+      'daily/2026-06-11.md',
+      '[[Audio memo 2026-06-11 15:30:22|Audio memo 15:30]]\n',
+      3,
+    )
+  })
+
+  it('a daily-note backlink without the note is a tombstone — deletion stays deleted', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    readNoteMock.mockResolvedValue(
+      'notes\n\n[[Audio memo 2026-06-11 15:30:22|Audio memo 15:30]]\n',
+    )
+
+    const onPending = vi.fn()
+    const outcome = await reconcile({ onPending })
+
+    expect(outcome).toEqual({ pending: 0, transcribed: 0, stopped: null })
+    expect(onPending).toHaveBeenCalledWith(0)
+    expect(transcribeMock).not.toHaveBeenCalled()
     expect(writeNoteMock).not.toHaveBeenCalled()
   })
 
-  it('reports a missing keychain entry as resumable', async () => {
-    getSecretMock.mockResolvedValue(null)
-
-    const outcome = await save(RECORDING)
-
-    expect(outcome).toMatchObject({ ok: false, resume: RECORDING })
-    expect(outcome.ok === false && outcome.message).toMatch(/keychain/)
-  })
-
-  it('a transcription failure resumes at the transcribe step', async () => {
-    transcribeMock.mockRejectedValue({ kind: 'network', message: 'provider down' })
-
-    const outcome = await save(RECORDING)
-
-    expect(outcome).toEqual({ ok: false, message: 'provider down', resume: RECORDING })
-  })
-
-  it('an empty transcript is not resumable — retrying silence cannot help', async () => {
+  it('an empty transcript writes a placeholder note — silence must not retry forever', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
     transcribeMock.mockResolvedValue('')
 
-    const outcome = await save(RECORDING)
+    const outcome = await reconcile()
 
-    expect(outcome).toMatchObject({ ok: false, resume: null })
+    expect(outcome).toEqual({ pending: 1, transcribed: 1, stopped: null })
+    expect(writeNoteMock).toHaveBeenCalledWith(
+      MEMO.notePath,
+      expect.stringContaining('No speech detected.'),
+      3,
+    )
+  })
+
+  it('transcribes oldest first, regardless of listing order', async () => {
+    const earlier = audioMemoIdentity(new Date(2026, 5, 10, 9, 0, 0, 0), 'audio/mp4')
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath), fileMeta(earlier.audioPath)])
+
+    await reconcile()
+
+    expect(readAssetMock.mock.calls.map(([path]) => path)).toEqual([
+      earlier.audioPath,
+      MEMO.audioPath,
+    ])
+  })
+
+  it('stops the pass on the first failure — the rest would fail the same way', async () => {
+    const earlier = audioMemoIdentity(new Date(2026, 5, 10, 9, 0, 0, 0), 'audio/mp4')
+    listDirMock.mockResolvedValue([fileMeta(earlier.audioPath), fileMeta(MEMO.audioPath)])
+    transcribeMock.mockRejectedValue({ kind: 'network', message: 'provider down' })
+
+    const outcome = await reconcile()
+
+    expect(outcome).toEqual({
+      pending: 2,
+      transcribed: 0,
+      stopped: { reason: 'network', message: 'provider down' },
+    })
+    expect(transcribeMock).toHaveBeenCalledTimes(1)
     expect(writeNoteMock).not.toHaveBeenCalled()
   })
 
-  it('an append failure resumes with the transcript — transcription is never paid twice', async () => {
-    writeNoteMock.mockRejectedValue({ kind: 'io', message: 'disk full' })
+  it('reports a missing provider as config — the pass retries after settings change', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
 
-    const outcome = await save(RECORDING)
+    const outcome = await reconcile({ models: { models: [], defaultModelId: null } })
 
-    expect(outcome).toEqual({
-      ok: false,
-      message: 'disk full',
-      resume: { kind: 'append', text: 'memo transcript' },
+    expect(outcome).toMatchObject({
+      pending: 1,
+      transcribed: 0,
+      stopped: { reason: 'config' },
+    })
+    expect(getSecretMock).not.toHaveBeenCalled()
+  })
+
+  it('reports a missing keychain entry as config', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    getSecretMock.mockResolvedValue(null)
+
+    const outcome = await reconcile()
+
+    expect(outcome).toMatchObject({ pending: 1, stopped: { reason: 'config' } })
+    expect(outcome.stopped?.message).toMatch(/keychain/)
+    expect(transcribeMock).not.toHaveBeenCalled()
+  })
+
+  it('the abort gate stops between memos', async () => {
+    const earlier = audioMemoIdentity(new Date(2026, 5, 10, 9, 0, 0, 0), 'audio/mp4')
+    listDirMock.mockResolvedValue([fileMeta(earlier.audioPath), fileMeta(MEMO.audioPath)])
+    const isStale = vi.fn().mockReturnValueOnce(false).mockReturnValue(true)
+
+    const outcome = await reconcile({ isStale })
+
+    expect(outcome).toMatchObject({
+      pending: 2,
+      transcribed: 1,
+      stopped: { reason: 'stale' },
     })
     expect(transcribeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('a listing failure is reported, never thrown — reconcile runs unattended', async () => {
+    listDirMock.mockRejectedValue({ kind: 'noGraph', message: 'no graph open' })
+
+    const outcome = await reconcile()
+
+    expect(outcome).toEqual({
+      pending: 0,
+      transcribed: 0,
+      stopped: { reason: 'noGraph', message: 'no graph open' },
+    })
   })
 })
 

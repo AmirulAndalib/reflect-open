@@ -48,6 +48,22 @@ export async function writeAsset(
   await call('asset_write', { path, contentsBase64, generation }, voidSchema)
 }
 
+/**
+ * Read a binary asset's bytes by graph-relative path, base64-encoded (the IPC
+ * is JSON). E.g. an audio memo read back for transcription.
+ */
+export async function readAsset(path: string): Promise<string> {
+  return call('asset_read', { path }, z.string())
+}
+
+/**
+ * List every file (any extension) under a graph-relative directory, e.g.
+ * `audio-memos`. A missing directory lists as empty.
+ */
+export async function listDir(dir: string): Promise<FileMeta[]> {
+  return call('dir_list', { dir }, z.array(fileMetaSchema))
+}
+
 /** Move/rename a note within the graph (pinned to `generation`). */
 export async function moveNote(from: string, to: string, generation: number): Promise<void> {
   await call('note_move', { from, to, generation }, voidSchema)

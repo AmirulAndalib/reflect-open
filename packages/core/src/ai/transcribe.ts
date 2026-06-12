@@ -56,11 +56,16 @@ export async function transcribeAudio(request: TranscriptionRequest): Promise<st
 }
 
 /** `audio/webm;codecs=opus` → `audio/webm` — parameters confuse provider sniffing. */
-function baseMimeType(mimeType: string): string {
+export function baseMimeType(mimeType: string): string {
   return (mimeType.split(';')[0] ?? mimeType).trim().toLowerCase()
 }
 
-const EXTENSION_BY_MIME: Record<string, string> = {
+/**
+ * File extension per audio MIME type — shared by the provider upload filename
+ * and the on-disk naming of saved memos (`actions/audio-memo`), which must
+ * agree so a stored recording round-trips back into transcription.
+ */
+export const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
   // An audio-only MP4 *is* an M4A — and whisper-1 sniffs by extension, so a
   // WKWebView recording named `.mp4` is rejected while `.m4a` is accepted.
   'audio/mp4': 'm4a',
@@ -71,7 +76,7 @@ const EXTENSION_BY_MIME: Record<string, string> = {
 }
 
 function uploadFilename(mimeType: string): string {
-  return `memo.${EXTENSION_BY_MIME[baseMimeType(mimeType)] ?? 'm4a'}`
+  return `memo.${AUDIO_EXTENSION_BY_MIME[baseMimeType(mimeType)] ?? 'm4a'}`
 }
 
 /** The provider's own error message when the body carries one, else the raw body. */
@@ -194,6 +199,16 @@ export function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + CHUNK_SIZE))
   }
   return btoa(binary)
+}
+
+/** Decode {@link bytesToBase64}'s output (a stored recording read back). */
+export function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return bytes
 }
 
 const GEMINI_INSTRUCTION =

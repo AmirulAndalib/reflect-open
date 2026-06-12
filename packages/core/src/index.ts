@@ -52,9 +52,11 @@ export {
   DAILY_DIR,
   NOTES_DIR,
   ASSETS_DIR,
+  AUDIO_MEMOS_DIR,
   dailyPath,
   notePath,
   assetPath,
+  audioMemoPath,
   isDaily,
   dateFromDailyPath,
 } from './graph/paths'
@@ -72,6 +74,8 @@ export {
   readNote,
   writeNote,
   writeAsset,
+  readAsset,
+  listDir,
   moveNote,
   deleteNote,
   listFiles,
@@ -176,11 +180,18 @@ export { transcribeAudio, type TranscriptionRequest } from './ai/transcribe'
 // Capture actions (audio memos; Plan 11's link capture joins here)
 export {
   appendToDailyNote,
-  saveAudioMemo,
+  audioMemoFromPath,
+  audioMemoIdentity,
+  captureAudioMemo,
+  listPendingAudioMemos,
+  reconcileAudioMemos,
   type AppendToDailyNoteInput,
-  type AudioMemoResume,
-  type SaveAudioMemoInput,
-  type SaveAudioMemoOutcome,
+  type AudioMemoIdentity,
+  type CaptureAudioMemoInput,
+  type CaptureAudioMemoOutcome,
+  type ReconcileAudioMemosInput,
+  type ReconcileAudioMemosOutcome,
+  type ReconcileStop,
 } from './actions/audio-memo'
 
 // Backup & sync (Plan 12)

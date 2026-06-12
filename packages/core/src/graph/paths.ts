@@ -7,6 +7,8 @@
 export const DAILY_DIR = 'daily'
 export const NOTES_DIR = 'notes'
 export const ASSETS_DIR = 'assets'
+/** Audio-memo recordings live apart from pasted/dropped `assets/` files. */
+export const AUDIO_MEMOS_DIR = 'audio-memos'
 
 /** Matches a daily-note path and captures its ISO date. */
 const DAILY_PATH_RE = /^daily\/(\d{4}-\d{2}-\d{2})\.md$/
@@ -40,6 +42,11 @@ export function notePath(slug: string): string {
 /** Graph-relative path to an attachment under `assets/`. */
 export function assetPath(name: string): string {
   return `${ASSETS_DIR}/${name}`
+}
+
+/** Graph-relative path to a stored recording under `audio-memos/`. */
+export function audioMemoPath(name: string): string {
+  return `${AUDIO_MEMOS_DIR}/${name}`
 }
 
 /** Is this graph-relative path a daily note (`daily/YYYY-MM-DD.md`)? */
