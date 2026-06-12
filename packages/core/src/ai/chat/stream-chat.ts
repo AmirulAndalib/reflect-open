@@ -4,6 +4,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
 import { errorMessage } from '../../errors'
 import type { AiProviderConfig } from '../../settings/schema'
+import type { CloudGraphContext, CloudSafe } from '../checkers'
 import { chatSystemPrompt } from './system-prompt'
 import {
   buildNoteTools,
@@ -40,6 +41,12 @@ export interface StreamChatOptions {
   messages: ModelMessage[]
   /** Local ISO date for the system prompt (daily-note key space). */
   today: string
+  /**
+   * Graph overview for the system prompt (`loadChatGraphContext`), or
+   * `null` to send the prompt without it — required so call sites decide
+   * the degraded mode explicitly rather than forgetting the block.
+   */
+  context: CloudSafe<CloudGraphContext> | null
   /** Aborts the provider call mid-stream (the UI's stop button). */
   signal?: AbortSignal
 }
@@ -80,6 +87,8 @@ export interface ChatTurnOptions {
   messages: ModelMessage[]
   /** Local ISO date for the system prompt (daily-note key space). */
   today: string
+  /** Graph overview for the system prompt, or `null` to omit the block. */
+  context: CloudSafe<CloudGraphContext> | null
   /** Aborts the provider call mid-stream (the UI's stop button). */
   signal?: AbortSignal
   /** Test seam for the note tools' effects. */
@@ -114,7 +123,7 @@ export async function* streamChatTurn(
   try {
     const result = streamText({
       model,
-      system: chatSystemPrompt({ today: options.today }),
+      system: chatSystemPrompt({ today: options.today, context: options.context }),
       messages: options.messages,
       tools,
       stopWhen: stepCountIs(MAX_STEPS),

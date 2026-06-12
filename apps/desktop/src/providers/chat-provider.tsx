@@ -14,12 +14,14 @@ import {
   chatModelOptions,
   errorMessage,
   getSecret,
+  loadChatGraphContext,
   resolveChatModel,
   streamChat,
   type AiProviderConfig,
   type ChatModelOption,
   type ChatModelSelection,
   type ChatStreamEvent,
+  type GraphInfo,
 } from '@reflect/core'
 import { toChatAttachment, type ChatAttachment } from '@/lib/chat-attachments'
 import { appendEvent, buildHistory, userMessage, type ChatTurn } from '@/lib/chat-transcript'
@@ -68,7 +70,13 @@ interface ChatContextValue {
 
 const ChatContext = createContext<ChatContextValue | null>(null)
 
-export function ChatProvider({ children }: { children: ReactNode }): ReactElement {
+interface ChatProviderProps {
+  /** The open graph — names the prompt's overview block. */
+  graph: GraphInfo
+  children: ReactNode
+}
+
+export function ChatProvider({ graph, children }: ChatProviderProps): ReactElement {
   const { settings } = useSettings()
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
@@ -150,7 +158,15 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
     activeSendRef.current = activeSend
 
     try {
-      const apiKey = await getSecret(aiKeySecretName(config.id))
+      // The graph overview degrades to null (prompt without the block)
+      // rather than blocking the turn — a cold index shouldn't kill chat.
+      const [apiKey, context] = await Promise.all([
+        getSecret(aiKeySecretName(config.id)),
+        loadChatGraphContext(graph.name).catch((cause: unknown) => {
+          console.error('chat graph context failed:', errorMessage(cause))
+          return null
+        }),
+      ])
       if (apiKey === null) {
         applyEvent({
           type: 'error',
@@ -165,6 +181,7 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
         fetchFn: providerFetch,
         messages,
         today: todayIso(),
+        context,
         signal: controller.signal,
       })
       for await (const event of events) {
@@ -192,7 +209,7 @@ export function ChatProvider({ children }: { children: ReactNode }): ReactElemen
         activeSendRef.current = null
       }
     }
-  }, [])
+  }, [graph.name])
 
   const stop = useCallback(() => {
     activeSendRef.current?.controller.abort()

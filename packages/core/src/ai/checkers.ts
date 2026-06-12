@@ -132,6 +132,38 @@ export async function cloudSafeNoteListings(
     )
 }
 
+/** The graph-level prompt context as an external service may see it. */
+export interface CloudGraphContext {
+  /** The graph's display name (its root folder name). */
+  graphName: string
+  /** Non-daily notes the assistant can list or read. */
+  noteCount: number
+  /** Days with a daily note. */
+  dailyNoteCount: number
+  /** ISO date of the first daily note, `null` when there are none. */
+  earliestDailyDate: string | null
+  /** ISO date of the latest daily note, `null` when there are none. */
+  latestDailyDate: string | null
+  /** Tag facets, most-used first. */
+  tags: { tag: string; count: number }[]
+  /** The facet list was capped — more tags exist. */
+  tagsTruncated: boolean
+}
+
+/**
+ * Gate the graph-level stats block for the system prompt. Unlike the
+ * per-note gates there is nothing to re-check live: these are aggregates
+ * with no note identity attached, so privacy rests on the **queries** —
+ * callers must compute every figure over `is_private = 0` rows only
+ * (`loadGraphStats` does). The index-lag window the live probes close
+ * elsewhere (a note marked private moments before reindex) is accepted
+ * here: no title, path, or content can leak through an aggregate — at
+ * worst a tag name that was public seconds earlier is still counted.
+ */
+export function cloudSafeGraphContext(context: CloudGraphContext): CloudSafe<CloudGraphContext> {
+  return mint(context)
+}
+
 /** A note's content as an external service may see it. */
 export interface CloudNoteContent {
   path: string

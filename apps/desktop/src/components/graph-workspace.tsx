@@ -28,7 +28,7 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
             {/* Above the sidebar: a recording must survive the sidebar (and its
                 mic button) unmounting on collapse. */}
             <AudioMemoProvider graph={graph}>
-              <ChatProvider>
+              <ChatProvider graph={graph}>
                 <WorkspaceContent graph={graph} />
               </ChatProvider>
             </AudioMemoProvider>
