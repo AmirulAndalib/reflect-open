@@ -895,7 +895,10 @@ fn chat_message_save_round_trips_and_upserts_the_conversation() {
     )
     .unwrap();
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["title"], Value::from("What did I write about Rust?"));
+    assert_eq!(
+        rows[0]["title"],
+        Value::from("What did I write about Rust?")
+    );
 
     // A later save bumps updated_ms but never rewrites title/created_ms —
     // the title is the conversation's identity, set once at creation.
@@ -910,7 +913,10 @@ fn chat_message_save_round_trips_and_upserts_the_conversation() {
         &[],
     )
     .unwrap();
-    assert_eq!(rows[0]["title"], Value::from("What did I write about Rust?"));
+    assert_eq!(
+        rows[0]["title"],
+        Value::from("What did I write about Rust?")
+    );
     assert_eq!(rows[0]["created_ms"], Value::from(1_000));
     assert_eq!(rows[0]["updated_ms"], Value::from(9_000));
 }
@@ -926,7 +932,12 @@ fn chat_message_resave_updates_by_id() {
         r#"[{"role":"assistant","content":"You wrote three notes."}]"#.to_string();
     save_message(&conn, &conversation("c1"), &settled).unwrap();
 
-    let rows = run_query(&conn, "SELECT parts FROM chat_messages WHERE id = 'm1'", &[]).unwrap();
+    let rows = run_query(
+        &conn,
+        "SELECT parts FROM chat_messages WHERE id = 'm1'",
+        &[],
+    )
+    .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(
         rows[0]["parts"],
