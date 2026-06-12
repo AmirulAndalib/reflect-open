@@ -100,6 +100,50 @@ export async function listNotes(options: NoteListOptions = {}): Promise<NoteList
   }))
 }
 
+/** One row of the recent-notes listing (the AI chat's recents tool). */
+export interface RecentNoteRow {
+  path: string
+  title: string
+  /** The indexed row preview (`buildIndexedNote`; may be empty). */
+  preview: string
+  /** File modification time (epoch ms). */
+  mtime: number
+  isPrivate: boolean
+}
+
+export interface RecentNotesOptions {
+  /** Row cap — the most recently edited notes win. */
+  limit: number
+  /** Only notes carrying this tag (case-insensitive). `null` lists all. */
+  tag?: string | null
+}
+
+/**
+ * The most recently edited non-daily notes, newest first. Same population as
+ * {@link listNotes} (dailies live in their own date-keyed listing) but capped,
+ * without the per-note tag fetch, and with private notes excluded in SQL so
+ * they don't consume cap slots — the AI privacy gate still re-checks every
+ * row live before anything leaves the device.
+ */
+export async function listRecentNotes(options: RecentNotesOptions): Promise<RecentNoteRow[]> {
+  const tag = options.tag ?? null
+
+  let query = db
+    .selectFrom('notes')
+    .where('notes.dailyDate', 'is', null)
+    .where('notes.isPrivate', '=', 0)
+    .select(['notes.path', 'notes.title', 'notes.preview', 'notes.mtime', 'notes.isPrivate'])
+    .orderBy('notes.mtime', 'desc')
+    .orderBy('notes.path')
+    .limit(options.limit)
+  if (tag !== null) {
+    query = query.where(noteCarriesTag(tag))
+  }
+
+  const rows = await query.execute()
+  return rows.map((row) => ({ ...row, isPrivate: row.isPrivate !== 0 }))
+}
+
 /** One tag facet over the note list: display casing + non-daily note count. */
 export interface NoteTagFacet {
   tag: string

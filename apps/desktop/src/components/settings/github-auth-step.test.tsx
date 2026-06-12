@@ -228,6 +228,21 @@ describe('GithubAuthStep', () => {
     expect(await screen.findByText(/code copied/i)).toBeTruthy()
   })
 
+  it('surfaces the device URL when the browser cannot be opened', async () => {
+    // The handoff URL appears only on failure — it is the one way left to
+    // reach the page asking for the code.
+    stubClipboard(vi.fn(async () => {}))
+    openedUrls.mockRejectedValueOnce(new Error('no handler for https'))
+    await renderCodeView()
+    expect(screen.queryByText(/login\/device/)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy code and open GitHub' }))
+
+    expect(
+      await screen.findByText(/visit https:\/\/github\.com\/login\/device yourself/i),
+    ).toBeTruthy()
+  })
+
   it('holds the GitHub handoff when the clipboard is unavailable', async () => {
     stubClipboard(async () => {
       throw new Error('denied')

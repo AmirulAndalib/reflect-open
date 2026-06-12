@@ -94,7 +94,7 @@ function twoStoredModels(): Record<string, unknown> {
   return {
     aiModels: [
       entry({ id: 'a' }),
-      entry({ id: 'b', provider: 'openai', model: 'gpt-5.1', keyHint: 'abcd2' }),
+      entry({ id: 'b', provider: 'openai', model: 'gpt-5.5', keyHint: 'abcd2' }),
     ],
     defaultAiModelId: 'a',
   }
@@ -130,7 +130,7 @@ describe('AiModelsSection', () => {
     await waitFor(() =>
       expect(screen.getByText('Anthropic — Claude Opus 4.8')).toBeTruthy(),
     )
-    expect(screen.getByText('OpenAI — GPT-5.1')).toBeTruthy()
+    expect(screen.getByText('OpenAI — GPT-5.5')).toBeTruthy()
     expect(screen.getByText(/wxyz1/)).toBeTruthy()
     expect(screen.getByText(/abcd2/)).toBeTruthy()
     expect(screen.getByText('Default')).toBeTruthy()
@@ -256,7 +256,7 @@ describe('AiModelsSection', () => {
 
     await waitFor(() =>
       expect(lastSavedDoc()).toMatchObject({
-        aiModels: [entry({ id: 'b', provider: 'openai', model: 'gpt-5.1', keyHint: 'abcd2' })],
+        aiModels: [entry({ id: 'b', provider: 'openai', model: 'gpt-5.5', keyHint: 'abcd2' })],
         defaultAiModelId: 'b',
       }),
     )
@@ -279,7 +279,7 @@ describe('AiModelsSection', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'Remove Anthropic — Claude Opus 4.8' }),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Remove OpenAI — GPT-5.1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove OpenAI — GPT-5.5' }))
 
     await waitFor(() =>
       expect(lastSavedDoc()).toMatchObject({ aiModels: [], defaultAiModelId: null }),

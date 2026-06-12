@@ -60,10 +60,13 @@ export {
   searchNotes,
   suggestWikiTargets,
   getIndexedHashes,
+  listDailyNotes,
   resolveWikiTarget,
   type Backlink,
   type BacklinkContext,
   type ConflictedNote,
+  type DailyNoteRow,
+  type DailyNotesRange,
   type DuplicateIdGroup,
   type NoteRow,
   type PinnedNote,
@@ -72,9 +75,12 @@ export {
 export {
   listNotes,
   listNoteTags,
+  listRecentNotes,
   type NoteListEntry,
   type NoteListOptions,
   type NoteTagFacet,
+  type RecentNoteRow,
+  type RecentNotesOptions,
 } from './note-list'
 export { rankWikiSuggestions, type WikiSuggestion } from './suggest'
 export {

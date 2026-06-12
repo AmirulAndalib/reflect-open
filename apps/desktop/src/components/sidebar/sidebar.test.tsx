@@ -1,7 +1,7 @@
 import { cleanup, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type GraphInfo, type PinnedNote, type Settings } from '@reflect/core'
 import type { CommandContext } from '@/lib/commands/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -49,12 +49,37 @@ vi.mock('@/providers/sync-provider', () => ({
   }),
 }))
 
+const audioMemo = vi.hoisted(() => ({
+  phase: 'idle' as const,
+  elapsedMs: 0,
+  stream: null,
+  available: true,
+  unavailableReason: null as string | null,
+  error: null,
+  canRetry: false,
+  toggle: vi.fn(),
+  cancel: vi.fn(),
+  retry: vi.fn(),
+  discard: vi.fn(),
+}))
+vi.mock('@/providers/audio-memo-provider', () => ({
+  useAudioMemo: () => audioMemo,
+}))
+
 const GRAPH: GraphInfo = { root: '/notes', name: 'Notes', cloudSync: null, generation: 1 }
 
 // Import after the core mock so the command registry sees the mocked module.
 const { Sidebar } = await import('./sidebar')
 const { registerAppCommands } = await import('@/lib/commands/app-commands')
 registerAppCommands()
+
+beforeEach(() => {
+  // The hoisted mock is shared module state — restore it so mic-related cases
+  // can't inherit mutations from earlier tests.
+  audioMemo.available = true
+  audioMemo.unavailableReason = null
+  audioMemo.toggle.mockReset()
+})
 
 afterEach(cleanup) // `globals: false` disables testing-library's automatic cleanup
 
@@ -68,6 +93,7 @@ function renderSidebar(overrides?: Partial<CommandContext>) {
     forward: vi.fn(),
     toggleTheme: vi.fn(),
     toggleSidebar: vi.fn(),
+    toggleAudioMemo: vi.fn(),
     generation: () => 1,
     openPalette,
     enableSemanticSearch: vi.fn(),
@@ -95,12 +121,31 @@ describe('Sidebar', () => {
 
     await userEvent.click(view.getByRole('button', { name: /settings/i }))
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ kind: 'settings' }))
+
+    await userEvent.click(view.getByRole('button', { name: /chat/i }))
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ kind: 'chat' }))
   })
 
   it('the search affordance opens the palette', async () => {
     const { view, openPalette } = renderSidebar()
     await userEvent.click(view.getByRole('button', { name: /search anything/i }))
     expect(openPalette).toHaveBeenCalled()
+  })
+
+  it('the mic button starts an audio memo', async () => {
+    const { view } = renderSidebar()
+    await userEvent.click(view.getByRole('button', { name: /record audio memo/i }))
+    expect(audioMemo.toggle).toHaveBeenCalled()
+  })
+
+  it('the mic button disables (without vanishing) when no provider can transcribe', async () => {
+    audioMemo.available = false
+    audioMemo.unavailableReason = 'Add an OpenAI or Gemini model in Settings to record audio memos'
+    const { view } = renderSidebar()
+    const micButton = view.getByRole('button', { name: /record audio memo/i })
+    expect(micButton.getAttribute('aria-disabled')).toBe('true')
+    await userEvent.click(micButton)
+    expect(audioMemo.toggle).not.toHaveBeenCalled()
   })
 
   it('pinned notes render their own section', async () => {

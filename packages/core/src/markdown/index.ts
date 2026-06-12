@@ -31,7 +31,7 @@ export {
   type InlineWikiLink,
   type InlineImage,
 } from './scan'
-export { appendUnderHeading, renameWikiLink } from './edit'
+export { appendBlock, appendUnderHeading, renameWikiLink } from './edit'
 export {
   detectConflictMarkers,
   resolveConflictMarkers,

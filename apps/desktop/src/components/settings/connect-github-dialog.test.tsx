@@ -62,7 +62,9 @@ afterEach(() => {
 })
 
 function renderWizard(onClose = vi.fn()): ReturnType<typeof vi.fn> {
-  render(<ConnectGithubDialog suggestedRepoName="g-backup" onClose={onClose} />)
+  render(
+    <ConnectGithubDialog suggestedRepoName="g-backup" onClose={onClose} pollIntervalMs={15} />,
+  )
   return onClose
 }
 
@@ -98,48 +100,45 @@ describe('ConnectGithubDialog', () => {
     expect(await screen.findByText('alex')).toBeTruthy()
   })
 
-  it('guides through github.com/new when the token cannot create repos', async () => {
-    sync.connectExistingRepo.mockResolvedValueOnce('notFound')
+  it('hands off to github.com/new and connects by polling — no button to click', async () => {
+    sync.connectExistingRepo.mockResolvedValueOnce('notFound').mockResolvedValueOnce('notFound')
     sync.connectNewRepo.mockResolvedValueOnce('manualCreateNeeded')
     const onClose = renderWizard()
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
     // The guide names the exact repo and opens the prefilled create page.
-    expect(await screen.findByText(/can’t create repositories/i)).toBeTruthy()
+    expect(await screen.findByText(/waiting for the repository/i)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Create on GitHub…' }))
     expect(openedUrls).toHaveBeenCalledWith(
       expect.stringContaining('https://github.com/new?name=g-backup'),
     )
 
-    // After the handoff, connecting finds the repo and finishes.
-    fireEvent.click(screen.getByRole('button', { name: 'I created it — connect' }))
+    // Once the repo exists, a poll connects it — the user clicks nothing.
     await waitFor(() =>
       expect(sync.connectExistingRepo).toHaveBeenLastCalledWith(
         { owner: 'alex', name: 'g-backup' },
         { allowPublic: false },
       ),
     )
-    expect(onClose).toHaveBeenCalled()
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    // The repo exists now — re-running the API create would just 422.
+    expect(sync.connectNewRepo).toHaveBeenCalledTimes(1)
   })
 
-  it('drops a stale create guide when the wizard takes a different path', async () => {
-    // Reach the manual-create guide, detour through the public-repo consent
-    // screen and back to the repo step — the old "can't create repositories"
-    // panel must not resurface during the new attempt.
-    sync.connectExistingRepo.mockResolvedValueOnce('notFound')
+  it('stops polling for consent when the created repo turns out public', async () => {
+    sync.connectExistingRepo
+      .mockResolvedValueOnce('notFound') // initial lookup → create guide
+      .mockResolvedValueOnce('needsPublicConfirm') // first poll finds it public
     sync.connectNewRepo.mockResolvedValueOnce('manualCreateNeeded')
     const onClose = renderWizard()
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(await screen.findByText(/can’t create repositories/i)).toBeTruthy()
 
-    // "I created it" turns up a public repo → consent → choose another.
-    sync.connectExistingRepo.mockResolvedValueOnce('needsPublicConfirm')
-    fireEvent.click(screen.getByRole('button', { name: 'I created it — connect' }))
     expect(await screen.findByText(/is public/i)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Choose another repo' }))
 
-    // New attempt with an existing repo; hold it pending to observe the UI.
+    // New attempt with an existing repo; hold it pending to observe the UI —
+    // the stale create guide (and its poll) must not resurface.
     const gate: { resolve: ((value: ConnectExistingResult) => void) | null } = { resolve: null }
     sync.connectExistingRepo.mockImplementationOnce(
       () => new Promise<ConnectExistingResult>((resolve) => (gate.resolve = resolve)),
@@ -151,10 +150,21 @@ describe('ConnectGithubDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
     expect(await screen.findByText('Connecting…')).toBeTruthy()
-    expect(screen.queryByText(/can’t create repositories/i)).toBeNull()
+    expect(screen.queryByText(/waiting for the repository/i)).toBeNull()
 
     gate.resolve?.('connected')
     await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('lets the user back out of the create guide', async () => {
+    sync.connectExistingRepo.mockResolvedValue('notFound')
+    sync.connectNewRepo.mockResolvedValueOnce('manualCreateNeeded')
+    renderWizard()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Change repository' }))
+
+    expect(await screen.findByLabelText('New repository name')).toBeTruthy()
   })
 
   it('validates the existing-repo input before any network work', async () => {
@@ -207,7 +217,7 @@ describe('ConnectGithubDialog', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
-    expect(await screen.findByText(/was not found/i)).toBeTruthy()
+    expect(await screen.findByText(/not found/i)).toBeTruthy()
     expect(sync.connectNewRepo).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
     // PAT remedy is token scope — the app-install flow is someone else's fix.
@@ -225,7 +235,7 @@ describe('ConnectGithubDialog', () => {
       target: { value: 'alex/gone' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(await screen.findByText(/was not found/i)).toBeTruthy()
+    expect(await screen.findByText(/not found/i)).toBeTruthy()
 
     // Back, fix the name — the stored sign-in carries the retry through.
     fireEvent.click(screen.getByRole('button', { name: 'Change repository' }))
@@ -244,7 +254,7 @@ describe('ConnectGithubDialog', () => {
   })
 
   it('surfaces the create URL when the browser cannot be opened', async () => {
-    sync.connectExistingRepo.mockResolvedValueOnce('notFound')
+    sync.connectExistingRepo.mockResolvedValue('notFound')
     sync.connectNewRepo.mockResolvedValueOnce('manualCreateNeeded')
     openedUrls.mockRejectedValueOnce(new Error('no handler for https'))
     renderWizard()
@@ -272,7 +282,7 @@ describe('ConnectGithubDialog', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
-    expect(await screen.findByText(/grant it access on GitHub/i)).toBeTruthy()
+    expect(await screen.findByText(/grant it access/i)).toBeTruthy()
     expect(screen.queryByText(/token/i)).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Grant access on GitHub…' }))
@@ -293,57 +303,46 @@ describe('ConnectGithubDialog', () => {
 
   it('points the app create guide at granting access, not token scope', async () => {
     storeCredential(appCredential())
-    sync.connectExistingRepo.mockResolvedValueOnce('notFound')
+    sync.connectExistingRepo.mockResolvedValue('notFound')
     sync.connectNewRepo.mockResolvedValueOnce('manualCreateNeeded')
     renderWizard()
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
-    expect(await screen.findByText(/Reflect can’t create the repository itself/i)).toBeTruthy()
-    expect(screen.queryByText(/token/i)).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: /grant the Reflect app access/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /grant the Reflect app access/i }))
     expect(openedUrls).toHaveBeenCalledWith(
       'https://github.com/apps/reflect-github-app/installations/new',
     )
+    expect(screen.queryByText(/token/i)).toBeNull()
   })
 
-  it('promotes the grant remedy when a created repo still cannot be seen', async () => {
+  it('keeps polling until an app-created repo becomes visible, then connects', async () => {
     // App user, "selected repositories" install: they create the repo via
-    // the handoff, but the app was never granted access to it. After
-    // "I created it — connect" a 404 means visibility, not existence — the
-    // grant flow takes over instead of looping back into the create guide.
+    // the handoff, but the app gains access to it only when they grant it.
+    // The poll rides through the 404s and connects on the first success.
     storeCredential(appCredential())
-    sync.connectExistingRepo.mockResolvedValueOnce('notFound').mockResolvedValueOnce('notFound')
+    sync.connectExistingRepo
+      .mockResolvedValueOnce('notFound') // initial lookup
+      .mockResolvedValueOnce('notFound') // poll: created, not granted yet
     sync.connectNewRepo.mockResolvedValueOnce('manualCreateNeeded')
     const onClose = renderWizard()
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'I created it — connect' }))
 
-    expect(await screen.findByText(/still can’t see the new repository/i)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Create on GitHub…' })).toBeNull()
-    // The repo exists now — re-running the API create would just 422.
-    expect(sync.connectNewRepo).toHaveBeenCalledTimes(1)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Grant access on GitHub…' }))
-    expect(openedUrls).toHaveBeenCalledWith(
-      'https://github.com/apps/reflect-github-app/installations/new',
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'I granted it — try again' }))
+    expect(await screen.findByText(/waiting for the repository/i)).toBeTruthy()
     await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(sync.connectExistingRepo.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(sync.connectNewRepo).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the created-but-unseen remedy token-flavored for PAT users', async () => {
-    sync.connectExistingRepo.mockResolvedValueOnce('notFound').mockResolvedValueOnce('notFound')
+  it('keeps the create-guide hint token-flavored for PAT users', async () => {
+    sync.connectExistingRepo.mockResolvedValue('notFound')
     sync.connectNewRepo.mockResolvedValueOnce('manualCreateNeeded')
     renderWizard()
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'I created it — connect' }))
 
-    expect(await screen.findByText(/included in your token’s repository access/i)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /grant access/i })).toBeNull()
+    expect(await screen.findByText(/token’s repository access/i)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /grant/i })).toBeNull()
   })
 })

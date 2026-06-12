@@ -46,6 +46,13 @@ const APP_COMMANDS: AppCommand[] = [
     run: (context) => context.navigate(newNoteRoute()),
   },
   {
+    id: 'chat.open',
+    title: 'Chat',
+    keywords: ['ai', 'assistant', 'copilot', 'ask'],
+    keybinding: 'Mod-j',
+    run: (context) => context.navigate({ kind: 'chat' }),
+  },
+  {
     id: 'history.back',
     title: 'Back',
     keybinding: 'Mod-[',
@@ -118,6 +125,15 @@ const APP_COMMANDS: AppCommand[] = [
         context.navigate({ kind: 'note', path })
       }
     },
+  },
+  {
+    id: 'audioMemo.toggle',
+    title: 'Record audio memo',
+    keywords: ['voice', 'mic', 'dictate', 'transcribe', 'speech', 'capture'],
+    // Starts a memo (or stops-and-saves the one recording). No default
+    // keybinding: the palette keeps it keyboard-reachable without spending a
+    // shortcut.
+    run: (context) => context.toggleAudioMemo(),
   },
   {
     id: 'theme.toggle',

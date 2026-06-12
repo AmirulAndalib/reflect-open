@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '../ipc/bridge'
-import { listNotes, listNoteTags } from './note-list'
+import { listNotes, listNoteTags, listRecentNotes } from './note-list'
 
 // A fake bridge resolves `db_query` so the tests exercise the real compiled
 // SQL (snake_case columns, parameters) — the same harness queries.test uses.
@@ -104,6 +104,53 @@ describe('listNotes', () => {
     mockInvoke.mockResolvedValue([])
     await expect(listNotes({ tag: 'nothing' })).resolves.toEqual([])
     expect(mockInvoke).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('listRecentNotes', () => {
+  it('caps public non-daily rows, newest first, with a boolean privacy flag', async () => {
+    mockInvoke.mockResolvedValueOnce([
+      {
+        path: 'notes/health.md',
+        title: 'Health Stacked',
+        preview: 'Shop your health goals.',
+        mtime: 2000,
+        is_private: 0,
+      },
+    ])
+
+    const rows = await listRecentNotes({ limit: 5 })
+
+    expect(rows).toEqual([
+      {
+        path: 'notes/health.md',
+        title: 'Health Stacked',
+        preview: 'Shop your health goals.',
+        mtime: 2000,
+        isPrivate: false,
+      },
+    ])
+    const [command, args] = mockInvoke.mock.calls[0]
+    expect(command).toBe('db_query')
+    const sql = String(args.sql)
+    expect(sql).toContain('"daily_date" is null')
+    expect(sql).toContain('"is_private"')
+    expect(sql).toContain('order by "notes"."mtime" desc')
+    expect(sql).toContain('limit')
+    expect(args.params).toEqual([0, 5])
+  })
+
+  it('narrows to one tag via the stored folded tag_key', async () => {
+    mockInvoke.mockResolvedValueOnce([])
+
+    await listRecentNotes({ limit: 5, tag: 'Book' })
+
+    const [, args] = mockInvoke.mock.calls[0]
+    const sql = String(args.sql)
+    expect(sql).toContain('exists')
+    expect(sql).toContain('"tag_key"')
+    expect(sql).not.toContain('lower(')
+    expect(args.params).toEqual([0, 'book', 5])
   })
 })
 

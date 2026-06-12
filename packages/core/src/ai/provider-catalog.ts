@@ -32,10 +32,10 @@ export const AI_PROVIDERS: AiProviderInfo[] = [
     label: 'OpenAI',
     keyPlaceholder: 'sk-…',
     models: [
-      { id: 'gpt-5.1', label: 'GPT-5.1' },
-      { id: 'gpt-5', label: 'GPT-5' },
-      { id: 'gpt-5-mini', label: 'GPT-5 mini' },
-      { id: 'gpt-5-nano', label: 'GPT-5 nano' },
+      { id: 'gpt-5.5', label: 'GPT-5.5' },
+      { id: 'gpt-5.4', label: 'GPT-5.4' },
+      { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini' },
+      { id: 'gpt-5.4-nano', label: 'GPT-5.4 nano' },
     ],
   },
   {
@@ -54,10 +54,10 @@ export const AI_PROVIDERS: AiProviderInfo[] = [
     label: 'Google Gemini',
     keyPlaceholder: 'AIza…',
     models: [
-      { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro' },
+      { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro' },
+      { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+      { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
       { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
     ],
   },
 ]

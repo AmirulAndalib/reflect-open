@@ -66,3 +66,34 @@ export function defaultAiModel(state: AiModelsState): AiModelConfig | null {
     state.models.find((model) => model.id === state.defaultModelId) ?? state.models[0] ?? null
   )
 }
+
+/**
+ * Providers with a speech-to-text path, in preference order (Anthropic has
+ * no audio API).
+ */
+export const TRANSCRIPTION_PROVIDERS = ['openai', 'google'] as const
+
+export type TranscriptionProvider = (typeof TRANSCRIPTION_PROVIDERS)[number]
+
+/** A configured entry known to belong to a transcription-capable provider. */
+export type TranscriptionConfig = AiModelConfig & { provider: TranscriptionProvider }
+
+/**
+ * The configured entry audio transcription should run on: any OpenAI entry
+ * wins over any Google entry, and within a provider the app default wins over
+ * the first. `null` means no capable provider is configured — the feature is
+ * unavailable. The entry only addresses the provider + API key; the
+ * transcription model itself is fixed per provider (see `transcribe.ts`), so
+ * the entry's chat-model choice never transfers.
+ */
+export function pickTranscriptionConfig(state: AiModelsState): TranscriptionConfig | null {
+  for (const provider of TRANSCRIPTION_PROVIDERS) {
+    const candidates = state.models.filter(
+      (model): model is TranscriptionConfig => model.provider === provider,
+    )
+    if (candidates.length > 0) {
+      return candidates.find((model) => model.id === state.defaultModelId) ?? candidates[0]
+    }
+  }
+  return null
+}

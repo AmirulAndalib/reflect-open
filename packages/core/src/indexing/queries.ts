@@ -306,6 +306,49 @@ export async function dailyDatesInRange(start: string, end: string): Promise<str
   return rows.flatMap((row) => (row.dailyDate === null ? [] : [row.dailyDate]))
 }
 
+/** One daily-note row of a date-ranged listing (the AI chat's daily tool). */
+export interface DailyNoteRow {
+  path: string
+  title: string
+  dailyDate: string
+  /** The indexed row preview (`buildIndexedNote`; may be empty). */
+  preview: string
+  /** File modification time (epoch ms). */
+  mtime: number
+  isPrivate: boolean
+}
+
+export interface DailyNotesRange {
+  /** First day, inclusive (ISO `YYYY-MM-DD`). */
+  start: string
+  /** Last day, inclusive (ISO `YYYY-MM-DD`). */
+  end: string
+  /** Row cap — the most recent days in range win. */
+  limit: number
+}
+
+/**
+ * Daily notes within `[start, end]` (inclusive), most recent first, capped at
+ * `limit`. Daily files are created lazily on first write, so a row means the
+ * day has real content. Private dailies are excluded in SQL so they don't
+ * consume cap slots — the AI privacy gate still re-checks every row live.
+ */
+export async function listDailyNotes(range: DailyNotesRange): Promise<DailyNoteRow[]> {
+  const rows = await db
+    .selectFrom('notes')
+    .where('dailyDate', 'is not', null)
+    .where('dailyDate', '>=', range.start)
+    .where('dailyDate', '<=', range.end)
+    .where('isPrivate', '=', 0)
+    .select(['path', 'title', 'dailyDate', 'preview', 'mtime', 'isPrivate'])
+    .orderBy('dailyDate', 'desc')
+    .limit(range.limit)
+    .execute()
+  return rows.flatMap((row) =>
+    row.dailyDate === null ? [] : [{ ...row, dailyDate: row.dailyDate, isPrivate: row.isPrivate !== 0 }],
+  )
+}
+
 /** Graph-relative paths of every note carrying `tag` (case-insensitive), ordered by path. */
 export async function getNotesByTag(tag: string): Promise<string[]> {
   const rows = await db

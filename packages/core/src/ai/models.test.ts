@@ -3,6 +3,7 @@ import type { AiModelConfig } from '../settings/schema'
 import {
   apiKeyHint,
   defaultAiModel,
+  pickTranscriptionConfig,
   withAiModelAdded,
   withAiModelRemoved,
   type AiModelsState,
@@ -67,6 +68,38 @@ describe('withAiModelRemoved', () => {
 
   it('removing the last entry clears the default', () => {
     expect(withAiModelRemoved(state([config({ id: 'a' })], 'a'), 'a')).toEqual(state([], null))
+  })
+})
+
+describe('pickTranscriptionConfig', () => {
+  it('prefers any openai entry over a google default', () => {
+    const models = [
+      config({ id: 'gemini', provider: 'google', model: 'gemini-2.5-flash' }),
+      config({ id: 'oai', provider: 'openai' }),
+    ]
+    expect(pickTranscriptionConfig(state(models, 'gemini'))?.id).toBe('oai')
+  })
+
+  it('prefers the app default among entries of the chosen provider', () => {
+    const models = [config({ id: 'first' }), config({ id: 'second' })]
+    expect(pickTranscriptionConfig(state(models, 'second'))?.id).toBe('second')
+  })
+
+  it('falls back to google when no openai entry exists', () => {
+    const models = [
+      config({ id: 'claude', provider: 'anthropic', model: 'claude-fable-5' }),
+      config({ id: 'gemini', provider: 'google', model: 'gemini-2.5-flash' }),
+    ]
+    expect(pickTranscriptionConfig(state(models, 'claude'))?.id).toBe('gemini')
+  })
+
+  it('returns null when only anthropic entries exist', () => {
+    const models = [config({ id: 'claude', provider: 'anthropic', model: 'claude-fable-5' })]
+    expect(pickTranscriptionConfig(state(models, 'claude'))).toBeNull()
+  })
+
+  it('returns null for the empty list', () => {
+    expect(pickTranscriptionConfig(state([], null))).toBeNull()
   })
 })
 
