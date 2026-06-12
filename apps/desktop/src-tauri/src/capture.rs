@@ -18,16 +18,19 @@ use crate::fs::{current_root, modified_ms, root_for_generation, FileMeta, GraphS
 
 /// The native-messaging host name browsers route on; must match the name the
 /// extension passes to `runtime.sendNativeMessage`.
+#[cfg(any(target_os = "macos", test))]
 const HOST_NAME: &str = "app.reflect.capture";
 
 /// The sidecar binary, staged beside the app binary by the Tauri bundler (and
 /// beside the dev binary by `tauri dev`).
+#[cfg(target_os = "macos")]
 const HOST_BINARY: &str = "reflect-capture-host";
 
 /// Extension IDs allowed to launch the host. The first is the dev/unpacked ID,
 /// pinned by the `key` field in `apps/extension/wxt.config.ts` — the Chrome
 /// Web Store ID joins this list after first publish (the store derives the
 /// same ID when the manifest keeps that key).
+#[cfg(any(target_os = "macos", test))]
 const EXTENSION_ORIGINS: [&str; 1] = ["chrome-extension://dlbliojklpickgimjdmjjdnbjdiomjik/"];
 
 /// Graph-relative spool directory the host writes and the drain reads.
@@ -65,8 +68,14 @@ fn atomic_write_to(path: &Path, contents: &str) -> AppResult<()> {
 }
 
 // ---- browser manifests (macOS) ------------------------------------------------
+//
+// Everything here is `cfg(target_os = "macos")` (plus `test`, so the rules
+// stay unit-tested on every CI platform): the first release registers
+// manifests on macOS only — Windows registry keys and Linux paths land with
+// Plan 15 packaging.
 
 /// The native-messaging manifest content for a host binary at `host_path`.
+#[cfg(any(target_os = "macos", test))]
 fn host_manifest_json(host_path: &Path) -> String {
     serde_json::to_string_pretty(&serde_json::json!({
         "name": HOST_NAME,
@@ -81,6 +90,7 @@ fn host_manifest_json(host_path: &Path) -> String {
 /// Chromium-family browser data dirs under `~/Library/Application Support`
 /// that may carry a `NativeMessagingHosts/` directory. Arc keeps its own under
 /// `User Data`, matching Chrome's profile layout.
+#[cfg(any(target_os = "macos", test))]
 const MACOS_BROWSER_DIRS: [&str; 10] = [
     "Google/Chrome",
     "Google/Chrome Beta",
@@ -98,6 +108,7 @@ const MACOS_BROWSER_DIRS: [&str; 10] = [
 /// `app_support` — manifests are only written for detected browsers (spraying
 /// them for uninstalled ones is the Claude-Desktop mistake the spike calls
 /// out). Pure given the base dir, so the detection rule is unit-testable.
+#[cfg(any(target_os = "macos", test))]
 fn detected_manifest_dirs(app_support: &Path) -> Vec<PathBuf> {
     MACOS_BROWSER_DIRS
         .iter()
@@ -110,6 +121,7 @@ fn detected_manifest_dirs(app_support: &Path) -> Vec<PathBuf> {
 /// Write (or rewrite) the host manifest for every detected browser. Runs on
 /// every launch and graph switch — rewriting self-heals app moves and macOS
 /// app translocation, per the bridge spike.
+#[cfg(any(target_os = "macos", test))]
 fn register_manifests(app_support: &Path, host_path: &Path) -> AppResult<usize> {
     let manifest = host_manifest_json(host_path);
     let mut written = 0;
@@ -123,6 +135,7 @@ fn register_manifests(app_support: &Path, host_path: &Path) -> AppResult<usize> 
 
 /// The staged host binary, next to the running executable in both dev
 /// (`target/debug/`) and the bundle (`Reflect.app/Contents/MacOS/`).
+#[cfg(target_os = "macos")]
 fn host_binary_path() -> AppResult<PathBuf> {
     let exe = std::env::current_exe().map_err(|err| AppError::io(err.to_string()))?;
     let dir = exe
