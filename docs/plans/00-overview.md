@@ -49,6 +49,7 @@ before the editor, and the editor lands before search/AI.
 | 13 | [Import / export / portability](13-import-export-portability.md) | Markdown/Obsidian-graph import, JSON/Markdown/HTML export, attachments preserved |
 | 14 | [CLI (read/discovery)](14-cli-read-discovery.md) | `reflect today`, `reflect search`, `reflect show`, path lookup |
 | 15 | [Hardening, packaging & OSS release](15-hardening-packaging-release.md) | a11y, perf budgets, signing/notarization, MIT + docs, onboarding, release pipeline |
+| 16 | [Generic git remotes](16-generic-git-remotes.md) | Any git host (GitLab/Gitea/GHES/NAS) via hand-wired `origin`, zero new UI — V1 SSH (agent) + path remotes, V2 HTTPS (credential helpers) |
 
 ## Milestone map
 

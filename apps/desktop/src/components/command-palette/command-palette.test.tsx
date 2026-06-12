@@ -87,6 +87,7 @@ function renderPalette(query: string, context?: Partial<CommandContext>) {
     forward: vi.fn(),
     toggleTheme: vi.fn(),
     toggleSidebar: vi.fn(),
+    toggleAudioMemo: vi.fn(),
     generation: () => 1,
     openPalette: vi.fn(),
     enableSemanticSearch: vi.fn(),

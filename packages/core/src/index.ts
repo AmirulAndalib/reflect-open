@@ -124,11 +124,15 @@ export { aiKeySecretName } from './ai/secrets'
 export { setSecret, getSecret, deleteSecret } from './secrets/keychain'
 export {
   KEY_HINT_LENGTH,
+  TRANSCRIPTION_PROVIDERS,
   apiKeyHint,
   withAiModelAdded,
   withAiModelRemoved,
   defaultAiModel,
+  pickTranscriptionConfig,
   type AiModelsState,
+  type TranscriptionConfig,
+  type TranscriptionProvider,
 } from './ai/models'
 export { validateApiKey, type ApiKeyValidation } from './ai/validate-key'
 export {
@@ -160,6 +164,19 @@ export {
   type StreamChatOptions,
 } from './ai/chat/stream-chat'
 export type { ModelMessage as ChatModelMessage } from 'ai'
+// The fixed per-provider model ids stay internal to `ai/transcribe` —
+// exporting them would let callers couple to vendor model names.
+export { transcribeAudio, type TranscriptionRequest } from './ai/transcribe'
+
+// Capture actions (audio memos; Plan 11's link capture joins here)
+export {
+  appendToDailyNote,
+  saveAudioMemo,
+  type AppendToDailyNoteInput,
+  type AudioMemoResume,
+  type SaveAudioMemoInput,
+  type SaveAudioMemoOutcome,
+} from './actions/audio-memo'
 
 // Backup & sync (Plan 12)
 export {
@@ -213,6 +230,7 @@ export {
   pinnedOrder,
   PARSED_NOTE_VERSION,
   parseNote,
+  appendBlock,
   appendUnderHeading,
   renameWikiLink,
   resolved,

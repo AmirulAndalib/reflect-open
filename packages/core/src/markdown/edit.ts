@@ -56,6 +56,18 @@ function nextSectionStart(headings: Heading[], target: Heading, eof: number): nu
  * matches `heading` (case-insensitive). If no such heading exists, append a new
  * `## heading` section at end of file. Used by capture (Plan 11).
  */
+/**
+ * Append `block` as its own paragraph at the end of the note, one blank line
+ * after the existing content (none for an empty note). The flat variant of
+ * {@link appendUnderHeading} — used by audio-memo capture, where the
+ * transcript reads as ordinary note content rather than a section entry.
+ */
+export function appendBlock(source: string, block: string): string {
+  const base = source.replace(/\s*$/, '')
+  const prefix = base.length > 0 ? `${base}\n\n` : ''
+  return `${prefix}${block.trim()}\n`
+}
+
 export function appendUnderHeading(source: string, heading: string, block: string): string {
   const headingKey = heading.trim().toLowerCase()
   const { headings } = parseNote({ path: '', source })

@@ -5,6 +5,7 @@ import { APP_COMMANDS } from '@/lib/commands/app-commands'
 import { runCommand } from '@/lib/commands/registry'
 import { retryFailedEmbeddings } from '@/lib/semantic'
 import type { CommandContext } from '@/lib/commands/types'
+import { useAudioMemo } from '@/providers/audio-memo-provider'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
@@ -45,6 +46,7 @@ export function useAppShortcuts(): CommandContext {
   const { graph } = useGraph()
   const { openPalette, open: paletteOpen } = usePalette()
   const { toggleSidebar } = useSidebar()
+  const { toggle: toggleAudioMemo } = useAudioMemo()
   const { updateSettings } = useSettings()
 
   // The palette is modal: app shortcuts must not navigate behind its overlay.
@@ -67,6 +69,7 @@ export function useAppShortcuts(): CommandContext {
       forward,
       toggleTheme: () => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'),
       toggleSidebar,
+      toggleAudioMemo,
       generation: () => generationRef.current,
       openPalette,
       enableSemanticSearch: () => {
@@ -76,7 +79,17 @@ export function useAppShortcuts(): CommandContext {
         void retryFailedEmbeddings()
       },
     }),
-    [navigate, back, forward, resolvedTheme, setTheme, openPalette, toggleSidebar, updateSettings],
+    [
+      navigate,
+      back,
+      forward,
+      resolvedTheme,
+      setTheme,
+      openPalette,
+      toggleSidebar,
+      toggleAudioMemo,
+      updateSettings,
+    ],
   )
 
   useEffect(() => {

@@ -76,8 +76,16 @@ impl From<git2::Error> for AppError {
         // rate limits; at the transport layer that's indistinguishable from a
         // rejected credential without the response body. Misclassification is
         // not sticky — the auth state never blocks the next cycle's retry.
+        //
+        // SSH (Plan 16): Certificate code = host-key verification failure, and
+        // Ssh-class errors (no agent, rejected keys, handshake) are all fixed
+        // by user action, so they surface as Auth (needs attention) rather
+        // than retrying as Network. An ssh *connectivity* failure carries the
+        // Net class and still lands in Network.
         let lowered = message.to_lowercase();
         if err.code() == ErrorCode::Auth
+            || err.code() == ErrorCode::Certificate
+            || err.class() == ErrorClass::Ssh
             || lowered.contains("status code: 401")
             || lowered.contains("status code: 403")
             || lowered.contains("authentication")
@@ -140,6 +148,27 @@ mod tests {
                 ErrorClass::Http,
                 "request failed with status code: 403",
             ),
+        ];
+        for error in cases {
+            assert!(matches!(error, AppError::Auth { .. }), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn ssh_failures_classify_as_auth() {
+        // All user-fixable: unknown host key, no agent, no accepted key.
+        let cases = [
+            classify(
+                ErrorCode::Certificate,
+                ErrorClass::Ssh,
+                "remote host key is not registered in known_hosts",
+            ),
+            classify(
+                ErrorCode::GenericError,
+                ErrorClass::Ssh,
+                "failed to connect to ssh agent",
+            ),
+            classify(ErrorCode::Auth, ErrorClass::Ssh, "no key this host accepts"),
         ];
         for error in cases {
             assert!(matches!(error, AppError::Auth { .. }), "{error:?}");

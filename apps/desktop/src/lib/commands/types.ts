@@ -16,6 +16,8 @@ export interface CommandContext {
   toggleTheme: () => void
   /** Collapse/expand the workspace sidebar. */
   toggleSidebar: () => void
+  /** Start an audio memo, or stop-and-save the one recording. */
+  toggleAudioMemo: () => void
   /**
    * The open **index session** generation (`index_open`), or null when none —
    * what index/embedding commands echo. File writes (`note_write`) take

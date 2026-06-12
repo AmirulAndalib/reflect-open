@@ -16,8 +16,9 @@ the [product vision](docs/reflect-v2-product-vision.md) for the full picture.
 - **Daily notes first, association over hierarchy.** The app opens to today;
   wiki links and backlinks are the organizing model. No folders.
 - **No Reflect-hosted APIs.** AI features are bring-your-own-key and talk
-  directly to the provider; sync goes to GitHub. Notes marked `private: true`
-  are never sent to any external service.
+  directly to the provider; sync goes to a git repository you control —
+  GitHub guided in-app, [any other host over SSH](docs/generic-git-remotes.md).
+  Notes marked `private: true` are never sent to any external service.
 - **Keyboard-native, minimal UI.** Built on Tauri 2 — no Electron.
 
 ## Architecture

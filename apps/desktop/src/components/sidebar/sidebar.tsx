@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
 import { MessageSquare, Settings, SquarePen } from 'lucide-react'
+import { AudioMemoButton } from '@/components/audio-memo/audio-memo-button'
 import { ListIcon } from '@/components/icons/list-icon'
 import { PencilIcon } from '@/components/icons/pencil-icon'
 import { keybindingFor } from '@/lib/commands/app-commands'
@@ -49,8 +50,11 @@ export function Sidebar({ graph, context }: SidebarProps): ReactElement {
       </div>
 
       <div className="flex flex-none flex-col">
-        <div className="mt-1 px-4">
-          <SidebarSearch onOpen={() => context.openPalette()} />
+        <div className="mt-1 flex items-center gap-1.5 px-4">
+          <div className="min-w-0 flex-1">
+            <SidebarSearch onOpen={() => context.openPalette()} />
+          </div>
+          <AudioMemoButton />
         </div>
 
         <nav aria-label="Primary" className="mt-6 space-y-1 px-4">

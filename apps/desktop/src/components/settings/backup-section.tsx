@@ -21,7 +21,9 @@ function statusLine(backup: Extract<BackupState, { phase: 'connected' }>): strin
     case 'offline':
       return backup.status.message
     case 'error':
-      return backup.status.errorKind === 'auth'
+      // "Reconnect GitHub" only helps when GitHub is the remote; a generic
+      // remote's auth message already names the fix (ssh-add, known_hosts…).
+      return backup.status.errorKind === 'auth' && backup.repo !== null
         ? 'Backup failed — reconnect GitHub'
         : `Backup failed: ${backup.status.message}`
   }
@@ -50,12 +52,18 @@ export function BackupSection(): ReactElement {
     backup.phase === 'connected'
       ? (backup.repo !== null ? `${backup.repo.owner}/${backup.repo.name}` : backup.remoteUrl)
       : null
+  // A hand-wired non-GitHub remote (Plan 16) renders the section host-neutral.
+  const genericRemote = backup.phase === 'connected' && backup.repo === null
 
   return (
     <SettingsSection id="backup">
       <SettingsField
-        legend="GitHub backup"
-        description="Back up this graph to a GitHub repository. Edits back up automatically a few moments after you stop typing."
+        legend={genericRemote ? 'Backup' : 'GitHub backup'}
+        description={
+          genericRemote
+            ? 'This graph backs up to its own git remote. Edits back up automatically a few moments after you stop typing.'
+            : 'Back up this graph to a GitHub repository. Edits back up automatically a few moments after you stop typing.'
+        }
       >
         <div className="mt-3 flex flex-col gap-2">
           {backup.phase === 'loading' ? (
@@ -101,14 +109,18 @@ export function BackupSection(): ReactElement {
                 >
                   Stop backing up
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  title="Removes the GitHub token from this machine — every connected graph stops backing up"
-                  onClick={() => void action.run(signOut)}
-                >
-                  Sign out of GitHub
-                </Button>
+                {backup.repo !== null ? (
+                  // Machine-level GitHub sign-out is noise next to a graph
+                  // that doesn't back up to GitHub.
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Removes the GitHub token from this machine — every connected graph stops backing up"
+                    onClick={() => void action.run(signOut)}
+                  >
+                    Sign out of GitHub
+                  </Button>
+                ) : null}
               </div>
             </>
           ) : null}

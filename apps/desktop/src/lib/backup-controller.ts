@@ -29,8 +29,11 @@ import { providerFetch } from '@/lib/provider-fetch'
 import { invalidateIndexQueries } from '@/lib/query-client'
 
 /**
- * Backup state as the UI sees it. `connected` means the graph has a repo,
- * an `origin` remote, and a stored GitHub credential — the engine is running.
+ * Backup state as the UI sees it. `connected` means the graph has a repo and
+ * an `origin` remote, and the engine is running. `repo` is set for GitHub
+ * remotes (which additionally require the stored GitHub credential) and
+ * `null` for hand-wired generic remotes (Plan 16: GitLab/Gitea/self-hosted
+ * over SSH, or a bare path repo), whose credentials resolve locally in Rust.
  */
 export type BackupState =
   | { phase: 'loading' }
@@ -160,22 +163,50 @@ export function createBackupController(options: BackupControllerOptions): Backup
       if (disposed) {
         return
       }
-      if (!status.initialized || status.remoteUrl === null || auth === null) {
+      if (!status.initialized || status.remoteUrl === null) {
         setState({ phase: 'disconnected' })
         return
       }
       const remoteUrl = status.remoteUrl
       const repo = parseGithubRemote(remoteUrl)
+      if (repo !== null && auth === null) {
+        // A GitHub remote needs the managed sign-in; the wizard is the fix.
+        // Generic remotes adopt without it — their credentials live with the
+        // user's own git tooling (ssh agent), not in our keychain.
+        setState({ phase: 'disconnected' })
+        return
+      }
+      if (repo === null && /^https?:\/\//i.test(remoteUrl)) {
+        // Plan 16 V1 speaks SSH (and paths) to generic hosts, not HTTPS.
+        // Fail at adoption, not at the first push: a *public* HTTPS remote
+        // would pull anonymously and only 401 on push — the other device's
+        // edits arriving while this one's silently never leave. The engine
+        // never starts; `rejected` = acting (not retrying) is the fix.
+        setState({
+          phase: 'connected',
+          remoteUrl,
+          repo: null,
+          status: {
+            state: 'error',
+            errorKind: 'rejected',
+            message:
+              'HTTPS isn’t supported for this host yet — switch the remote to its SSH form: git remote set-url origin git@<host>:<owner>/<repo>.git',
+          },
+        })
+        return
+      }
       const next = createSyncEngine({
         generation,
-        getToken: () => getGithubToken(providerFetch),
+        // The managed token is for github.com only — a generic host must
+        // never receive it. Rust resolves generic credentials locally.
+        getToken: repo === null ? async () => null : () => getGithubToken(providerFetch),
         onStatus: (engineStatus) => {
           setState({ phase: 'connected', remoteUrl, repo, status: engineStatus })
         },
         onLargeFilesSkipped: (files) => {
           // Surface the guardrail loudly: these files are NOT in the backup.
           const names = files.map((file) => file.path).join(', ')
-          startOperation('Backing up').fail(`Too large for GitHub backup (kept local): ${names}`)
+          startOperation('Backing up').fail(`Too large to back up (kept local): ${names}`)
         },
         onRemoteChanges,
       })

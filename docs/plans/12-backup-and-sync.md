@@ -210,9 +210,10 @@ present) · `Backup failed` (action needed). Git mechanics never surface.
 - meowdown conflict widget (parse marker blocks → keep-mine/keep-theirs UI).
 - AI-assisted resolution via the Plan 10 copilot (markers parse to base/ours/theirs;
   `private: true` notes never go to cloud AI).
-- Custom merge driver for daily notes; Git LFS / asset offload; generic-remote UX
-  toggle; background sync on mobile; "purge history" escape hatch; stale-`index.lock`
-  recovery on startup.
+- Custom merge driver for daily notes; Git LFS / asset offload; background sync on
+  mobile; "purge history" escape hatch; stale-`index.lock` recovery on startup.
+- ~~Generic-remote UX toggle~~ → became [Plan 16](16-generic-git-remotes.md): any git
+  host via a hand-wired `origin`, no UI (V1 ships SSH-agent auth + path remotes).
 
 ## Risks
 

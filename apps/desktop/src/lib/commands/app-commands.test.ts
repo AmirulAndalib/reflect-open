@@ -43,6 +43,7 @@ function fakeContext(overrides?: Partial<CommandContext>) {
     forward: vi.fn(),
     toggleTheme: vi.fn(),
     toggleSidebar: vi.fn(),
+    toggleAudioMemo: vi.fn(),
     generation: () => 7,
     openPalette: vi.fn(),
     enableSemanticSearch: vi.fn(),
@@ -78,6 +79,8 @@ describe('app commands', () => {
     expect(context.toggleTheme).toHaveBeenCalled()
     await command('sidebar.toggle').run(context)
     expect(context.toggleSidebar).toHaveBeenCalled()
+    await command('audioMemo.toggle').run(context)
+    expect(context.toggleAudioMemo).toHaveBeenCalled()
   })
 
   it('settings.open navigates to the settings screen', async () => {

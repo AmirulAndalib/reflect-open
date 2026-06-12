@@ -40,6 +40,9 @@ export function GithubAuthStep({ onAuthed, repoName }: GithubAuthStepProps): Rea
   // The device flow leads when the app is registered; the PAT path stays one
   // click away (some users prefer a scoped token; GHES needs it).
   const [usePat, setUsePat] = useState(!isDeviceFlowConfigured())
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  /** Opening the browser failed — show the URL, the only way left to get there. */
+  const [openFailed, setOpenFailed] = useState(false)
   const authedRef = useRef(false)
 
   // Auth can complete twice — the mount-time probe of a stored credential
@@ -83,9 +86,33 @@ export function GithubAuthStep({ onAuthed, repoName }: GithubAuthStepProps): Rea
   }
 
   async function signIn(): Promise<void> {
+    setCopyState('idle') // each attempt mints a fresh code
+    setOpenFailed(false)
     if (await deviceFlow.signIn()) {
       await pat.run(verifyAndFinish)
     }
+  }
+
+  /**
+   * The code goes to the clipboard *before* the browser opens — GitHub's
+   * device page asks for it immediately, and once the browser has focus the
+   * code in this dialog is out of sight. If copying isn't possible, hold the
+   * handoff and have the user copy by hand first.
+   */
+  async function copyCodeAndOpen(flow: { userCode: string; verificationUri: string }): Promise<void> {
+    if (copyState !== 'failed') {
+      try {
+        await navigator.clipboard.writeText(flow.userCode)
+        setCopyState('copied')
+      } catch {
+        setCopyState('failed')
+        return
+      }
+    }
+    setOpenFailed(false)
+    void openUrl(flow.verificationUri).catch(() => {
+      setOpenFailed(true)
+    })
   }
 
   async function savePat(): Promise<void> {
@@ -167,20 +194,26 @@ export function GithubAuthStep({ onAuthed, repoName }: GithubAuthStepProps): Rea
       ) : (
         <div className="flex flex-col gap-2">
           <p className="text-xs text-text-muted">
-            Enter this code at{' '}
-            <button
-              type="button"
-              className="underline"
-              onClick={() => void openUrl(flowView.verificationUri)}
-            >
-              {flowView.verificationUri}
-            </button>
-            :
+            {copyState === 'copied'
+              ? 'Code copied — paste it on the GitHub page:'
+              : 'GitHub will ask for this one-time code:'}
           </p>
           <p className="select-text text-center font-mono text-xl tracking-[0.3em] text-text">
             {flowView.userCode}
           </p>
-          <p className="text-center text-xs text-text-muted">Waiting for GitHub…</p>
+          <Button size="sm" onClick={() => void copyCodeAndOpen(flowView)}>
+            {copyState === 'failed' ? 'Open GitHub' : 'Copy code and open GitHub'}
+          </Button>
+          {copyState === 'failed' ? (
+            <p className="text-xs text-text-muted">
+              Couldn’t copy automatically — select the code above and copy it first.
+            </p>
+          ) : null}
+          {openFailed ? (
+            <p className="select-text text-xs text-text-muted">
+              Couldn’t open the browser — visit {flowView.verificationUri} yourself.
+            </p>
+          ) : null}
         </div>
       )}
       {error !== null ? <InlineAlert tone="error">{error}</InlineAlert> : null}
