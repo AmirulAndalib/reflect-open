@@ -164,10 +164,14 @@ export async function runFilenameMigration(options: RunMigrationOptions): Promis
     operation.fail(
       `renamed ${result.moved} of ${count} — ${result.failed.length} failed and keep their old filenames${skippedToo}; reopening the graph offers the rest again`,
     )
+  } else if (result.skipped > 0) {
+    // Not an error — the scan excludes open/conflicted notes up front, so a
+    // skip here is a mid-run race — but the prompt promised `count` renames,
+    // and a partial completion must say so rather than read as done.
+    operation.notice(
+      `renamed ${result.moved} of ${count} — ${result.skipped} ${result.skipped === 1 ? 'was' : 'were'} skipped (opened or edited mid-run); reopening the graph offers ${result.skipped === 1 ? 'it' : 'them'} again`,
+    )
   } else {
-    // Pure skips need no alarm: the scan excludes open/conflicted notes up
-    // front, so a skip here is a mid-run race, and the next graph open
-    // simply offers the remainder.
     operation.done()
   }
 }

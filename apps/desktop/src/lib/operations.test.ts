@@ -43,7 +43,23 @@ describe('operations store', () => {
     })
     act(() => handle.fail('disk full'))
     expect(result.current[0].status).toBe('failed')
-    expect(result.current[0].error).toBe('disk full')
+    expect(result.current[0].message).toBe('disk full')
+
+    act(() => vi.advanceTimersByTime(8000 + 1200))
+    expect(result.current).toEqual([])
+  })
+
+  it('a notice completes with a lingering message, then clears', () => {
+    // Partial work where the label promised a count: not a failure, not
+    // silence — the message stays visible the way a failure would.
+    const { result } = renderHook(() => useOperations())
+    let handle!: ReturnType<typeof startOperation>
+    act(() => {
+      handle = startOperation('Renaming 3 notes')
+    })
+    act(() => handle.notice('renamed 2 of 3'))
+    expect(result.current[0].status).toBe('notice')
+    expect(result.current[0].message).toBe('renamed 2 of 3')
 
     act(() => vi.advanceTimersByTime(8000 + 1200))
     expect(result.current).toEqual([])

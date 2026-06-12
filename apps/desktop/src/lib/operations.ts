@@ -13,19 +13,26 @@ export interface Operation {
   id: number
   label: string
   progress: { done: number; total: number } | null
-  status: 'running' | 'failed'
-  error: string | null
+  status: 'running' | 'notice' | 'failed'
+  /** The lingering line under the label: what to know (notice) or what failed. */
+  message: string | null
 }
 
 export interface OperationHandle {
   progress: (done: number, total: number) => void
   /** The operation completed; its entry disappears. */
   done: () => void
+  /**
+   * The operation completed, but with something the user should know — e.g.
+   * partial work where the label promised a count. Lingers like a failure,
+   * styled neutrally: not an error, not silence.
+   */
+  notice: (message: string) => void
   /** The operation failed; the entry lingers briefly so the error is seen. */
   fail: (message: string) => void
 }
 
-const FAILED_LINGER_MS = 8000
+const LINGER_MS = 8000
 /**
  * Once shown, an entry stays visible at least this long — a fast operation
  * (a one-source rename) otherwise flashes for a frame and reads as a glitch.
@@ -68,7 +75,7 @@ function remove(id: number): void {
 export function startOperation(label: string): OperationHandle {
   const id = nextId++
   const shownAt = Date.now()
-  operations = [...operations, { id, label, progress: null, status: 'running', error: null }]
+  operations = [...operations, { id, label, progress: null, status: 'running', message: null }]
   emit()
   const removeAfterMinimum = (extra: number): void => {
     const visibleFor = Date.now() - shownAt
@@ -82,9 +89,13 @@ export function startOperation(label: string): OperationHandle {
   return {
     progress: (done, total) => patch(id, { progress: { done, total } }),
     done: () => removeAfterMinimum(0),
+    notice: (message) => {
+      patch(id, { status: 'notice', message })
+      removeAfterMinimum(LINGER_MS)
+    },
     fail: (message) => {
-      patch(id, { status: 'failed', error: message })
-      removeAfterMinimum(FAILED_LINGER_MS)
+      patch(id, { status: 'failed', message })
+      removeAfterMinimum(LINGER_MS)
     },
   }
 }

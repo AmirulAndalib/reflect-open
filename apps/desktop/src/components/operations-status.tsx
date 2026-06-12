@@ -27,7 +27,10 @@ export function OperationsStatus(): ReactElement | null {
             </span>
           ) : null}
           {operation.status === 'failed' ? (
-            <span className="block text-red-600 dark:text-red-400">{operation.error}</span>
+            <span className="block text-red-600 dark:text-red-400">{operation.message}</span>
+          ) : null}
+          {operation.status === 'notice' ? (
+            <span className="block text-text-muted">{operation.message}</span>
           ) : null}
         </div>
       ))}

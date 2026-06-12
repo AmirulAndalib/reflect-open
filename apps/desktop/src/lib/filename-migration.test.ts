@@ -23,6 +23,10 @@ vi.mock('./operations', () => ({
       done: () => {
         record.outcome = 'done'
       },
+      notice: (message: string) => {
+        record.outcome = 'notice'
+        record.message = message
+      },
       fail: (message: string) => {
         record.outcome = 'failed'
         record.message = message
@@ -275,6 +279,41 @@ describe('runFilenameMigration', () => {
       expect(files[CANDIDATE.path]).toBe('# Real Title\n') // untouched
     } finally {
       errorSpy.mockRestore()
+    }
+  })
+
+  it('a partial completion with skips is a notice, never a silent done', async () => {
+    // The prompt promised the candidate count; a mid-run race (the note got
+    // opened) shrinks it. Not a failure — but it must not read as complete.
+    files[CANDIDATE.path] = '# Real Title\n'
+    const open = `notes/${ULID_B}.md`
+    files[open] = '# Open Note\n'
+    const session: NoteSession = {
+      path: open,
+      retarget: () => {},
+      load: () => {},
+      editorChanged: () => {},
+      externalChanged: () => {},
+      flush: async () => {},
+      keepMine: () => {},
+      loadTheirs: () => {},
+      commitFrontmatter: async () => true,
+      content: () => files[open],
+      updateFrontmatter: () => true,
+      dispose: () => {},
+    }
+    const unregister = registerOpenDocument({ session })
+    try {
+      await runFilenameMigration({
+        candidates: [CANDIDATE, { path: open, title: 'Open Note' }],
+        generation: 3,
+      })
+
+      expect(operations.log[0]?.outcome).toBe('notice')
+      expect(operations.log[0]?.message).toContain('renamed 1 of 2')
+      expect(operations.log[0]?.message).toContain('skipped')
+    } finally {
+      unregister()
     }
   })
 
