@@ -61,8 +61,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: "0.2.0-beta.1"
-        CFBundleVersion: "0.2.0-beta.1"
+        CFBundleShortVersionString: 0.2.0
+        CFBundleVersion: 0.2.0
     entitlements:
       path: reflect-open_iOS/reflect-open_iOS.entitlements
     scheme:
