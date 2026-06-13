@@ -7,14 +7,15 @@ import { setBridge } from '@reflect/core'
 import { RouterProvider, useRouter } from '@/routing/router'
 import type { Route } from '@/routing/route'
 import { addDaysIso, formatDayLabel, todayIso } from '@/lib/dates'
-import { MobileScreen } from './mobile-screen'
+import { MobileShell } from './mobile-shell'
 
 /**
- * The mobile route switch (Plan 19): the daily spine pages between days, a
- * note screen pops back to where it came from, and a cold note entry lands
- * on today. Drives the real router → MobileScreen → NotePane stack over a
- * fake IPC bridge; only the ProseMirror view is stubbed (jsdom can't host
- * contenteditable), mirroring `route-content.test.tsx`.
+ * The tabbed mobile shell (Plan 19, V1 parity): the daily spine pages
+ * between days, the All tab lists and searches, a note screen pops back to
+ * where it came from, and a cold note entry lands on today. Drives the real
+ * router → MobileShell → screens → NotePane stack over a fake IPC bridge;
+ * only the ProseMirror view is stubbed (jsdom can't host contenteditable),
+ * mirroring `route-content.test.tsx`.
  */
 
 vi.mock('@/editor/note-editor', () => ({
@@ -83,7 +84,7 @@ function mount(initialRoute: Route, probeRoute?: Route): ReturnType<typeof rende
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider initialRoute={initialRoute}>
-        <MobileScreen />
+        <MobileShell />
         {probeRoute ? <NavProbe to={probeRoute} /> : null}
       </RouterProvider>
     </QueryClientProvider>,
@@ -104,7 +105,7 @@ function dayHeading(date: string): string {
   return formatDayLabel(date, 'mdy')
 }
 
-describe('MobileScreen', () => {
+describe('MobileShell', () => {
   it('renders today as the daily spine with its note content', async () => {
     const today = todayIso()
     files[`daily/${today}.md`] = 'captured on the go'
@@ -140,6 +141,28 @@ describe('MobileScreen', () => {
 
     await user.click(view.getByRole('button', { name: 'Back' }))
     expect(view.getByRole('heading').textContent).toContain(dayHeading(todayIso()))
+  })
+
+  it('switches tabs: All shows the searchable list, Daily returns to today', async () => {
+    const user = userEvent.setup()
+    const view = mount({ kind: 'today' })
+
+    await user.click(view.getByRole('button', { name: 'All' }))
+    expect(view.getByRole('searchbox', { name: 'Search notes' })).toBeTruthy()
+    expect((await view.findByText('No notes yet')).textContent).toBe('No notes yet')
+
+    await user.click(view.getByRole('button', { name: 'Daily' }))
+    expect(view.getByRole('heading').textContent).toContain(dayHeading(todayIso()))
+  })
+
+  it('renders a search entry as the All tab with the query seeded', async () => {
+    const view = mount({ kind: 'search', query: 'meeting' })
+
+    const box = view.getByRole('searchbox', { name: 'Search notes' })
+    await waitFor(() => {
+      expect((box as HTMLInputElement).value).toBe('meeting')
+    })
+    expect(view.getByRole('button', { name: 'All' }).getAttribute('aria-current')).toBe('page')
   })
 
   it('back from a cold note entry lands on today', async () => {
