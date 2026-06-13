@@ -71,7 +71,7 @@ pub(crate) fn ensure_defaults(root: &Path) -> AppResult<()> {
     };
 
     for (heading, patterns) in missing_groups {
-        write!(file, "{prefix}# {heading}\n")?;
+        writeln!(file, "{prefix}# {heading}")?;
         for pattern in patterns {
             writeln!(file, "{pattern}")?;
         }
