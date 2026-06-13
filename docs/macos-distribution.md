@@ -93,8 +93,10 @@ pnpm release:bump --dry-run      # show the plan, change nothing
 
 Default (no argument) is `beta`, the common case on `next`. The script refuses to run on
 a dirty tree or a branch out of sync with origin, refuses a version whose tag already
-exists, and — because a stable tag would reach every stable install — refuses to cut a
-stable (non-prerelease) version from `next`. It prints the plan and asks for confirmation
+exists, and locks each release to its branch — betas only from `next`, and stable
+versions only from `master` (a stable tag reaches `releases/latest` and auto-updates
+every stable install, so it must never be pushed from a branch whose code hasn't landed
+on `master`). It prints the plan and asks for confirmation
 (skip with `--yes`); `--no-tag` bumps and pushes the branch without tagging, for when you
 want the version commit but aren't ready to release. The typical flows:
 

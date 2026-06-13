@@ -218,15 +218,18 @@ async function main() {
   const isPrerelease = next.includes('-')
   const tag = `v${next}`
 
-  // Guardrail: stable versions are for the stable channel, which ships from
-  // master. A stable tag pushed from next would become `releases/latest` and
-  // reach every stable install — refuse it here.
-  if (!isPrerelease && branch === BETA_BRANCH) {
-    fail(
-      `refusing to cut stable ${next} from ${BETA_BRANCH}.\n` +
-        `  Stable releases ship from ${STABLE_BRANCH}: merge ${BETA_BRANCH} → ${STABLE_BRANCH} and run this there.\n` +
-        `  (To open the next beta cycle on ${BETA_BRANCH}, use prepatch/preminor/premajor.)`,
-    )
+  // Guardrail: releases are locked to their branch. A stable version reaches
+  // `releases/latest` and auto-updates every stable install, so it must come
+  // from master and nowhere else — keying on the *required* branch (not just
+  // excluding next) stops a stable tag being pushed from any other synced
+  // branch whose code never landed on master. Betas come from next.
+  const requiredBranch = isPrerelease ? BETA_BRANCH : STABLE_BRANCH
+  if (branch !== requiredBranch) {
+    const channel = isPrerelease ? 'pre-release' : 'stable'
+    const hint = isPrerelease
+      ? `Betas ship from ${BETA_BRANCH} — switch there and run this.`
+      : `Stable releases ship from ${STABLE_BRANCH} — merge ${BETA_BRANCH} → ${STABLE_BRANCH} and run this there.`
+    fail(`refusing to cut ${channel} ${next} from "${branch}".\n  ${hint}`)
   }
 
   if (git(['status', '--porcelain']) !== '') {
