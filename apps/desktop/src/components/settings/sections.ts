@@ -9,6 +9,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'editor', title: 'Editor' },
   { id: 'all-notes', title: 'All notes' },
   { id: 'search', title: 'Search' },
+  { id: 'import-export', title: 'Import & export' },
   { id: 'backup', title: 'Backup' },
   { id: 'ai-providers', title: 'AI providers' },
   { id: 'keyboard', title: 'Keyboard shortcuts' },

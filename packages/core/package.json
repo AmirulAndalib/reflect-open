@@ -20,6 +20,7 @@
     "@lezer/markdown": "^1.6.4",
     "@reflect/db": "workspace:*",
     "ai": "^6.0.202",
+    "fflate": "^0.8.3",
     "kysely": "^0.28.17",
     "yaml": "^2.9.0",
     "zod": "^3.23.0"
