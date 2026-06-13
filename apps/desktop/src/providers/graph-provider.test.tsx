@@ -118,8 +118,8 @@ describe('GraphProvider open sequencing', () => {
     const { result } = renderHook(() => useGraph(), { wrapper })
     await waitFor(() => expect(result.current.status).toBe('choosing'))
 
-    let firstOpen: Promise<void>
-    let secondOpen: Promise<void>
+    let firstOpen: Promise<boolean>
+    let secondOpen: Promise<boolean>
     act(() => {
       firstOpen = result.current.openRecent('/a')
       secondOpen = result.current.openRecent('/b')
@@ -235,6 +235,22 @@ describe('GraphProvider mobile onboarding (Plan 19, step 6)', () => {
     expect(result.current.graph?.root).toBe(MOBILE_ROOT)
     // The gate is persisted so later launches open the root directly.
     expect(settingsStore.mobileOnboarded).toBe(true)
+  })
+
+  it('does not persist the onboarded flag when the open fails (stays recoverable)', async () => {
+    const { result } = renderHook(() => useGraph(), { wrapper: mobileWrapper })
+    await waitFor(() => expect(result.current.needsOnboarding).toBe(true))
+
+    failOpens = true
+    await act(async () => {
+      await result.current.completeOnboarding()
+    })
+
+    // Open failed → the error screen shows (choosing) and the flag is NOT set,
+    // so the next launch re-offers onboarding instead of getting stuck.
+    expect(result.current.status).toBe('choosing')
+    expect(result.current.graph).toBeNull()
+    expect(settingsStore.mobileOnboarded).toBeUndefined()
   })
 
   it('opens the fixed root directly when already onboarded', async () => {

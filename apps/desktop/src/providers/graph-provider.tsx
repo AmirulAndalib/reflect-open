@@ -48,8 +48,8 @@ interface GraphContextValue {
   error: string | null
   /** Show the OS folder picker, then open (and bootstrap) the chosen graph. */
   pickAndOpen: () => Promise<void>
-  /** Open a graph by its root path. */
-  openRecent: (root: string) => Promise<void>
+  /** Open a graph by its root path. Resolves true only when it reached 'ready'. */
+  openRecent: (root: string) => Promise<boolean>
   /** Drop a graph from the recents list. */
   forget: (root: string) => Promise<void>
   /**
@@ -142,15 +142,19 @@ export function GraphProvider({
   )
 
   const openRecent = useCallback(
-    (root: string): Promise<void> => {
+    (root: string): Promise<boolean> => {
       const seq = ++openSeq.current
       setStatus('opening')
       setError(null)
-      const run = async (): Promise<void> => {
+      // Resolves true only when this open actually reached 'ready' — callers
+      // (mobile onboarding) gate side effects like persisting the onboarded
+      // flag on a confirmed open, never on a clone that failed to open.
+      const run = async (): Promise<boolean> => {
+        let opened = false
         try {
           const info = await openGraph(root)
           if (seq !== openSeq.current) {
-            return // superseded by a newer open
+            return false // superseded by a newer open
           }
           const index = indexRef.current
           // Stop any prior reconcile and wait for it to fully settle before the
@@ -161,7 +165,7 @@ export function GraphProvider({
           // graph's index. Best-effort: an index failure doesn't block editing.
           const generation = await index.open()
           if (seq !== openSeq.current) {
-            return
+            return false
           }
           // Onboarding, considered exactly once per graph (the `welcomeSeeded`
           // meta marker): an empty graph gets the pinned "How to use Reflect"
@@ -179,12 +183,13 @@ export function GraphProvider({
           setGraph(info)
           setIndexGeneration(generation)
           setStatus('ready')
+          opened = true
           // Background-sync the index (reconcile → subscribe → watch), bailing if
           // a newer open supersedes this one.
           index.sync(generation, () => seq !== openSeq.current)
         } catch (err) {
           if (seq !== openSeq.current) {
-            return
+            return false
           }
           setError(errorMessage(err))
           setStatus('choosing')
@@ -192,6 +197,7 @@ export function GraphProvider({
         if (seq === openSeq.current) {
           await loadRecents()
         }
+        return opened
       }
       // `graph_open` mutates Rust's GraphState (`set_root`), so overlapping opens
       // could otherwise have a slow older call land *after* a newer one and leave
@@ -292,17 +298,24 @@ export function GraphProvider({
     // status to 'opening' synchronously, so the shell never flashes the
     // open-failed screen in between.
     setNeedsOnboarding(false)
-    const opening = openRecent(mobileRoot)
-    // Persist the flag so later launches open the fixed root directly. Best
-    // effort: a failed write just re-shows onboarding next launch, where Start
-    // fresh re-opens the existing graph without re-seeding (no data loss).
+    const opened = await openRecent(mobileRoot)
+    if (!opened) {
+      // The open failed (e.g. a clone that won't open). Leave the onboarded
+      // flag unset so the next launch re-offers onboarding instead of getting
+      // stuck retrying a broken auto-open with no in-app way back; the
+      // open-failed screen surfaces the error in the meantime.
+      return
+    }
+    // Persist the flag only once the graph is actually open, so a failed open
+    // never strands the user past onboarding. Best effort: a failed write just
+    // re-shows onboarding next launch, where Start fresh re-opens the existing
+    // graph without re-seeding (no data loss).
     try {
       const current = await loadSettings()
       await saveSettings({ ...current, mobileOnboarded: true })
     } catch (err) {
       console.error('persist onboarded flag failed:', errorMessage(err))
     }
-    await opening
   }, [mobileRoot, openRecent])
 
   const value = useMemo<GraphContextValue>(

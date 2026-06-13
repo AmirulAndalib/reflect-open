@@ -41,7 +41,12 @@ export function SettingsSheet(): ReactElement {
   const gitStatusKey = [INDEX_QUERY_SCOPE, graph?.root, 'mobile-git-status']
   const { data: git } = useQuery({
     queryKey: gitStatusKey,
-    queryFn: () => gitStatus(generation as number),
+    queryFn: () => {
+      if (generation === null) {
+        throw new Error('git status query ran without a graph generation')
+      }
+      return gitStatus(generation)
+    },
     enabled: open && hasBridge() && generation !== null,
   })
 
