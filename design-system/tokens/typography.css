@@ -27,8 +27,8 @@
   --text-sm:   0.875rem;  /* 14px — buttons, menu items, default chrome */
   --text-base: 1rem;      /* 16px — editor body                  */
   --text-lg:   1.125rem;  /* 18px — lead paragraphs              */
-  --text-xl:   1.25rem;   /* 20px — note H2                      */
-  --text-2xl:  1.5rem;    /* 24px — note H1 / daily-note date     */
+  --text-xl:   1.25rem;   /* 20px — note title / note H2 / daily-note date */
+  --text-2xl:  1.5rem;    /* 24px — prose H1                     */
   --text-3xl:  1.875rem;  /* 30px                                */
 
   /* Marketing display sizes */

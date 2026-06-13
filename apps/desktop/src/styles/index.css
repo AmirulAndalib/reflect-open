@@ -269,6 +269,7 @@ body {
 .reflect-editor h2 { font-size: var(--text-xl, 1.25rem); }
 .reflect-editor h3 { font-size: var(--text-lg, 1.125rem); }
 .reflect-editor h1:first-child { margin-top: 0; }
+.reflect-editor .reflect-note-title { font-size: var(--text-xl, 1.25rem); }
 
 /* The new-note flow's name field: ghost "Untitled" over the seeded empty H1
    (`editor/title-placeholder.ts`) without occupying layout, so the caret

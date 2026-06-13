@@ -7,7 +7,9 @@ import { Decoration, DecorationSet } from '@prosekit/pm/view'
  * Title placeholder for the new-note flow (non-daily notes): a missing note
  * opens seeded with an empty H1 and the caret in it, and this decoration
  * ghosts "Untitled" over that line so it reads as the name field it is —
- * V1's new-note pattern. The ghost is anchored to the document, not the
+ * V1's new-note pattern. The extension also marks the leading H1 as the note
+ * title so it can share the daily-subject typography while ordinary body H1s
+ * keep prose heading styles. The ghost is anchored to the document, not the
  * caret: it stays while the user writes the body, a standing reminder that
  * the note is still unnamed (text styled by `.reflect-title-placeholder`).
  */
@@ -20,31 +22,39 @@ import { Decoration, DecorationSet } from '@prosekit/pm/view'
 export function titlePlaceholderRange(
   doc: ProseMirrorNode,
 ): { from: number; to: number } | null {
-  const first = doc.firstChild
-  const isEmptyTitle =
-    first !== null &&
-    first.type.name === 'heading' &&
-    first.attrs.level === 1 &&
-    first.content.size === 0
-  return isEmptyTitle ? { from: 0, to: first.nodeSize } : null
+  const range = titleHeadingRange(doc)
+  return range !== null && range.isEmpty ? { from: range.from, to: range.to } : null
 }
 
-/** Ghost `placeholder` over the document's leading empty H1. */
+function titleHeadingRange(
+  doc: ProseMirrorNode,
+): { from: number; to: number; isEmpty: boolean } | null {
+  const first = doc.firstChild
+  const isTitle = first !== null && first.type.name === 'heading' && first.attrs.level === 1
+  return isTitle ? { from: 0, to: first.nodeSize, isEmpty: first.content.size === 0 } : null
+}
+
+/** Mark the leading H1 as a note title and ghost `placeholder` when it is empty. */
 export function defineTitlePlaceholder(placeholder: string): PlainExtension {
   return definePlugin(
     new Plugin({
       key: new PluginKey('reflect-title-placeholder'),
       props: {
         decorations: (state) => {
-          const range = titlePlaceholderRange(state.doc)
+          const range = titleHeadingRange(state.doc)
           if (range === null) {
             return null
           }
+          const attrs: { class: string; 'data-placeholder'?: string } = {
+            class: range.isEmpty
+              ? 'reflect-note-title reflect-title-placeholder'
+              : 'reflect-note-title',
+          }
+          if (range.isEmpty) {
+            attrs['data-placeholder'] = placeholder
+          }
           return DecorationSet.create(state.doc, [
-            Decoration.node(range.from, range.to, {
-              class: 'reflect-title-placeholder',
-              'data-placeholder': placeholder,
-            }),
+            Decoration.node(range.from, range.to, attrs),
           ])
         },
       },

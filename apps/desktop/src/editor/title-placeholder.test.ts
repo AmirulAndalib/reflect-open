@@ -1,4 +1,5 @@
 import type { EditorState } from '@prosekit/pm/state'
+import type { Decoration } from '@prosekit/pm/view'
 import { DecorationSet } from '@prosekit/pm/view'
 import { describe, expect, it } from 'vitest'
 import { createMeowdownEditor } from './meowdown'
@@ -39,13 +40,39 @@ describe('titlePlaceholderRange', () => {
 })
 
 describe('defineTitlePlaceholder', () => {
-  it('decorates the empty title through the plugin the editor mounts', () => {
-    const state = stateFor('#\n')
-    const decorations = state.plugins
+  function decorationsFor(state: EditorState): Decoration[] {
+    return state.plugins
       .map((plugin) => plugin.props.decorations?.call(plugin, state))
       .filter((set): set is DecorationSet => set instanceof DecorationSet)
       .flatMap((set) => set.find())
+  }
+
+  function decorationClass(decoration: Decoration): string | null {
+    const decorated = decoration as unknown as {
+      readonly type?: { readonly attrs?: { readonly class?: unknown } }
+    }
+    const className = decorated.type?.attrs?.class
+    return typeof className === 'string' ? className : null
+  }
+
+  it('decorates the empty title through the plugin the editor mounts', () => {
+    const state = stateFor('#\n')
+    const decorations = decorationsFor(state)
     const titleEnd = state.doc.firstChild?.nodeSize ?? Number.NaN
     expect(decorations.some(({ from, to }) => from === 0 && to === titleEnd)).toBe(true)
+  })
+
+  it('marks a filled leading H1 as the note title', () => {
+    const state = stateFor('# My Note\n\nBody\n')
+    const decorations = decorationsFor(state)
+    const titleEnd = state.doc.firstChild?.nodeSize ?? Number.NaN
+    expect(
+      decorations.some(
+        (decoration) =>
+          decoration.from === 0 &&
+          decoration.to === titleEnd &&
+          decorationClass(decoration) === 'reflect-note-title',
+      ),
+    ).toBe(true)
   })
 })
