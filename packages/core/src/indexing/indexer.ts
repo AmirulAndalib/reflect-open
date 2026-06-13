@@ -1,4 +1,4 @@
-import { isAppError } from '../errors'
+import { errorMessage, isAppError } from '../errors'
 import { listFiles, readNote } from '../graph/commands'
 import { parseNote } from '../markdown'
 import {
@@ -67,12 +67,52 @@ export interface IndexPassOptions {
   /** Aborts the pass early when the active graph changes. */
   signal?: AbortSignal
   /**
+   * Called when a full rebuild cannot apply one note's projection even after
+   * retrying it outside the batch. The rebuild continues so one bad projection
+   * cannot leave the whole cache empty after `index_clear`. If omitted, that
+   * final single-note failure is thrown.
+   */
+  onSkippedNote?: (note: SkippedIndexedNote) => void
+  /**
    * Called after id-based move healing relocates a note's rows (Plan 17): an
    * external rename observed after the fact. The desktop layer uses it to
    * carry live sessions and rewrite routes, exactly as for an in-app rename
    * — without it, history entries keep pointing at the dead path.
    */
   onMoved?: (from: string, to: string) => void
+}
+
+/** One note omitted from a rebuild because its projection could not be written. */
+export interface SkippedIndexedNote {
+  /** Graph-relative markdown path. */
+  path: string
+  /** Displayable reason from the failed write. */
+  message: string
+}
+
+async function applyRebuildBatch(
+  notes: IndexedNote[],
+  generation: number,
+  onSkippedNote?: (note: SkippedIndexedNote) => void,
+): Promise<void> {
+  if (notes.length === 0) {
+    return
+  }
+  try {
+    await applyIndexedNotes(notes, generation)
+    return
+  } catch (cause) {
+    if (notes.length === 1) {
+      if (onSkippedNote === undefined) {
+        throw cause
+      }
+      onSkippedNote({ path: notes[0].path, message: errorMessage(cause) })
+      return
+    }
+    const midpoint = Math.ceil(notes.length / 2)
+    await applyRebuildBatch(notes.slice(0, midpoint), generation, onSkippedNote)
+    await applyRebuildBatch(notes.slice(midpoint), generation, onSkippedNote)
+  }
 }
 
 /**
@@ -83,7 +123,7 @@ export interface IndexPassOptions {
  * empty or half-populated.
  */
 export async function rebuildIndex(options: IndexPassOptions): Promise<void> {
-  const { generation } = options
+  const { generation, onSkippedNote } = options
   if (options.signal?.aborted) {
     return // don't wipe the current index for an already-cancelled pass
   }
@@ -96,11 +136,11 @@ export async function rebuildIndex(options: IndexPassOptions): Promise<void> {
     const fileHash = await hashContent(content)
     batch.push(buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs, source: content }))
     if (batch.length >= REBUILD_BATCH_SIZE) {
-      await applyIndexedNotes(batch, generation)
+      await applyRebuildBatch(batch, generation, onSkippedNote)
       batch = []
     }
   }
-  await applyIndexedNotes(batch, generation)
+  await applyRebuildBatch(batch, generation, onSkippedNote)
   // The rows now match the current projection — stamp it so `syncIndex` can
   // reconcile cheaply from here on. A superseded pass stamps into a stale
   // generation, which Rust drops: the next open then rebuilds again, which is

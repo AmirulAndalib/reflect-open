@@ -34,9 +34,19 @@ export function rebuildIndexVisibly(generation: number): Promise<void> {
 
 async function runRebuild(generation: number): Promise<void> {
   const operation = startOperation('Rebuilding search index')
+  const skippedNotes: string[] = []
   try {
-    await rebuildIndex({ generation })
-    operation.done()
+    await rebuildIndex({
+      generation,
+      onSkippedNote: (note) => skippedNotes.push(`${note.path}: ${note.message}`),
+    })
+    if (skippedNotes.length === 0) {
+      operation.done()
+    } else {
+      const sample = skippedNotes.slice(0, 3).join('; ')
+      const suffix = skippedNotes.length > 3 ? `; +${skippedNotes.length - 3} more` : ''
+      operation.fail(`Rebuilt with ${skippedNotes.length} skipped note(s): ${sample}${suffix}`)
+    }
   } catch (cause) {
     operation.fail(errorMessage(cause))
     return

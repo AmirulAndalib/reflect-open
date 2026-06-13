@@ -233,7 +233,9 @@ describe('app commands', () => {
       rebuildIndex.mockResolvedValueOnce(undefined)
       const { context } = fakeContext()
       await command('index.rebuild').run(context)
-      expect(rebuildIndex).toHaveBeenCalledWith({ generation: 7 })
+      expect(rebuildIndex).toHaveBeenCalledWith(
+        expect.objectContaining({ generation: 7, onSkippedNote: expect.any(Function) }),
+      )
 
       // No graph open → no rebuild.
       rebuildIndex.mockClear()

@@ -3,7 +3,12 @@ import type { EmbedStatus } from '@reflect/core'
 import { resetOperations } from '@/lib/operations'
 
 const rebuildIndex = vi.hoisted(() =>
-  vi.fn<(options: { generation: number }) => Promise<void>>(async () => undefined),
+  vi.fn<
+    (options: {
+      generation: number
+      onSkippedNote?: (note: { path: string; message: string }) => void
+    }) => Promise<void>
+  >(async () => undefined),
 )
 const embedStatus = vi.hoisted(() =>
   vi.fn<() => Promise<EmbedStatus>>(async () => ({ status: 'uninitialized' })),
@@ -55,10 +60,21 @@ describe('rebuildIndexVisibly', () => {
     await rebuildIndexVisibly(8)
 
     expect(rebuildIndex).toHaveBeenCalledTimes(2)
-    expect(rebuildIndex).toHaveBeenNthCalledWith(2, { generation: 8 })
+    expect(rebuildIndex).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ generation: 8, onSkippedNote: expect.any(Function) }),
+    )
 
     finishFirst()
     await first
+  })
+
+  it('does not reject when a rebuild reports skipped notes', async () => {
+    rebuildIndex.mockImplementationOnce(async (options) => {
+      options.onSkippedNote?.({ path: 'notes/bad.md', message: 'unexpected end of hex escape' })
+    })
+
+    await expect(rebuildIndexVisibly(7)).resolves.toBeUndefined()
   })
 
   it('absorbs a failed rebuild and releases the in-flight guard', async () => {

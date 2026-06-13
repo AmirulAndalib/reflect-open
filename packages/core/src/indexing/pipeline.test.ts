@@ -80,6 +80,84 @@ describe('rebuildIndex', () => {
       generation: 1,
     })
   })
+
+  it('splits a failed rebuild batch and still applies the notes individually', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'list_files') {
+        return [
+          { path: 'notes/a.md', size: 1, modifiedMs: 1 },
+          { path: 'notes/b.md', size: 1, modifiedMs: 2 },
+          { path: 'notes/c.md', size: 1, modifiedMs: 3 },
+        ]
+      }
+      if (command === 'note_read') {
+        return `# ${String(args.path)}\n`
+      }
+      if (command === 'index_apply_batch') {
+        const notes = args.notes as Array<{ path: string }>
+        if (notes.length > 1) {
+          throw new Error('batch payload refused')
+        }
+        return null
+      }
+      return null
+    })
+
+    await rebuildIndex({ generation: 1 })
+
+    const applied = mockInvoke.mock.calls
+      .filter(([command]) => command === 'index_apply_batch')
+      .map(([, args]) => (args as { notes: Array<{ path: string }> }).notes.map((note) => note.path))
+    expect(applied).toEqual([
+      ['notes/a.md', 'notes/b.md', 'notes/c.md'],
+      ['notes/a.md', 'notes/b.md'],
+      ['notes/a.md'],
+      ['notes/b.md'],
+      ['notes/c.md'],
+    ])
+    expect(mockInvoke.mock.calls.some(([command]) => command === 'index_meta_set')).toBe(true)
+  })
+
+  it('reports and skips a note whose projection cannot be written alone', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'list_files') {
+        return [{ path: 'notes/bad.md', size: 1, modifiedMs: 1 }]
+      }
+      if (command === 'note_read') {
+        return `# ${String(args.path)}\n`
+      }
+      if (command === 'index_apply_batch') {
+        throw { kind: 'parse', message: 'unexpected end of hex escape' }
+      }
+      return null
+    })
+    const skipped: Array<{ path: string; message: string }> = []
+
+    await rebuildIndex({ generation: 1, onSkippedNote: (note) => skipped.push(note) })
+
+    expect(skipped).toEqual([
+      { path: 'notes/bad.md', message: 'unexpected end of hex escape' },
+    ])
+    expect(mockInvoke.mock.calls.some(([command]) => command === 'index_meta_set')).toBe(true)
+  })
+
+  it('throws a single-note write failure when no skip callback is registered', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'list_files') {
+        return [{ path: 'notes/bad.md', size: 1, modifiedMs: 1 }]
+      }
+      if (command === 'note_read') {
+        return `# ${String(args.path)}\n`
+      }
+      if (command === 'index_apply_batch') {
+        throw new Error('single note refused')
+      }
+      return null
+    })
+
+    await expect(rebuildIndex({ generation: 1 })).rejects.toThrow('single note refused')
+    expect(mockInvoke.mock.calls.some(([command]) => command === 'index_meta_set')).toBe(false)
+  })
 })
 
 describe('syncIndex', () => {
@@ -230,7 +308,8 @@ describe('reconcileIndex move healing (Plan 17)', () => {
     expect(commands).toContain('index_move')
     expect(commands).not.toContain('index_remove')
     const apply = calls.find(([command]) => command === 'index_apply')
-    expect((apply?.[1].note as { path: string }).path).toBe(NEW)
+    expect(apply).toBeDefined()
+    expect((apply![1].note as { path: string }).path).toBe(NEW)
   })
 
   it('a legacy file without an id still reconciles as delete+create', async () => {
