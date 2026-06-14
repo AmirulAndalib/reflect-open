@@ -166,8 +166,9 @@ export function GraphProvider({
           // Rust index connection is swapped, so a stale pass can't write into
           // this graph's index.
           await index.stop()
-          // Drop optimistic note-row overlays from the prior graph: their paths
-          // may collide with this graph's, and their index never will.
+          // Reclaim the prior graph's optimistic note-row overlays. They're
+          // already invisible here (scoped by generation), so this is memory
+          // hygiene, not correctness.
           resetNoteRowOverlays()
           // Open the index *before* 'ready' so reads can't hit the previous
           // graph's index. Best-effort: an index failure doesn't block editing.

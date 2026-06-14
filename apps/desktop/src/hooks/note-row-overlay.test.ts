@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { NoteRow } from '@reflect/core'
 import {
   applyNoteRowOverlay,
+  getNoteRowOverlay,
   reconcileNoteRowOverlay,
   resetNoteRowOverlays,
   setNoteRowOverlay,
@@ -23,6 +24,7 @@ function noteRow(overrides: Partial<NoteRow> = {}): NoteRow {
 }
 
 const URL = 'https://gist.github.com/alex/g1'
+const GEN = 1
 
 beforeEach(() => {
   resetNoteRowOverlays()
@@ -46,13 +48,29 @@ describe('applyNoteRowOverlay', () => {
   })
 })
 
+describe('setNoteRowOverlay', () => {
+  it('ignores an empty or all-undefined patch (no non-reconcilable entry)', () => {
+    setNoteRowOverlay('notes/a.md', GEN, {})
+    setNoteRowOverlay('notes/a.md', GEN, { gistUrl: undefined })
+    expect(getNoteRowOverlay('notes/a.md', GEN)).toBeNull()
+  })
+
+  it('scopes the overlay to the writing generation', () => {
+    setNoteRowOverlay('notes/a.md', GEN, { gistUrl: URL })
+    expect(getNoteRowOverlay('notes/a.md', GEN)?.gistUrl).toBe(URL)
+    // A reader on a different graph generation never sees it.
+    expect(getNoteRowOverlay('notes/a.md', GEN + 1)).toBeNull()
+    expect(getNoteRowOverlay('notes/a.md', undefined)).toBeNull()
+  })
+})
+
 describe('useNoteRowOverlay', () => {
   it('reflects a set overlay and scopes it to the path', () => {
-    const { result } = renderHook(() => useNoteRowOverlay('notes/a.md'))
-    const other = renderHook(() => useNoteRowOverlay('notes/b.md'))
+    const { result } = renderHook(() => useNoteRowOverlay('notes/a.md', GEN))
+    const other = renderHook(() => useNoteRowOverlay('notes/b.md', GEN))
     expect(result.current).toBeNull()
 
-    act(() => setNoteRowOverlay('notes/a.md', { gistUrl: URL }))
+    act(() => setNoteRowOverlay('notes/a.md', GEN, { gistUrl: URL }))
     expect(result.current?.gistUrl).toBe(URL)
     expect(other.result.current).toBeNull()
   })
@@ -60,28 +78,28 @@ describe('useNoteRowOverlay', () => {
 
 describe('reconcileNoteRowOverlay', () => {
   it('holds the overlay while the index still lags, retires it once they agree', () => {
-    const { result } = renderHook(() => useNoteRowOverlay('notes/a.md'))
-    act(() => setNoteRowOverlay('notes/a.md', { gistUrl: URL }))
+    const { result } = renderHook(() => useNoteRowOverlay('notes/a.md', GEN))
+    act(() => setNoteRowOverlay('notes/a.md', GEN, { gistUrl: URL }))
 
-    act(() => reconcileNoteRowOverlay('notes/a.md', noteRow({ gistUrl: null })))
+    act(() => reconcileNoteRowOverlay('notes/a.md', GEN, noteRow({ gistUrl: null })))
     expect(result.current?.gistUrl).toBe(URL) // index hasn't caught up
 
-    act(() => reconcileNoteRowOverlay('notes/a.md', noteRow({ gistUrl: URL })))
+    act(() => reconcileNoteRowOverlay('notes/a.md', GEN, noteRow({ gistUrl: URL })))
     expect(result.current).toBeNull() // index agrees → retired
   })
 
   it('holds the overlay against a null row (nothing to compare yet)', () => {
-    const { result } = renderHook(() => useNoteRowOverlay('notes/a.md'))
-    act(() => setNoteRowOverlay('notes/a.md', { gistUrl: URL }))
-    act(() => reconcileNoteRowOverlay('notes/a.md', null))
+    const { result } = renderHook(() => useNoteRowOverlay('notes/a.md', GEN))
+    act(() => setNoteRowOverlay('notes/a.md', GEN, { gistUrl: URL }))
+    act(() => reconcileNoteRowOverlay('notes/a.md', GEN, null))
     expect(result.current?.gistUrl).toBe(URL)
   })
 })
 
 describe('resetNoteRowOverlays', () => {
   it('drops every overlay (e.g. on a graph switch)', () => {
-    const { result } = renderHook(() => useNoteRowOverlay('notes/a.md'))
-    act(() => setNoteRowOverlay('notes/a.md', { gistUrl: URL }))
+    const { result } = renderHook(() => useNoteRowOverlay('notes/a.md', GEN))
+    act(() => setNoteRowOverlay('notes/a.md', GEN, { gistUrl: URL }))
     expect(result.current?.gistUrl).toBe(URL)
 
     act(() => resetNoteRowOverlays())

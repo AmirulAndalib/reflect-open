@@ -77,20 +77,19 @@ describe('NoteGistAction', () => {
     expect(view.getByRole('button', { name: /Republish private link/ })).toBeTruthy()
   })
 
-  it('publishes on click and flips to Republish before the index catches up', async () => {
-    // The real publish records the url in the optimistic overlay; mirror that
-    // so the label flips off the overlay, ahead of any index refresh.
-    runGistPublish.mockImplementation(async (path) => {
-      setNoteRowOverlay(path, { gistUrl: 'https://gist.github.com/alex/g1' })
-      return 'https://gist.github.com/alex/g1'
-    })
+  it('publishes the open note on click', async () => {
     const view = renderAction()
     await userEvent.click(view.getByRole('button', { name: /Share with private link/ }))
-
     expect(runGistPublish).toHaveBeenCalledWith('notes/a.md', 7)
-    await waitFor(() => {
-      expect(view.getByRole('button', { name: /Republish private link/ })).toBeTruthy()
-    })
+  })
+
+  it('reflects an optimistic publish as Republish before the index catches up', () => {
+    // The overlay is what `runGistPublish` writes on success (its contract is
+    // covered in note-gist.test.ts); given one, the label flips without waiting
+    // on the index.
+    setNoteRowOverlay('notes/a.md', 7, { gistUrl: 'https://gist.github.com/alex/g1' })
+    const view = renderAction()
+    expect(view.getByRole('button', { name: /Republish private link/ })).toBeTruthy()
   })
 
   it('stays on Publish when the publish failed (already surfaced elsewhere)', async () => {
@@ -120,7 +119,7 @@ describe('NoteGistAction', () => {
     idle.unmount()
 
     // A fresh publish sits in the overlay: the nudge is held back.
-    setNoteRowOverlay('notes/a.md', { gistUrl: url })
+    setNoteRowOverlay('notes/a.md', 7, { gistUrl: url })
     const pending = renderAction()
     expect(accentIcon(pending)).toBeNull()
     pending.unmount()
