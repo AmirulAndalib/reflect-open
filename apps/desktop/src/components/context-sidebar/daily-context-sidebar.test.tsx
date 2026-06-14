@@ -1,7 +1,7 @@
-import { render, waitFor } from '@testing-library/react'
+import { cleanup, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import type { NoteRow } from '@reflect/core'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -69,6 +69,8 @@ beforeEach(() => {
   useNoteRow.mockReset().mockReturnValue(null)
 })
 
+afterEach(cleanup)
+
 describe('DailyContextSidebar calendar header', () => {
   it('jumps to today from the calendar-icon button', async () => {
     const view = renderSidebar('2026-06-09')
@@ -126,7 +128,7 @@ describe('DailyContextSidebar calendar', () => {
 describe('DailyContextSidebar related notes', () => {
   it('renders no Similar notes section without results', async () => {
     const view = renderSidebar('2026-06-09')
-    await waitFor(() => expect(relatedNotes).toHaveBeenCalledWith('daily/2026-06-09.md'))
+    await waitFor(() => expect(relatedNotes).toHaveBeenCalledWith('daily/2026-06-09.md', 6))
     expect(view.queryByText('Similar notes')).toBeNull()
     view.unmount()
   })
