@@ -58,7 +58,7 @@ function contextSidebarFor(target: ContextSidebarTarget | null): ReactElement | 
  */
 export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement {
   const { collapsed } = useSidebar()
-  const { route } = useRouter()
+  const { route, arrivalSeq, entryId } = useRouter()
   const commandContext = useAppShortcuts()
   const today = useToday()
   // Daily routes get the day's contextual panel and note routes the note's;
@@ -66,16 +66,18 @@ export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement
   const sidebarTarget = contextSidebarTarget(route, today)
 
   // In the daily stream the route stays on the day you navigated to while focus
-  // moves between days. The sidebar follows the focused day, falling back to the
-  // routed day — which is also the calendar-pick path, where focus stays out of
-  // the stream. A new routed day resets focus tracking pre-paint, so the sidebar
-  // snaps to it immediately and only then tracks where focus lands.
-  const routeDailyDate = sidebarTarget?.kind === 'daily' ? sidebarTarget.date : null
+  // moves between days, so the sidebar follows the focused day (falling back to
+  // the routed day when focus is outside the stream — the calendar-pick path).
+  // Every navigation re-anchors the stream; reset focus tracking on the *same*
+  // signals (`arrivalSeq`/`entryId`), not on the routed date — re-targeting the
+  // current day (a calendar pick on it, ⌘D to today) re-anchors too and must
+  // snap the sidebar back to it. The reset runs pre-paint, so no stale focused
+  // day is shown before the stream re-focuses the target.
   const focusedDailyDate = useFocusedDailyDate()
   const setFocusedDailyDate = useSetFocusedDailyDate()
   useLayoutEffect(() => {
     setFocusedDailyDate(null)
-  }, [routeDailyDate, setFocusedDailyDate])
+  }, [arrivalSeq, entryId, setFocusedDailyDate])
   const contextTarget = contextTargetForFocus(sidebarTarget, focusedDailyDate)
 
   return (
