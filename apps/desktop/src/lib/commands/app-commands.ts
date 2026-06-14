@@ -1,4 +1,11 @@
-import { errorMessage, getNote, getPinnedNotes, randomNotePath } from '@reflect/core'
+import {
+  errorMessage,
+  getNote,
+  getPinnedNotes,
+  hasBridge,
+  randomNotePath,
+  toggleDevtools,
+} from '@reflect/core'
 import { untitledNotePath } from '@/lib/create-note'
 import { todayIso } from '@/lib/dates'
 import { runGistPublish } from '@/lib/note-gist'
@@ -209,6 +216,26 @@ const APP_COMMANDS: AppCommand[] = [
         return
       }
       await rebuildIndexVisibly(generation)
+    },
+  },
+  {
+    id: 'dev.toggleDevtools',
+    title: 'Developer tools',
+    keywords: ['devtools', 'inspector', 'debug', 'console', 'inspect', 'web inspector'],
+    // The web inspector ships in every build (see `src-tauri/src/devtools.rs`),
+    // so users can always debug. Plain-browser dev has no native shell — and its
+    // own DevTools — so this no-ops there rather than throwing through the
+    // bridge. Errors are swallowed: a debug affordance never interrupts the user.
+    keybinding: 'Mod-Shift-i',
+    run: async () => {
+      if (!hasBridge()) {
+        return
+      }
+      try {
+        await toggleDevtools()
+      } catch {
+        // Best effort — opening the inspector is never worth a surfaced failure.
+      }
     },
   },
 ]

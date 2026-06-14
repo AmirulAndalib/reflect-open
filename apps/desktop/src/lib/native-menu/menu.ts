@@ -99,6 +99,8 @@ export function appMenuLayout(): AppSubmenuLayout[] {
         command('history.forward'),
         separator(),
         command('sidebar.toggle'),
+        separator(),
+        command('dev.toggleDevtools'),
       ],
     },
     {

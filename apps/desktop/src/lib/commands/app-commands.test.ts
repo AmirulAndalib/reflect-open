@@ -14,6 +14,8 @@ const toggleNotePinned = vi.hoisted(() => vi.fn(async () => true))
 const toggleNotePrivate = vi.hoisted(() => vi.fn(async () => true))
 const getNote = vi.hoisted(() => vi.fn<() => Promise<NoteRow | undefined>>(async () => undefined))
 const getPinnedNotes = vi.hoisted(() => vi.fn<() => Promise<PinnedNote[]>>(async () => []))
+const hasBridge = vi.hoisted(() => vi.fn(() => true))
+const toggleDevtools = vi.hoisted(() => vi.fn(async () => undefined))
 const operationFail = vi.hoisted(() => vi.fn())
 const startOperation = vi.hoisted(() =>
   vi.fn(() => ({ progress: vi.fn(), done: vi.fn(), fail: operationFail })),
@@ -35,6 +37,8 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   embedStatus,
   getNote,
   getPinnedNotes,
+  hasBridge,
+  toggleDevtools,
 }))
 
 // Importing registers the commands (module side effect, like production).
@@ -92,6 +96,10 @@ describe('keybindingFor', () => {
 
   it('audioMemo.toggle is bound to Mod-Shift-r', () => {
     expect(keybindingFor('audioMemo.toggle')).toBe('Mod-Shift-r')
+  })
+
+  it('dev.toggleDevtools is bound to Mod-Shift-i', () => {
+    expect(keybindingFor('dev.toggleDevtools')).toBe('Mod-Shift-i')
   })
 })
 
@@ -219,6 +227,23 @@ describe('app commands', () => {
     const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
     await expect(command('note.togglePrivate').run(context)).resolves.toBeUndefined()
     expect(startOperation).toHaveBeenCalledWith('Unlocking note')
+  })
+
+  it('dev.toggleDevtools toggles the inspector through the native shell', async () => {
+    hasBridge.mockReturnValue(true)
+    toggleDevtools.mockClear()
+    const { context } = fakeContext()
+    await command('dev.toggleDevtools').run(context)
+    expect(toggleDevtools).toHaveBeenCalledTimes(1)
+  })
+
+  it('dev.toggleDevtools no-ops without a native shell (plain-browser dev)', async () => {
+    hasBridge.mockReturnValue(false)
+    toggleDevtools.mockClear()
+    const { context } = fakeContext()
+    await expect(command('dev.toggleDevtools').run(context)).resolves.toBeUndefined()
+    expect(toggleDevtools).not.toHaveBeenCalled()
+    hasBridge.mockReturnValue(true)
   })
 
   it('semantic.enable persists the opt-in through the context capability', async () => {

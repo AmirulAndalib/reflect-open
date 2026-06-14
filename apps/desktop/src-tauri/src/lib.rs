@@ -12,6 +12,7 @@
 
 mod capture;
 mod db;
+mod devtools;
 mod error;
 mod fs;
 mod git;
@@ -189,6 +190,7 @@ pub fn run() {
             git::git_merge_remote,
             git::git_push,
             quit::quit_confirm,
+            devtools::toggle_devtools,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

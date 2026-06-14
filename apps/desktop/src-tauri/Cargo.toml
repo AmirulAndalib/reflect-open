@@ -18,7 +18,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+# `devtools` compiles the web inspector into release builds too (it is otherwise
+# debug-only), so a shipped app stays debuggable — see `src/devtools.rs`.
+tauri = { version = "2", features = ["protocol-asset", "devtools"] }
 tauri-plugin-opener = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
