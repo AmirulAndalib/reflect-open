@@ -20,22 +20,23 @@ import { useGraph } from '@/providers/graph-provider'
  */
 export function useNoteRow(path: string): NoteRow | null {
   const { graph } = useGraph()
+  const generation = graph?.generation
   const { data } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'note', path],
     queryFn: async () => (await getNote(path)) ?? null,
     enabled: hasBridge() && graph !== null,
   })
   const row = data ?? null
-  const overlay = useNoteRowOverlay(path)
+  const overlay = useNoteRowOverlay(path, generation)
 
   // Retire the overlay once the index reports the same value. An effect, not a
   // render-time mutation: the store is shared, and writing it during render
   // would tear other subscribers.
   useEffect(() => {
-    if (overlay !== null) {
-      reconcileNoteRowOverlay(path, row)
+    if (generation !== undefined && overlay !== null) {
+      reconcileNoteRowOverlay(path, generation, row)
     }
-  }, [path, overlay, row])
+  }, [path, generation, overlay, row])
 
   return applyNoteRowOverlay(row, overlay)
 }
