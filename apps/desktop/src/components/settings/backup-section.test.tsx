@@ -127,6 +127,33 @@ describe('BackupSection', () => {
     await waitFor(() => expect(screen.queryByText(/Couldn’t open the browser/)).toBeNull())
   })
 
+  it('ignores an older open-repo failure after a newer retry succeeds', async () => {
+    let rejectFirstOpen: (reason?: unknown) => void = () => {}
+    vi.mocked(openUrl)
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectFirstOpen = reject
+          }),
+      )
+      .mockResolvedValueOnce()
+    renderSection({
+      phase: 'connected',
+      remoteUrl: 'https://github.com/alex/notes.git',
+      repo: { owner: 'alex', name: 'notes' },
+      status: { state: 'idle' },
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open GitHub repo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub repo' }))
+
+    await waitFor(() => expect(openUrl).toHaveBeenCalledTimes(2))
+
+    rejectFirstOpen(new Error('Old failure'))
+
+    await waitFor(() => expect(screen.queryByText(/Couldn’t open the browser/)).toBeNull())
+  })
+
   it('confirms before signing out of GitHub', async () => {
     renderSection({
       phase: 'connected',

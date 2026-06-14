@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { useRef, useState, type ReactElement } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { useQuery } from '@tanstack/react-query'
 import { getConflictedNotes, getDuplicateNoteIds, hasBridge } from '@reflect/core'
@@ -57,6 +57,7 @@ export function BackupSection(): ReactElement {
   const { graph } = useGraph()
   const [connectOpen, setConnectOpen] = useState(false)
   const [signOutOpen, setSignOutOpen] = useState(false)
+  const openRepoAttempt = useRef(0)
   const action = useAsyncAction()
   const signOutAction = useAsyncAction()
 
@@ -89,13 +90,19 @@ export function BackupSection(): ReactElement {
       return
     }
     const url = githubRepoBrowserUrl(backup.repo)
+    const attempt = openRepoAttempt.current + 1
+    openRepoAttempt.current = attempt
     action.setError(null)
     void openUrl(url)
       .then(() => {
-        action.setError(null)
+        if (openRepoAttempt.current === attempt) {
+          action.setError(null)
+        }
       })
       .catch(() => {
-        action.setError(`Couldn’t open the browser — visit ${url} yourself.`)
+        if (openRepoAttempt.current === attempt) {
+          action.setError(`Couldn’t open the browser — visit ${url} yourself.`)
+        }
       })
   }
 
