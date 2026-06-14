@@ -16,7 +16,7 @@ import {
   type StreamChatOptions,
 } from '@reflect/core'
 import { ChatProvider, useChatSession } from '@/providers/chat-provider'
-import { RouterProvider } from '@/routing/router'
+import { RouterProvider, useRouter } from '@/routing/router'
 
 /**
  * The chat view over a faked engine: the provider stack and screen are real,
@@ -30,6 +30,9 @@ const streamChat = vi.hoisted(() =>
   vi.fn<(options: StreamChatOptions) => AsyncGenerator<ChatStreamEvent>>(),
 )
 const getSecret = vi.hoisted(() => vi.fn<(name: string) => Promise<string | null>>())
+const resolveWikiTarget = vi.hoisted(() =>
+  vi.fn<(target: string) => Promise<{ kind: 'resolved'; ref: string } | { kind: 'unresolved'; text: string }>>(),
+)
 const loadChatGraphContext = vi.hoisted(() =>
   vi.fn<
     (graphName: string, deps?: GraphContextDeps) => Promise<CloudSafe<CloudGraphContext>>
@@ -39,6 +42,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   streamChat,
   getSecret,
+  resolveWikiTarget,
   loadChatGraphContext,
 }))
 
@@ -79,9 +83,37 @@ vi.mock('@/providers/graph-provider', () => ({
 // jsdom can't host the ProseMirror contenteditable (same stub as the palette
 // tests); markdown rendering is the editor's concern, not this screen's.
 vi.mock('@/editor/markdown-preview', () => ({
-  MarkdownPreview: ({ content }: { content: string }) => (
-    <div data-testid="markdown-preview">{content}</div>
-  ),
+  MarkdownPreview: ({
+    content,
+    onWikiLinkClick,
+    onTagClick,
+  }: {
+    content: string
+    onWikiLinkClick?: (target: string) => void
+    onTagClick?: (tag: string) => void
+  }) => {
+    const wikiTargets = Array.from(content.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)).map(
+      (match) => match[1],
+    )
+    const tags = Array.from(content.matchAll(/(^|\s)#(\p{L}[\p{L}\p{N}/_-]*)/gu)).map(
+      (match) => match[2],
+    )
+    return (
+      <div data-testid="markdown-preview">
+        {content}
+        {wikiTargets.map((target) => (
+          <button key={target} type="button" onClick={() => onWikiLinkClick?.(target)}>
+            Open {target}
+          </button>
+        ))}
+        {tags.map((tag) => (
+          <button key={tag} type="button" onClick={() => onTagClick?.(tag)}>
+            Open #{tag}
+          </button>
+        ))}
+      </div>
+    )
+  },
 }))
 vi.mock('@/lib/provider-fetch', () => ({ providerFetch: vi.fn() }))
 
@@ -112,6 +144,10 @@ beforeEach(() => {
   streamChat.mockReset()
   getSecret.mockReset().mockResolvedValue('sk-test')
   loadChatGraphContext.mockReset().mockResolvedValue(GRAPH_CONTEXT)
+  resolveWikiTarget.mockReset().mockImplementation(async (target) => ({
+    kind: 'resolved',
+    ref: `notes/${target.toLowerCase()}.md`,
+  }))
 })
 
 const MODEL: AiProviderConfig = { id: 'm1', provider: 'openai', model: 'gpt-5.1', keyHint: '12345' }
@@ -136,6 +172,7 @@ function pngFile(name: string): File {
 
 let probedSend: ((text: string) => Promise<void>) | null = null
 let probedNewChat: (() => void) | null = null
+let probedRoute: unknown = null
 
 function SendProbe(): ReactElement | null {
   const session = useChatSession()
@@ -144,8 +181,14 @@ function SendProbe(): ReactElement | null {
   return null
 }
 
+function RouteProbe(): ReactElement | null {
+  probedRoute = useRouter().route
+  return null
+}
+
 function renderChat() {
   probedSend = null
+  probedRoute = null
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
@@ -153,6 +196,7 @@ function renderChat() {
         <ChatProvider graph={GRAPH}>
           <ChatScreen />
           <SendProbe />
+          <RouteProbe />
         </ChatProvider>
       </RouterProvider>
     </QueryClientProvider>,
@@ -198,6 +242,26 @@ describe('ChatScreen', () => {
     const options = streamChat.mock.lastCall?.[0]
     expect(options?.config).toEqual(MODEL)
     expect(options?.messages.at(-1)).toEqual({ role: 'user', content: 'when does atlas ship?' })
+  })
+
+  it('opens cited wiki links and tags from settled chat markdown', async () => {
+    configureModel()
+    scriptTurn([
+      { type: 'text-delta', text: 'See [[Atlas]] and #book.' },
+      {
+        type: 'complete',
+        messages: [{ role: 'assistant', content: 'See [[Atlas]] and #book.' }],
+      },
+    ])
+    const view = renderChat()
+
+    await userEvent.type(view.getByLabelText('Chat message'), 'what should I open?{Enter}')
+    await userEvent.click(await view.findByRole('button', { name: 'Open Atlas' }))
+
+    await waitFor(() => expect(probedRoute).toEqual({ kind: 'note', path: 'notes/atlas.md' }))
+
+    await userEvent.click(view.getByRole('button', { name: 'Open #book' }))
+    expect(probedRoute).toEqual({ kind: 'allNotes', tag: 'book' })
   })
 
   it('offers the provider catalog in the picker, keeping a custom model selectable', async () => {
@@ -322,7 +386,8 @@ describe('ChatScreen', () => {
 
     await userEvent.type(view.getByLabelText('Chat message'), 'what have I been reading?{Enter}')
 
-    await view.findByText(/Listed #book notes · 1 note/)
+    await userEvent.click(await view.findByRole('button', { name: '#book' }))
+    expect(probedRoute).toEqual({ kind: 'allNotes', tag: 'book' })
     // A refused listing shows the refusal, not a misleading count.
     await view.findByText(/Listed #\* notes — Not a tag/)
     await view.findByText(/Listed daily notes 2026-06-01 – 2026-06-11 · 2 days/)

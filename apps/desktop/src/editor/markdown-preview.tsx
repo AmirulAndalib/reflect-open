@@ -11,6 +11,7 @@ import { ProseKit } from '@prosekit/react'
 import '@meowdown/core/style.css'
 import { cn } from '@/lib/utils'
 import { defineImages } from './images'
+import { defineTags } from './tags'
 import { defineWikiLinks } from './wiki-links'
 
 /**
@@ -35,6 +36,8 @@ interface MarkdownPreviewProps {
    * inert chips (the palette preview's behavior).
    */
   onWikiLinkClick?: (target: string) => void
+  /** Navigate a clicked `#tag` name, without the leading `#`. */
+  onTagClick?: (tag: string) => void
   /** Extra classes for the rendered root. */
   className?: string
 }
@@ -46,6 +49,7 @@ function defineReadOnly(): PlainExtension {
 function createPreviewEditor(
   resolveUrl: (src: string) => string | null,
   onNavigate: ((target: string) => void) | undefined,
+  onTagNavigate: ((tag: string) => void) | undefined,
 ): Editor {
   return createEditor({
     extension: union(
@@ -54,6 +58,7 @@ function createPreviewEditor(
       // No handler, no plugin option: a registered callback makes the plugin
       // consume chip clicks, and an inert preview must not swallow them.
       defineWikiLinks(onNavigate ? { onNavigate } : {}),
+      defineTags(onTagNavigate ? { onNavigate: onTagNavigate } : {}),
       defineImages({ resolveUrl }),
       defineReadOnly(),
     ),
@@ -64,6 +69,7 @@ export function MarkdownPreview({
   content,
   resolveImageUrl,
   onWikiLinkClick,
+  onTagClick,
   className,
 }: MarkdownPreviewProps): ReactElement {
   // The extension set is created once; the resolver and click handler are
@@ -74,10 +80,13 @@ export function MarkdownPreview({
   resolveRef.current = resolveImageUrl
   const navigateRef = useRef<((target: string) => void) | undefined>(onWikiLinkClick)
   navigateRef.current = onWikiLinkClick
+  const tagNavigateRef = useRef<((tag: string) => void) | undefined>(onTagClick)
+  tagNavigateRef.current = onTagClick
   const [editor] = useState(() =>
     createPreviewEditor(
       (src) => resolveRef.current?.(src) ?? null,
       onWikiLinkClick ? (target) => navigateRef.current?.(target) : undefined,
+      onTagClick ? (tag) => tagNavigateRef.current?.(tag) : undefined,
     ),
   )
 

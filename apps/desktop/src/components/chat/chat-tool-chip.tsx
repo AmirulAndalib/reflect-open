@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from 'react'
 import { CalendarDays, FileText, History, Search } from 'lucide-react'
-import { isToolPending, type AssistantPart } from '@reflect/core'
+import { isTagName, isToolPending, type AssistantPart } from '@reflect/core'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
 import { Spinner } from '@/components/ui/spinner'
@@ -56,10 +56,22 @@ export function ChatToolChip({ part }: ChatToolChipProps): ReactElement {
 
   if (call.tool === 'recents') {
     const result = part.result?.tool === 'recents' ? part.result : null
+    const tagLabel =
+      call.tag !== null && isTagName(call.tag) ? (
+        <button
+          type="button"
+          onClick={() => navigate({ kind: 'allNotes', tag: call.tag })}
+          className="underline-offset-2 hover:text-text hover:underline"
+        >
+          #{call.tag}
+        </button>
+      ) : (
+        (call.tag !== null ? `#${call.tag}` : 'recent')
+      )
     return (
       <ChipFrame pending={pending} icon={<History aria-hidden className="size-3.5" />}>
         <span className="truncate">
-          Listed {call.tag !== null ? `#${call.tag}` : 'recent'} notes
+          Listed {tagLabel} notes
           {result !== null
             ? result.error !== null
               ? ` — ${result.error}`
