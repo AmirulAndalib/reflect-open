@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BackupState } from '@/lib/backup-controller'
@@ -109,5 +109,21 @@ describe('BackupSection', () => {
     await waitFor(() =>
       expect(screen.queryByRole('heading', { name: 'Sign out of GitHub?' })).toBeNull(),
     )
+  })
+
+  it('shows sign-out failures inside the confirmation dialog', async () => {
+    sync.signOut.mockRejectedValueOnce(new Error('Keychain denied'))
+    renderSection({
+      phase: 'connected',
+      remoteUrl: 'https://github.com/alex/notes.git',
+      repo: { owner: 'alex', name: 'notes' },
+      status: { state: 'idle' },
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: /Sign out of GitHub/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+
+    expect(await screen.findByRole('heading', { name: 'Sign out of GitHub?' })).toBeTruthy()
+    expect(within(screen.getByRole('dialog')).getByText('Keychain denied')).toBeTruthy()
   })
 })

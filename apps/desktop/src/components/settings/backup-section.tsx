@@ -189,6 +189,9 @@ export function BackupSection(): ReactElement {
                           GitHub-backed graph will stop backing up until you sign in again.
                         </DialogDescription>
                       </DialogHeader>
+                      {action.error !== null ? (
+                        <p className="text-xs text-red-700 dark:text-red-300">{action.error}</p>
+                      ) : null}
                       <DialogFooter>
                         <DialogClose asChild>
                           <Button variant="outline">Cancel</Button>
