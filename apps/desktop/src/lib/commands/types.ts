@@ -9,8 +9,15 @@ import type { Route } from '@/routing/route'
 
 export interface CommandContext {
   navigate: (route: Route) => void
-  /** The current route, read at run time — what note-scoped commands act on. */
+  /** The current route, read at run time. */
   route: () => Route
+  /**
+   * The note file note-scoped commands (pin, private, publish) act on, or null
+   * for screens that edit no note. Usually the routed note, but in the daily
+   * stream it's the **focused** day — the same note the context sidebar
+   * describes — so a command and the sidebar never target different days.
+   */
+  notePath: () => string | null
   back: () => void
   forward: () => void
   toggleTheme: () => void

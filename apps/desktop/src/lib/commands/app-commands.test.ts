@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { EmbedStatus, NoteRow, PinnedNote } from '@reflect/core'
-import type { Route } from '@/routing/route'
+import { notePathForRoute, type Route } from '@/routing/route'
 import { resetOperations } from '@/lib/operations'
 import type { CommandContext } from './types'
+
+const TODAY = '2026-06-09'
 
 const randomNotePath = vi.hoisted(() => vi.fn())
 const rebuildIndex = vi.hoisted(() => vi.fn())
@@ -54,9 +56,13 @@ function command(id: string) {
 
 function fakeContext(overrides?: Partial<CommandContext>) {
   const navigated: Route[] = []
+  const route: () => Route = overrides?.route ?? (() => ({ kind: 'today' }))
   const context: CommandContext = {
-    navigate: (route) => void navigated.push(route),
-    route: () => ({ kind: 'today' }),
+    navigate: (target) => void navigated.push(target),
+    route,
+    // Mirror the real context: note-scoped commands resolve their target from
+    // the route (the focused-day branch is exercised in app-shortcuts).
+    notePath: () => notePathForRoute(route(), TODAY),
     back: vi.fn(),
     forward: vi.fn(),
     toggleTheme: vi.fn(),

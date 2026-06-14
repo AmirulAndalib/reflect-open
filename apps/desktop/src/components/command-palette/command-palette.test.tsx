@@ -83,6 +83,7 @@ function renderPalette(query: string, context?: Partial<CommandContext>) {
   const fullContext: CommandContext = {
     navigate,
     route: () => ({ kind: 'today' }),
+    notePath: () => null,
     back: vi.fn(),
     forward: vi.fn(),
     toggleTheme: vi.fn(),

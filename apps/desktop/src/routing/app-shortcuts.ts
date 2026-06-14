@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { dailyPath } from '@reflect/core'
 import { usePalette } from '@/components/command-palette/palette-provider'
 import { registerKeymap } from '@/editor/keymap'
 import { APP_COMMANDS } from '@/lib/commands/app-commands'
 import { runCommand } from '@/lib/commands/registry'
+import { todayIso } from '@/lib/dates'
 import { setMenuCommandDispatch } from '@/lib/native-menu/dispatch'
 import { retryFailedEmbeddings } from '@/lib/semantic'
 import type { CommandContext } from '@/lib/commands/types'
 import { useAudioMemo } from '@/providers/audio-memo-provider'
+import { useFocusedDailyDate } from '@/providers/focused-daily-provider'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
 import { useShortcuts } from '@/providers/shortcuts-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
 import { useTheme } from '@/providers/theme-provider'
+import { notePathForRoute } from './route'
 import { useRouter } from './router'
 
 /**
@@ -46,6 +50,7 @@ function isModKey(event: KeyboardEvent): boolean {
  */
 export function useAppShortcuts(): CommandContext {
   const { route, navigate, back, forward } = useRouter()
+  const focusedDailyDate = useFocusedDailyDate()
   const { resolvedTheme, setTheme } = useTheme()
   const { graph } = useGraph()
   const { openPalette, open: paletteOpen } = usePalette()
@@ -69,11 +74,24 @@ export function useAppShortcuts(): CommandContext {
   generationRef.current = graph?.generation ?? null
   const routeRef = useRef(route)
   routeRef.current = route
+  const focusedDailyDateRef = useRef(focusedDailyDate)
+  focusedDailyDateRef.current = focusedDailyDate
 
   const context = useMemo<CommandContext>(
     () => ({
       navigate,
       route: () => routeRef.current,
+      // The focused day in the daily stream, falling back to the routed note —
+      // so a note-scoped command targets the same day the context sidebar shows
+      // (the stream keeps one route while focus moves between days).
+      notePath: () => {
+        const currentRoute = routeRef.current
+        const focused = focusedDailyDateRef.current
+        if (focused !== null && (currentRoute.kind === 'today' || currentRoute.kind === 'daily')) {
+          return dailyPath(focused)
+        }
+        return notePathForRoute(currentRoute, todayIso())
+      },
       back,
       forward,
       toggleTheme: () => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'),
