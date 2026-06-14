@@ -65,7 +65,7 @@ export function PublishedUrlSection({ path }: PublishedUrlSectionProps): ReactEl
         <a
           href={url}
           onClick={openPublishedUrl}
-          className="min-w-0 flex-1 truncate text-sm text-text hover:underline"
+          className="min-w-0 flex-1 truncate text-xs text-text hover:underline"
           title={url}
         >
           {url}
