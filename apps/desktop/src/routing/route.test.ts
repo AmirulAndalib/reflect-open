@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { notePathForRoute, routeForPath, routesEqual } from './route'
+import { effectiveDailyDate, notePathForRoute, routeForPath, routesEqual } from './route'
 
 describe('routeForPath', () => {
   it('routes real daily paths to the daily view', () => {
@@ -53,5 +53,27 @@ describe('notePathForRoute', () => {
     expect(notePathForRoute({ kind: 'settings' }, TODAY)).toBeNull()
     expect(notePathForRoute({ kind: 'allNotes', tag: null }, TODAY)).toBeNull()
     expect(notePathForRoute({ kind: 'chat' }, TODAY)).toBeNull()
+  })
+})
+
+describe('effectiveDailyDate', () => {
+  const TODAY = '2026-06-10'
+
+  it('prefers the focused stream day on a daily view', () => {
+    expect(effectiveDailyDate({ kind: 'today' }, TODAY, '2026-06-01')).toBe('2026-06-01')
+    expect(effectiveDailyDate({ kind: 'daily', date: '2026-06-09' }, TODAY, '2026-06-01')).toBe(
+      '2026-06-01',
+    )
+  })
+
+  it('falls back to the route’s own day when nothing is focused', () => {
+    expect(effectiveDailyDate({ kind: 'today' }, TODAY, null)).toBe(TODAY)
+    expect(effectiveDailyDate({ kind: 'daily', date: '2026-06-09' }, TODAY, null)).toBe('2026-06-09')
+  })
+
+  it('is null off the daily views, even with a focused day (focus is irrelevant)', () => {
+    expect(effectiveDailyDate({ kind: 'note', path: 'notes/a.md' }, TODAY, '2026-06-01')).toBeNull()
+    expect(effectiveDailyDate({ kind: 'search', query: 'x' }, TODAY, '2026-06-01')).toBeNull()
+    expect(effectiveDailyDate({ kind: 'settings' }, TODAY, '2026-06-01')).toBeNull()
   })
 })

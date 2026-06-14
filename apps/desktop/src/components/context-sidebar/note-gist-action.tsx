@@ -32,7 +32,7 @@ export function NoteGistAction({ path, keybinding = null }: NoteGistActionProps)
   // `row` already reflects a just-published url (the optimistic overlay flows
   // through `useNoteRow`); the raw overlay tells us *that* a publish is still
   // catching up, which only `stale` needs.
-  const optimistic = useNoteRowOverlay(path)?.gistUrl != null
+  const optimistic = useNoteRowOverlay(path, graph?.generation)?.gistUrl != null
   const [isPublishing, setIsPublishing] = useState(false)
 
   const published = optimistic || (row?.gistUrl ?? null) !== null

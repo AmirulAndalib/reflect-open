@@ -7,13 +7,12 @@ import {
   toggleDevtools,
 } from '@reflect/core'
 import { untitledNotePath } from '@/lib/create-note'
-import { todayIso } from '@/lib/dates'
 import { runGistPublish } from '@/lib/note-gist'
 import { toggleNotePinned } from '@/lib/note-pin'
 import { toggleNotePrivate } from '@/lib/note-private'
 import { startOperation } from '@/lib/operations'
 import { rebuildIndexVisibly } from '@/lib/rebuild-index'
-import { notePathForRoute, type Route } from '@/routing/route'
+import { type Route } from '@/routing/route'
 import { registerCommands } from './registry'
 import type { AppCommand } from './types'
 
@@ -89,7 +88,7 @@ const APP_COMMANDS: AppCommand[] = [
     keybinding: 'Mod-o',
     run: async (context) => {
       const generation = context.generation()
-      const path = notePathForRoute(context.route(), todayIso())
+      const path = context.notePath()
       if (generation === null || path === null) {
         return
       }
@@ -116,7 +115,7 @@ const APP_COMMANDS: AppCommand[] = [
     // keyboard-reachable without spending a shortcut.
     run: async (context) => {
       const generation = context.generation()
-      const path = notePathForRoute(context.route(), todayIso())
+      const path = context.notePath()
       if (generation === null || path === null) {
         return
       }
@@ -143,7 +142,7 @@ const APP_COMMANDS: AppCommand[] = [
     // progress line, the failure surface, and the "link copied" confirmation.
     run: async (context) => {
       const generation = context.generation()
-      const path = notePathForRoute(context.route(), todayIso())
+      const path = context.notePath()
       if (generation === null || path === null) {
         return
       }

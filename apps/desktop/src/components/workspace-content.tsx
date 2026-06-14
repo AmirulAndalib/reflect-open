@@ -6,10 +6,7 @@ import { CloudSyncBanner } from '@/components/cloud-sync-banner'
 import { CommandPalette } from '@/components/command-palette/command-palette'
 import { DailyContextSidebar } from '@/components/context-sidebar/daily-context-sidebar'
 import { NoteContextSidebar } from '@/components/context-sidebar/note-context-sidebar'
-import {
-  contextSidebarTarget,
-  type ContextSidebarTarget,
-} from '@/components/context-sidebar/sidebar-route'
+import { type ContextSidebarTarget } from '@/components/context-sidebar/sidebar-route'
 import { EmbeddingsSync } from '@/components/embeddings-sync'
 import { ShortcutKeys } from '@/components/shortcut-keys'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -18,12 +15,11 @@ import { RouteContent } from '@/components/route-content'
 import { ShortcutsDialog } from '@/components/shortcuts-dialog'
 import { Sidebar } from '@/components/sidebar/sidebar'
 import { keybindingFor } from '@/lib/commands/app-commands'
-import { useToday } from '@/lib/use-today'
 import { cn } from '@/lib/utils'
 import { hasMacosTitleBarOverlay } from '@/lib/window-chrome'
+import { useDailyContextTarget } from '@/providers/focused-daily-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
 import { useAppShortcuts } from '@/routing/app-shortcuts'
-import { useRouter } from '@/routing/router'
 
 const TOGGLE_SIDEBAR_BINDING = keybindingFor('sidebar.toggle')
 
@@ -53,17 +49,17 @@ function contextSidebarFor(target: ContextSidebarTarget | null): ReactElement | 
  */
 export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement {
   const { collapsed } = useSidebar()
-  const { route } = useRouter()
   const commandContext = useAppShortcuts()
-  const today = useToday()
   // Daily routes get the day's contextual panel and note routes the note's;
   // search/settings get none (AppShell omits the region when context is absent).
-  const sidebarTarget = contextSidebarTarget(route, today)
+  // In the daily stream the route stays put while focus moves between days, so
+  // the panel follows the focused day and snaps back on navigation.
+  const contextTarget = useDailyContextTarget()
 
   return (
     <AppShell
       sidebar={collapsed ? undefined : <Sidebar graph={graph} context={commandContext} />}
-      context={contextSidebarFor(sidebarTarget)}
+      context={contextSidebarFor(contextTarget)}
     >
       <div className="relative flex h-full flex-col">
         {collapsed ? (

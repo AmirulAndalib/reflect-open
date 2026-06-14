@@ -115,7 +115,9 @@ export async function runGistPublish(path: string, generation: number): Promise<
     return null
   }
   operation.done()
-  setNoteRowOverlay(path, { gistUrl: url })
+  // Stamp the optimism with the publishing graph's generation, so a publish
+  // that resolves after a graph switch can't surface on the new graph.
+  setNoteRowOverlay(path, generation, { gistUrl: url })
   try {
     await navigator.clipboard.writeText(url)
     startOperation('Gist link copied').done()

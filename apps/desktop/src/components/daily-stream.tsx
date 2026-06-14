@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { useSettings } from '@/providers/settings-provider'
 import { useToday } from '@/lib/use-today'
 import { createDayWindow, dateAtIndex, indexOfDate } from '@/lib/day-window'
+import { useSetFocusedDailyDate } from '@/providers/focused-daily-provider'
 import { useRouter } from '@/routing/router'
 
 interface DailyStreamProps {
@@ -107,6 +108,11 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
     focusPending.current = null
   }, [])
 
+  // Report the day the user is editing to the context sidebar: the route stays
+  // on the day navigated to, but focus moves freely between stream rows, and the
+  // sidebar's note actions / published link must describe the focused day.
+  const setFocusedDailyDate = useSetFocusedDailyDate()
+
   // Re-anchor on every explicit arrival (`arrivalSeq` bumps even when ⌘D is
   // pressed while already on today — the router clears the entry's saved
   // offset for that case; `entryId` covers back/forward between entries whose
@@ -168,6 +174,9 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
               ref={virtualizer.measureElement}
               className="absolute inset-x-0"
               style={{ transform: `translateY(${item.start}px)` }}
+              // Focus entering this row (clicking its editor, tabbing in) makes
+              // it the day the sidebar describes.
+              onFocusCapture={() => setFocusedDailyDate(date)}
             >
               <section className="border-b border-border py-6">
                 {/* V1 renders the date as the note's H1-sized subject, with

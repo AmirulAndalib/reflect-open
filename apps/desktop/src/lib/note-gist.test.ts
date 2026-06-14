@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { gistBodyHash, upsertFrontmatter } from '@reflect/core'
 import type { NoteSession } from '@/editor/note-session'
+import { getNoteRowOverlay, resetNoteRowOverlays } from '@/hooks/note-row-overlay'
 
 const readNote = vi.hoisted(() => vi.fn<(path: string) => Promise<string>>())
 const writeNote = vi.hoisted(() => vi.fn(async () => {}))
@@ -48,6 +49,7 @@ beforeEach(() => {
   startOperation.mockClear()
   operationDone.mockClear()
   operationFail.mockClear()
+  resetNoteRowOverlays()
 })
 
 function fakeSession(content: string, canCommit = true, liveContent: string | null = content) {
@@ -220,6 +222,23 @@ describe('runGistPublish', () => {
     expect(startOperation).toHaveBeenCalledWith('Gist link copied')
     expect(operationDone).toHaveBeenCalledTimes(2)
     expect(operationFail).not.toHaveBeenCalled()
+  })
+
+  it('records the published url in the optimistic overlay, stamped with the generation', async () => {
+    readNote.mockResolvedValue(BODY)
+    await runGistPublish('notes/a.md', 3)
+
+    expect(getNoteRowOverlay('notes/a.md', 3)?.gistUrl).toBe(PUBLISHED.htmlUrl)
+    // Stamped with the publishing generation — a reader on another graph won't see it.
+    expect(getNoteRowOverlay('notes/a.md', 4)).toBeNull()
+  })
+
+  it('leaves no overlay when the publish failed', async () => {
+    readNote.mockResolvedValue(BODY)
+    getGithubToken.mockResolvedValue(null)
+    await runGistPublish('notes/a.md', 3)
+
+    expect(getNoteRowOverlay('notes/a.md', 3)).toBeNull()
   })
 
   it('surfaces failures and resolves null', async () => {

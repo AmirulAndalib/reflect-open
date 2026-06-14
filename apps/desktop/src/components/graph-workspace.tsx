@@ -3,6 +3,7 @@ import type { GraphInfo } from '@reflect/core'
 import { PaletteProvider } from '@/components/command-palette/palette-provider'
 import { WorkspaceContent } from '@/components/workspace-content'
 import { AudioMemoProvider } from '@/providers/audio-memo-provider'
+import { FocusedDailyProvider } from '@/providers/focused-daily-provider'
 import { CaptureProvider } from '@/providers/capture-provider'
 import { ChatProvider } from '@/providers/chat-provider'
 import { ShortcutsProvider } from '@/providers/shortcuts-provider'
@@ -33,7 +34,11 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
               <AudioMemoProvider graph={graph}>
                 <CaptureProvider graph={graph}>
                   <ChatProvider graph={graph}>
-                    <WorkspaceContent graph={graph} />
+                    {/* Tracks the focused day in the daily stream so the right
+                        sidebar describes it, not just the routed day. */}
+                    <FocusedDailyProvider>
+                      <WorkspaceContent graph={graph} />
+                    </FocusedDailyProvider>
                   </ChatProvider>
                 </CaptureProvider>
               </AudioMemoProvider>

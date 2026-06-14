@@ -95,6 +95,7 @@ function renderSidebar(overrides?: Partial<CommandContext>, initialRoute?: Route
   const context: CommandContext = {
     navigate,
     route: () => ({ kind: 'today' }),
+    notePath: () => null,
     back: vi.fn(),
     forward: vi.fn(),
     toggleTheme: vi.fn(),

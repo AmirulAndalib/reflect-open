@@ -13,10 +13,13 @@ import type { NoteRow } from '@reflect/core'
  * and it retires the moment the index agrees. Every reader of `useNoteRow`
  * sees a single consistent value, so there is no second value to disagree.
  *
- * Module-level state, keyed by graph-relative path. Deliberately narrow — only
- * the projections an action flips and then waits to observe. Cleared on graph
- * switch ({@link resetNoteRowOverlays}) so an overlay can never bleed across
- * graphs that share a note path.
+ * Each entry is keyed by graph-relative path and stamped with the **graph
+ * generation** it was written under. A reader only sees overlays matching its
+ * current generation, so a publish that resolves *after* a graph switch can't
+ * surface on the new graph (its generation no longer matches) — a path shared
+ * across graphs never shows the wrong note's url. {@link resetNoteRowOverlays}
+ * on graph teardown is then just memory hygiene, not load-bearing for
+ * correctness.
  */
 
 /**
@@ -30,7 +33,13 @@ export interface NoteRowOverlay {
   readonly gistUrl?: string
 }
 
-const overlays = new Map<string, NoteRowOverlay>()
+interface OverlayEntry {
+  /** The graph (file) generation this optimism was written under. */
+  readonly generation: number
+  readonly overlay: NoteRowOverlay
+}
+
+const overlays = new Map<string, OverlayEntry>()
 const listeners = new Set<() => void>()
 
 function emit(): void {
@@ -46,33 +55,78 @@ function subscribe(listener: () => void): () => void {
   }
 }
 
+/** Strip `undefined` fields — an all-`undefined` patch must never be stored. */
+function definedFields(patch: NoteRowOverlay): NoteRowOverlay {
+  const result: { -readonly [Key in keyof NoteRowOverlay]: NoteRowOverlay[Key] } = {}
+  for (const key of Object.keys(patch) as (keyof NoteRowOverlay)[]) {
+    const value = patch[key]
+    if (value !== undefined) {
+      result[key] = value
+    }
+  }
+  return result
+}
+
 /**
- * Record an optimistic patch for `path`, reflected by every `useNoteRow(path)`
- * reader until the index row catches up. Merges with any existing patch.
+ * Record an optimistic patch for `path` under the `generation` it was written
+ * in, reflected by every `useNoteRow(path)` reader on that graph until the
+ * index catches up. Merges with an existing patch from the same generation; a
+ * patch from a newer generation replaces a stale one. An empty patch (or one
+ * that is all `undefined`) is ignored — it would only leave a non-reconcilable
+ * entry and leak `undefined` into merged rows.
  */
-export function setNoteRowOverlay(path: string, patch: NoteRowOverlay): void {
-  overlays.set(path, { ...overlays.get(path), ...patch })
+export function setNoteRowOverlay(path: string, generation: number, patch: NoteRowOverlay): void {
+  const defined = definedFields(patch)
+  if (Object.keys(defined).length === 0) {
+    return
+  }
+  const existing = overlays.get(path)
+  // Never let an older generation's late write clobber a newer graph's overlay.
+  // Rust already rejects stale-generation file writes before a publish reaches
+  // here (the publish throws and never records an overlay), so this is defence
+  // in depth — the store owns the invariant rather than trusting the caller.
+  if (existing !== undefined && existing.generation > generation) {
+    return
+  }
+  const base = existing?.generation === generation ? existing.overlay : {}
+  overlays.set(path, { generation, overlay: { ...base, ...defined } })
   emit()
+}
+
+/**
+ * The overlay for `path` on `generation`, or `null` when none applies. Readers
+ * (here and {@link useNoteRowOverlay}) accept `undefined` — the graph may not
+ * have loaded yet — and report no overlay; writers always hold a concrete
+ * generation, so {@link setNoteRowOverlay}/{@link reconcileNoteRowOverlay}
+ * require one. Keep that asymmetry: it is the load-state boundary, not an
+ * inconsistency to unify.
+ */
+export function getNoteRowOverlay(path: string, generation: number | undefined): NoteRowOverlay | null {
+  if (generation === undefined) {
+    return null
+  }
+  const entry = overlays.get(path)
+  return entry !== undefined && entry.generation === generation ? entry.overlay : null
 }
 
 /**
  * Drop overlay fields the freshly-read index `row` has caught up to (and the
  * whole entry once nothing is left). Called from {@link useNoteRow} in an
- * effect, never during render. A `null` row (note not indexed yet) has nothing
- * to reconcile against, so the overlay is held.
+ * effect, never during render. A `null` row (note not indexed yet) or a
+ * mismatched generation has nothing to reconcile, so the overlay is held.
  */
-export function reconcileNoteRowOverlay(path: string, row: NoteRow | null): void {
-  const overlay = overlays.get(path)
-  if (overlay === undefined || row === null) {
+export function reconcileNoteRowOverlay(path: string, generation: number, row: NoteRow | null): void {
+  const entry = overlays.get(path)
+  if (entry === undefined || entry.generation !== generation || row === null) {
     return
   }
   const remaining: { -readonly [Key in keyof NoteRowOverlay]: NoteRowOverlay[Key] } = {}
   let retired = false
-  for (const key of Object.keys(overlay) as (keyof NoteRowOverlay)[]) {
-    if (row[key] === overlay[key]) {
+  for (const key of Object.keys(entry.overlay) as (keyof NoteRowOverlay)[]) {
+    if (row[key] === entry.overlay[key]) {
       retired = true
     } else {
-      remaining[key] = overlay[key]
+      remaining[key] = entry.overlay[key]
     }
   }
   if (!retired) {
@@ -81,12 +135,12 @@ export function reconcileNoteRowOverlay(path: string, row: NoteRow | null): void
   if (Object.keys(remaining).length === 0) {
     overlays.delete(path)
   } else {
-    overlays.set(path, remaining)
+    overlays.set(path, { generation, overlay: remaining })
   }
   emit()
 }
 
-/** Drop every overlay — the active graph changed, so prior optimism is moot. */
+/** Drop every overlay — graph teardown reclaims memory (correctness is by generation). */
 export function resetNoteRowOverlays(): void {
   if (overlays.size === 0) {
     return
@@ -107,8 +161,8 @@ export function applyNoteRowOverlay(row: NoteRow | null, overlay: NoteRowOverlay
   return { ...row, ...overlay }
 }
 
-/** Subscribe a component to `path`'s overlay; `null` when none is pending. */
-export function useNoteRowOverlay(path: string): NoteRowOverlay | null {
-  const getSnapshot = useCallback(() => overlays.get(path) ?? null, [path])
+/** Subscribe a component to `path`'s overlay on `generation`; `null` when none. */
+export function useNoteRowOverlay(path: string, generation: number | undefined): NoteRowOverlay | null {
+  const getSnapshot = useCallback(() => getNoteRowOverlay(path, generation), [path, generation])
   return useSyncExternalStore(subscribe, getSnapshot)
 }
