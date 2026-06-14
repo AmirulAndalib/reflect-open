@@ -9,7 +9,20 @@ import { setBridge, type IpcBridge } from '@reflect/core'
  */
 export const tauriBridge: IpcBridge = {
   invoke: (command, args) => invoke(command, args),
-  listen: (event, handler) => listen(event, (incoming) => handler(incoming.payload)),
+  listen: async (event, handler) => {
+    const unlisten = await listen(event, (incoming) => handler(incoming.payload))
+    return () => {
+      // Tauri types unlisten() as `() => void`, but at runtime it is async and
+      // can reject: its injected cleanup script reads `listeners[eventId].handlerId`
+      // unguarded, so tearing a listener down around the time its registration
+      // script lands throws "undefined is not an object" (tauri-apps/tauri#13746,
+      // still unguarded on Tauri's `dev`). Subscriptions that resolve after their
+      // owner has already unmounted hit this — see use-file-changes.ts. The
+      // teardown is benign, so swallow the rejection instead of letting it surface
+      // as an unhandled promise rejection.
+      void Promise.resolve(unlisten() as void | Promise<void>).catch(() => {})
+    }
+  },
 }
 
 /**
