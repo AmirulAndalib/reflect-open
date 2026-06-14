@@ -63,8 +63,26 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9); // applied migrations (0001 through 0009)
+    assert_eq!(version, 10); // applied migrations (0001 through 0010)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
+}
+
+#[test]
+fn tag_search_indexes_are_created() {
+    let conn = migrated();
+    let has_tags_index: bool = conn
+        .prepare("SELECT 1 FROM pragma_index_list('tags') WHERE name = ?1")
+        .unwrap()
+        .exists(["tags_tag_key_note_path"])
+        .unwrap();
+    assert!(has_tags_index);
+
+    let has_notes_index: bool = conn
+        .prepare("SELECT 1 FROM pragma_index_list('notes') WHERE name = ?1")
+        .unwrap()
+        .exists(["notes_daily_date_mtime_path"])
+        .unwrap();
+    assert!(has_notes_index);
 }
 
 #[test]
@@ -334,7 +352,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 10);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();
