@@ -27,21 +27,3 @@ export function contextSidebarTarget(route: Route, today: string): ContextSideba
       return null
   }
 }
-
-/**
- * Override a daily context target with the day currently focused in the daily
- * stream, when there is one. The stream keeps one `daily/:date` route while
- * focus moves between days, so the sidebar must describe the focused day, not
- * the routed one. A non-daily target — or an unfocused stream (`null`) — passes
- * through unchanged: there the routed subject is the right one (and `null` is
- * the calendar-pick path, where focus stays out of the stream).
- */
-export function contextTargetForFocus(
-  target: ContextSidebarTarget | null,
-  focusedDailyDate: string | null,
-): ContextSidebarTarget | null {
-  if (target?.kind === 'daily' && focusedDailyDate !== null) {
-    return { kind: 'daily', date: focusedDailyDate }
-  }
-  return target
-}

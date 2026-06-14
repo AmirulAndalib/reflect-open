@@ -15,7 +15,7 @@ import { useSettings } from '@/providers/settings-provider'
 import { useShortcuts } from '@/providers/shortcuts-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
 import { useTheme } from '@/providers/theme-provider'
-import { notePathForRoute } from './route'
+import { effectiveDailyDate, notePathForRoute } from './route'
 import { useRouter } from './router'
 
 /**
@@ -81,16 +81,14 @@ export function useAppShortcuts(): CommandContext {
     () => ({
       navigate,
       route: () => routeRef.current,
-      // The focused day in the daily stream, falling back to the routed note —
-      // so a note-scoped command targets the same day the context sidebar shows
-      // (the stream keeps one route while focus moves between days).
+      // Resolve through the focused stream day so a note-scoped command targets
+      // the same day the context sidebar shows (see `effectiveDailyDate`); off
+      // the daily views it falls back to the routed note.
       notePath: () => {
-        const currentRoute = routeRef.current
-        const focused = focusedDailyDateRef.current
-        if (focused !== null && (currentRoute.kind === 'today' || currentRoute.kind === 'daily')) {
-          return dailyPath(focused)
-        }
-        return notePathForRoute(currentRoute, todayIso())
+        const route = routeRef.current
+        const today = todayIso()
+        const daily = effectiveDailyDate(route, today, focusedDailyDateRef.current)
+        return daily !== null ? dailyPath(daily) : notePathForRoute(route, today)
       },
       back,
       forward,

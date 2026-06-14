@@ -1,4 +1,4 @@
-import { useLayoutEffect, type ReactElement } from 'react'
+import type { ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
 import { PanelLeft } from 'lucide-react'
 import { AppShell } from '@/components/app-shell'
@@ -6,11 +6,7 @@ import { CloudSyncBanner } from '@/components/cloud-sync-banner'
 import { CommandPalette } from '@/components/command-palette/command-palette'
 import { DailyContextSidebar } from '@/components/context-sidebar/daily-context-sidebar'
 import { NoteContextSidebar } from '@/components/context-sidebar/note-context-sidebar'
-import {
-  contextSidebarTarget,
-  contextTargetForFocus,
-  type ContextSidebarTarget,
-} from '@/components/context-sidebar/sidebar-route'
+import { type ContextSidebarTarget } from '@/components/context-sidebar/sidebar-route'
 import { EmbeddingsSync } from '@/components/embeddings-sync'
 import { ShortcutKeys } from '@/components/shortcut-keys'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -19,16 +15,11 @@ import { RouteContent } from '@/components/route-content'
 import { ShortcutsDialog } from '@/components/shortcuts-dialog'
 import { Sidebar } from '@/components/sidebar/sidebar'
 import { keybindingFor } from '@/lib/commands/app-commands'
-import { useToday } from '@/lib/use-today'
 import { cn } from '@/lib/utils'
 import { hasMacosTitleBarOverlay } from '@/lib/window-chrome'
-import {
-  useFocusedDailyDate,
-  useSetFocusedDailyDate,
-} from '@/providers/focused-daily-provider'
+import { useDailyContextTarget } from '@/providers/focused-daily-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
 import { useAppShortcuts } from '@/routing/app-shortcuts'
-import { useRouter } from '@/routing/router'
 
 const TOGGLE_SIDEBAR_BINDING = keybindingFor('sidebar.toggle')
 
@@ -58,29 +49,12 @@ function contextSidebarFor(target: ContextSidebarTarget | null): ReactElement | 
  */
 export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement {
   const { collapsed } = useSidebar()
-  const { route, arrivalSeq, entryId } = useRouter()
   const commandContext = useAppShortcuts()
-  const today = useToday()
   // Daily routes get the day's contextual panel and note routes the note's;
   // search/settings get none (AppShell omits the region when context is absent).
-  const sidebarTarget = contextSidebarTarget(route, today)
-
-  // In the daily stream the route stays on the day you navigated to while focus
-  // moves between days, so the sidebar follows the last day focused in the
-  // stream. It deliberately *stays* on that day through transient focus moves
-  // (opening ⌘K, clicking a sidebar button) rather than flicking back to the
-  // routed day and out again — what restores the routed day is navigation, not
-  // blur. Reset on the same signals the stream re-anchors on (`arrivalSeq`/
-  // `entryId`), not the routed date, so re-targeting the current day (a calendar
-  // pick on it, ⌘D to today) snaps back too. With nothing focused yet it falls
-  // back to the routed day (also the post-navigation state). The reset runs
-  // pre-paint, so no stale day shows before the stream re-focuses the target.
-  const focusedDailyDate = useFocusedDailyDate()
-  const setFocusedDailyDate = useSetFocusedDailyDate()
-  useLayoutEffect(() => {
-    setFocusedDailyDate(null)
-  }, [arrivalSeq, entryId, setFocusedDailyDate])
-  const contextTarget = contextTargetForFocus(sidebarTarget, focusedDailyDate)
+  // In the daily stream the route stays put while focus moves between days, so
+  // the panel follows the focused day and snaps back on navigation.
+  const contextTarget = useDailyContextTarget()
 
   return (
     <AppShell
