@@ -120,6 +120,16 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
+  it('surfaces a failed archived query as an alert, not a blank list', async () => {
+    window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
+    getOpenTasks.mockResolvedValue([])
+    getCompletedTasks.mockRejectedValue(new Error('index unavailable'))
+    const view = renderScreen()
+    const alert = await view.findByRole('alert')
+    expect(alert.textContent).toContain('Couldn’t load tasks.')
+    view.unmount()
+  })
+
   it('groups tasks by date bucket then note, in display order', async () => {
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'daily/2026-06-14.md', dailyDate: '2026-06-14', text: 'today task', noteTitle: '2026-06-14' }),

@@ -63,17 +63,20 @@ export function TasksScreen(): ReactElement {
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
   const enabled = hasBridge() && graph !== null
 
-  const { data: open, isError } = useQuery({
+  const { data: open, isError: openFailed } = useQuery({
     queryKey: tasksQueryKey(graph?.root),
     queryFn: () => getOpenTasks(),
     enabled,
   })
-  const { data: completed } = useQuery({
+  const { data: completed, isError: completedFailed } = useQuery({
     queryKey: completedTasksQueryKey(graph?.root),
     queryFn: () => getCompletedTasks(),
     enabled: enabled && filters.archived,
   })
 
+  // Either read failing surfaces the alert — a failed completed read must not
+  // leave `ready` stuck (and the list blank) just because its data never arrived.
+  const isError = openFailed || completedFailed
   // When archived is on, the list merges open + completed, so the empty state
   // must wait for both — else a graph with only completed tasks flashes "No
   // tasks to show." while the completed query is still loading.
