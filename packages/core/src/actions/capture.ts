@@ -228,7 +228,6 @@ function capturePageTextFromBody(body: string): string | undefined {
       /\n+## Screenshot[ \t]*\n+!\[[^\]\n]*\]\(assets\/capture-[^)]+\.jpg\)\s*$/u,
       '',
     )
-    .replace(/\n+!\[[^\]\n]*\]\(assets\/capture-[^)]+\.jpg\)\s*$/u, '')
     .trim()
   return content === '' ? undefined : content
 }
@@ -589,8 +588,7 @@ function metadataValue(text: string): string {
 
 /**
  * Insert or replace the single visible generated-text surface for link
- * captures. The raw body has a `- Type: #link` anchor; the fallback only
- * covers older pending captures or hand-edited-but-hash-matching oddities.
+ * captures. The raw body has a `- Type: #link` anchor.
  */
 function withDescription(body: string, description: string): string {
   const line = `- Description: ${metadataValue(description)}`
@@ -604,7 +602,7 @@ function withDescription(body: string, description: string): string {
   }
   const typeLine = /^- Type: #link[ \t]*$/mu.exec(metadata)
   if (typeLine === null) {
-    return `${body.replace(/\s*$/, '')}\n\n${line}\n`
+    throw new Error('capture note is missing Type metadata')
   }
   const insertAt = typeLine.index + typeLine[0].length
   return `${body.slice(0, insertAt)}\n${line}${body.slice(insertAt)}`
