@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser'
 import { buildWireMessage } from '@/lib/capture-message'
 import { enqueueCapture, readQueue } from '@/lib/flush'
 import { flushResultSchema, type FlushResult } from '@/lib/messages'
+import { extractPageText } from './extract-page-text'
 import { useCapturedPage } from './use-captured-page'
 
 /**
@@ -60,6 +61,7 @@ function holdMessage(result: FlushResult): string {
 export function CapturePopup(): ReactElement {
   const captured = useCapturedPage()
   const [note, setNote] = useState('')
+  const [includePageText, setIncludePageText] = useState(false)
   const [save, setSave] = useState<SaveState>({ phase: 'idle' })
   const [heldCount, setHeldCount] = useState(0)
 
@@ -82,8 +84,10 @@ export function CapturePopup(): ReactElement {
     }
     setSave({ phase: 'saving' })
     try {
+      const contentText = includePageText ? await extractPageText(captured.tabId) : undefined
       const outcome = await saveCapture({
         ...captured.page,
+        contentText,
         note,
         id: crypto.randomUUID(),
         capturedAt: new Date(),
@@ -139,6 +143,16 @@ export function CapturePopup(): ReactElement {
         disabled={busy}
         className="rounded-md border border-border bg-input-bg px-2 py-1.5 text-sm text-text outline-none placeholder:text-text-muted focus:ring-2 focus:ring-focus-ring"
       />
+      <label className="flex items-center gap-2 text-xs text-text-secondary">
+        <input
+          type="checkbox"
+          checked={includePageText}
+          onChange={(event) => setIncludePageText(event.target.checked)}
+          disabled={busy}
+          className="size-3.5 rounded border-border text-accent focus:ring-focus-ring"
+        />
+        Capture page text
+      </label>
       <button
         type="submit"
         disabled={busy}

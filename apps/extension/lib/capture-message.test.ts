@@ -29,11 +29,13 @@ describe('buildWireMessage', () => {
       url: 'https://example.com/article',
       title: '  An article  ',
       selection: 'quoted',
+      contentText: 'First paragraph.\n\nSecond paragraph.',
       note: 'check later',
       screenshotDataUrl: 'data:image/jpeg;base64,aGVsbG8=',
     })
     expect(captureWireMessageSchema.parse(message)).toEqual(message)
     expect(message.envelope.title).toBe('An article')
+    expect(message.envelope.contentText).toBe('First paragraph.\n\nSecond paragraph.')
     expect(message.envelope.capturedAt).toBe('2026-06-12T15:30:22.845Z')
     expect(message.screenshotBase64).toBe('aGVsbG8=')
   })
@@ -45,9 +47,11 @@ describe('buildWireMessage', () => {
       url: 'https://example.com',
       title: 'Example',
       selection: '   ',
+      contentText: '',
       note: '',
     })
     expect(message.envelope.selection).toBeUndefined()
+    expect(message.envelope.contentText).toBeUndefined()
     expect(message.envelope.note).toBeUndefined()
     expect(message.screenshotBase64).toBeUndefined()
   })

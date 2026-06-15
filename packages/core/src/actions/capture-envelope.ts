@@ -37,6 +37,8 @@ export const captureEnvelopeSchema = z.object({
   title: z.string(),
   /** Text the user had selected, verbatim. */
   selection: z.string().optional(),
+  /** Plain text paragraphs extracted from the captured page. */
+  contentText: z.string().optional(),
   /** A comment the user typed into the capture UI. */
   note: z.string().optional(),
   /**

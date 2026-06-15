@@ -15,7 +15,7 @@
       }
     },
     {
-      "name": "full with selection, note, and screenshot",
+      "name": "full with selection, page text, note, and screenshot",
       "message": {
         "envelope": {
           "version": 1,
@@ -23,6 +23,7 @@
           "url": "http://localhost:3000/page",
           "title": "Local page",
           "selection": "quoted text",
+          "contentText": "First paragraph.\n\nSecond paragraph.",
           "note": "check later",
           "capturedAt": "2026-06-12T15:30:22.845Z",
           "source": "extension"

@@ -239,6 +239,18 @@ describe('drainCaptureInbox', () => {
     expect(spool.size).toBe(0)
   })
 
+  it('writes extracted page text into the capture note', async () => {
+    addSpool(envelope({ contentText: 'First paragraph.\n\nSecond paragraph.' }), {
+      screenshot: false,
+    })
+
+    const outcome = await drain()
+
+    expect(outcome).toEqual({ pending: 1, drained: 1, deduped: 0, invalid: 0, stopped: null })
+    const note = files.get(IDENTITY.notePath)
+    expect(note).toContain('## Page Text\n\nFirst paragraph.\n\nSecond paragraph.')
+  })
+
   it('removes the spool only after the note and daily entry are written', async () => {
     addSpool(envelope())
     await drain()

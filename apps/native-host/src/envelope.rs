@@ -21,6 +21,8 @@ pub struct Envelope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub screenshot_ref: Option<String>,

@@ -204,6 +204,10 @@ function captureNoteBody(
         .join('\n'),
     )
   }
+  const contentText = envelope.contentText?.trim()
+  if (contentText) {
+    parts.push(`## Page Text\n\n${contentText}`)
+  }
   if (hasScreenshot) {
     parts.push(`![${title}](${identity.assetPath})`)
   }
