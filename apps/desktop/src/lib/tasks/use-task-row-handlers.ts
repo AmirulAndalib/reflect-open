@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { type OpenTask } from '@reflect/core'
 import { type TaskNavigate } from '@/components/tasks/task-editor'
-import { insertTargetForTask, previousTaskKey } from '@/lib/tasks/task-navigation'
+import { insertTargetForBucket, previousTaskKey } from '@/lib/tasks/task-navigation'
 import { taskKey } from '@/lib/tasks/task-identity'
 import { type TaskActions } from '@/lib/tasks/use-task-actions'
 import { type TaskSelection } from '@/lib/tasks/use-task-selection'
@@ -23,6 +23,8 @@ export interface TaskRowHandlerDeps {
   actions: TaskActions
   /** The flat, render-order tasks — used to pick the row to select after a delete. */
   orderedTasks: readonly OpenTask[]
+  /** Today's ISO date — Enter adds the next task into the row's group (V1). */
+  today: string
   /** Bring a row into view after a keyboard move (V1 scrolls the selection). */
   scrollToKey: (key: string | null) => void
 }
@@ -39,6 +41,7 @@ export function useTaskRowHandlers({
   selection,
   actions,
   orderedTasks,
+  today,
   scrollToKey,
 }: TaskRowHandlerDeps): (task: OpenTask) => TaskRowEditHandlers {
   const selectExclusively = useCallback(
@@ -56,9 +59,21 @@ export function useTaskRowHandlers({
         selection.clear()
       },
       onEditContinue: (content) => {
-        // Enter: persist this row (when changed), add the next task in the same
-        // note, and select it so its editor opens focused — V1 continuous entry.
-        void actions.insertAfter(task, content, insertTargetForTask(task)).then((created) => {
+        // Enter: persist this row, add the next task into its group (V1 — Current
+        // → today's daily, a note → that note), and select it so its editor opens.
+        const target = insertTargetForBucket(task, today)
+        if (target === null) {
+          // Overdue/Upcoming aggregate many notes — V1 can't add there. Persist the
+          // edit (or delete an emptied row) and exit, never stranding the editor.
+          if (content === '') {
+            actions.remove([task])
+          } else if (content !== null) {
+            actions.edit(task, content)
+          }
+          selection.clear()
+          return
+        }
+        void actions.insertAfter(task, content, target).then((created) => {
           if (created !== null) {
             selectExclusively(taskKey(created))
           } else {

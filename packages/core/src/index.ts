@@ -441,6 +441,7 @@ export {
   getOpenTasks,
   getCompletedTasks,
   groupTasks,
+  taskDateBucket,
   listDailyNotes,
   listNotes,
   listNoteTags,

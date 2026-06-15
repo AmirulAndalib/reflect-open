@@ -1,7 +1,11 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import { dailyPath, type OpenTask } from '@reflect/core'
+import { type OpenTask } from '@reflect/core'
 import { taskKey } from '@/lib/tasks/task-identity'
-import { previousTaskKey } from '@/lib/tasks/task-navigation'
+import {
+  insertTargetForBucket,
+  previousTaskKey,
+  todaysDailyTarget,
+} from '@/lib/tasks/task-navigation'
 import { type InsertTaskTarget, type TaskActions } from '@/lib/tasks/use-task-actions'
 import { type TaskSelection } from '@/lib/tasks/use-task-selection'
 
@@ -85,21 +89,13 @@ export function useTaskKeyboard({
       return
     }
     const inSearch = target instanceof HTMLInputElement
-    // The note a Return-inserted task lands in: the active selected row's note (so
-    // it joins that group — the row you last touched, not whichever renders last
-    // in a multi-note selection), else today's daily — V1's "add to Today".
-    const insertTarget = (): InsertTaskTarget => {
+    // The note a Return-inserted task lands in (V1 group-based): the active row's
+    // group — Current → today's daily, a note → that note, Overdue/Upcoming refuse
+    // (`null`) — else, with nothing selected, today's daily.
+    const insertTarget = (): InsertTaskTarget | null => {
       const activeKey = selection.activeKey()
       const active = activeKey !== null ? tasksByKey.get(activeKey) : undefined
-      return active !== undefined
-        ? {
-            notePath: active.notePath,
-            noteTitle: active.noteTitle,
-            dailyDate: active.dailyDate,
-            isPinned: active.isPinned,
-            pinnedOrder: active.pinnedOrder,
-          }
-        : { notePath: dailyPath(today), noteTitle: today, dailyDate: today, isPinned: false, pinnedOrder: null }
+      return active !== undefined ? insertTargetForBucket(active, today) : todaysDailyTarget(today)
     }
     const selectExclusively = (key: string): void => {
       selection.clickSelect(key, { metaKey: false, ctrlKey: false, shiftKey: false })
@@ -130,12 +126,16 @@ export function useTaskKeyboard({
       // Return adds a task (V1). A sole selection's editor owns Enter (it bailed
       // above via OWNS_KEYS and continues the entry there), so this fires from the
       // list itself: insert, then select the new row to open its editor focused.
+      // A null target means the active row is Overdue/Upcoming — nothing to add to.
       event.preventDefault()
-      void actions.insert(insertTarget()).then((created) => {
-        if (created !== null) {
-          selectExclusively(taskKey(created))
-        }
-      })
+      const target = insertTarget()
+      if (target !== null) {
+        void actions.insert(target).then((created) => {
+          if (created !== null) {
+            selectExclusively(taskKey(created))
+          }
+        })
+      }
     } else if (mod && event.key === 'Backspace') {
       event.preventDefault()
       actions.remove(selectedTasks())

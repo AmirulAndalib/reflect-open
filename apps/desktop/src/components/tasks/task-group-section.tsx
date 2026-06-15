@@ -1,7 +1,9 @@
 import type { ReactElement } from 'react'
-import { AlarmClock, Calendar, FileText, Pin, Star } from 'lucide-react'
+import { AlarmClock, Calendar, FileText, Pin, Plus, Star } from 'lucide-react'
 import type { OpenTask, TaskGroup } from '@reflect/core'
 import { taskKey } from '@/lib/tasks/task-identity'
+import { insertTargetForTask, todaysDailyTarget } from '@/lib/tasks/task-navigation'
+import type { InsertTaskTarget } from '@/lib/tasks/use-task-actions'
 import type { TaskSelection } from '@/lib/tasks/use-task-selection'
 import type { TaskRowEditHandlers } from '@/lib/tasks/use-task-row-handlers'
 import { cn } from '@/lib/utils'
@@ -12,7 +14,24 @@ interface TaskGroupSectionProps {
   selection: TaskSelection
   /** The inline-editor callbacks for a row, built once by the screen. */
   editHandlers: (task: OpenTask) => TaskRowEditHandlers
+  /** Today's ISO date — the Current group's "+ Add" targets today's daily. */
+  today: string
+  /** Add a task to this group and open its editor (the header's "+ Add", V1). */
+  onAdd: (target: InsertTaskTarget) => void
   onOpen: (notePath: string) => void
+}
+
+/**
+ * Where this group's "+ Add" adds a task (V1: Current → today's daily, a note →
+ * that note), or `null` for the aggregate Overdue/Upcoming buckets, which span
+ * many notes and so show no Add button.
+ */
+function addTargetForGroup(group: TaskGroup, today: string): InsertTaskTarget | null {
+  if (group.kind === 'current') {
+    return todaysDailyTarget(today)
+  }
+  const first = group.tasks[0]
+  return group.kind === 'note' && first !== undefined ? insertTargetForTask(first) : null
 }
 
 /** The icon + accent colour for a group's sticky header, V1's per-bucket styling. */
@@ -41,49 +60,64 @@ export function TaskGroupSection({
   group,
   selection,
   editHandlers,
+  today,
+  onAdd,
   onOpen,
 }: TaskGroupSectionProps): ReactElement {
   const showSource = group.kind !== 'note'
   const { notePath } = group
   const { icon, colorClass } = headerStyle(group)
+  const addTarget = addTargetForGroup(group, today)
 
   return (
     <section>
-      <h2
-        className={cn(
-          'sticky top-0 z-10 flex items-center gap-2 bg-surface-sunken px-4 py-1.5 text-sm font-medium lg:px-12',
-          colorClass,
-        )}
-      >
-        {icon}
-        {group.kind === 'note' && notePath !== null ? (
+      <div className="sticky top-0 z-10 flex items-center gap-2 bg-surface-sunken px-4 py-1.5 lg:px-12">
+        <h2 className={cn('flex min-w-0 items-center gap-2 text-sm font-medium', colorClass)}>
+          {icon}
+          {group.kind === 'note' && notePath !== null ? (
+            <button
+              type="button"
+              onClick={() => onOpen(notePath)}
+              className="truncate hover:underline focus-visible:underline focus-visible:outline-none"
+            >
+              {group.label}
+            </button>
+          ) : (
+            <span className="truncate">{group.label}</span>
+          )}
+        </h2>
+        {addTarget !== null ? (
           <button
             type="button"
-            onClick={() => onOpen(notePath)}
-            className="hover:underline focus-visible:underline focus-visible:outline-none"
+            aria-label={`Add a task to ${group.kind === 'current' ? 'today' : group.label}`}
+            onClick={() => onAdd(addTarget)}
+            className="ml-auto flex flex-none items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-text-muted transition-colors hover:text-text focus-visible:text-text focus-visible:outline-none"
           >
-            {group.label}
+            <Plus aria-hidden className="size-3.5" />
+            Add
           </button>
-        ) : (
-          <span>{group.label}</span>
-        )}
-      </h2>
+        ) : null}
+      </div>
       <ul className="px-4 py-1 lg:px-12">
-        {group.tasks.map((task) => {
-          const key = taskKey(task)
-          return (
-            <TaskRow
-              key={key}
-              task={task}
-              showSource={showSource}
-              selected={selection.isSelected(key)}
-              editing={selection.isSoleSelected(key)}
-              onSelect={(event) => selection.clickSelect(key, event)}
-              {...editHandlers(task)}
-              onOpen={onOpen}
-            />
-          )
-        })}
+        {group.tasks.length === 0 ? (
+          <li className="px-2 py-1.5 text-sm text-text-muted">No tasks</li>
+        ) : (
+          group.tasks.map((task) => {
+            const key = taskKey(task)
+            return (
+              <TaskRow
+                key={key}
+                task={task}
+                showSource={showSource}
+                selected={selection.isSelected(key)}
+                editing={selection.isSoleSelected(key)}
+                onSelect={(event) => selection.clickSelect(key, event)}
+                {...editHandlers(task)}
+                onOpen={onOpen}
+              />
+            )
+          })
+        )}
       </ul>
     </section>
   )

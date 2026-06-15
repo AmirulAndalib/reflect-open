@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { useRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { sameTask, taskKey } from '@/lib/tasks/task-identity'
 import { scrollTaskIntoView } from '@/lib/tasks/task-navigation'
-import { useTaskActions } from '@/lib/tasks/use-task-actions'
+import { useTaskActions, type InsertTaskTarget } from '@/lib/tasks/use-task-actions'
 import { useTaskRowHandlers } from '@/lib/tasks/use-task-row-handlers'
 import { useTaskFilters, type TaskFilters } from '@/lib/tasks/task-filters'
 import { useTaskKeyboard } from '@/lib/tasks/use-task-keyboard'
@@ -131,7 +131,22 @@ export function TasksScreen(): ReactElement {
       scrollTaskIntoView(rootRef.current, key)
     }
   }, [])
-  const editHandlers = useTaskRowHandlers({ selection, actions, orderedTasks, scrollToKey })
+  const editHandlers = useTaskRowHandlers({ selection, actions, orderedTasks, today, scrollToKey })
+  // The group headers' "+ Add" (V1): drop any search filter so the new row is
+  // visible, write it, then select it so its editor opens focused.
+  const onAdd = useCallback(
+    (target: InsertTaskTarget) => {
+      setQuery('')
+      void actions.insert(target).then((created) => {
+        if (created !== null) {
+          const key = taskKey(created)
+          selection.clickSelect(key, { metaKey: false, ctrlKey: false, shiftKey: false })
+          scrollToKey(key)
+        }
+      })
+    },
+    [actions, selection, scrollToKey],
+  )
   useTaskKeyboard({
     selection,
     actions,
@@ -204,6 +219,8 @@ export function TasksScreen(): ReactElement {
               group={group}
               selection={selection}
               editHandlers={editHandlers}
+              today={today}
+              onAdd={onAdd}
               onOpen={(path) => navigate(routeForPath(path))}
             />
           ))

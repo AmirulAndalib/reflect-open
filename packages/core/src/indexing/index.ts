@@ -79,7 +79,7 @@ export {
   type SearchHit,
   type TagSuggestion,
 } from './queries'
-export { groupTasks, type TaskGroup, type TaskGroupKind } from './group-tasks'
+export { groupTasks, taskDateBucket, type TaskGroup, type TaskGroupKind } from './group-tasks'
 export {
   listNotes,
   listNoteTags,

@@ -477,6 +477,39 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
+  it('a note group’s "+ Add" button inserts into that note and opens the editor', async () => {
+    insertTask.mockResolvedValue(0)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/proj.md', markerOffset: 2, raw: '[ ] a', text: 'a', noteTitle: 'Project' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('a')
+    await userEvent.click(await view.findByRole('button', { name: 'Add a task to Project' }))
+    await waitFor(() => expect(insertTask).toHaveBeenCalledWith('notes/proj.md', 1))
+    // The new row's editor opens, ready to type.
+    await view.findByTestId('task-editor')
+    view.unmount()
+  })
+
+  it('Overdue tasks show no "+ Add" button (V1 can’t add to an aggregate bucket)', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 2,
+        raw: '[ ] late',
+        text: 'late',
+        noteTitle: 'P',
+        dueDate: '2026-06-01',
+      }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('late')
+    expect(view.queryByRole('button', { name: /Add a task/ })).toBeNull()
+    view.unmount()
+  })
+
   it('Return adds a task to today’s daily and opens its inline editor', async () => {
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
