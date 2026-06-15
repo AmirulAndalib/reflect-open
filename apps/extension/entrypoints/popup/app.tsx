@@ -118,7 +118,9 @@ export function CapturePopup(): ReactElement {
     }
     setSave({ phase: 'saving' })
     try {
-      const contentText = includePageText ? await tryExtractPageText(captured.tabId) : undefined
+      const contentText = includePageText
+        ? await tryExtractPageText(captured.tabId, captured.page.url)
+        : undefined
       const outcome = await saveCapture({
         ...captured.page,
         contentText,

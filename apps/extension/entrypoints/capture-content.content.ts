@@ -31,7 +31,10 @@ function fallbackParagraphs(): string[] {
   return root ? visibleParagraphs(root) : []
 }
 
-function extractPageText(): ExtractPageTextResponse {
+function extractPageText(expectedUrl: string): ExtractPageTextResponse {
+  if (document.location.href !== expectedUrl) {
+    return { ok: false, message: 'page URL changed before text extraction' }
+  }
   try {
     const clone = document.cloneNode(true)
     if (!(clone instanceof Document)) {
@@ -70,7 +73,7 @@ export default defineContentScript({
       if (!request.success) {
         return undefined
       }
-      return Promise.resolve(extractPageText())
+      return Promise.resolve(extractPageText(request.data.expectedUrl))
     }
     window.__reflectCaptureTextListener = listener
     browser.runtime.onMessage.addListener(listener)
