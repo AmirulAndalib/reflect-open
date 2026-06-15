@@ -478,6 +478,7 @@ describe('SettingsScreen', () => {
     expect(screen.getByText('Toggle sidebar')).toBeTruthy()
     expect(screen.getByText('Go to today')).toBeTruthy()
     expect(screen.getByText('Bold')).toBeTruthy()
-    expect(screen.getByText('Heading 1')).toBeTruthy()
+    // meowdown binds Heading 1 to both Mod-1 and Mod-Alt-1, so it lists twice.
+    expect(screen.getAllByText('Heading 1').length).toBeGreaterThan(0)
   })
 })

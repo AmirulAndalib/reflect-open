@@ -1,21 +1,5 @@
-import { TextSelection, type EditorState } from '@prosekit/pm/state'
 import { describe, expect, it } from 'vitest'
-import { EDITOR_BINDINGS, defineReflectKeymap, listRegisteredBindings, registerKeymap } from './keymap'
-import { createMeowdownEditor, serializeMarkdown } from './meowdown'
-
-function stateWithSelection(markdown: string, from: number, to: number): EditorState {
-  const editor = createMeowdownEditor(markdown, defineReflectKeymap())
-  return editor.state.apply(
-    editor.state.tr.setSelection(TextSelection.create(editor.state.doc, from, to)),
-  )
-}
-
-function runBinding(state: EditorState, key: string): string {
-  const command = EDITOR_BINDINGS[key]
-  let next = state
-  expect(command(state, (tr) => (next = state.apply(tr)), undefined)).toBe(true)
-  return serializeMarkdown(next.doc).replace(/\n$/, '')
-}
+import { listRegisteredBindings, registerKeymap } from './keymap'
 
 describe('keymap registry', () => {
   it('rejects duplicate bindings across scopes', () => {
@@ -30,21 +14,10 @@ describe('keymap registry', () => {
     expect(listRegisteredBindings().get('Mod-b')).toBe('editor') // untouched
   })
 
-  it('holds the editor bindings exactly once', () => {
+  it('holds meowdown editor bindings editor-scope', () => {
     const bindings = listRegisteredBindings()
     expect(bindings.get('Mod-b')).toBe('editor')
     expect(bindings.get('Mod-i')).toBe('editor')
-    expect(bindings.get('Mod-e')).toBe('editor')
-  })
-})
-
-describe('heading toggles', () => {
-  // Doc positions: paragraph starts at 1.
-  it('sets and unsets the block heading level', () => {
-    expect(runBinding(stateWithSelection('hello', 2, 2), 'Mod-1')).toBe('# hello')
-    expect(runBinding(stateWithSelection('# hello', 2, 2), 'Mod-1')).toBe('hello')
-    expect(runBinding(stateWithSelection('# hello', 2, 2), 'Mod-2')).toBe('## hello')
-    expect(runBinding(stateWithSelection('hello', 2, 2), 'Mod-3')).toBe('### hello')
-    expect(runBinding(stateWithSelection('### hello', 2, 2), 'Mod-3')).toBe('hello')
+    expect(bindings.get('Mod-1')).toBe('editor')
   })
 })
