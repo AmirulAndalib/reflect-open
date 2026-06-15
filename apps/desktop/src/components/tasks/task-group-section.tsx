@@ -2,11 +2,13 @@ import type { ReactElement } from 'react'
 import { AlarmClock, Calendar, FileText, Pin, Star } from 'lucide-react'
 import type { TaskGroup } from '@reflect/core'
 import { taskKey } from '@/lib/tasks/task-identity'
+import type { TaskSelection } from '@/lib/tasks/use-task-selection'
 import { cn } from '@/lib/utils'
 import { TaskRow } from './task-row'
 
 interface TaskGroupSectionProps {
   group: TaskGroup
+  selection: TaskSelection
   onOpen: (notePath: string) => void
 }
 
@@ -32,7 +34,7 @@ function headerStyle(group: TaskGroup): { icon: ReactElement; colorClass: string
  * header sticks to the top of the scroll container, so the next group's header
  * pushes the previous one up as you scroll. A note group's header opens the note.
  */
-export function TaskGroupSection({ group, onOpen }: TaskGroupSectionProps): ReactElement {
+export function TaskGroupSection({ group, selection, onOpen }: TaskGroupSectionProps): ReactElement {
   const showSource = group.kind !== 'note'
   const { notePath } = group
   const { icon, colorClass } = headerStyle(group)
@@ -59,9 +61,19 @@ export function TaskGroupSection({ group, onOpen }: TaskGroupSectionProps): Reac
         )}
       </h2>
       <ul className="px-4 py-1 lg:px-12">
-        {group.tasks.map((task) => (
-          <TaskRow key={taskKey(task)} task={task} showSource={showSource} onOpen={onOpen} />
-        ))}
+        {group.tasks.map((task) => {
+          const key = taskKey(task)
+          return (
+            <TaskRow
+              key={key}
+              task={task}
+              showSource={showSource}
+              selected={selection.isSelected(key)}
+              onSelect={(event) => selection.clickSelect(key, event)}
+              onOpen={onOpen}
+            />
+          )
+        })}
       </ul>
     </section>
   )

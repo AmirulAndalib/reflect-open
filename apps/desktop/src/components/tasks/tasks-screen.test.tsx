@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react'
+import { fireEvent, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -24,7 +24,8 @@ vi.mock('@/providers/settings-provider', () => ({
 }))
 
 const toggleTask = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/note-task', () => ({ toggleTask }))
+const deleteTask = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/note-task', () => ({ toggleTask, deleteTask }))
 
 const fail = vi.hoisted(() => vi.fn())
 const startOperation = vi.hoisted(() => vi.fn(() => ({ fail })))
@@ -76,6 +77,7 @@ beforeEach(() => {
   getCompletedTasks.mockReset()
   getCompletedTasks.mockResolvedValue([])
   toggleTask.mockReset()
+  deleteTask.mockReset()
   startOperation.mockClear()
   fail.mockReset()
 })
@@ -166,14 +168,116 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
-  it('opens a task’s source note on row click', async () => {
+  it('opens a task’s source note via the open arrow', async () => {
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'notes/p.md', dailyDate: null, text: 'project task', noteTitle: 'Project' }),
     ])
     const view = renderScreen()
 
-    await userEvent.click(await view.findByText('project task'))
+    await view.findByText('project task')
+    await userEvent.click(view.getByRole('button', { name: 'Open Project' }))
     expect(view.getByTestId('route').textContent).toContain('notes/p.md')
+    view.unmount()
+  })
+
+  it('selects a row on click, exclusively, and clears it with Escape', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, text: 'first', noteTitle: 'Project' }),
+      task({ notePath: 'notes/p.md', markerOffset: 3, text: 'second', noteTitle: 'Project' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    expect(view.getByRole('button', { name: 'first' }).getAttribute('aria-pressed')).toBe('true')
+    expect(view.getByRole('button', { name: 'second' }).getAttribute('aria-pressed')).toBe('false')
+
+    // A plain click on another row replaces the selection.
+    await userEvent.click(view.getByRole('button', { name: 'second' }))
+    expect(view.getByRole('button', { name: 'first' }).getAttribute('aria-pressed')).toBe('false')
+    expect(view.getByRole('button', { name: 'second' }).getAttribute('aria-pressed')).toBe('true')
+
+    await userEvent.keyboard('{Escape}')
+    expect(view.getByRole('button', { name: 'second' }).getAttribute('aria-pressed')).toBe('false')
+    view.unmount()
+  })
+
+  it('toggles rows with ⌘-click and selects a range with shift-click', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, text: 'first', noteTitle: 'Project' }),
+      task({ notePath: 'notes/p.md', markerOffset: 3, text: 'second', noteTitle: 'Project' }),
+      task({ notePath: 'notes/p.md', markerOffset: 4, text: 'third', noteTitle: 'Project' }),
+    ])
+    const view = renderScreen()
+    const pressed = (name: string) =>
+      view.getByRole('button', { name }).getAttribute('aria-pressed') === 'true'
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    // ⌘-click adds the row without clearing the rest (modifier set explicitly —
+    // userEvent's held modifiers don't reach its synthetic click).
+    fireEvent.click(view.getByRole('button', { name: 'third' }), { metaKey: true })
+    expect([pressed('first'), pressed('second'), pressed('third')]).toEqual([true, false, true])
+
+    // Shift-click from the anchor (third) back to first selects the whole range.
+    fireEvent.click(view.getByRole('button', { name: 'first' }), { shiftKey: true })
+    expect([pressed('first'), pressed('second'), pressed('third')]).toEqual([true, true, true])
+    view.unmount()
+  })
+
+  it('selects all with ⌘A and moves a single selection with the arrow keys', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+    const pressed = (name: string) =>
+      view.getByRole('button', { name }).getAttribute('aria-pressed') === 'true'
+
+    await view.findByRole('button', { name: 'first' })
+    await userEvent.keyboard('{Meta>}a{/Meta}')
+    expect([pressed('first'), pressed('second')]).toEqual([true, true])
+
+    // ↓ collapses to a single moving selection.
+    await userEvent.keyboard('{ArrowDown}')
+    expect([pressed('first'), pressed('second')]).toEqual([false, true])
+    await userEvent.keyboard('{ArrowUp}')
+    expect([pressed('first'), pressed('second')]).toEqual([true, false])
+    view.unmount()
+  })
+
+  it('completes the selection with ⌘↵', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] second', text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByRole('button', { name: 'first' })
+    await userEvent.keyboard('{Meta>}a{/Meta}') // select all
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(2))
+    // Optimistically dropped from the open list.
+    await waitFor(() => expect(view.queryByText('first')).toBeNull())
+    view.unmount()
+  })
+
+  it('deletes the selection with ⌘⌫', async () => {
+    deleteTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] second', text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.keyboard('{Meta>}{Backspace}{/Meta}')
+    await waitFor(() =>
+      expect(deleteTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/a.md', markerOffset: 2 }),
+        1,
+      ),
+    )
+    await waitFor(() => expect(view.queryByText('first')).toBeNull())
     view.unmount()
   })
 
@@ -238,22 +342,6 @@ describe('TasksScreen', () => {
     expect(startOperation).toHaveBeenCalledWith('Completing task')
     // Rolled back: the row returns after the failed write.
     await view.findByText('project task')
-    view.unmount()
-  })
-
-  it('moves focus between task checkboxes with the arrow keys', async () => {
-    getOpenTasks.mockResolvedValue([
-      task({ notePath: 'notes/a.md', markerOffset: 2, text: 'first', noteTitle: 'A' }),
-      task({ notePath: 'notes/b.md', markerOffset: 2, text: 'second', noteTitle: 'B' }),
-    ])
-    const view = renderScreen()
-
-    const first = await view.findByRole('button', { name: 'Complete: first' })
-    first.focus()
-    await userEvent.keyboard('{ArrowDown}')
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Complete: second')
-    await userEvent.keyboard('{ArrowUp}')
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Complete: first')
     view.unmount()
   })
 })

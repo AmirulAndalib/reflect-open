@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import type { MouseEvent, ReactElement } from 'react'
 import { ArrowRight, Circle, CircleCheck } from 'lucide-react'
 import type { OpenTask } from '@reflect/core'
 import { formatDayLabel } from '@/lib/dates'
@@ -11,25 +11,35 @@ interface TaskRowProps {
   task: OpenTask
   /** Show the source-note date — date buckets aggregate tasks from many notes. */
   showSource: boolean
+  /** Whether this row is part of the current multi-selection (Plan 18). */
+  selected: boolean
+  /** Select the row, honoring ⌘/Ctrl (toggle) and Shift (range) modifiers. */
+  onSelect: (event: MouseEvent) => void
   onOpen: (notePath: string) => void
 }
 
 /**
  * One task row in the Tasks view (V1 design): a circle checkbox that completes
  * the task (the guarded write-back, Plan 18), the task content with inline date
- * and link chips ({@link TaskText}), the source-note date on the right, and a
- * navigation arrow. Completing optimistically drops the row; an archived
- * (completed) row shows struck through. The checkbox is the arrow-navigable
- * element (↑/↓ between rows, Space to complete — see {@link TasksScreen}).
+ * and link chips ({@link TaskText}), the source-note date on the right, and an
+ * arrow that opens the source note. Clicking the row body **selects** it (V1's
+ * multi-select); a plain click selects exclusively, ⌘/Ctrl toggles, Shift
+ * extends a range. Completing optimistically drops the row; an archived
+ * (completed) row shows struck through.
  */
-export function TaskRow({ task, showSource, onOpen }: TaskRowProps): ReactElement {
+export function TaskRow({ task, showSource, selected, onSelect, onOpen }: TaskRowProps): ReactElement {
   const { settings } = useSettings()
   const { complete, isPending } = useCompleteTask(task)
   const done = task.checked || isPending
   const label = task.text || 'Empty task'
 
   return (
-    <li className="group/task flex items-start gap-3 rounded-md px-2 py-1.5 hover:bg-surface-hover">
+    <li
+      className={cn(
+        'group/task flex items-start gap-3 rounded-md px-2 py-1.5',
+        selected ? 'bg-surface-hover ring-1 ring-inset ring-accent' : 'hover:bg-surface-hover',
+      )}
+    >
       <button
         type="button"
         data-task-row
@@ -46,7 +56,15 @@ export function TaskRow({ task, showSource, onOpen }: TaskRowProps): ReactElemen
       </button>
       <button
         type="button"
-        onClick={() => onOpen(task.notePath)}
+        aria-pressed={selected}
+        onClick={(event) => {
+          // Shift-click selects a range; stop the browser turning that into a
+          // text selection across the rows.
+          if (event.shiftKey) {
+            event.preventDefault()
+          }
+          onSelect(event)
+        }}
         className={cn(
           'min-w-0 flex-1 break-words text-left text-sm leading-6 text-text focus-visible:outline-none',
           task.checked && 'text-text-muted line-through',
@@ -59,7 +77,14 @@ export function TaskRow({ task, showSource, onOpen }: TaskRowProps): ReactElemen
           {formatDayLabel(task.dailyDate, settings.dateFormat)}
         </span>
       ) : null}
-      <ArrowRight aria-hidden className="mt-1 size-3.5 shrink-0 text-text-muted/60" />
+      <button
+        type="button"
+        aria-label={`Open ${task.noteTitle}`}
+        onClick={() => onOpen(task.notePath)}
+        className="mt-0.5 shrink-0 text-text-muted/60 opacity-0 transition-opacity hover:text-text focus-visible:opacity-100 focus-visible:outline-none group-hover/task:opacity-100"
+      >
+        <ArrowRight aria-hidden className="size-3.5" />
+      </button>
     </li>
   )
 }
