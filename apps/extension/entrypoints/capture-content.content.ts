@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser'
 import {
   extractPageTextRequestSchema,
   formatParagraphs,
+  normalizeParagraphText,
   samePageUrl,
   type ExtractPageTextResponse,
 } from '@/lib/page-text'
@@ -33,8 +34,8 @@ function isVisibleElement(element: Element): boolean {
 function textFromElements(elements: readonly Element[]): string[] {
   return elements
     .filter(isVisibleElement)
-    .filter((paragraph) => paragraph.textContent !== null)
-    .map((paragraph) => paragraph.textContent ?? '')
+    .map((paragraph) => normalizeParagraphText(paragraph.textContent ?? ''))
+    .filter((text) => text.length > 0)
 }
 
 function hasNestedTextBlock(element: Element): boolean {
@@ -44,9 +45,9 @@ function hasNestedTextBlock(element: Element): boolean {
 }
 
 function visibleTextBlocks(root: ParentNode): string[] {
-  const primary = Array.from(root.querySelectorAll(PRIMARY_TEXT_SELECTOR))
-  if (primary.length > 0) {
-    return textFromElements(primary)
+  const primaryText = textFromElements(Array.from(root.querySelectorAll(PRIMARY_TEXT_SELECTOR)))
+  if (primaryText.length > 0) {
+    return primaryText
   }
   const fallback = Array.from(root.querySelectorAll(FALLBACK_TEXT_SELECTOR)).filter(
     (element) => !hasNestedTextBlock(element),
