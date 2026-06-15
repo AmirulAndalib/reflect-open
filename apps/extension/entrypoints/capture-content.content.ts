@@ -6,9 +6,11 @@ import {
   type ExtractPageTextResponse,
 } from '@/lib/page-text'
 
+type PageTextListener = (message: unknown) => Promise<ExtractPageTextResponse> | undefined
+
 declare global {
   interface Window {
-    __reflectCaptureTextInstalled?: boolean
+    __reflectCaptureTextListener?: PageTextListener
   }
 }
 
@@ -54,16 +56,19 @@ function extractPageText(): ExtractPageTextResponse {
 export default defineContentScript({
   registration: 'runtime',
   main() {
-    if (window.__reflectCaptureTextInstalled) {
-      return
+    const previousListener = window.__reflectCaptureTextListener
+    if (previousListener) {
+      browser.runtime.onMessage.removeListener(previousListener)
     }
-    window.__reflectCaptureTextInstalled = true
-    browser.runtime.onMessage.addListener((message: unknown) => {
+
+    const listener: PageTextListener = (message) => {
       const request = extractPageTextRequestSchema.safeParse(message)
       if (!request.success) {
         return undefined
       }
       return Promise.resolve(extractPageText())
-    })
+    }
+    window.__reflectCaptureTextListener = listener
+    browser.runtime.onMessage.addListener(listener)
   },
 })

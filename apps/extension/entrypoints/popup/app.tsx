@@ -7,7 +7,7 @@ import {
   readIncludePageTextPreference,
   writeIncludePageTextPreference,
 } from '@/lib/popup-preferences'
-import { extractPageText } from './extract-page-text'
+import { tryExtractPageText } from './extract-page-text'
 import { useCapturedPage } from './use-captured-page'
 
 /**
@@ -106,7 +106,7 @@ export function CapturePopup(): ReactElement {
     }
     setSave({ phase: 'saving' })
     try {
-      const contentText = includePageText ? await extractPageText(captured.tabId) : undefined
+      const contentText = includePageText ? await tryExtractPageText(captured.tabId) : undefined
       const outcome = await saveCapture({
         ...captured.page,
         contentText,

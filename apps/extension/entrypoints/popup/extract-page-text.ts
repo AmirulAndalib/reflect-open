@@ -22,3 +22,13 @@ export async function extractPageText(tabId: number): Promise<string | undefined
   const contentText = parsed.contentText.trim()
   return contentText === '' ? undefined : contentText
 }
+
+/** Try optional page-text extraction without blocking the rest of the capture. */
+export async function tryExtractPageText(tabId: number): Promise<string | undefined> {
+  try {
+    return await extractPageText(tabId)
+  } catch (cause) {
+    console.warn('capture page text could not be extracted:', cause)
+    return undefined
+  }
+}
