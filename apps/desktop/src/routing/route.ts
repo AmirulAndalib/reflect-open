@@ -16,6 +16,7 @@ export type Route =
   | { kind: 'note'; path: string }
   | { kind: 'allNotes'; tag: string | null }
   | { kind: 'search'; query: string }
+  | { kind: 'tasks' }
   | { kind: 'chat' }
   | { kind: 'settings' }
 
@@ -26,6 +27,7 @@ export function routesEqual(a: Route, b: Route): boolean {
   }
   switch (a.kind) {
     case 'today':
+    case 'tasks':
     case 'chat':
     case 'settings':
       return true
