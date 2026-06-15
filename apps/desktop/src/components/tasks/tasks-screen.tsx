@@ -50,7 +50,8 @@ function visibleGroups(groups: TaskGroup[], filters: TaskFilters): TaskGroup[] {
  *
  * Rows are multi-selectable (V1 parity): click to select, ⌘/Shift to extend, and
  * keyboard shortcuts act on the selection — ⌘A select all, ↑/↓ (Shift to extend),
- * ⌘↵ complete, ⌫/⌘⌫ delete, Esc clear. A sole selection opens the inline editor.
+ * ⌘↵ complete, ⌘⌫ delete (plain ⌫ deletes only empty rows), Esc clear. A sole
+ * selection opens the inline editor.
  */
 export function TasksScreen(): ReactElement {
   const { graph } = useGraph()
@@ -149,6 +150,15 @@ export function TasksScreen(): ReactElement {
       event.preventDefault()
       actions.remove(selectedTasks())
       selection.clear()
+    } else if (event.key === 'Backspace') {
+      // Plain ⌫ deletes only empty rows (V1) — never content, so a stray
+      // Backspace can't lose work; ⌘⌫ above is the unconditional delete. The
+      // sole-empty case runs in the inline editor; this covers a multi-selection.
+      const empties = selectedTasks().filter((row) => row.text.trim() === '')
+      if (empties.length > 0) {
+        event.preventDefault()
+        actions.remove(empties)
+      }
     } else if (mod && (event.key === 'a' || event.key === 'A')) {
       event.preventDefault()
       selection.selectAll()

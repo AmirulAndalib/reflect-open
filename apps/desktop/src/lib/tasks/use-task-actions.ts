@@ -8,10 +8,11 @@ import { useGraph } from '@/providers/graph-provider'
 
 /**
  * Bulk task actions for the Tasks view's keyboard shortcuts (Plan 18): complete
- * a selection (⌘↵) and delete a selection (⌫/⌘⌫). Both update the open and
- * completed caches optimistically — like {@link useCompleteTask} does for one
- * row — so the selection reacts instantly, then the reindex reconciles. A failed
- * write rolls every row back to the snapshot and surfaces the reason once.
+ * a selection (⌘↵) and delete it (⌘⌫ unconditionally; plain ⌫ removes only the
+ * empty rows). Both update the open and completed caches optimistically — like
+ * {@link useCompleteTask} does for one row — so the selection reacts instantly,
+ * then the reindex reconciles. A failed write rolls every row back to the
+ * snapshot and surfaces the reason once.
  *
  * Writes within a batch run **sequentially**: tasks can share a note, and two
  * concurrent edits to one file would race (the loser's read predates the

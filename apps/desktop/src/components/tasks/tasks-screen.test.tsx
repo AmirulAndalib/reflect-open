@@ -347,6 +347,23 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
+  it('deletes only empty rows on plain ⌫, leaving content rows', async () => {
+    deleteTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ]', text: '', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] keep', text: 'keep', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('keep')
+    await userEvent.keyboard('{Meta>}a{/Meta}') // select both
+    await userEvent.keyboard('{Backspace}')
+    // Only the empty row is removed; the content row is untouched.
+    await waitFor(() => expect(deleteTask).toHaveBeenCalledTimes(1))
+    expect(deleteTask).toHaveBeenCalledWith(expect.objectContaining({ notePath: 'notes/a.md' }), 1)
+    view.unmount()
+  })
+
   it('does not reopen an already-completed task when ⌘↵ hits the selection', async () => {
     window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
     toggleTask.mockResolvedValue(undefined)
