@@ -6,6 +6,7 @@ import { InlineAlert } from '@/components/inline-alert'
 import { NoteConflictBanner } from '@/components/note-conflict-banner'
 import { ProtectedNoteView } from '@/components/protected-note-view'
 import { SyncConflictNotice } from '@/components/sync-conflict-notice'
+import { editorBodyWithDefaultBullet } from '@/editor/default-bullet'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
@@ -49,7 +50,6 @@ interface NotePaneProps {
    */
   gutterClassName?: string
 }
-
 
 /**
  * One open note: the editor bound to its on-disk document via the Plan 05 save
@@ -214,6 +214,15 @@ export function NotePane({
     )
   }
 
+  // A note that opens with an empty body starts on an empty bullet when the
+  // setting is on (old Reflect's every-note default). The seed only changes what
+  // the editor shows; persistence is untouched, so a not-yet-created daily
+  // placeholder stays uncreated until the user types — see `default-bullet.ts`.
+  const editorSeed = editorBodyWithDefaultBullet(
+    document.initialContent,
+    settings.editorDefaultBullet,
+  )
+
   return (
     <div className={cn('relative', className)} aria-label={`Editing ${path}`}>
       <div className={gutterClassName}>
@@ -245,7 +254,7 @@ export function NotePane({
         // session under a new filename (Plan 17), and remounting the editor
         // for that would throw away the cursor mid-thought.
         key={document.sessionEpoch}
-        initialContent={document.initialContent}
+        initialContent={editorSeed}
         onChange={document.onEditorChange}
         markMode={settings.editorMarkdownSyntax}
         spellCheck={settings.editorSpellCheck}

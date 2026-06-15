@@ -629,6 +629,34 @@ describe('missing-note seed (new ordinary notes)', () => {
   })
 })
 
+describe('default-bullet editor seed (daily notes)', () => {
+  // The `editorDefaultBullet` feature seeds the *editor* of an empty daily note
+  // with `- `; meowdown serializes that lone empty bullet back to `"\n"`. The
+  // session has no `missingSeed` for daily notes, so the only way the bullet can
+  // reach it is a mount-time serialization — which must be treated as the empty
+  // note it is, never written, so a future placeholder stays uncreated.
+  it('an empty-bullet serialization on a missing daily note writes nothing', async () => {
+    const h = harness({ disk: null, createIfMissing: true })
+    h.session.load()
+    await settled()
+    expect(h.snapshots.at(-1)?.missing).toBe(true)
+
+    h.session.editorChanged('\n') // docToMarkdown of an unedited empty bullet
+    await h.session.flush()
+    await settled()
+
+    expect(h.writes).toEqual([]) // the placeholder is still not on disk
+    expect(h.snapshots.at(-1)?.missing).toBe(true)
+    expect(h.snapshots.at(-1)?.dirty).toBe(false)
+
+    // Typing into the bullet births the file with the real content.
+    h.session.editorChanged('- groceries\n')
+    await settled()
+    expect(h.writes).toEqual([{ path: 'notes/a.md', contents: '- groceries\n' }])
+    expect(h.snapshots.at(-1)?.missing).toBe(false)
+  })
+})
+
 describe('retarget (Plan 17)', () => {
   it('rebinds reads and writes to the new path without touching document state', async () => {
     const h = harness()

@@ -31,6 +31,20 @@ export type EditorMarkdownSyntax = z.infer<typeof editorMarkdownSyntaxSchema>
 export const editorSpellCheckSchema = z.boolean().catch(true)
 
 /**
+ * Whether a note that opens with an empty body starts the editor on a single
+ * empty bullet — old Reflect's every-note default. On by default.
+ *
+ * The bullet is an **editor affordance only**, never persisted on its own: an
+ * empty list item serializes to nothing (`docToMarkdown` drops it), so an
+ * unedited note still writes an empty file — and a not-yet-created daily-note
+ * placeholder stays uncreated until the first real keystroke (the lazy
+ * no-litter contract). The seam lives at the editor (`note-pane.tsx`), not the
+ * save pipeline, because seeding the document model with the literal `- `
+ * markdown would classify lossy and open the note read-only.
+ */
+export const editorDefaultBulletSchema = z.boolean().catch(true)
+
+/**
  * The app color theme. `system` (the default) follows the OS preference;
  * `light`/`dark` pin it. Persisted here so the choice survives relaunch.
  */
@@ -210,6 +224,7 @@ export const settingsSchema = z
   .object({
     editorMarkdownSyntax: editorMarkdownSyntaxSchema,
     editorSpellCheck: editorSpellCheckSchema,
+    editorDefaultBullet: editorDefaultBulletSchema,
     semanticSearchEnabled: semanticSearchEnabledSchema,
     mobileOnboarded: mobileOnboardedSchema,
     theme: themePreferenceSchema,

@@ -117,6 +117,7 @@ describe('SettingsScreen', () => {
         {
           editorMarkdownSyntax: 'show',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -156,6 +157,45 @@ describe('SettingsScreen', () => {
         {
           editorMarkdownSyntax: 'focus',
           editorSpellCheck: false,
+          editorDefaultBullet: true,
+          semanticSearchEnabled: false,
+          mobileOnboarded: false,
+          theme: 'system',
+          timeFormat: '12h',
+          dateFormat: 'mdy',
+          weekStartDay: 'monday',
+          allNotesFilterTags: ['book', 'link', 'person'],
+          graphColors: {},
+          aiProviders: [],
+          defaultAiProviderId: null,
+          chatModelSelection: null,
+        },
+      ]),
+    )
+  })
+
+  it('reflects a persisted default-bullet opt-out', async () => {
+    stored = { editorDefaultBullet: false }
+    renderScreen()
+    const toggle = screen.getByRole('switch', { name: /start with a bullet/i })
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'))
+  })
+
+  it('toggling the default bullet off applies instantly and persists', async () => {
+    renderScreen()
+    const toggle = screen.getByRole('switch', { name: /start with a bullet/i })
+    // On by default.
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+
+    fireEvent.click(toggle)
+
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    await waitFor(() =>
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'focus',
+          editorSpellCheck: true,
+          editorDefaultBullet: false,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -185,6 +225,7 @@ describe('SettingsScreen', () => {
         {
           editorMarkdownSyntax: 'focus',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'light',
@@ -227,6 +268,7 @@ describe('SettingsScreen', () => {
         {
           editorMarkdownSyntax: 'focus',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -265,6 +307,7 @@ describe('SettingsScreen', () => {
         {
           editorMarkdownSyntax: 'focus',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -294,6 +337,7 @@ describe('SettingsScreen', () => {
         {
           editorMarkdownSyntax: 'focus',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -355,6 +399,7 @@ describe('SettingsScreen', () => {
         {
           editorMarkdownSyntax: 'focus',
           editorSpellCheck: true,
+          editorDefaultBullet: true,
           semanticSearchEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
@@ -379,7 +424,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, semanticSearchEnabled: true, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
+        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, editorDefaultBullet: true, semanticSearchEnabled: true, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
       ]),
     )
     // The control flips to the loading state (EmbeddingsSync owns the actual
@@ -408,7 +453,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, semanticSearchEnabled: false, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
+        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, editorDefaultBullet: true, semanticSearchEnabled: false, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
       ]),
     )
     expect(screen.getByRole('button', { name: /enable semantic search/i })).toBeTruthy()
@@ -431,7 +476,7 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(invoked).toContain('embed_ensure'))
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, semanticSearchEnabled: true, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
+        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, editorDefaultBullet: true, semanticSearchEnabled: true, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
       ]),
     )
   })
@@ -450,7 +495,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, semanticSearchEnabled: false, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
+        { editorMarkdownSyntax: 'focus', editorSpellCheck: true, editorDefaultBullet: true, semanticSearchEnabled: false, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
       ]),
     )
     expect(screen.getByRole('button', { name: /enable semantic search/i })).toBeTruthy()
