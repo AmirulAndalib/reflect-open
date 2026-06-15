@@ -125,6 +125,6 @@ export function useTaskRowHandlers({
         scrollToKey(selection.activeKey())
       },
     }),
-    [actions, selection, orderedTasks, selectExclusively, scrollToKey],
+    [actions, selection, orderedTasks, today, selectExclusively, scrollToKey],
   )
 }

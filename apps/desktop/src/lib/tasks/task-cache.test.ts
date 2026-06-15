@@ -1,6 +1,12 @@
 import { type OpenTask } from '@reflect/core'
 import { describe, expect, it } from 'vitest'
-import { asCompleted, taskRawWithContent, withEditedTask, withoutTasks } from './task-cache'
+import {
+  asCompleted,
+  taskRawWithContent,
+  withCheckedMarker,
+  withEditedTask,
+  withoutTasks,
+} from './task-cache'
 
 function task(overrides: Partial<OpenTask> = {}): OpenTask {
   const text = overrides.text ?? 'do it'
@@ -34,14 +40,22 @@ describe('withoutTasks', () => {
   })
 })
 
+describe('withCheckedMarker', () => {
+  it('flips the marker in raw to match the new checked state', () => {
+    expect(withCheckedMarker(a, true)).toEqual({ ...a, checked: true, raw: '[x] a' })
+    expect(withCheckedMarker({ ...a, checked: true, raw: '[x] a' }, false)).toEqual({
+      ...a,
+      checked: false,
+      raw: '[ ] a',
+    })
+  })
+})
+
 describe('asCompleted', () => {
-  it('prepends the tasks as checked, de-duping any already present', () => {
-    const existingChecked = { ...b, checked: true }
+  it('prepends the tasks as checked (raw flipped to [x]), de-duping any already present', () => {
+    const existingChecked = withCheckedMarker(b, true)
     const result = asCompleted([existingChecked], [a, b])
-    expect(result).toEqual([
-      { ...a, checked: true },
-      { ...b, checked: true },
-    ])
+    expect(result).toEqual([withCheckedMarker(a, true), withCheckedMarker(b, true)])
   })
 
   it('is a no-op when the completed list is not loaded', () => {

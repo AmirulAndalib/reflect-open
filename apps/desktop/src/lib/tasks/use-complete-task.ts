@@ -28,21 +28,26 @@ export function useCompleteTask(task: OpenTask): { complete: () => void; isPendi
   const cache = useTaskCacheWriter()
 
   const root = graph?.root ?? null
+  // Pass the task *into* the mutation rather than closing over the prop: completing
+  // optimistically flips the struck row's `raw` to `[x]` (so a later reopen/edit
+  // can locate it), which re-renders this row with a `[x]` prop before the write
+  // runs — and `toggleTask` must use the pre-toggle `[ ]` line still on disk.
   const mutation = useMutation({
-    mutationFn: (generation: number) => toggleTask(task, generation),
-    onMutate: async () => {
+    mutationFn: ({ task: target, generation }: { task: OpenTask; generation: number }) =>
+      toggleTask(target, generation),
+    onMutate: async ({ task: target }: { task: OpenTask; generation: number }) => {
       const snapshot = await cache.snapshot()
       cache.patch(
-        (rows) => withoutTasks(rows, [task]),
-        (rows) => asCompleted(rows, [task]),
+        (rows) => withoutTasks(rows, [target]),
+        (rows) => asCompleted(rows, [target]),
       )
       // Keep it showing struck in the active list (V1's middle state) until archived.
-      markRecentlyCompleted(root, [task])
+      markRecentlyCompleted(root, [target])
       return snapshot
     },
-    onError: (cause, _generation, context) => {
+    onError: (cause, { task: target }, context) => {
       cache.rollback(context, 'Completing task', cause)
-      forgetRecentlyCompleted(root, [taskKey(task)])
+      forgetRecentlyCompleted(root, [taskKey(target)])
     },
   })
 
@@ -53,7 +58,7 @@ export function useCompleteTask(task: OpenTask): { complete: () => void; isPendi
       if (generation === undefined || mutation.isPending) {
         return
       }
-      mutation.mutate(generation)
+      mutation.mutate({ task, generation })
     },
   }
 }

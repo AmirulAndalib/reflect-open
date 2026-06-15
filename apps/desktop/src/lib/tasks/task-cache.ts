@@ -21,6 +21,17 @@ export function withoutTasks(
 }
 
 /**
+ * The same task line with its checkbox flipped to `checked` — the marker rewritten
+ * in `raw` to match. An optimistic checked/reopened row MUST carry this, not the
+ * pre-toggle `raw`: the write-back locates the line by `raw`, so a struck row
+ * still holding `[ ]` while disk has `[x]` would fail `locateTaskMarker` on the
+ * next reopen/edit/delete. The marker always begins `raw`, so slice past it.
+ */
+export function withCheckedMarker(task: OpenTask, checked: boolean): OpenTask {
+  return { ...task, checked, raw: `${checked ? '[x]' : '[ ]'}${task.raw.slice(3)}` }
+}
+
+/**
  * Move `tasks` to the front of the completed list as checked, de-duping any
  * already present — the optimistic shape of completing them with archived on, so
  * the rows stay visible struck through instead of vanishing until the refetch.
@@ -33,7 +44,7 @@ export function asCompleted(
     return rows
   }
   const kept = rows.filter((row) => !tasks.some((task) => sameTask(row, task)))
-  return [...tasks.map((task) => ({ ...task, checked: true })), ...kept]
+  return [...tasks.map((task) => withCheckedMarker(task, true)), ...kept]
 }
 
 /**

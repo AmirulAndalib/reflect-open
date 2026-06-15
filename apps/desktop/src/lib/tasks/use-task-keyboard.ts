@@ -150,9 +150,11 @@ export function useTaskKeyboard({
       // above via OWNS_KEYS and continues the entry there), so this fires from the
       // list itself: insert, then select the new row to open its editor focused.
       // A null target means the active row is Overdue/Upcoming — nothing to add to.
+      // Skip while a write is in flight so a held/rapid Return can't append several
+      // empty rows before the first insert's editor takes focus.
       event.preventDefault()
       const target = insertTarget()
-      if (target !== null) {
+      if (target !== null && !actions.isPending) {
         void actions.insert(target).then((created) => {
           if (created !== null) {
             selectExclusively(taskKey(created))

@@ -7,7 +7,13 @@ import {
   forgetRecentlyCompleted,
   markRecentlyCompleted,
 } from '@/lib/tasks/recently-completed'
-import { asCompleted, taskRawWithContent, withEditedTask, withoutTasks } from '@/lib/tasks/task-cache'
+import {
+  asCompleted,
+  taskRawWithContent,
+  withCheckedMarker,
+  withEditedTask,
+  withoutTasks,
+} from '@/lib/tasks/task-cache'
 import { taskKey } from '@/lib/tasks/task-identity'
 import { useTaskCacheWriter } from '@/lib/tasks/use-task-cache'
 import { useGraph } from '@/providers/graph-provider'
@@ -139,11 +145,7 @@ export function useTaskActions(): TaskActions {
       const snapshot = await cache.snapshot()
       // Put them back in the open list (unchecked), drop them from the completed
       // list and this session's struck set — the inverse of completing.
-      const reopened = tasks.map((task) => ({
-        ...task,
-        checked: false,
-        raw: `[ ]${task.raw.slice(3)}`,
-      }))
+      const reopened = tasks.map((task) => withCheckedMarker(task, false))
       const reopenedKeys = new Set(reopened.map(taskKey))
       cache.patch(
         (rows) => [...(rows ?? []).filter((row) => !reopenedKeys.has(taskKey(row))), ...reopened],
@@ -176,7 +178,13 @@ export function useTaskActions(): TaskActions {
       forgetRecentlyCompleted(root, tasks.map(taskKey))
       return snapshot
     },
-    onError: (cause) => cache.reconcile('Deleting tasks', cause),
+    onError: (cause, tasks) => {
+      cache.reconcile('Deleting tasks', cause)
+      // The delete dropped checked rows from the session's struck set; if it
+      // failed they're still `[x]` on disk, so restore them or they'd vanish from
+      // the default list (gone from open, struck-set, and the unloaded archived query).
+      markRecentlyCompleted(root, tasks.filter((task) => task.checked))
+    },
   })
 
   const editMutation = useMutation({
@@ -348,14 +356,18 @@ export function useTaskActions(): TaskActions {
       if (graph?.generation === undefined) {
         return null
       }
-      // Persist the current edit first and *await* it, so the append reads the
-      // post-edit source — the new offset can't drift when the line above resized.
-      if (content !== null) {
-        try {
+      // Resolve the current row first and *await* it, so the append reads the
+      // settled source — the new offset can't drift when the line above resized.
+      // Emptied content (the row was cleared) deletes that row rather than leaving
+      // a bare `- [ ]` ghost; a real change persists; null (unchanged) is left be.
+      try {
+        if (content === '') {
+          await deleteMutation.mutateAsync([task])
+        } else if (content !== null) {
           await editMutation.mutateAsync({ task, content })
-        } catch {
-          return null // the edit's rollback already surfaced the failure
         }
+      } catch {
+        return null // the edit/delete rollback already surfaced the failure
       }
       let markerOffset: number
       try {

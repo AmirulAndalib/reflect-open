@@ -70,6 +70,9 @@ vi.mock('./task-editor', () => ({
       <button type="button" onClick={() => onContinue(null)}>
         continue-unchanged
       </button>
+      <button type="button" onClick={() => onContinue('')}>
+        continue-empty
+      </button>
       <button type="button" onClick={() => onDelete()}>
         delete-edit
       </button>
@@ -605,6 +608,25 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
+  it('Enter on a cleared row deletes it instead of leaving a bare task (no ghost)', async () => {
+    deleteTask.mockResolvedValue(undefined)
+    insertTask.mockResolvedValue(0)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await view.findByTestId('task-editor')
+    await userEvent.click(view.getByRole('button', { name: 'continue-empty' }))
+    // The cleared row is deleted (not edited to `- [ ]`); editTask is never called.
+    await waitFor(() =>
+      expect(deleteTask).toHaveBeenCalledWith(expect.objectContaining({ notePath: 'notes/a.md' }), 1),
+    )
+    expect(editTask).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
   it('↑/↓ in the editor move the selection between rows (V1)', async () => {
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
@@ -792,6 +814,27 @@ describe('TasksScreen', () => {
     await view.findByRole('button', { name: 'Completed task' })
     await userEvent.keyboard('{Meta>}{Shift>}{Enter}{/Shift}{/Meta}')
     await waitFor(() => expect(view.queryByText('project task')).toBeNull())
+    view.unmount()
+  })
+
+  it('a failed delete restores a struck task instead of dropping it (V1 middle state)', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    deleteTask.mockRejectedValue(new Error('disk full'))
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] one', text: 'one', noteTitle: 'A' }),
+    ])
+    const view = renderScreen()
+
+    // Complete it → struck (kept showing via the session set), then try to delete.
+    await userEvent.click(await view.findByRole('button', { name: 'Complete: one' }))
+    await view.findByRole('button', { name: 'Completed task' })
+    await userEvent.click(view.getByText('one')) // select the struck row → editor opens
+    await view.findByTestId('task-editor')
+    await userEvent.click(view.getByRole('button', { name: 'delete-edit' }))
+
+    await waitFor(() => expect(deleteTask).toHaveBeenCalled())
+    // The write failed, so the struck row is restored, not lost.
+    await view.findByRole('button', { name: 'Completed task' })
     view.unmount()
   })
 

@@ -1,5 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import { type OpenTask } from '@reflect/core'
+import { withCheckedMarker } from '@/lib/tasks/task-cache'
 import { taskKey } from '@/lib/tasks/task-identity'
 
 /**
@@ -40,7 +41,9 @@ function adopt(root: string | null): void {
 
 /**
  * Keep `completed` showing struck (checked) in the active list until archived.
- * Stored as a fresh checked copy, deduped by {@link taskKey}.
+ * Stored as a fresh checked copy, deduped by {@link taskKey}. The marker in `raw`
+ * is flipped to `[x]` to match disk — these rows outlive the reindex, so a stale
+ * `[ ]` would later fail the reopen/edit/delete write-back ({@link withCheckedMarker}).
  */
 export function markRecentlyCompleted(root: string | null, completed: readonly OpenTask[]): void {
   if (completed.length === 0) {
@@ -49,7 +52,7 @@ export function markRecentlyCompleted(root: string | null, completed: readonly O
   adopt(root)
   const byKey = new Map(tasks.map((task) => [taskKey(task), task]))
   for (const task of completed) {
-    byKey.set(taskKey(task), { ...task, checked: true })
+    byKey.set(taskKey(task), withCheckedMarker(task, true))
   }
   tasks = [...byKey.values()]
   emit()
