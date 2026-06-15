@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { scanInlineImages, scanInlineWikiLinks } from './scan'
+import { scanInlineImages, scanInlineSegments, scanInlineWikiLinks } from './scan'
 
 describe('scanInlineWikiLinks', () => {
   it('finds plain and aliased links with display spans', () => {
@@ -50,5 +50,42 @@ describe('scanInlineImages', () => {
     expect(scanInlineImages('code `![x](y.png)` stays literal')).toEqual([])
     expect(scanInlineImages('a [link](not-an-image.png) only')).toEqual([])
     expect(scanInlineImages('no images')).toEqual([])
+  })
+})
+
+describe('scanInlineSegments', () => {
+  it('returns a single text segment for plain content', () => {
+    expect(scanInlineSegments('just buy milk')).toEqual([{ kind: 'text', text: 'just buy milk' }])
+  })
+
+  it('interleaves text, wiki links, and markdown links in document order', () => {
+    expect(scanInlineSegments('call [[Bob]] re [the doc](https://x.com/d) today')).toEqual([
+      { kind: 'text', text: 'call ' },
+      { kind: 'wikiLink', target: 'Bob', alias: null },
+      { kind: 'text', text: ' re ' },
+      { kind: 'link', text: 'the doc', href: 'https://x.com/d' },
+      { kind: 'text', text: ' today' },
+    ])
+  })
+
+  it('keeps a wiki link target and alias separate', () => {
+    expect(scanInlineSegments('[[2026-06-20|Friday]] ship')).toEqual([
+      { kind: 'wikiLink', target: '2026-06-20', alias: 'Friday' },
+      { kind: 'text', text: ' ship' },
+    ])
+  })
+
+  it('segments a bare autolinked URL as a link', () => {
+    expect(scanInlineSegments('read https://example.com/x now')).toEqual([
+      { kind: 'text', text: 'read ' },
+      { kind: 'link', text: 'https://example.com/x', href: 'https://example.com/x' },
+      { kind: 'text', text: ' now' },
+    ])
+  })
+
+  it('leaves links inside a code span as literal text (no regex false-positive)', () => {
+    expect(scanInlineSegments('code `[[NotALink]]` stays literal')).toEqual([
+      { kind: 'text', text: 'code `[[NotALink]]` stays literal' },
+    ])
   })
 })

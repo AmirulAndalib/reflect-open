@@ -31,8 +31,10 @@ export { parseNote, isTagName, hasAuthoredTitle } from './extract'
 export {
   scanInlineWikiLinks,
   scanInlineImages,
+  scanInlineSegments,
   type InlineWikiLink,
   type InlineImage,
+  type InlineSegment,
 } from './scan'
 export {
   appendBlock,
