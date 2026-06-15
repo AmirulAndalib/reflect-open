@@ -14,26 +14,29 @@ import { useSettings } from '@/providers/settings-provider'
  * The inline task editor (Plan 18, V1 parity): the sole-selected task swaps its
  * read-only text for a one-line editor seeded with the content after its marker.
  * It reuses Reflect's note editor — so it gets meowdown's built-in `[[` backlink
- * and `#` tag menus ({@link useEditorAutocomplete}) — and binds a commit/cancel/
- * delete keymap. The marker (and so the checked state) is never in this editor;
- * the write-back only rewrites the content line. The single-shot commit/cancel/
- * delete rules live in {@link useTaskEditorFinalizer}.
+ * and `#` tag menus ({@link useEditorAutocomplete}) — and binds the commit/cancel/
+ * complete/delete keymap. The marker (and so the checked state) is never in this
+ * editor; the write-back only rewrites the content line. The single-shot rules
+ * live in {@link useTaskEditorFinalizer}.
  */
 interface TaskEditorProps {
   task: OpenTask
   /** Persist the new content (non-empty, changed) and exit edit mode. */
   onCommit: (content: string) => void
-  /** Delete the task (emptied or backspaced-empty) and exit edit mode. */
+  /** Delete the task (emptied, ⌫-empty, or ⌘⌫) and exit edit mode. */
   onDelete: () => void
   /** Exit edit mode without writing (Escape / unchanged). */
   onCancel: () => void
+  /** ⌘↵: complete the task (saving the edit first when `content` isn't null). */
+  onComplete: (content: string | null) => void
 }
 
 /**
- * Binds Enter/Escape/Backspace inside the editor's ProseKit context (meowdown
- * renders children there). High priority so it runs before the editor's default
- * Enter — but the `[[`/`#` menus claim those keys first while open, so Enter
- * selects a menu item rather than committing.
+ * Binds the editor's keys inside its ProseKit context (meowdown renders children
+ * there). High priority so it runs before the editor's default Enter — but the
+ * `[[`/`#` menus claim Enter/Escape first while open, so those select a menu item
+ * rather than committing. ⌘↵ completes and ⌘⌫ deletes the task (V1) — handled
+ * here, not by the screen's bulk shortcuts, which back off while editing.
  */
 function TaskCommitKeymap({ apiRef }: { apiRef: MutableRefObject<TaskEditorApi> }): null {
   const keymap = useMemo(
@@ -47,8 +50,16 @@ function TaskCommitKeymap({ apiRef }: { apiRef: MutableRefObject<TaskEditorApi> 
         apiRef.current.commit()
         return true
       },
+      'Mod-Enter': () => {
+        apiRef.current.complete()
+        return true
+      },
       Escape: () => {
         apiRef.current.cancel()
+        return true
+      },
+      'Mod-Backspace': () => {
+        apiRef.current.delete()
         return true
       },
       Backspace: () => {
@@ -65,7 +76,13 @@ function TaskCommitKeymap({ apiRef }: { apiRef: MutableRefObject<TaskEditorApi> 
   return null
 }
 
-export function TaskEditor({ task, onCommit, onDelete, onCancel }: TaskEditorProps): ReactElement {
+export function TaskEditor({
+  task,
+  onCommit,
+  onDelete,
+  onCancel,
+  onComplete,
+}: TaskEditorProps): ReactElement {
   const { graph } = useGraph()
   const { settings } = useSettings()
   const generation = graph?.generation ?? null
@@ -78,6 +95,7 @@ export function TaskEditor({ task, onCommit, onDelete, onCancel }: TaskEditorPro
     onCommit,
     onDelete,
     onCancel,
+    onComplete,
   })
 
   const handleRef = useCallback((handle: NoteEditorHandle | null) => {

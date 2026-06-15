@@ -87,6 +87,14 @@ export function TaskGroupSection({
                 selection.clear()
               }}
               onEditCancel={() => selection.clear()}
+              onEditComplete={(content) => {
+                if (content === null) {
+                  actions.complete([task])
+                } else {
+                  actions.editAndComplete(task, content)
+                }
+                selection.clear()
+              }}
               onOpen={onOpen}
             />
           )

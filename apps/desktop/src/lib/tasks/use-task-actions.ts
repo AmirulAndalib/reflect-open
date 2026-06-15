@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { type OpenTask } from '@reflect/core'
 import { deleteTask, editTask, toggleTask } from '@/lib/note-task'
-import { asCompleted, withEditedTask, withoutTasks } from '@/lib/tasks/task-cache'
+import { asCompleted, taskRawWithContent, withEditedTask, withoutTasks } from '@/lib/tasks/task-cache'
 import { useTaskCacheWriter } from '@/lib/tasks/use-task-cache'
 import { useGraph } from '@/providers/graph-provider'
 
@@ -24,6 +24,12 @@ export interface TaskActions {
   remove: (tasks: OpenTask[]) => void
   /** Replace one task's content from the inline editor (Plan 18). */
   edit: (task: OpenTask, content: string) => void
+  /**
+   * Save an inline edit and complete the task in one go (⌘↵ while editing). The
+   * two writes run **sequentially** — edit then toggle the rebuilt line — so they
+   * can't race each other on the same note line.
+   */
+  editAndComplete: (task: OpenTask, content: string) => void
   isPending: boolean
 }
 
@@ -97,8 +103,37 @@ export function useTaskActions(): TaskActions {
     onError: (cause, _vars, context) => cache.rollback(context, 'Editing task', cause),
   })
 
+  const editAndCompleteMutation = useMutation({
+    mutationFn: async ({ task, content }: { task: OpenTask; content: string }) => {
+      const generation = graph?.generation
+      if (generation === undefined) {
+        throw new Error('No graph is open.')
+      }
+      // Edit, then toggle the *rewritten* line — sequential, and the toggle is
+      // given the post-edit `raw` so it locates the line the edit just wrote
+      // (the marker offset is unchanged; only the content after it moved).
+      await editTask(task, content, generation)
+      await toggleTask({ ...task, raw: taskRawWithContent(task, content) }, generation)
+    },
+    onMutate: async ({ task }: { task: OpenTask; content: string }) => {
+      const snapshot = await cache.snapshot()
+      // Same optimistic shape as completing: drop from open, surface struck in
+      // the completed list. The reindex fills in the edited text a beat later.
+      cache.patch(
+        (rows) => withoutTasks(rows, [task]),
+        (rows) => asCompleted(rows, [task]),
+      )
+      return snapshot
+    },
+    onError: (cause, _vars, context) => cache.rollback(context, 'Completing task', cause),
+  })
+
   return {
-    isPending: completeMutation.isPending || deleteMutation.isPending || editMutation.isPending,
+    isPending:
+      completeMutation.isPending ||
+      deleteMutation.isPending ||
+      editMutation.isPending ||
+      editAndCompleteMutation.isPending,
     complete: (tasks) => {
       // ⌘↵ *completes*; with archived rows in the selection, toggling an
       // already-checked task would reopen it on disk. Only act on open rows.
@@ -115,6 +150,11 @@ export function useTaskActions(): TaskActions {
     edit: (task, content) => {
       if (graph?.generation !== undefined) {
         editMutation.mutate({ task, content })
+      }
+    },
+    editAndComplete: (task, content) => {
+      if (graph?.generation !== undefined && !editAndCompleteMutation.isPending) {
+        editAndCompleteMutation.mutate({ task, content })
       }
     },
   }

@@ -12,6 +12,10 @@ import { resolveTaskEdit } from '@/lib/tasks/task-content'
 export interface TaskEditorApi {
   commit: () => void
   cancel: () => void
+  /** ⌘↵: save any change, then complete the task (or delete it if emptied). */
+  complete: () => void
+  /** ⌘⌫: delete the task outright, discarding any pending edit. */
+  delete: () => void
   deleteEmpty: () => void
   isEmpty: () => boolean
 }
@@ -25,6 +29,11 @@ export interface TaskEditorFinalizerOptions {
   onDelete: () => void
   /** Exit edit mode without writing (Escape / unchanged). */
   onCancel: () => void
+  /**
+   * Complete the task and exit (⌘↵). `content` is the new text when the edit
+   * changed it (save **and** complete), or `null` to complete the unchanged task.
+   */
+  onComplete: (content: string | null) => void
 }
 
 export interface TaskEditorFinalizer {
@@ -43,13 +52,15 @@ export interface TaskEditorFinalizer {
  * apart from the editor view so the finalizing rules are one cohesive, testable
  * unit.
  *
- * Finalizing is single-shot and idempotent: the first of Enter, a real blur, or
- * the row unmounting (the selection moved off it) commits; Escape cancels; an
- * empty editor + Backspace, or committing empty, deletes. {@link resolveTaskEdit}
- * turns the current text vs. the seed into commit/cancel/delete, so a
- * whitespace-only change never rewrites the file. The commands are bound once
- * via {@link TaskEditorFinalizer.apiRef} but always call this render's
- * callbacks — the keymap closes over the ref, not a stale closure.
+ * Finalizing is single-shot and idempotent — the first finalizer to run claims
+ * the editor (so the row unmounting afterward can't double-fire a write): the
+ * first of Enter, a real blur, or the row unmounting commits; Escape cancels;
+ * empty + Backspace (or committing empty) deletes; ⌘↵ completes (saving the edit
+ * first when changed); ⌘⌫ deletes outright. {@link resolveTaskEdit} turns the
+ * current text vs. the seed into commit/cancel/delete, so a whitespace-only
+ * change never rewrites the file. The commands are bound once via
+ * {@link TaskEditorFinalizer.apiRef} but always call this render's callbacks —
+ * the keymap closes over the ref, not a stale closure.
  *
  * A blur is deferred a tick: the `[[`/`#` menus refocus the editor after
  * inserting, so only a focus that has genuinely left `rootRef` commits — a
@@ -60,6 +71,7 @@ export function useTaskEditorFinalizer({
   onCommit,
   onDelete,
   onCancel,
+  onComplete,
 }: TaskEditorFinalizerOptions): TaskEditorFinalizer {
   const currentRef = useRef(initial)
   const doneRef = useRef(false)
@@ -70,15 +82,25 @@ export function useTaskEditorFinalizer({
   const apiRef = useRef<TaskEditorApi>({
     commit: () => {},
     cancel: () => {},
+    complete: () => {},
+    delete: () => {},
     deleteEmpty: () => {},
     isEmpty: () => false,
   })
+  // Each finalizer claims the editor once (doneRef): completing/deleting via a
+  // shortcut sets it, so the row unmounting afterward can't double-fire a commit.
+  const claim = (): boolean => {
+    if (doneRef.current) {
+      return false
+    }
+    doneRef.current = true
+    return true
+  }
   apiRef.current = {
     commit: () => {
-      if (doneRef.current) {
+      if (!claim()) {
         return
       }
-      doneRef.current = true
       const result = resolveTaskEdit(initial, currentRef.current)
       if (result.type === 'commit') {
         onCommit(result.content)
@@ -89,18 +111,34 @@ export function useTaskEditorFinalizer({
       }
     },
     cancel: () => {
-      if (doneRef.current) {
+      if (claim()) {
+        onCancel()
+      }
+    },
+    complete: () => {
+      if (!claim()) {
         return
       }
-      doneRef.current = true
-      onCancel()
+      // Emptying then completing means delete (an empty task can't be "done");
+      // an unchanged task just toggles; otherwise save the new text and complete.
+      const result = resolveTaskEdit(initial, currentRef.current)
+      if (result.type === 'delete') {
+        onDelete()
+      } else if (result.type === 'commit') {
+        onComplete(result.content)
+      } else {
+        onComplete(null)
+      }
+    },
+    delete: () => {
+      if (claim()) {
+        onDelete()
+      }
     },
     deleteEmpty: () => {
-      if (doneRef.current) {
-        return
+      if (claim()) {
+        onDelete()
       }
-      doneRef.current = true
-      onDelete()
     },
     isEmpty: () => currentRef.current.trim() === '',
   }

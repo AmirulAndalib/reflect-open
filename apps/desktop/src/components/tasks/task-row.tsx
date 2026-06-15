@@ -20,10 +20,12 @@ interface TaskRowProps {
   onSelect: (event: MouseEvent) => void
   /** Persist an inline edit (content after the marker) and exit edit mode. */
   onEditCommit: (content: string) => void
-  /** Delete the task from the inline editor (emptied) and exit edit mode. */
+  /** Delete the task from the inline editor (emptied / ⌘⌫) and exit edit mode. */
   onEditDelete: () => void
   /** Exit edit mode without writing (Escape / unchanged). */
   onEditCancel: () => void
+  /** ⌘↵ in the editor: complete the task, saving the edit first when `content` isn't null. */
+  onEditComplete: (content: string | null) => void
   onOpen: (notePath: string) => void
 }
 
@@ -45,6 +47,7 @@ export function TaskRow({
   onEditCommit,
   onEditDelete,
   onEditCancel,
+  onEditComplete,
   onOpen,
 }: TaskRowProps): ReactElement {
   const { settings } = useSettings()
@@ -79,6 +82,7 @@ export function TaskRow({
           onCommit={onEditCommit}
           onDelete={onEditDelete}
           onCancel={onEditCancel}
+          onComplete={onEditComplete}
         />
       ) : (
         <button

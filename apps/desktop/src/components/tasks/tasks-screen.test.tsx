@@ -38,11 +38,13 @@ vi.mock('./task-editor', () => ({
     onCommit,
     onDelete,
     onCancel,
+    onComplete,
   }: {
     task: { text: string }
     onCommit: (content: string) => void
     onDelete: () => void
     onCancel: () => void
+    onComplete: (content: string | null) => void
   }) => (
     <div data-task-editor data-testid="task-editor">
       <span>editing: {task.text}</span>
@@ -54,6 +56,12 @@ vi.mock('./task-editor', () => ({
       </button>
       <button type="button" onClick={() => onCancel()}>
         cancel-edit
+      </button>
+      <button type="button" onClick={() => onComplete('edited content')}>
+        complete-edited
+      </button>
+      <button type="button" onClick={() => onComplete(null)}>
+        complete-unchanged
       </button>
     </div>
   ),
@@ -265,6 +273,47 @@ describe('TasksScreen', () => {
     await userEvent.click(view.getByRole('button', { name: 'edited content' }))
     await userEvent.click(view.getByText('delete-edit'))
     await waitFor(() => expect(deleteTask).toHaveBeenCalled())
+    view.unmount()
+  })
+
+  it('completes from the editor: edit+complete sequences the two writes', async () => {
+    editTask.mockResolvedValue(undefined)
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'P' }),
+    ])
+    const view = renderScreen()
+
+    // ⌘↵ with an edit → save the content, then toggle the rewritten line.
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByText('complete-edited'))
+    await waitFor(() =>
+      expect(editTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 2 }),
+        'edited content',
+        1,
+      ),
+    )
+    await waitFor(() =>
+      expect(toggleTask).toHaveBeenCalledWith(
+        expect.objectContaining({ markerOffset: 2, raw: '[ ] edited content' }),
+        1,
+      ),
+    )
+    view.unmount()
+  })
+
+  it('completes from the editor: an unchanged task just toggles, no edit', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'P' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByText('complete-unchanged'))
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(1))
+    expect(editTask).not.toHaveBeenCalled()
     view.unmount()
   })
 
