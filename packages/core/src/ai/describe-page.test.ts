@@ -115,6 +115,17 @@ describe('describePage', () => {
     expect(text).not.toContain('x'.repeat(1_001))
   })
 
+  it('adds extracted page text to the prompt and caps long pages', async () => {
+    const calls = modelAnswering('A description.')
+
+    await request({ contentText: `Important opening paragraph.\n\n${'x'.repeat(7_000)}` })
+
+    const parts = calls[0].prompt[0].content as Array<{ type: string; text?: string }>
+    const text = parts.find((part) => part.type === 'text')?.text ?? ''
+    expect(text).toContain('Extracted page text: Important opening paragraph.')
+    expect(text).not.toContain('x'.repeat(6_001))
+  })
+
   it.each([
     [401, 'auth'],
     [403, 'auth'],

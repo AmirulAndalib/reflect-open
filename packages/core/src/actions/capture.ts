@@ -28,14 +28,14 @@ import type { ReconcileStop } from './audio-memo'
 /**
  * Link capture (Plan 11), the second of the `actions/` capture family — the
  * same raw-first shape as audio memos: the spooled envelope is drained into a
- * durable **raw** save (a dedicated capture note + a `[[Links]]` entry in the
+ * durable **raw** save (a dedicated capture note + a bullet under `## Links` in the
  * capture-day daily note), and enrichment (meta scrape + BYOK AI description)
  * runs later, patching the note in place and retrying freely.
  *
  * 1. **Drain** ({@link drainCaptureInbox}): every `.json` envelope the
  *    native-messaging host spooled into `.reflect/inbox/` becomes
  *    `notes/capture-<stamp>.md` (provenance in frontmatter, screenshot
- *    promoted into `assets/`) plus a `[[capture-…|Title]]` line under the
+ *    promoted into `assets/`) plus a `- [[capture-…|Title]]` line under the
  *    daily note's `## Links` heading. Identity derives from `capturedAt`, so
  *    a crashed drain re-runs idempotently; the spool files are removed last.
  *    Re-capturing the same URL on the same day with the same selection
@@ -43,7 +43,8 @@ import type { ReconcileStop } from './audio-memo'
  * 2. **Enrich** ({@link reconcileCaptureEnrichment}): every capture note with
  *    `captureStatus: pending` gets the page's meta tags (scraped through the
  *    hard-capped Rust fetch) and — when a provider is configured — an AI
- *    description grounded in the screenshot, inserted under the link line.
+ *    description grounded in the screenshot, inserted as the `Description`
+ *    metadata bullet.
  *    A note the user edited (the body hash no longer matches) or made
  *    private is skipped, never clobbered.
  *
@@ -190,28 +191,48 @@ function captureNoteBody(
   hasScreenshot: boolean,
 ): string {
   const title = displayTitle(envelope)
-  const parts = [`# ${title}`, `[${urlHost(envelope.url)}](${envelope.url})`]
+  const parts = [
+    `# ${title}`,
+    [`- URL: ${envelope.url}`, '- Type: #link'].join('\n'),
+  ]
   const note = envelope.note?.trim()
   if (note) {
-    parts.push(note)
+    parts.push(`## Note\n\n${note}`)
   }
   const selection = envelope.selection?.trim()
   if (selection) {
-    parts.push(
-      selection
-        .split('\n')
-        .map((line) => `> ${line}`)
-        .join('\n'),
-    )
+    parts.push(`## Selection\n\n${selection}`)
   }
   const contentText = envelope.contentText?.trim()
   if (contentText) {
     parts.push(`## Page Text\n\n${contentText}`)
   }
   if (hasScreenshot) {
-    parts.push(`![${title}](${identity.assetPath})`)
+    parts.push(`## Screenshot\n\n![${title}](${identity.assetPath})`)
   }
   return `${parts.join('\n\n')}\n`
+}
+
+function h2SectionBody(body: string, heading: string): string | undefined {
+  const marker = new RegExp(`^## ${heading}[ \\t]*$`, 'mu')
+  const match = marker.exec(body)
+  if (match === null) {
+    return undefined
+  }
+  const contentStart = body.indexOf('\n', match.index + match[0].length)
+  if (contentStart === -1) {
+    return undefined
+  }
+  const rest = body.slice(contentStart + 1)
+  const nextHeading = rest.search(/^##\s+/mu)
+  const content = (nextHeading === -1 ? rest : rest.slice(0, nextHeading))
+    .replace(/\n+!\[[^\]\n]*\]\(assets\/capture-[^)]+\.jpg\)\s*$/u, '')
+    .trim()
+  return content === '' ? undefined : content
+}
+
+function capturePageTextFromBody(body: string): string | undefined {
+  return h2SectionBody(body, 'Page Text')
 }
 
 async function captureNoteSource(
@@ -434,7 +455,11 @@ export async function drainCaptureInbox(
       if (!dailySource.includes(`[[${identity.base}`)) {
         await writeNote(
           daily,
-          appendUnderHeading(dailySource, LINKS_HEADING, `[[${identity.base}|${displayTitle(envelope)}]]`),
+          appendUnderHeading(
+            dailySource,
+            LINKS_HEADING,
+            `- [[${identity.base}|${displayTitle(envelope)}]]`,
+          ),
           input.generation,
         )
       }
@@ -552,26 +577,33 @@ export interface ReconcileCaptureEnrichmentOutcome {
   stopped: ReconcileStop | null
 }
 
+function metadataValue(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
 /**
- * Insert the description paragraph directly under the capture's link line.
- * The body is hash-verified raw output of {@link captureNoteBody}, so the
- * anchor is always present; the append fallback only guards the impossible.
+ * Insert or replace the single visible generated-text surface for link
+ * captures. The raw body has a `- Type: #link` anchor; the fallback only
+ * covers older pending captures or hand-edited-but-hash-matching oddities.
  */
-function withDescription(body: string, url: string, description: string): string {
-  const anchor = body.indexOf(`](${url})`)
-  if (anchor === -1) {
-    return `${body.replace(/\s*$/, '')}\n\n${description}\n`
+function withDescription(body: string, description: string): string {
+  const line = `- Description: ${metadataValue(description)}`
+  if (/^- Description: /mu.test(body)) {
+    return body.replace(/^- Description: .*$/mu, line)
   }
-  const lineEnd = body.indexOf('\n', anchor)
-  const insertAt = lineEnd === -1 ? body.length : lineEnd
-  return `${body.slice(0, insertAt)}\n\n${description}${body.slice(insertAt)}`
+  const typeLine = /^- Type: #link[ \t]*$/mu.exec(body)
+  if (typeLine === null) {
+    return `${body.replace(/\s*$/, '')}\n\n${line}\n`
+  }
+  const insertAt = typeLine.index + typeLine[0].length
+  return `${body.slice(0, insertAt)}\n${line}${body.slice(insertAt)}`
 }
 
 /**
  * Enrich every pending capture: scrape the page's meta tags, generate the AI
  * description (when a provider is configured — the screenshot, title, URL,
- * and scraped meta ground it), insert the description under the link line,
- * and stamp provenance + `captureStatus: done`. Both privacy flags are
+ * and scraped meta ground it), insert the `Description` metadata bullet, and
+ * stamp provenance + `captureStatus: done`. Both privacy flags are
  * re-checked live before any outbound call; an edited body (hash mismatch)
  * is skipped, never clobbered. Transient failures (offline, auth) stop the
  * pass for the next trigger to retry; a provider refusing one capture falls
@@ -706,6 +738,7 @@ export async function reconcileCaptureEnrichment(
             url: meta.captureUrl,
             title: parseNote({ path: identity.notePath, source }).title,
             metaDescription: pageMeta?.description ?? undefined,
+            contentText: capturePageTextFromBody(split.body),
             screenshotBase64,
           })
         } catch (cause) {
@@ -719,10 +752,11 @@ export async function reconcileCaptureEnrichment(
         }
       }
 
-      const text = description ?? pageMeta?.description ?? null
-      const newBody = text !== null ? withDescription(split.body, meta.captureUrl, text) : split.body
+      const text =
+        description && metadataValue(description) !== '' ? description : pageMeta?.description ?? null
+      const newBody = text !== null ? withDescription(split.body, text) : split.body
       const reassembled = source.slice(0, split.bodyOffset) + newBody
-      const usedAi = description !== null && config !== null
+      const usedAi = text === description && config !== null
       await writeNote(
         identity.notePath,
         upsertFrontmatter(reassembled, {

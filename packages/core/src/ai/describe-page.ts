@@ -15,6 +15,7 @@ const DESCRIBE_TIMEOUT_MS = 60_000
 
 /** Caps the prompt's selection excerpt; the model needs gist, not the article. */
 const MAX_SELECTION_CHARS = 1_000
+const MAX_CONTENT_TEXT_CHARS = 6_000
 
 export interface DescribePageRequest {
   /** The provider entry to call (the app default). */
@@ -28,6 +29,8 @@ export interface DescribePageRequest {
   title: string
   /** Text the user had selected, if any. */
   selection?: string
+  /** Extracted full-page text, capped before it enters the provider prompt. */
+  contentText?: string
   /** Scraped meta description, if the scrape produced one. */
   metaDescription?: string
   /** Downscaled JPEG screenshot, base64 (no data-URL prefix), if captured. */
@@ -84,8 +87,11 @@ function describePrompt(request: DescribePageRequest): string {
   if (request.selection) {
     lines.push(`Text the user highlighted: ${request.selection.slice(0, MAX_SELECTION_CHARS)}`)
   }
+  if (request.contentText) {
+    lines.push(`Extracted page text: ${request.contentText.slice(0, MAX_CONTENT_TEXT_CHARS)}`)
+  }
   lines.push(
-    'Base the description on the screenshot when one is attached.',
+    'Base the description on the extracted page text when present, and the screenshot when one is attached.',
     'Answer with the description only — no preamble, no markdown.',
   )
   return lines.join('\n')
