@@ -214,30 +214,35 @@ function captureNoteBody(
 }
 
 function capturePageTextFromBody(body: string): string | undefined {
-  const marker = /^## Page Text[ \t]*$/mu.exec(body)
-  if (marker === null) {
+  const marker = '\n## Page Text\n\n'
+  const markerAt = body.indexOf(marker)
+  if (markerAt === -1) {
     return undefined
   }
-  const contentStart = body.indexOf('\n', marker.index + marker[0].length)
-  if (contentStart === -1) {
-    return undefined
-  }
-  const rest = body.slice(contentStart + 1)
-  const content = rest
-    .replace(
-      /\n+## Screenshot[ \t]*\n+!\[[^\]\n]*\]\(assets\/capture-[^)]+\.jpg\)\s*$/u,
-      '',
-    )
-    .trim()
+  const rest = body.slice(markerAt + marker.length)
+  const screenshotMarker = '\n\n## Screenshot\n\n'
+  const screenshotAt = rest.lastIndexOf(screenshotMarker)
+  const candidateImage =
+    screenshotAt === -1 ? null : rest.slice(screenshotAt + screenshotMarker.length).trim()
+  const content =
+    candidateImage !== null &&
+    candidateImage.startsWith('![') &&
+    candidateImage.includes('](assets/capture-') &&
+    candidateImage.endsWith('.jpg)')
+      ? rest.slice(0, screenshotAt).trim()
+      : rest.trim()
   return content === '' ? undefined : content
 }
 
 function firstSectionStart(body: string): number {
-  const match = /^##\s+/mu.exec(body)
-  if (match === null) {
-    return body.length
+  let offset = 0
+  for (const line of body.split('\n')) {
+    if (line.startsWith('## ')) {
+      return offset
+    }
+    offset += line.length + 1
   }
-  return match.index
+  return body.length
 }
 
 async function captureNoteSource(
@@ -593,19 +598,20 @@ function metadataValue(text: string): string {
 function withDescription(body: string, description: string): string {
   const line = `- Description: ${metadataValue(description)}`
   const metadataEnd = firstSectionStart(body)
-  const metadata = body.slice(0, metadataEnd)
-  const existing = /^- Description: .*$/mu.exec(metadata)
-  if (existing !== null) {
-    const from = existing.index
-    const to = existing.index + existing[0].length
-    return `${metadata.slice(0, from)}${line}${metadata.slice(to)}${body.slice(metadataEnd)}`
+  const metadataLines = body.slice(0, metadataEnd).split('\n')
+  const descriptionLine = metadataLines.findIndex((candidate) =>
+    candidate.startsWith('- Description: '),
+  )
+  if (descriptionLine !== -1) {
+    metadataLines[descriptionLine] = line
+    return `${metadataLines.join('\n')}${body.slice(metadataEnd)}`
   }
-  const typeLine = /^- Type: #link[ \t]*$/mu.exec(metadata)
-  if (typeLine === null) {
+  const typeLine = metadataLines.findIndex((candidate) => candidate.trimEnd() === '- Type: #link')
+  if (typeLine === -1) {
     throw new Error('capture note is missing Type metadata')
   }
-  const insertAt = typeLine.index + typeLine[0].length
-  return `${body.slice(0, insertAt)}\n${line}${body.slice(insertAt)}`
+  metadataLines.splice(typeLine + 1, 0, line)
+  return `${metadataLines.join('\n')}${body.slice(metadataEnd)}`
 }
 
 /**
