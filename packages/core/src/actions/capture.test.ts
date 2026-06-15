@@ -473,6 +473,8 @@ describe('reconcileCaptureEnrichment', () => {
       'First paragraph.',
       '- Description: A line from the captured article.',
       '## Article heading',
+      '## Screenshot',
+      'This is an article heading, not the capture image section.',
       'Second paragraph.',
     ].join('\n\n')
     await drainOne({ selection: 'quoted text', contentText })
@@ -490,6 +492,7 @@ describe('reconcileCaptureEnrichment', () => {
     expect(note).not.toContain('A scraped description.')
     expect(note).toContain('- Description: A line from the captured article.')
     expect(note).toContain('## Article heading')
+    expect(note).toContain('This is an article heading, not the capture image section.')
     expect(note).toContain('captureStatus: done')
     expect(note).toContain('captureProvider: openai')
     expect(note).toContain('captureModel: gpt-5.5')

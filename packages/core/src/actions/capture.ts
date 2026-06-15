@@ -223,8 +223,11 @@ function capturePageTextFromBody(body: string): string | undefined {
     return undefined
   }
   const rest = body.slice(contentStart + 1)
-  const screenshotSection = /^## Screenshot[ \t]*$/mu.exec(rest)
-  const content = (screenshotSection === null ? rest : rest.slice(0, screenshotSection.index))
+  const content = rest
+    .replace(
+      /\n+## Screenshot[ \t]*\n+!\[[^\]\n]*\]\(assets\/capture-[^)]+\.jpg\)\s*$/u,
+      '',
+    )
     .replace(/\n+!\[[^\]\n]*\]\(assets\/capture-[^)]+\.jpg\)\s*$/u, '')
     .trim()
   return content === '' ? undefined : content
