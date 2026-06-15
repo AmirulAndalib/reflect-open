@@ -1,18 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useMemo, useRef, useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
-import {
-  getCompletedTasks,
-  getOpenTasks,
-  groupTasks,
-  hasBridge,
-  type OpenTask,
-  type TaskGroup,
-} from '@reflect/core'
+import { getCompletedTasks, getOpenTasks, groupTasks, hasBridge, type TaskGroup } from '@reflect/core'
 import { Input } from '@/components/ui/input'
 import { taskKey } from '@/lib/tasks/task-identity'
 import { useTaskActions } from '@/lib/tasks/use-task-actions'
 import { useTaskFilters, type TaskFilters } from '@/lib/tasks/task-filters'
+import { useTaskKeyboard } from '@/lib/tasks/use-task-keyboard'
 import { useTaskSelection } from '@/lib/tasks/use-task-selection'
 import { completedTasksQueryKey, tasksQueryKey } from '@/lib/tasks/tasks-query'
 import { useScrollRestoration } from '@/lib/use-scroll-restoration'
@@ -104,91 +98,7 @@ export function TasksScreen(): ReactElement {
   )
   const selection = useTaskSelection(orderedKeys)
   const actions = useTaskActions()
-
-  // The keydown handler closes over this render's state, but is registered once
-  // — a ref carries the latest closure so the listener stays stable.
-  const handleKeyRef = useRef<(event: KeyboardEvent) => void>(() => {})
-  handleKeyRef.current = (event) => {
-    // Respect anything a focused widget already handled (e.g. the filters menu's
-    // own arrow/Escape navigation).
-    if (event.defaultPrevented) {
-      return
-    }
-    const target = event.target as HTMLElement | null
-    // Only the Tasks screen's own surface drives these shortcuts — or the body
-    // when nothing is focused. A portaled overlay (the filters menu, a future
-    // dialog) renders outside the root, so its keys are never hijacked.
-    const onSurface = target === document.body || (target !== null && (rootRef.current?.contains(target) ?? false))
-    if (!onSurface) {
-      return
-    }
-    const inSearch = target instanceof HTMLInputElement
-    const inEditor = target?.closest?.('[data-task-editor]') != null
-    const mod = event.metaKey || event.ctrlKey
-    const selectedTasks = (): OpenTask[] =>
-      [...selection.selected].map((key) => tasksByKey.get(key)).filter((t): t is OpenTask => !!t)
-
-    // While editing a sole task the inline editor owns its keys — typing, ⌘A to
-    // select its text, and ⌘↵ commit / ⌘⌫ delete for that one task. The bulk
-    // shortcuts below must NOT also fire: a ⌘⌫ that both deletes here and lets
-    // the editor commit on unmount would race two writes to the same line.
-    if (inEditor) {
-      return
-    }
-    if (inSearch) {
-      if (event.key === 'Escape') {
-        setQuery('')
-        selection.clear()
-        target.blur()
-      }
-      return
-    }
-    if (mod && event.key === 'Enter') {
-      event.preventDefault()
-      actions.complete(selectedTasks())
-    } else if (mod && event.key === 'Backspace') {
-      event.preventDefault()
-      actions.remove(selectedTasks())
-      selection.clear()
-    } else if (event.key === 'Backspace') {
-      // Plain ⌫ deletes only empty rows (V1) — never content, so a stray
-      // Backspace can't lose work; ⌘⌫ above is the unconditional delete. The
-      // sole-empty case runs in the inline editor; this covers a multi-selection.
-      const empties = selectedTasks().filter((row) => row.text.trim() === '')
-      if (empties.length > 0) {
-        event.preventDefault()
-        actions.remove(empties)
-      }
-    } else if (mod && (event.key === 'a' || event.key === 'A')) {
-      event.preventDefault()
-      selection.selectAll()
-    } else if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      if (event.shiftKey) {
-        selection.extend(1)
-      } else {
-        selection.move(1)
-      }
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      if (event.shiftKey) {
-        selection.extend(-1)
-      } else {
-        selection.move(-1)
-      }
-    } else if (event.key === 'Escape') {
-      if (selection.selectedCount > 0) {
-        selection.clear()
-      } else if (query !== '') {
-        setQuery('')
-      }
-    }
-  }
-  useEffect(() => {
-    const listener = (event: KeyboardEvent): void => handleKeyRef.current(event)
-    document.addEventListener('keydown', listener)
-    return () => document.removeEventListener('keydown', listener)
-  }, [])
+  useTaskKeyboard({ rootRef, selection, actions, tasksByKey, query, setQuery })
 
   return (
     <div ref={rootRef} aria-label="Tasks" className="flex h-full min-h-0 flex-col">
