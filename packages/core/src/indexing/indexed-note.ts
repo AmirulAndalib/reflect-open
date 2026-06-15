@@ -40,9 +40,11 @@ import { previewSnippet } from './snippet'
  * 5 — `notes.gist_url` + `notes.gist_stale` (gist publishing) ·
  * 6 — rendered Markdown escapes in titles, wiki-link targets, and previews ·
  * 7 — `tasks` projection (GFM checkboxes, Plan 18): existing notes carry no task
- * rows until reprojected, so the bump backfills them.
+ * rows until reprojected, so the bump backfills them ·
+ * 8 — `tasks.due_date` (explicit `[[YYYY-MM-DD]]` per task, V1 Overdue semantics):
+ * existing task rows have a null due date until reprojected.
  */
-export const PROJECTION_VERSION = 7
+export const PROJECTION_VERSION = 8
 
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),
@@ -77,6 +79,8 @@ export const indexedTaskSchema = z.object({
   /** The marker line verbatim — the surgical write-back's staleness guard. */
   raw: z.string(),
   checked: z.boolean(),
+  /** Explicit due date (first `[[YYYY-MM-DD]]` in the item), or null — drives Overdue. */
+  dueDate: z.string().nullable(),
 })
 export type IndexedTask = z.infer<typeof indexedTaskSchema>
 
@@ -169,6 +173,7 @@ export function buildIndexedNote(
       text: task.text,
       raw: task.raw,
       checked: task.checked,
+      dueDate: task.dueDate,
     })),
   }
 }

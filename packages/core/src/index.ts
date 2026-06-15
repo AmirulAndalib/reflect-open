@@ -431,6 +431,7 @@ export {
   getNote,
   getNotesByTag,
   getOpenTasks,
+  getCompletedTasks,
   groupTasks,
   listDailyNotes,
   listNotes,

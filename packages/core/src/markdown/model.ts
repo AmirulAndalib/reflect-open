@@ -173,6 +173,14 @@ export interface ParsedTask extends TaskMarker {
   text: string
   /** `[x]`/`[X]` → true, `[ ]` → false. */
   checked: boolean
+  /**
+   * The task's explicit due date: the first calendar-valid `[[YYYY-MM-DD]]` link
+   * inside the item, or null. This is V1's "scheduling is association" mechanism —
+   * a date link *in the task* is its due date, distinct from (and overriding) the
+   * source note's own daily date. The Tasks view buckets Overdue strictly off this
+   * (a bare task in a past daily note is Current, not Overdue — Plan 18 / V1).
+   */
+  dueDate: string | null
 }
 
 /** Version of the extraction contract; bump on breaking shape changes. */

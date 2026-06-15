@@ -132,8 +132,8 @@ describe('buildIndexedNote', () => {
       source,
     })
     expect(indexed.tasks).toEqual([
-      { markerOffset: source.indexOf('[ ]'), text: 'buy milk', raw: '[ ] buy milk', checked: false },
-      { markerOffset: source.indexOf('[x]'), text: 'call mum', raw: '[x] call mum', checked: true },
+      { markerOffset: source.indexOf('[ ]'), text: 'buy milk', raw: '[ ] buy milk', checked: false, dueDate: null },
+      { markerOffset: source.indexOf('[x]'), text: 'call mum', raw: '[x] call mum', checked: true, dueDate: null },
     ])
   })
 

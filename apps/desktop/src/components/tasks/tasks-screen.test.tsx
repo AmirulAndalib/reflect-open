@@ -17,6 +17,9 @@ vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: 1 } }),
 }))
 vi.mock('@/lib/use-today', () => ({ useToday: () => '2026-06-14' }))
+vi.mock('@/providers/settings-provider', () => ({
+  useSettings: () => ({ settings: { dateFormat: 'mdy' } }),
+}))
 
 const toggleTask = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/note-task', () => ({ toggleTask }))
@@ -29,12 +32,17 @@ vi.mock('@/lib/operations', async (importOriginal) => ({
 }))
 
 function task(overrides: Partial<OpenTask> = {}): OpenTask {
+  const text = overrides.text ?? 'do it'
   return {
     notePath: 'notes/n.md',
     markerOffset: 2,
-    raw: '[ ] do it',
-    text: 'do it',
+    // The row renders `raw`; default it to the marker line for `text` so display
+    // assertions match unless a case overrides `raw` explicitly.
+    raw: `[ ] ${text}`,
+    checked: false,
+    text,
     noteTitle: 'N',
+    dueDate: null,
     dailyDate: null,
     isPinned: false,
     pinnedOrder: null,
@@ -72,7 +80,7 @@ describe('TasksScreen', () => {
   it('shows an empty state when there are no open tasks', async () => {
     getOpenTasks.mockResolvedValue([])
     const view = renderScreen()
-    await view.findByText('No open tasks.')
+    await view.findByText('No tasks to show.')
     view.unmount()
   })
 
@@ -86,16 +94,18 @@ describe('TasksScreen', () => {
 
   it('groups tasks by date bucket then note, in display order', async () => {
     getOpenTasks.mockResolvedValue([
-      task({ notePath: 'daily/2026-06-10.md', dailyDate: '2026-06-10', text: 'old task', noteTitle: '2026-06-10' }),
       task({ notePath: 'daily/2026-06-14.md', dailyDate: '2026-06-14', text: 'today task', noteTitle: '2026-06-14' }),
-      task({ notePath: 'notes/p.md', dailyDate: null, text: 'project task', noteTitle: 'Project' }),
+      // Overdue needs an explicit past due date (V1 asymmetry) — a bare past
+      // daily-note task would be Current.
+      task({ notePath: 'notes/d.md', dueDate: '2026-06-10', text: 'overdue task', noteTitle: 'D' }),
+      task({ notePath: 'notes/p.md', text: 'project task', noteTitle: 'Project' }),
     ])
     const view = renderScreen()
 
     await view.findByText('today task')
     const headers = view.getAllByRole('heading', { level: 2 }).map((node) => node.textContent)
     expect(headers).toEqual(['Current', 'Overdue', 'Project'])
-    expect(view.getByText('old task')).toBeDefined()
+    expect(view.getByText('overdue task')).toBeDefined()
     expect(view.getByText('project task')).toBeDefined()
     view.unmount()
   })

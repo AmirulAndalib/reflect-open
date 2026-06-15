@@ -59,6 +59,7 @@ export {
   getNote,
   getNotesByTag,
   getOpenTasks,
+  getCompletedTasks,
   getPinnedNotes,
   searchNotes,
   suggestWikiTargets,

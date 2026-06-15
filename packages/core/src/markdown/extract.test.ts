@@ -129,14 +129,16 @@ describe('parseNote — tasks', () => {
   it('extracts open and checked checkboxes with text, raw, marker offset', () => {
     const note = parse('- [ ] buy milk\n- [x] call mum\n')
     expect(note.tasks).toEqual([
-      { text: 'buy milk', raw: '[ ] buy milk', checked: false, markerOffset: 2 },
-      { text: 'call mum', raw: '[x] call mum', checked: true, markerOffset: 17 },
+      { text: 'buy milk', raw: '[ ] buy milk', checked: false, markerOffset: 2, dueDate: null },
+      { text: 'call mum', raw: '[x] call mum', checked: true, markerOffset: 17, dueDate: null },
     ])
   })
 
   it('treats an uppercase [X] marker as checked', () => {
     const note = parse('- [X] done\n')
-    expect(note.tasks).toEqual([{ text: 'done', raw: '[X] done', checked: true, markerOffset: 2 }])
+    expect(note.tasks).toEqual([
+      { text: 'done', raw: '[X] done', checked: true, markerOffset: 2, dueDate: null },
+    ])
   })
 
   it('strips inline syntax from text but keeps it verbatim in raw', () => {
@@ -167,11 +169,28 @@ describe('parseNote — tasks', () => {
 
   it('ignores checkboxes inside fenced code', () => {
     const note = parse('- [ ] real\n\n```\n- [ ] not a task\n```\n')
-    expect(note.tasks).toEqual([{ text: 'real', raw: '[ ] real', checked: false, markerOffset: 2 }])
+    expect(note.tasks).toEqual([
+      { text: 'real', raw: '[ ] real', checked: false, markerOffset: 2, dueDate: null },
+    ])
   })
 
   it('yields no tasks for a plain bullet list', () => {
     const note = parse('- just a bullet\n- another\n')
     expect(note.tasks).toEqual([])
+  })
+
+  it('reads the first calendar [[YYYY-MM-DD]] link in the item as the due date', () => {
+    const note = parse('- [ ] ship it [[2026-07-01]] and review [[2026-08-01]]\n')
+    expect(note.tasks[0].dueDate).toBe('2026-07-01') // first date link wins
+  })
+
+  it('ignores an impossible date as a due date', () => {
+    const note = parse('- [ ] not a real day [[2026-02-31]]\n')
+    expect(note.tasks[0].dueDate).toBeNull()
+  })
+
+  it('does not borrow a due-date link from a neighbouring task', () => {
+    const note = parse('- [ ] no date here\n- [ ] dated [[2026-07-01]]\n')
+    expect(note.tasks.map((task) => task.dueDate)).toEqual([null, '2026-07-01'])
   })
 })

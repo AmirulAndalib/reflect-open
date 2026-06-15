@@ -47,6 +47,14 @@ export function formatDayLabel(date: string, dateFormat: DateFormat): string {
 }
 
 /**
+ * Compact numeric date for inline chips (the Tasks view's `[[YYYY-MM-DD]]` due
+ * link, V1's blue date): `12/31/2025` for `mdy`, `31/12/2025` for `dmy`.
+ */
+export function formatShortDate(date: string, dateFormat: DateFormat): string {
+  return format(parseIsoDate(date), dateFormat === 'dmy' ? 'd/M/yyyy' : 'M/d/yyyy')
+}
+
+/**
  * A date spelled out in full per the date-format setting: `June 10th, 2026`
  * for `mdy`, `10th June, 2026` for `dmy` (the forms the settings screen shows
  * as the options themselves).

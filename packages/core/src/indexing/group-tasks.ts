@@ -3,15 +3,19 @@ import type { OpenTask } from './queries'
 /**
  * Grouping for the Tasks view (Plan 18), faithful to V1's `task-view.ts`: open
  * tasks split into date buckets — **Current / Overdue / Upcoming** in that
- * display order — followed by one section per regular (dateless) note. A task's
- * date is its source note's daily date (V1's explicit `[[date]]` scheduling is
- * dropped), so the buckets are symmetric: a task in a past daily note is
- * overdue, today's is current, a future daily note's is upcoming, and a task in
- * a regular note groups under that note's title.
+ * display order — followed by one section per note that holds undated tasks.
+ *
+ * A task's date is its explicit **due date** when it has one — the first calendar
+ * `[[YYYY-MM-DD]]` link inside the item (V1's "scheduling is association") — else
+ * its source note's daily date. The buckets follow V1 exactly, and Overdue is
+ * **asymmetric**: only an explicit due date in the past makes a task overdue. A
+ * bare checkbox in a past daily note is *Current*, not Overdue — V1 treats an
+ * un-rescheduled daily task as still current, not late. A task with no date at
+ * all (no due date, in a regular note) groups under its note's title.
  *
  * Lives in core (not the desktop view) so the same grouping serves any surface —
  * the desktop list today, a `reflect tasks` CLI later — without re-deriving it.
- * Pure: the caller supplies `today`.
+ * Pure: the caller supplies `today` (an ISO `YYYY-MM-DD`, the app's local day).
  */
 
 /** A date bucket (tasks aggregated across daily notes) or a single regular note. */
@@ -26,11 +30,22 @@ export interface TaskGroup {
   tasks: OpenTask[]
 }
 
-/** Within a date bucket: oldest daily note first, then document order. */
+/** The date a task is bucketed by: its explicit due date, else its note's date. */
+function effectiveDate(task: OpenTask): string | null {
+  return task.dueDate ?? task.dailyDate
+}
+
+/** Within a date bucket: earliest effective date first, then document order. */
 function compareDated(left: OpenTask, right: OpenTask): number {
-  // Both carry a dailyDate here, and ISO `YYYY-MM-DD` sorts chronologically.
-  if (left.dailyDate !== right.dailyDate) {
-    return (left.dailyDate ?? '') < (right.dailyDate ?? '') ? -1 : 1
+  // Every task in a date bucket has an effective date; ISO `YYYY-MM-DD` sorts
+  // chronologically. (The `?? ''` only satisfies the type — it never fires here.)
+  const leftDate = effectiveDate(left) ?? ''
+  const rightDate = effectiveDate(right) ?? ''
+  if (leftDate !== rightDate) {
+    return leftDate < rightDate ? -1 : 1
+  }
+  if (left.notePath !== right.notePath) {
+    return left.notePath < right.notePath ? -1 : 1
   }
   return left.markerOffset - right.markerOffset
 }
@@ -94,16 +109,20 @@ export function groupTasks(tasks: readonly OpenTask[], today: string): TaskGroup
   const byNote = new Map<string, OpenTask[]>()
 
   for (const task of tasks) {
-    if (task.dailyDate === null) {
+    const date = effectiveDate(task)
+    if (date === null) {
+      // No due date and no daily date — V1's "unscheduled": grouped by note.
       const group = byNote.get(task.notePath)
       if (group === undefined) {
         byNote.set(task.notePath, [task])
       } else {
         group.push(task)
       }
-    } else if (task.dailyDate < today) {
+    } else if (task.dueDate !== null && task.dueDate < today) {
+      // Overdue keys off the explicit due date ALONE (V1's asymmetry): a bare
+      // task in a past daily note is not overdue — it lands in Current below.
       overdue.push(task)
-    } else if (task.dailyDate > today) {
+    } else if (date > today) {
       upcoming.push(task)
     } else {
       current.push(task)

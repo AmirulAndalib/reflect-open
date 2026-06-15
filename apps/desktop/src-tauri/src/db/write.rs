@@ -76,6 +76,8 @@ pub(super) struct IndexedTask {
     pub(super) text: String,
     pub(super) raw: String,
     pub(super) checked: bool,
+    /// Explicit due date (first `[[YYYY-MM-DD]]` in the item), or None.
+    pub(super) due_date: Option<String>,
 }
 
 /// Replace all rows for `note.path` with its current projection. Caller wraps
@@ -152,7 +154,7 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
     }
     {
         let mut stmt = conn.prepare_cached(
-            "INSERT INTO tasks(note_path, marker_offset, text, raw, checked) VALUES(?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO tasks(note_path, marker_offset, text, raw, checked, due_date) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
         )?;
         for task in &note.tasks {
             stmt.execute(params![
@@ -160,7 +162,8 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
                 task.marker_offset,
                 task.text,
                 task.raw,
-                i64::from(task.checked)
+                i64::from(task.checked),
+                task.due_date
             ])?;
         }
     }

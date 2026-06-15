@@ -91,15 +91,21 @@ export async function getBacklinksWithContext(path: string): Promise<BacklinkCon
 
 /**
  * One open task plus the note context the Tasks view (Plan 18) groups and
- * renders by. `dailyDate` is the source note's date — the view buckets
- * Current/Overdue/Upcoming off it; `isPinned`/`pinnedOrder`/`updatedAt` order the
- * per-note groups for tasks in regular (dateless) notes.
+ * renders by. The view buckets Current/Overdue/Upcoming off the task's
+ * `dueDate` when it has one, else the source note's `dailyDate`;
+ * `isPinned`/`pinnedOrder`/`updatedAt` order the per-note groups for tasks in
+ * regular (dateless) notes.
  */
 export interface OpenTask extends TaskMarker {
   notePath: string
+  /** Whether the checkbox is ticked. Open lists are all `false`; the Tasks view's
+   * "show archived" surfaces completed rows where this is `true`. */
+  checked: boolean
   /** Display text, markdown stripped. */
   text: string
   noteTitle: string
+  /** The task's explicit `[[YYYY-MM-DD]]` due date, or null — drives Overdue (V1). */
+  dueDate: string | null
   /** ISO date for daily-note tasks; null for tasks in regular notes. */
   dailyDate: string | null
   /** Pin flag mapped to a real boolean at the read boundary (SQLite stores `0|1`). */
@@ -108,37 +114,64 @@ export interface OpenTask extends TaskMarker {
   updatedAt: number
 }
 
-/**
- * Every open checkbox across the graph, with note context, for the Tasks view.
- * Completed tasks are excluded (the view shows open work only). `private: true`
- * notes' tasks **are** included: the Tasks view is a local-only surface that
- * never sends content anywhere — exactly like local search and the daily stream
- * — so the `private` hard-block (content never leaves the device) is unaffected.
- * The ordering here is only for a deterministic result; the final grouping and
- * sort live in {@link groupTasks}, so this read just gathers the rows.
- */
-export async function getOpenTasks(): Promise<OpenTask[]> {
-  const rows = await db
+/** Task rows joined to their note context — the shared shape both task reads select. */
+function taskRowsQuery() {
+  return db
     .selectFrom('tasks')
     .innerJoin('notes', 'notes.path', 'tasks.notePath')
-    .where('tasks.checked', '=', 0)
     .select([
       'tasks.notePath',
       'tasks.markerOffset',
       'tasks.raw',
       'tasks.text',
+      'tasks.checked',
+      'tasks.dueDate',
       'notes.title as noteTitle',
       'notes.dailyDate',
       'notes.isPinned',
       'notes.pinnedOrder',
       'notes.updatedAt',
     ])
+}
+
+/** Map the SQLite `0|1` flags to real booleans at the read boundary, like the
+ * other note getters — so `groupTasks` and the view see booleans, not integers. */
+function toTaskRow(row: {
+  checked: number
+  isPinned: number
+}): { checked: boolean; isPinned: boolean } {
+  return { ...row, checked: row.checked !== 0, isPinned: row.isPinned !== 0 }
+}
+
+/**
+ * Every open checkbox across the graph, with note context, for the Tasks view.
+ * `private: true` notes' tasks **are** included: the Tasks view is a local-only
+ * surface that never sends content anywhere — exactly like local search and the
+ * daily stream — so the `private` hard-block (content never leaves the device)
+ * is unaffected. The ordering here is only for a deterministic result; the final
+ * grouping and sort live in {@link groupTasks}, so this read just gathers the rows.
+ */
+export async function getOpenTasks(): Promise<OpenTask[]> {
+  const rows = await taskRowsQuery()
+    .where('tasks.checked', '=', 0)
     .orderBy('tasks.notePath')
     .orderBy('tasks.markerOffset')
     .execute()
-  // Map the SQLite `0|1` flag to a real boolean at the read boundary, like the
-  // other note getters — so `groupTasks` orders on a boolean, not a raw integer.
-  return rows.map((row) => ({ ...row, isPinned: row.isPinned !== 0 }))
+  return rows.map((row) => ({ ...row, ...toTaskRow(row) }))
+}
+
+/**
+ * Completed checkboxes across the graph, most-recently-edited note first — the
+ * Tasks view's "show archived" surface. Same shape as {@link getOpenTasks}, so
+ * the view groups and renders both the same way (completed rows struck through).
+ */
+export async function getCompletedTasks(): Promise<OpenTask[]> {
+  const rows = await taskRowsQuery()
+    .where('tasks.checked', '=', 1)
+    .orderBy('notes.updatedAt', 'desc')
+    .orderBy('tasks.markerOffset')
+    .execute()
+  return rows.map((row) => ({ ...row, ...toTaskRow(row) }))
 }
 
 /** Distinct source paths of links whose folded target key is `targetKey`. */

@@ -3,6 +3,8 @@ import { groupTasks } from './group-tasks'
 import type { OpenTask } from './queries'
 
 const TODAY = '2026-06-14'
+const PAST = '2026-06-10'
+const FUTURE = '2026-06-20'
 
 /** An open-task row with sensible defaults; override only what a case needs. */
 function task(overrides: Partial<OpenTask> = {}): OpenTask {
@@ -10,8 +12,10 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
     notePath: 'notes/n.md',
     markerOffset: 0,
     raw: '[ ] do it',
+    checked: false,
     text: 'do it',
     noteTitle: 'N',
+    dueDate: null,
     dailyDate: null,
     isPinned: false,
     pinnedOrder: null,
@@ -21,43 +25,55 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
 }
 
 describe('groupTasks', () => {
-  it('buckets daily-note tasks by date relative to today, in display order', () => {
+  it('treats a bare task in a past daily note as Current, not Overdue (V1 asymmetry)', () => {
     const groups = groupTasks(
       [
+        task({ notePath: 'daily/2026-06-10.md', dailyDate: PAST, text: 'past' }),
         task({ notePath: 'daily/2026-06-14.md', dailyDate: TODAY, text: 'today' }),
-        task({ notePath: 'daily/2026-06-10.md', dailyDate: '2026-06-10', text: 'past' }),
-        task({ notePath: 'daily/2026-06-20.md', dailyDate: '2026-06-20', text: 'future' }),
+        task({ notePath: 'daily/2026-06-20.md', dailyDate: FUTURE, text: 'future' }),
       ],
       TODAY,
     )
-    expect(groups.map((group) => group.kind)).toEqual(['current', 'overdue', 'upcoming'])
-    expect(groups.map((group) => group.label)).toEqual(['Current', 'Overdue', 'Upcoming'])
-    expect(groups.map((group) => group.tasks.map((entry) => entry.text))).toEqual([
-      ['today'],
-      ['past'],
-      ['future'],
-    ])
+    // No Overdue bucket: a daily-note task with no explicit due date is current.
+    expect(groups.map((group) => group.kind)).toEqual(['current', 'upcoming'])
+    expect(groups[0].tasks.map((entry) => entry.text)).toEqual(['past', 'today'])
+    expect(groups[1].tasks.map((entry) => entry.text)).toEqual(['future'])
   })
 
-  it('omits empty buckets', () => {
-    const groups = groupTasks([task({ dailyDate: TODAY })], TODAY)
-    expect(groups.map((group) => group.kind)).toEqual(['current'])
+  it('marks a task with an explicit past due date as Overdue', () => {
+    const groups = groupTasks(
+      [task({ notePath: 'notes/p.md', noteTitle: 'P', dueDate: PAST, text: 'late' })],
+      TODAY,
+    )
+    expect(groups.map((group) => group.kind)).toEqual(['overdue'])
+    expect(groups[0].tasks.map((entry) => entry.text)).toEqual(['late'])
   })
 
-  it('orders overdue oldest-first, then by document position', () => {
+  it('lets the explicit due date override the note daily date, both directions', () => {
     const groups = groupTasks(
       [
-        task({ dailyDate: '2026-06-12', markerOffset: 40, text: 'b' }),
-        task({ dailyDate: '2026-06-10', markerOffset: 5, text: 'a' }),
-        task({ dailyDate: '2026-06-12', markerOffset: 10, text: 'c' }),
+        // future due date inside a PAST daily note → Upcoming
+        task({ notePath: 'daily/2026-06-10.md', dailyDate: PAST, dueDate: FUTURE, text: 'pushed-out' }),
+        // past due date inside a FUTURE daily note → Overdue
+        task({ notePath: 'daily/2026-06-20.md', dailyDate: FUTURE, dueDate: PAST, text: 'pulled-in' }),
       ],
       TODAY,
     )
-    expect(groups[0].kind).toBe('overdue')
-    expect(groups[0].tasks.map((entry) => entry.text)).toEqual(['a', 'c', 'b'])
+    const byKind = Object.fromEntries(groups.map((group) => [group.kind, group.tasks.map((entry) => entry.text)]))
+    expect(byKind.overdue).toEqual(['pulled-in'])
+    expect(byKind.upcoming).toEqual(['pushed-out'])
+    expect(byKind.current).toBeUndefined()
   })
 
-  it('groups dateless tasks under their note and keeps document order within', () => {
+  it('puts a due-dated task from a regular note into a date bucket, not a note group', () => {
+    const groups = groupTasks(
+      [task({ notePath: 'notes/p.md', noteTitle: 'P', dueDate: FUTURE, text: 'scheduled' })],
+      TODAY,
+    )
+    expect(groups.map((group) => group.kind)).toEqual(['upcoming'])
+  })
+
+  it('groups an undated task (no due date, regular note) under its note', () => {
     const groups = groupTasks(
       [
         task({ notePath: 'notes/p.md', noteTitle: 'Project', markerOffset: 30, text: 'second' }),
@@ -68,6 +84,32 @@ describe('groupTasks', () => {
     expect(groups).toHaveLength(1)
     expect(groups[0]).toMatchObject({ kind: 'note', label: 'Project', notePath: 'notes/p.md' })
     expect(groups[0].tasks.map((entry) => entry.text)).toEqual(['first', 'second'])
+  })
+
+  it('orders the display Current → Overdue → Upcoming → note groups', () => {
+    const groups = groupTasks(
+      [
+        task({ notePath: 'notes/p.md', noteTitle: 'P', text: 'undated' }),
+        task({ notePath: 'daily/2026-06-14.md', dailyDate: TODAY, text: 'cur' }),
+        task({ notePath: 'notes/d.md', dueDate: PAST, text: 'over' }),
+        task({ notePath: 'daily/2026-06-20.md', dailyDate: FUTURE, text: 'up' }),
+      ],
+      TODAY,
+    )
+    expect(groups.map((group) => group.kind)).toEqual(['current', 'overdue', 'upcoming', 'note'])
+  })
+
+  it('orders a date bucket by effective date, then document position', () => {
+    const groups = groupTasks(
+      [
+        task({ notePath: 'notes/a.md', dueDate: '2026-06-08', markerOffset: 9, text: 'b' }),
+        task({ notePath: 'notes/a.md', dueDate: '2026-06-05', markerOffset: 2, text: 'a' }),
+        task({ notePath: 'notes/a.md', dueDate: '2026-06-08', markerOffset: 1, text: 'c' }),
+      ],
+      TODAY,
+    )
+    expect(groups[0].kind).toBe('overdue')
+    expect(groups[0].tasks.map((entry) => entry.text)).toEqual(['a', 'c', 'b'])
   })
 
   it('orders note groups pinned-first, then most-recently edited', () => {
@@ -84,22 +126,11 @@ describe('groupTasks', () => {
     expect(groups.map((group) => group.label)).toEqual(['Pin1', 'Pin2', 'PinBare', 'New', 'Old'])
   })
 
-  it('places date buckets before note groups', () => {
-    const groups = groupTasks(
-      [
-        task({ notePath: 'notes/p.md', noteTitle: 'Project' }),
-        task({ notePath: 'daily/2026-06-14.md', dailyDate: TODAY }),
-      ],
-      TODAY,
-    )
-    expect(groups.map((group) => group.kind)).toEqual(['current', 'note'])
-  })
-
   it('is independent of input order', () => {
     const rows = [
-      task({ notePath: 'daily/2026-06-20.md', dailyDate: '2026-06-20', text: 'future' }),
-      task({ notePath: 'notes/p.md', noteTitle: 'Project', text: 'note' }),
-      task({ notePath: 'daily/2026-06-10.md', dailyDate: '2026-06-10', text: 'past' }),
+      task({ notePath: 'notes/d1.md', dueDate: FUTURE, text: 'future' }),
+      task({ notePath: 'notes/p.md', noteTitle: 'P', text: 'note' }),
+      task({ notePath: 'notes/d2.md', dueDate: PAST, text: 'past' }),
     ]
     const forward = groupTasks(rows, TODAY).map((group) => group.kind)
     const reversed = groupTasks([...rows].reverse(), TODAY).map((group) => group.kind)

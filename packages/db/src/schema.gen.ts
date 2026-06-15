@@ -116,6 +116,7 @@ export interface Tags {
 
 export interface Tasks {
   checked: number;
+  dueDate: string | null;
   markerOffset: number;
   notePath: string;
   raw: string;

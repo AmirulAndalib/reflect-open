@@ -4,6 +4,7 @@ import { parseBody } from './grammar'
 import { foldTag } from './keys'
 import { parseInlineLink } from './link-syntax'
 import { buildPlainText, plainTextOfRange, unescapeMarkdownText } from './plain-text'
+import { normalizeWikiTarget } from './resolve'
 import { parseTaskMarker } from './task-marker'
 import type {
   AssetRef,
@@ -139,23 +140,46 @@ function readLink(body: string, from: number, to: number, offset: number): Markd
  */
 function readTask(
   body: string,
-  from: number,
+  range: Span,
   bodyOffset: number,
   cuts: Span[],
   literalRanges: Span[],
+  wikiLinks: WikiLink[],
 ): ParsedTask | null {
+  const { from, to } = range
   const marker = parseTaskMarker(body.slice(from, from + 3))
   if (marker === null) {
     return null
   }
   const newline = body.indexOf('\n', from)
   const lineEnd = newline === -1 ? body.length : newline
+  const markerOffset = from + bodyOffset
   return {
     text: plainTextOfRange(body, from, lineEnd, cuts, literalRanges),
     raw: body.slice(from, lineEnd),
     checked: marker.checked,
-    markerOffset: from + bodyOffset,
+    markerOffset,
+    dueDate: firstDueDate(wikiLinks, markerOffset, to + bodyOffset),
   }
+}
+
+/**
+ * The task's due date: the first calendar-valid `[[YYYY-MM-DD]]` link inside the
+ * task's span `[from, to)` (file coords). `wikiLinks` are in document order, so
+ * "first" is the first such link in the item. Reuses {@link normalizeWikiTarget}
+ * so an impossible date (`2026-02-31`) is not treated as a due date — exactly the
+ * dailies the resolver recognises.
+ */
+function firstDueDate(wikiLinks: WikiLink[], from: number, to: number): string | null {
+  for (const link of wikiLinks) {
+    if (link.from >= from && link.from < to) {
+      const { date } = normalizeWikiTarget(link.target)
+      if (date !== undefined) {
+        return date
+      }
+    }
+  }
+  return null
 }
 
 function inAnyRange(index: number, ranges: Span[]): boolean {
@@ -229,7 +253,7 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
   const cuts: Span[] = [] // body coords — syntax to drop from plain text
   const tagExcluded: Span[] = [] // body coords — regions that don't yield tags
   const literalPlainText: Span[] = [] // body coords — regions that render backslashes literally
-  const taskFroms: number[] = [] // body coords — `Task` node starts, resolved after the walk
+  const taskRanges: Span[] = [] // body coords — `Task` node spans, resolved after the walk
 
   tree.iterate({
     enter: (node) => {
@@ -240,8 +264,10 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
       }
       if (name === 'Task') {
         // Resolve after the walk: the child `TaskMarker`/emphasis cuts this task
-        // needs to strip its text aren't collected until their own `enter`.
-        taskFroms.push(from)
+        // needs to strip its text — and the `[[date]]` due-date link inside it —
+        // aren't collected until their own `enter`. The node span bounds the
+        // due-date search to this task.
+        taskRanges.push({ from, to })
       }
       if (isTagExcludedNode(name)) {
         tagExcluded.push({ from, to })
@@ -282,8 +308,8 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
   collectTags(body, tagExcluded, tags)
 
   const tasks: ParsedTask[] = []
-  for (const from of taskFroms) {
-    const task = readTask(body, from, bodyOffset, cuts, literalPlainText)
+  for (const range of taskRanges) {
+    const task = readTask(body, range, bodyOffset, cuts, literalPlainText, wikiLinks)
     if (task) {
       tasks.push(task)
     }
