@@ -58,6 +58,75 @@ export function scanInlineImages(text: string): InlineImage[] {
 }
 
 /**
+ * An ordered piece of inline content: literal text, a `[[wiki]]` link, or a
+ * markdown/autolink link. {@link scanInlineSegments} returns these in document
+ * order so a renderer can style links without re-parsing.
+ */
+export type InlineSegment =
+  | { kind: 'text'; text: string }
+  | { kind: 'wikiLink'; target: string; alias: string | null }
+  | { kind: 'link'; text: string; href: string }
+
+/**
+ * Split inline `text` into ordered segments through the **one canonical Lezer
+ * grammar** (GFM + wiki links) — the same parser the editor and indexer use, so
+ * what counts as a link can't drift, and a `[[link]]`/`[text](url)`/bare URL
+ * inside a code span stays literal text. Used by the Tasks view to render a
+ * task's content with styled date/link chips without a fragile regex.
+ *
+ * Emphasis and other inline marks aren't segmented — their text (with markers)
+ * falls into the surrounding `text` segments, rendered as written.
+ */
+export function scanInlineSegments(text: string): InlineSegment[] {
+  const found: Array<{ from: number; to: number; segment: InlineSegment }> = []
+  parseBody(text).iterate({
+    enter: (node) => {
+      const { name, from, to } = node
+      if (name === 'WikiLink') {
+        const inner = text.slice(from + 2, to - 2)
+        const pipe = inner.indexOf('|')
+        const target = (pipe === -1 ? inner : inner.slice(0, pipe)).trim()
+        const alias = pipe === -1 ? null : inner.slice(pipe + 1).trim() || null
+        found.push({ from, to, segment: { kind: 'wikiLink', target, alias } })
+        return false
+      }
+      if (name === 'Link' || name === 'Image') {
+        const parsed = parseInlineLink(text.slice(from, to))
+        if (parsed === null) {
+          return true // reference-style/non-inline link — leave as literal text
+        }
+        found.push({ from, to, segment: { kind: 'link', text: parsed.text, href: parsed.href } })
+        return false
+      }
+      // A GFM-autolinked bare URL surfaces as a top-level `URL` node; `<…>`
+      // autolinks as `Autolink`. (URLs *inside* a Link/Autolink are never reached
+      // — we don't recurse into those.) Both render as their own link.
+      if (name === 'URL' || name === 'Autolink') {
+        const href = text.slice(from, to).replace(/^<|>$/g, '')
+        found.push({ from, to, segment: { kind: 'link', text: href, href } })
+        return false
+      }
+      return true
+    },
+  })
+
+  found.sort((left, right) => left.from - right.from)
+  const segments: InlineSegment[] = []
+  let cursor = 0
+  for (const node of found) {
+    if (node.from > cursor) {
+      segments.push({ kind: 'text', text: text.slice(cursor, node.from) })
+    }
+    segments.push(node.segment)
+    cursor = node.to
+  }
+  if (cursor < text.length) {
+    segments.push({ kind: 'text', text: text.slice(cursor) })
+  }
+  return segments
+}
+
+/**
  * Find every wiki link in a block's text content. Offsets are relative to the
  * input string; the caller maps them into document positions.
  */

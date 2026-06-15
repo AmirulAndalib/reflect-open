@@ -39,6 +39,7 @@ pub struct IndexedNote {
     pub(super) tags: Vec<IndexedTag>,
     pub(super) aliases: Vec<IndexedAlias>,
     pub(super) assets: Vec<String>,
+    pub(super) tasks: Vec<IndexedTask>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +65,19 @@ pub(super) struct IndexedTag {
 pub(super) struct IndexedAlias {
     pub(super) alias: String,
     pub(super) alias_key: String,
+}
+
+/// One GFM checkbox (Plan 18). `marker_offset` is the `[`'s character offset in
+/// the file (UTF-16 units) and, with `note_path`, the row's primary key.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct IndexedTask {
+    pub(super) marker_offset: i64,
+    pub(super) text: String,
+    pub(super) raw: String,
+    pub(super) checked: bool,
+    /// Explicit due date (first `[[YYYY-MM-DD]]` in the item), or None.
+    pub(super) due_date: Option<String>,
 }
 
 /// Replace all rows for `note.path` with its current projection. Caller wraps
@@ -138,6 +152,21 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
             stmt.execute(params![note.path, asset])?;
         }
     }
+    {
+        let mut stmt = conn.prepare_cached(
+            "INSERT INTO tasks(note_path, marker_offset, text, raw, checked, due_date) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+        )?;
+        for task in &note.tasks {
+            stmt.execute(params![
+                note.path,
+                task.marker_offset,
+                task.text,
+                task.raw,
+                i64::from(task.checked),
+                task.due_date
+            ])?;
+        }
+    }
     conn.prepare_cached("INSERT INTO search_fts(path, title, body) VALUES(?1, ?2, ?3)")?
         .execute(params![note.path, note.title, note.text])?;
     Ok(())
@@ -179,6 +208,8 @@ pub(super) fn move_note(conn: &Connection, from: &str, to: &str) -> AppResult<()
     conn.prepare_cached("UPDATE aliases SET note_path = ?2 WHERE note_path = ?1")?
         .execute(params![from, to])?;
     conn.prepare_cached("UPDATE assets SET note_path = ?2 WHERE note_path = ?1")?
+        .execute(params![from, to])?;
+    conn.prepare_cached("UPDATE tasks SET note_path = ?2 WHERE note_path = ?1")?
         .execute(params![from, to])?;
     conn.prepare_cached("UPDATE embedding_chunks SET note_path = ?2 WHERE note_path = ?1")?
         .execute(params![from, to])?;

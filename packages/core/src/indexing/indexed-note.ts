@@ -38,9 +38,13 @@ import { previewSnippet } from './snippet'
  * carried `modifiedMs` (hash-reconcile can never refresh them) ·
  * 4 — `notes.has_conflict` (sync conflict markers, Plan 12) ·
  * 5 — `notes.gist_url` + `notes.gist_stale` (gist publishing) ·
- * 6 — rendered Markdown escapes in titles, wiki-link targets, and previews.
+ * 6 — rendered Markdown escapes in titles, wiki-link targets, and previews ·
+ * 7 — `tasks` projection (GFM checkboxes, Plan 18): existing notes carry no task
+ * rows until reprojected, so the bump backfills them ·
+ * 8 — `tasks.due_date` (explicit `[[YYYY-MM-DD]]` per task, V1 Overdue semantics):
+ * existing task rows have a null due date until reprojected.
  */
-export const PROJECTION_VERSION = 6
+export const PROJECTION_VERSION = 8
 
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),
@@ -67,6 +71,19 @@ export const indexedAliasSchema = z.object({
 })
 export type IndexedAlias = z.infer<typeof indexedAliasSchema>
 
+export const indexedTaskSchema = z.object({
+  /** Character offset of the marker's `[` in the file (UTF-16 units) — the row PK with `path`. */
+  markerOffset: z.number(),
+  /** Display/search text of the task's marker line, markdown stripped. */
+  text: z.string(),
+  /** The marker line verbatim — the surgical write-back's staleness guard. */
+  raw: z.string(),
+  checked: z.boolean(),
+  /** Explicit due date (first `[[YYYY-MM-DD]]` in the item), or null — drives Overdue. */
+  dueDate: z.string().nullable(),
+})
+export type IndexedTask = z.infer<typeof indexedTaskSchema>
+
 export const indexedNoteSchema = z.object({
   path: z.string(),
   id: z.string().nullable(),
@@ -92,6 +109,8 @@ export const indexedNoteSchema = z.object({
   tags: z.array(indexedTagSchema),
   aliases: z.array(indexedAliasSchema),
   assets: z.array(z.string()),
+  /** GFM checkbox rows for the Tasks projection (Plan 18). */
+  tasks: z.array(indexedTaskSchema),
 })
 export type IndexedNote = z.infer<typeof indexedNoteSchema>
 
@@ -149,5 +168,12 @@ export function buildIndexedNote(
       aliasKey: foldKey(alias),
     })),
     assets: parsed.assets.map((asset) => asset.path),
+    tasks: parsed.tasks.map((task) => ({
+      markerOffset: task.markerOffset,
+      text: task.text,
+      raw: task.raw,
+      checked: task.checked,
+      dueDate: task.dueDate,
+    })),
   }
 }

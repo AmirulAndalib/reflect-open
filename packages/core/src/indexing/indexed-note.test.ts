@@ -124,6 +124,29 @@ describe('buildIndexedNote', () => {
     expect(indexed.gistStale).toBe(false)
   })
 
+  it('maps GFM checkboxes into task rows', () => {
+    const source = '# Todo\n\n- [ ] buy milk\n- [x] call mum\n'
+    const indexed = buildIndexedNote(parseNote({ path: 'notes/n.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
+    expect(indexed.tasks).toEqual([
+      { markerOffset: source.indexOf('[ ]'), text: 'buy milk', raw: '[ ] buy milk', checked: false, dueDate: null },
+      { markerOffset: source.indexOf('[x]'), text: 'call mum', raw: '[x] call mum', checked: true, dueDate: null },
+    ])
+  })
+
+  it('maps an explicit task due date from a [[YYYY-MM-DD]] link', () => {
+    const source = '# Todo\n\n- [ ] pay bill [[2026-06-20]]\n'
+    const indexed = buildIndexedNote(parseNote({ path: 'notes/n.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
+    expect(indexed.tasks[0]?.dueDate).toBe('2026-06-20')
+  })
+
   it('flags notes carrying sync conflict markers', () => {
     const source =
       '# Shared\n\n<<<<<<< this device\nmine\n=======\ntheirs\n>>>>>>> other device\n'

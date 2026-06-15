@@ -9,7 +9,9 @@ use super::chat_write::{delete_conversation, save_message, ChatConversation, Cha
 use super::embed_write::{apply_chunks, remove_chunks, EmbeddedChunk};
 use super::migrations::{migrate, migrate_to, open_in_memory, open_index_at, validate_migrations};
 use super::query::run_query;
-use super::write::{apply_note, clear_index, move_note, IndexedLink, IndexedNote, IndexedTag};
+use super::write::{
+    apply_note, clear_index, move_note, IndexedLink, IndexedNote, IndexedTag, IndexedTask,
+};
 
 fn migrated() -> Connection {
     // Registers sqlite-vec before migrating — the 0002 migration creates a
@@ -41,6 +43,7 @@ fn note(path: &str, title: &str, links: Vec<IndexedLink>) -> IndexedNote {
         tags: vec![],
         aliases: vec![],
         assets: vec![],
+        tasks: vec![],
     }
 }
 
@@ -55,6 +58,16 @@ fn wiki(target: &str) -> IndexedLink {
     }
 }
 
+fn task(marker_offset: i64, text: &str, checked: bool) -> IndexedTask {
+    IndexedTask {
+        marker_offset,
+        text: text.to_string(),
+        raw: format!("[{}] {text}", if checked { "x" } else { " " }),
+        checked,
+        due_date: None,
+    }
+}
+
 #[test]
 fn migrations_are_valid_and_idempotent() {
     // Guards every migration's SQL (rusqlite_migration validates the set).
@@ -63,7 +76,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 10); // applied migrations (0001 through 0010)
+    assert_eq!(version, 12); // applied migrations (0001 through 0012)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -333,7 +346,9 @@ fn read_bridge_refuses_attach_and_pragma() {
 #[test]
 fn clear_cascades_to_child_tables() {
     let conn = migrated();
-    apply_note(&conn, &note("notes/a.md", "A", vec![wiki("X")])).unwrap();
+    let mut seeded = note("notes/a.md", "A", vec![wiki("X")]);
+    seeded.tasks = vec![task(0, "buy milk", false)];
+    apply_note(&conn, &seeded).unwrap();
     clear_index(&conn).unwrap();
     // Deleting notes cascades to children; search_fts is cleared explicitly.
     for table in [
@@ -343,6 +358,7 @@ fn clear_cascades_to_child_tables() {
         "tags",
         "aliases",
         "assets",
+        "tasks",
         "search_fts",
     ] {
         let rows = run_query(&conn, &format!("SELECT count(*) AS n FROM {table}"), &[]).unwrap();
@@ -359,6 +375,70 @@ fn reapplying_a_note_cascades_away_stale_children() {
     apply_note(&conn, &note("notes/a.md", "A", vec![])).unwrap();
     let rows = run_query(&conn, "SELECT count(*) AS n FROM links", &[]).unwrap();
     assert_eq!(rows[0]["n"], Value::from(0));
+}
+
+#[test]
+fn apply_note_inserts_tasks_and_replace_clears_them() {
+    let conn = migrated();
+    let mut seeded = note("notes/a.md", "A", vec![]);
+    let mut due = task(4, "buy milk", false);
+    due.due_date = Some("2026-07-01".to_string());
+    seeded.tasks = vec![due, task(20, "call mum", true)];
+    apply_note(&conn, &seeded).unwrap();
+
+    let rows = run_query(
+        &conn,
+        "SELECT marker_offset, text, checked, due_date FROM tasks WHERE note_path = 'notes/a.md' ORDER BY marker_offset",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["marker_offset"], Value::from(4));
+    assert_eq!(rows[0]["text"], Value::from("buy milk"));
+    assert_eq!(rows[0]["checked"], Value::from(0));
+    assert_eq!(rows[0]["due_date"], Value::from("2026-07-01"));
+    assert_eq!(rows[1]["checked"], Value::from(1));
+    assert_eq!(rows[1]["due_date"], Value::Null);
+
+    // Re-applying with no tasks cascades the old rows away (no explicit delete).
+    apply_note(&conn, &note("notes/a.md", "A", vec![])).unwrap();
+    let after = run_query(&conn, "SELECT count(*) AS n FROM tasks", &[]).unwrap();
+    assert_eq!(after[0]["n"], Value::from(0));
+}
+
+#[test]
+fn open_tasks_read_includes_private_notes_and_excludes_completed() {
+    // The semantics `getOpenTasks` (queries.ts) relies on: open checkboxes joined
+    // to note context, completed tasks excluded, and `private: true` notes' tasks
+    // INCLUDED (the Tasks view is a local-only surface, like local search).
+    let conn = migrated();
+    let mut public = note("notes/a.md", "A", vec![]);
+    public.daily_date = Some("2026-06-10".to_string());
+    public.tasks = vec![task(2, "open a", false)];
+    apply_note(&conn, &public).unwrap();
+
+    let mut private = note("notes/b.md", "B", vec![]);
+    private.is_private = true;
+    private.tasks = vec![task(2, "open b", false), task(20, "done b", true)];
+    apply_note(&conn, &private).unwrap();
+
+    let rows = run_query(
+        &conn,
+        "SELECT tasks.note_path, tasks.text, notes.title AS note_title, notes.daily_date \
+         FROM tasks INNER JOIN notes ON notes.path = tasks.note_path \
+         WHERE tasks.checked = 0 ORDER BY tasks.note_path, tasks.marker_offset",
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(rows.len(), 2); // both open tasks; the completed one is gone
+    assert_eq!(rows[0]["note_path"], Value::from("notes/a.md"));
+    assert_eq!(rows[0]["text"], Value::from("open a"));
+    assert_eq!(rows[0]["note_title"], Value::from("A"));
+    assert_eq!(rows[0]["daily_date"], Value::from("2026-06-10"));
+    // The private note's open task is present (local-only surface).
+    assert_eq!(rows[1]["note_path"], Value::from("notes/b.md"));
+    assert_eq!(rows[1]["text"], Value::from("open b"));
 }
 
 #[test]
@@ -386,7 +466,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 10);
+    assert_eq!(version, 12);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();
@@ -842,6 +922,7 @@ fn move_note_migrates_every_row_and_preserves_derived_state() {
     moved.is_pinned = true;
     moved.pinned_order = Some(2.5);
     moved.has_conflict = true;
+    moved.tasks = vec![task(0, "do thing", false)];
     apply_note(&conn, &moved).unwrap();
     apply_note(
         &conn,
@@ -891,6 +972,14 @@ fn move_note_migrates_every_row_and_preserves_derived_state() {
         ),
         (
             "SELECT count(*) AS n FROM embedding_chunks WHERE note_path = 'notes/old.md'",
+            0,
+        ),
+        (
+            "SELECT count(*) AS n FROM tasks WHERE note_path = 'notes/kept-title.md'",
+            1,
+        ),
+        (
+            "SELECT count(*) AS n FROM tasks WHERE note_path = 'notes/old.md'",
             0,
         ),
     ] {

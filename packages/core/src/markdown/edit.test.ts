@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { appendBlock, appendUnderHeading, renameWikiLink } from './edit'
+import { parseNote } from './extract'
+import {
+  appendBlock,
+  appendUnderHeading,
+  renameWikiLink,
+  TaskStaleError,
+  toggleTaskMarker,
+} from './edit'
 
 describe('renameWikiLink', () => {
   it('rewrites matching targets, preserves aliases, skips code and non-matches', () => {
@@ -68,5 +75,81 @@ describe('appendBlock', () => {
 
   it('trims the block itself', () => {
     expect(appendBlock('alpha', '  new text \n')).toBe('alpha\n\nnew text\n')
+  })
+})
+
+describe('toggleTaskMarker', () => {
+  /** The first task's `{ markerOffset, raw }` as the index would record it. */
+  function indexedTask(source: string) {
+    const [task] = parseNote({ path: 'notes/n.md', source }).tasks
+    return { markerOffset: task.markerOffset, raw: task.raw }
+  }
+
+  it('checks an open task, changing only the marker', () => {
+    const source = '# Todo\n\n- [ ] buy milk\n- [ ] call mum\n'
+    const result = toggleTaskMarker(source, indexedTask(source))
+    expect(result.checked).toBe(true)
+    expect(result.source).toBe('# Todo\n\n- [x] buy milk\n- [ ] call mum\n')
+  })
+
+  it('unchecks a completed task', () => {
+    const source = '- [x] done\n'
+    const result = toggleTaskMarker(source, indexedTask(source))
+    expect(result.checked).toBe(false)
+    expect(result.source).toBe('- [ ] done\n')
+  })
+
+  it('relocates the task by its line when an edit above shifted the offset', () => {
+    const source = '- [ ] buy milk\n'
+    const stale = indexedTask(source)
+    // A paragraph was inserted above the task, so the recorded offset is wrong;
+    // the raw line still locates it uniquely.
+    const edited = `Some new intro.\n\n${source}`
+    const result = toggleTaskMarker(edited, stale)
+    expect(result.source).toBe('Some new intro.\n\n- [x] buy milk\n')
+  })
+
+  it('refuses loudly when the task line is gone', () => {
+    const source = '- [ ] buy milk\n'
+    const task = indexedTask(source)
+    expect(() => toggleTaskMarker('- [ ] something else\n', task)).toThrow(TaskStaleError)
+  })
+
+  it('refuses loudly when the task line is ambiguous and the offset is stale', () => {
+    const source = '- [ ] dup\n'
+    const task = indexedTask(source)
+    // Two identical lines and a stale offset: which one is unknowable.
+    expect(() => toggleTaskMarker('intro\n\n- [ ] dup\n- [ ] dup\n', task)).toThrow(TaskStaleError)
+  })
+
+  it('relocates to the real task line, not a coincidental inline match', () => {
+    const task = indexedTask('- [ ] dup\n')
+    // The same text appears inline (not a task) and as a task, and the recorded
+    // offset is stale. Relocation re-extracts tasks, so it can only toggle the
+    // real list item — the inline mention is untouched.
+    const result = toggleTaskMarker('mention [ ] dup inline\n\n- [ ] dup\n', task)
+    expect(result.source).toBe('mention [ ] dup inline\n\n- [x] dup\n')
+  })
+
+  it('never toggles a marker that only appears inside a code block', () => {
+    const task = indexedTask('- [ ] incode\n')
+    // The line moved into a fenced code block, so it is no longer a task; a raw
+    // string search would have spliced it, but re-extraction sees no task.
+    expect(() => toggleTaskMarker('```\n- [ ] incode\n```\n', task)).toThrow(TaskStaleError)
+  })
+
+  it('refuses the offset fast-path when its byte-matching line is no longer a task', () => {
+    // `[ ] x` still sits verbatim at offset 4, but inside a fenced code block —
+    // so it is not a parsed task. The fast path must re-validate, not trust bytes.
+    expect(() => toggleTaskMarker('```\n[ ] x\n```\n', { markerOffset: 4, raw: '[ ] x' })).toThrow(
+      TaskStaleError,
+    )
+  })
+
+  it('round-trips back to the original after two toggles', () => {
+    const source = '- [ ] task [[2026-07-01]] #tag\n'
+    const once = toggleTaskMarker(source, indexedTask(source))
+    const twice = toggleTaskMarker(once.source, indexedTask(once.source))
+    expect(twice.source).toBe(source)
   })
 })

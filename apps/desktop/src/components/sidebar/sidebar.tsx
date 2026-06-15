@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
-import { MessageSquare, Settings, SquarePen } from 'lucide-react'
+import { ListChecks, MessageSquare, Settings, SquarePen } from 'lucide-react'
 import { AudioMemoButton } from '@/components/audio-memo/audio-memo-button'
 import { ListIcon } from '@/components/icons/list-icon'
 import { PencilIcon } from '@/components/icons/pencil-icon'
@@ -73,6 +73,17 @@ export function Sidebar({ graph, context }: SidebarProps): ReactElement {
             binding={keybindingFor('nav.allNotes') ?? undefined}
             active={route.kind === 'allNotes'}
             onClick={() => void runCommand('nav.allNotes', context)}
+          />
+          <SidebarItem
+            icon={
+              <span className={lucideBox}>
+                <ListChecks aria-hidden strokeWidth={1.75} className="size-4" />
+              </span>
+            }
+            label="Tasks"
+            binding={keybindingFor('nav.tasks') ?? undefined}
+            active={route.kind === 'tasks'}
+            onClick={() => void runCommand('nav.tasks', context)}
           />
           <SidebarItem
             icon={

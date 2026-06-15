@@ -2,8 +2,10 @@ import {
   errorMessage,
   isAppError,
   splitFrontmatter,
+  toggleTaskMarker,
   upsertFrontmatter,
   type GistFrontmatter,
+  type TaskMarker,
 } from '@reflect/core'
 import type { RoundTripFidelity } from './roundtrip'
 
@@ -259,6 +261,18 @@ export interface NoteSession {
    * resolution instead (the rename alias), use `updateFrontmatter`.
    */
   commitFrontmatter: (patch: FrontmatterPatch) => Promise<boolean>
+  /**
+   * Toggle a GFM checkbox in the body from the Tasks view (Plan 18), applied to
+   * the live buffer so unsaved edits survive, then flushed now. The caller routes
+   * here whenever the note is open — the buffer is read synchronously, so there
+   * is no read/write race with the editor. Returns false when the session can't
+   * take it (loading, protected, disposed, or a parked conflict) so the caller
+   * refuses rather than clobber the buffer, and propagates `TaskStaleError` when
+   * the marker can't be located, like the disk path. An open note's toggle rides
+   * the editor, so a normalizing-fidelity note normalizes like any edit (an
+   * exact-fidelity note stays byte-identical apart from the marker).
+   */
+  commitTaskToggle: (task: TaskMarker) => Promise<boolean>
   /** Flush pending edits and detach: no further snapshots are emitted. */
   dispose: () => void
   /**
@@ -655,6 +669,44 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     return true
   }
 
+  async function commitTaskToggle(task: TaskMarker): Promise<boolean> {
+    // Refuse when the session can't safely take a body edit: no write channel,
+    // disposed, protected (read-only), still loading, or a parked conflict. The
+    // caller then refuses rather than risk a disk write clobbering the buffer.
+    if (io.write === null || disposed || isProtected || status !== 'ready' || conflict !== null) {
+      return false
+    }
+    // Snapshot the pre-toggle document so a failed write reverts cleanly.
+    const previousHeader = header
+    const previousBuffer = buffer
+    // Toggle the live document — header plus the unsaved buffer — so concurrent
+    // edits survive. `toggleTaskMarker` relocates by `raw` if the offset drifted
+    // and throws TaskStaleError when it can't; that propagates to the caller.
+    const toggled = toggleTaskMarker(header + buffer, task)
+    const doc = splitDoc(toggled.source)
+    header = doc.header
+    buffer = doc.body
+    applyToEditor(doc.body) // the open editor shows the toggled checkbox
+    dirty = header + buffer !== disk
+    emit()
+    await flush() // land it now so the Tasks view refreshes promptly
+    // `flush()` resolves even when the write failed (captured in `error`, not
+    // thrown). Revert the in-memory toggle so the editor and the Tasks list can't
+    // diverge — the row stays open everywhere — then surface the failure. The
+    // toggle is transactional: it persists, or nothing changes.
+    if (error !== null) {
+      const message = error
+      header = previousHeader
+      buffer = previousBuffer
+      applyToEditor(previousBuffer)
+      dirty = header + buffer !== disk
+      error = null
+      emit()
+      throw new Error(message)
+    }
+    return true
+  }
+
   function dispose(): void {
     // A discarded session must not write: its file is being deleted, and a
     // flush would recreate it. Otherwise flush first — the queued save step
@@ -689,6 +741,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     liveContent: () => (status === 'ready' ? header + buffer : null),
     updateFrontmatter,
     commitFrontmatter,
+    commitTaskToggle,
     dispose,
     discard,
   }

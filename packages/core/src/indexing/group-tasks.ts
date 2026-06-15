@@ -1,0 +1,153 @@
+import type { OpenTask } from './queries'
+
+/**
+ * Grouping for the Tasks view (Plan 18), faithful to V1's `task-view.ts`: open
+ * tasks split into date buckets — **Current / Overdue / Upcoming** in that
+ * display order — followed by one section per note that holds undated tasks.
+ *
+ * A task's date is its explicit **due date** when it has one — the first calendar
+ * `[[YYYY-MM-DD]]` link inside the item (V1's "scheduling is association") — else
+ * its source note's daily date. The buckets follow V1 exactly, and Overdue is
+ * **asymmetric**: only an explicit due date in the past makes a task overdue. A
+ * bare checkbox in a past daily note is *Current*, not Overdue — V1 treats an
+ * un-rescheduled daily task as still current, not late. A task with no date at
+ * all (no due date, in a regular note) groups under its note's title.
+ *
+ * Lives in core (not the desktop view) so the same grouping serves any surface —
+ * the desktop list today, a `reflect tasks` CLI later — without re-deriving it.
+ * Pure: the caller supplies `today` (an ISO `YYYY-MM-DD`, the app's local day).
+ */
+
+/** A date bucket (tasks aggregated across daily notes) or a single regular note. */
+export type TaskGroupKind = 'current' | 'overdue' | 'upcoming' | 'note'
+
+export interface TaskGroup {
+  kind: TaskGroupKind
+  /** Section heading — the bucket name, or (for `note` groups) the note's title. */
+  label: string
+  /** The note a `note` group's header opens; null for the date buckets. */
+  notePath: string | null
+  tasks: OpenTask[]
+}
+
+/** The date a task is bucketed by: its explicit due date, else its note's date. */
+function effectiveDate(task: OpenTask): string | null {
+  return task.dueDate ?? task.dailyDate
+}
+
+/** Within a date bucket: earliest effective date first, then document order. */
+function compareDated(left: OpenTask, right: OpenTask): number {
+  // Every task in a date bucket has an effective date; ISO `YYYY-MM-DD` sorts
+  // chronologically. (The `?? ''` only satisfies the type — it never fires here.)
+  const leftDate = effectiveDate(left) ?? ''
+  const rightDate = effectiveDate(right) ?? ''
+  if (leftDate !== rightDate) {
+    return leftDate < rightDate ? -1 : 1
+  }
+  if (left.notePath !== right.notePath) {
+    return left.notePath < right.notePath ? -1 : 1
+  }
+  return left.markerOffset - right.markerOffset
+}
+
+/**
+ * Compare two notes by pin shelf precedence: pinned before unpinned, then
+ * numbered pins (`pinned: <n>`, ascending) before bare `pinned: true`. Returns 0
+ * when the two share a rank, leaving the caller's own tiebreak (recency, title)
+ * to decide. This is the one JS expression of the order the sidebar's pinned list
+ * encodes in SQL ({@link getPinnedNotes}), so the two can't drift.
+ */
+function comparePinPrecedence(
+  left: Pick<OpenTask, 'isPinned' | 'pinnedOrder'>,
+  right: Pick<OpenTask, 'isPinned' | 'pinnedOrder'>,
+): number {
+  if (left.isPinned !== right.isPinned) {
+    return left.isPinned ? -1 : 1 // pinned before unpinned
+  }
+  if (!left.isPinned) {
+    return 0 // both unpinned — no pin-derived order
+  }
+  const { pinnedOrder: leftOrder } = left
+  const { pinnedOrder: rightOrder } = right
+  if (leftOrder !== null && rightOrder !== null && leftOrder !== rightOrder) {
+    return leftOrder - rightOrder
+  }
+  if ((leftOrder === null) !== (rightOrder === null)) {
+    return leftOrder === null ? 1 : -1 // numbered pins before bare ones
+  }
+  return 0
+}
+
+/**
+ * Order the per-note groups: pinned notes first ({@link comparePinPrecedence}),
+ * then by most-recently edited, then by path for a stable tiebreak. Each group's
+ * note metadata is shared by all its tasks, so the first task carries the sort key.
+ */
+function compareNoteGroups(left: TaskGroup, right: TaskGroup): number {
+  const first = left.tasks[0]
+  const second = right.tasks[0]
+  const byPin = comparePinPrecedence(first, second)
+  if (byPin !== 0) {
+    return byPin
+  }
+  if (first.updatedAt !== second.updatedAt) {
+    return second.updatedAt - first.updatedAt // most recent first
+  }
+  return first.notePath < second.notePath ? -1 : first.notePath > second.notePath ? 1 : 0
+}
+
+/**
+ * Group open tasks for the Tasks view. `today` is an ISO `YYYY-MM-DD` date (the
+ * app's local day). Empty buckets are omitted; the result is ordered
+ * Current → Overdue → Upcoming → per-note. Pure and self-sorting, so it does not
+ * depend on the order the index read returns.
+ */
+export function groupTasks(tasks: readonly OpenTask[], today: string): TaskGroup[] {
+  const current: OpenTask[] = []
+  const overdue: OpenTask[] = []
+  const upcoming: OpenTask[] = []
+  const byNote = new Map<string, OpenTask[]>()
+
+  for (const task of tasks) {
+    const date = effectiveDate(task)
+    if (date === null) {
+      // No due date and no daily date — V1's "unscheduled": grouped by note.
+      const group = byNote.get(task.notePath)
+      if (group === undefined) {
+        byNote.set(task.notePath, [task])
+      } else {
+        group.push(task)
+      }
+    } else if (task.dueDate !== null && task.dueDate < today) {
+      // Overdue keys off the explicit due date ALONE (V1's asymmetry): a bare
+      // task in a past daily note is not overdue — it lands in Current below.
+      overdue.push(task)
+    } else if (date > today) {
+      upcoming.push(task)
+    } else {
+      current.push(task)
+    }
+  }
+
+  const dateGroups: TaskGroup[] = []
+  if (current.length > 0) {
+    dateGroups.push({ kind: 'current', label: 'Current', notePath: null, tasks: current.sort(compareDated) })
+  }
+  if (overdue.length > 0) {
+    dateGroups.push({ kind: 'overdue', label: 'Overdue', notePath: null, tasks: overdue.sort(compareDated) })
+  }
+  if (upcoming.length > 0) {
+    dateGroups.push({ kind: 'upcoming', label: 'Upcoming', notePath: null, tasks: upcoming.sort(compareDated) })
+  }
+
+  const noteGroups: TaskGroup[] = [...byNote.values()]
+    .map((noteTasks) => ({
+      kind: 'note' as const,
+      label: noteTasks[0].noteTitle,
+      notePath: noteTasks[0].notePath,
+      tasks: noteTasks.sort((left, right) => left.markerOffset - right.markerOffset),
+    }))
+    .sort(compareNoteGroups)
+
+  return [...dateGroups, ...noteGroups]
+}

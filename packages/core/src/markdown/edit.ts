@@ -1,5 +1,6 @@
 import { parseNote } from './extract'
-import type { Heading } from './model'
+import { parseTaskMarker } from './task-marker'
+import type { Heading, TaskMarker } from './model'
 
 /**
  * Source-level edit helpers (Plan 03). These splice the original string by node
@@ -7,6 +8,69 @@ import type { Heading } from './model'
  * thus sync diffs (Plan 12) — stay minimal. (Frontmatter edits live in
  * `frontmatter.ts`'s `upsertFrontmatter`.)
  */
+
+/**
+ * The indexed task no longer matches the source, so toggling it would edit the
+ * wrong line. Thrown by {@link toggleTaskMarker}; the caller refuses loudly and
+ * reindexes rather than writing a silent wrong edit (Plan 18).
+ */
+export class TaskStaleError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TaskStaleError'
+  }
+}
+
+/**
+ * Locate the task marker in `source`: trust `markerOffset` when the recorded
+ * marker line (`raw`) still sits exactly there, else re-extract the note's tasks
+ * and match the unique one whose marker line is `raw`. Re-extracting (rather than
+ * a raw string search) means the relocation can only ever land on a real task
+ * line — never a coincidental mid-line or in-code-block occurrence of `raw` — so
+ * an edit *above* the task is tolerated without risking a wrong-line toggle.
+ * Throws {@link TaskStaleError} when `raw` matches no task, or more than one.
+ */
+function locateTaskMarker(source: string, markerOffset: number, raw: string): number {
+  // Re-extract: the recorded offset is trusted only when it still holds a real
+  // parsed task with this line — a byte match alone isn't enough, since an edit
+  // above could have turned the line into (say) code without changing its bytes.
+  const tasks = parseNote({ path: '', source }).tasks
+  if (tasks.some((task) => task.markerOffset === markerOffset && task.raw === raw)) {
+    return markerOffset
+  }
+  const matches = tasks.filter((task) => task.raw === raw)
+  if (matches.length === 0) {
+    throw new TaskStaleError(`task line no longer in note: ${JSON.stringify(raw)}`)
+  }
+  if (matches.length > 1) {
+    throw new TaskStaleError(`task line is ambiguous: ${JSON.stringify(raw)}`)
+  }
+  return matches[0].markerOffset
+}
+
+/**
+ * Toggle a GFM checkbox between `[ ]` and `[x]` by splicing exactly the three
+ * marker characters — the file changes by the marker alone, nothing else. The
+ * task is located by {@link locateTaskMarker}; a stale or ambiguous location, or
+ * a position that no longer holds a marker, throws {@link TaskStaleError} rather
+ * than writing the wrong line. Returns the new source and the new checked state.
+ */
+export function toggleTaskMarker(
+  source: string,
+  task: TaskMarker,
+): { source: string; checked: boolean } {
+  const offset = locateTaskMarker(source, task.markerOffset, task.raw)
+  const marker = source.slice(offset, offset + 3)
+  const parsed = parseTaskMarker(marker)
+  if (parsed === null) {
+    throw new TaskStaleError(`no task marker at offset ${offset}: ${JSON.stringify(marker)}`)
+  }
+  const next = parsed.checked ? '[ ]' : '[x]'
+  return {
+    source: source.slice(0, offset) + next + source.slice(offset + 3),
+    checked: !parsed.checked,
+  }
+}
 
 interface Splice {
   from: number

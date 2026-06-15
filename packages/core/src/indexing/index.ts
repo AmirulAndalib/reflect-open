@@ -58,6 +58,8 @@ export {
   getLinkSources,
   getNote,
   getNotesByTag,
+  getOpenTasks,
+  getCompletedTasks,
   getPinnedNotes,
   searchNotes,
   suggestWikiTargets,
@@ -71,9 +73,11 @@ export {
   type DailyNotesRange,
   type DuplicateIdGroup,
   type NoteRow,
+  type OpenTask,
   type PinnedNote,
   type SearchHit,
 } from './queries'
+export { groupTasks, type TaskGroup, type TaskGroupKind } from './group-tasks'
 export {
   listNotes,
   listNoteTags,

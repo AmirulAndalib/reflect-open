@@ -3,12 +3,16 @@ import { parseFrontmatter, splitFrontmatter } from './frontmatter'
 import { parseBody } from './grammar'
 import { foldTag } from './keys'
 import { parseInlineLink } from './link-syntax'
+import { buildPlainText, plainTextOfRange, unescapeMarkdownText } from './plain-text'
+import { normalizeWikiTarget } from './resolve'
+import { parseTaskMarker } from './task-marker'
 import type {
   AssetRef,
   Frontmatter,
   Heading,
   MarkdownLink,
   ParsedNote,
+  ParsedTask,
   Span,
   WikiLink,
 } from './model'
@@ -36,14 +40,6 @@ const TAG_NAME_RE = /^\p{L}[\p{L}\p{N}/_-]*$/u
  */
 export function isTagName(value: string): boolean {
   return TAG_NAME_RE.test(value)
-}
-// Inner of a wiki link, for plain-text rendering.
-const WIKI_INNER_RE = /\[\[([^\]\n]*)\]\]/g
-// CommonMark backslash escapes are visible in source, but not rendered text.
-const MARKDOWN_ESCAPE_RE = /\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g
-
-function unescapeMarkdownText(text: string): string {
-  return text.replace(MARKDOWN_ESCAPE_RE, '$1')
 }
 
 /** Names whose source range is markup to drop from plain text. */
@@ -136,56 +132,54 @@ function readLink(body: string, from: number, to: number, offset: number): Markd
   return { href, text, from: from + offset, to: to + offset, domain: hostOf(href) }
 }
 
-function renderMarkdownText(text: string): string {
-  return text
-    .replace(WIKI_INNER_RE, (_, inner: string) => inner.replace(/\|/g, ' '))
-    .replace(MARKDOWN_ESCAPE_RE, '$1')
-}
-
-function appendPlainTextChunk(
+/**
+ * Resolve a `Task` Lezer node (the marker starts at `from`) into a
+ * {@link ParsedTask}, or `null` when the marker shape isn't a real GFM checkbox
+ * (a defensive guard against parser surprises). `text` is the marker line minus
+ * its syntax; `raw` is that physical line verbatim for the write-back guard.
+ */
+function readTask(
   body: string,
-  from: number,
-  to: number,
+  range: Span,
+  bodyOffset: number,
+  cuts: Span[],
   literalRanges: Span[],
-): string {
-  let kept = ''
-  let cursor = from
-  for (const literalRange of literalRanges) {
-    if (literalRange.to <= cursor) {
-      continue
-    }
-    if (literalRange.from >= to) {
-      break
-    }
-
-    const literalFrom = Math.max(cursor, literalRange.from)
-    const literalTo = Math.min(to, literalRange.to)
-    if (cursor < literalFrom) {
-      kept += renderMarkdownText(body.slice(cursor, literalFrom))
-    }
-    kept += body.slice(literalFrom, literalTo)
-    cursor = literalTo
+  wikiLinks: WikiLink[],
+): ParsedTask | null {
+  const { from, to } = range
+  const marker = parseTaskMarker(body.slice(from, from + 3))
+  if (marker === null) {
+    return null
   }
-  if (cursor < to) {
-    kept += renderMarkdownText(body.slice(cursor, to))
+  const newline = body.indexOf('\n', from)
+  const lineEnd = newline === -1 ? body.length : newline
+  const markerOffset = from + bodyOffset
+  return {
+    text: plainTextOfRange(body, from, lineEnd, cuts, literalRanges),
+    raw: body.slice(from, lineEnd),
+    checked: marker.checked,
+    markerOffset,
+    dueDate: firstDueDate(wikiLinks, markerOffset, to + bodyOffset),
   }
-  return kept
 }
 
-/** Body text minus the cut (syntax) ranges, with wiki brackets/pipes flattened. */
-function buildPlainText(body: string, cuts: Span[], literalRanges: Span[]): string {
-  const sorted = [...cuts].sort((a, b) => a.from - b.from)
-  const sortedLiteralRanges = [...literalRanges].sort((a, b) => a.from - b.from)
-  let kept = ''
-  let pos = 0
-  for (const cut of sorted) {
-    if (cut.from > pos) {
-      kept += appendPlainTextChunk(body, pos, cut.from, sortedLiteralRanges)
+/**
+ * The task's due date: the first calendar-valid `[[YYYY-MM-DD]]` link inside the
+ * task's span `[from, to)` (file coords). `wikiLinks` are in document order, so
+ * "first" is the first such link in the item. Reuses {@link normalizeWikiTarget}
+ * so an impossible date (`2026-02-31`) is not treated as a due date — exactly the
+ * dailies the resolver recognises.
+ */
+function firstDueDate(wikiLinks: WikiLink[], from: number, to: number): string | null {
+  for (const link of wikiLinks) {
+    if (link.from >= from && link.from < to) {
+      const { date } = normalizeWikiTarget(link.target)
+      if (date !== undefined) {
+        return date
+      }
     }
-    pos = Math.max(pos, cut.to)
   }
-  kept += appendPlainTextChunk(body, pos, body.length, sortedLiteralRanges)
-  return kept.replace(/\s+/g, ' ').trim()
+  return null
 }
 
 function inAnyRange(index: number, ranges: Span[]): boolean {
@@ -259,6 +253,7 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
   const cuts: Span[] = [] // body coords — syntax to drop from plain text
   const tagExcluded: Span[] = [] // body coords — regions that don't yield tags
   const literalPlainText: Span[] = [] // body coords — regions that render backslashes literally
+  const taskRanges: Span[] = [] // body coords — `Task` node spans, resolved after the walk
 
   tree.iterate({
     enter: (node) => {
@@ -266,6 +261,13 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
 
       if (isSyntaxNode(name)) {
         cuts.push({ from, to })
+      }
+      if (name === 'Task') {
+        // Resolve after the walk: the child `TaskMarker`/emphasis cuts this task
+        // needs to strip its text — and the `[[date]]` due-date link inside it —
+        // aren't collected until their own `enter`. The node span bounds the
+        // due-date search to this task.
+        taskRanges.push({ from, to })
       }
       if (isTagExcludedNode(name)) {
         tagExcluded.push({ from, to })
@@ -305,6 +307,14 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
   const tags = new Map<string, string>()
   collectTags(body, tagExcluded, tags)
 
+  const tasks: ParsedTask[] = []
+  for (const range of taskRanges) {
+    const task = readTask(body, range, bodyOffset, cuts, literalPlainText, wikiLinks)
+    if (task) {
+      tasks.push(task)
+    }
+  }
+
   return {
     path,
     id: stringField(frontmatter, 'id'),
@@ -316,6 +326,7 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
     tags: [...tags.values()],
     headings,
     assets,
+    tasks,
     text: buildPlainText(body, cuts, literalPlainText),
   }
 }

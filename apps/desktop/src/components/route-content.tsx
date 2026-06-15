@@ -6,6 +6,7 @@ import { NotePane } from '@/components/note-pane'
 import { SearchRoute } from '@/components/search-route'
 import { SettingsNavigator } from '@/components/settings/settings-navigator'
 import { SettingsScreen } from '@/components/settings-screen'
+import { TasksScreen } from '@/components/tasks/tasks-screen'
 import { useToday } from '@/lib/use-today'
 import { useRouter } from '@/routing/router'
 import { ScrollRestored } from '@/routing/scroll-restore'
@@ -51,6 +52,10 @@ export function RouteContent(): ReactElement {
       // Owns its scroll container (virtualized table + fixed header), so no
       // ScrollRestored wrapper — same shape as the daily stream.
       return <AllNotesScreen tag={route.tag} />
+    case 'tasks':
+      // Owns its scroll container (a grouped list with a fixed header), so no
+      // ScrollRestored wrapper — same shape as All Notes.
+      return <TasksScreen />
     case 'search':
       return <SearchRoute query={route.query} today={today} />
     case 'chat':
