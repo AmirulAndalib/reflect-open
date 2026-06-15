@@ -88,6 +88,30 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
+  it('does not flash an empty state while archived tasks are still loading', async () => {
+    window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
+    getOpenTasks.mockResolvedValue([])
+    let resolveCompleted: (rows: OpenTask[]) => void = () => {}
+    getCompletedTasks.mockReturnValue(
+      new Promise<OpenTask[]>((resolve) => {
+        resolveCompleted = resolve
+      }),
+    )
+    const view = renderScreen()
+
+    // Open resolved to []; completed still loading → no false "empty" yet.
+    await waitFor(() => expect(getOpenTasks).toHaveBeenCalled())
+    expect(view.queryByText('No tasks to show.')).toBeNull()
+
+    // Completed resolves with a task → it appears (was never reported empty).
+    resolveCompleted([
+      task({ notePath: 'notes/p.md', text: 'archived task', noteTitle: 'P', checked: true }),
+    ])
+    await view.findByText('archived task')
+    expect(view.queryByText('No tasks to show.')).toBeNull()
+    view.unmount()
+  })
+
   it('surfaces a failed query as an alert', async () => {
     getOpenTasks.mockRejectedValue(new Error('index unavailable'))
     const view = renderScreen()

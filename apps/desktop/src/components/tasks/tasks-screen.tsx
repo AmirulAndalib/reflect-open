@@ -74,7 +74,10 @@ export function TasksScreen(): ReactElement {
     enabled: enabled && filters.archived,
   })
 
-  const ready = open !== undefined
+  // When archived is on, the list merges open + completed, so the empty state
+  // must wait for both — else a graph with only completed tasks flashes "No
+  // tasks to show." while the completed query is still loading.
+  const ready = open !== undefined && (!filters.archived || completed !== undefined)
   const { onScroll } = useScrollRestoration(scrollElement, ready)
 
   const all = open ? (filters.archived && completed ? [...open, ...completed] : open) : []
