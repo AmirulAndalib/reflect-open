@@ -370,6 +370,11 @@ function typedDateSuggestions(
   if (parts.length < 2 || parts.length > 3 || !parts.every((part) => /^\d+$/.test(part))) {
     return []
   }
+  // An explicit year must be four digits — "12/25/23" must resolve to nothing,
+  // not the year 23. We don't guess a century for a two-digit year.
+  if (parts.length === 3 && parts[2].length !== 4) {
+    return []
+  }
   const [first, second] = parts.map(Number)
   const year = parts.length === 3 ? Number(parts[2]) : Number(context.today.slice(0, 4))
   // The preferred reading follows the date-format setting; the swapped reading

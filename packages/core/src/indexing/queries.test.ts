@@ -6,6 +6,7 @@ import {
   getNoteIdsByPath,
   getPinnedNotes,
   listDailyNotes,
+  suggestWikiTargets,
 } from './queries'
 
 // A fake bridge resolves `db_query` so the test exercises the real compiled
@@ -170,5 +171,52 @@ describe('getNoteIdsByPath', () => {
     expect(ids.get('notes/0.md')).toBe('id-notes/0.md')
     expect(ids.get('notes/500.md')).toBe('id-notes/500.md')
     expect(ids.get('notes/1000.md')).toBe('id-notes/1000.md')
+  })
+})
+
+describe('suggestWikiTargets', () => {
+  // Wednesday, 1 January 2020, day/month — the date generator's worked-example
+  // clock. This exercises the live glue (generator + merge) the editor hits;
+  // the parts themselves are unit-tested in date-suggestions/suggest.
+  const clock = { today: '2020-01-01', dateFormat: 'dmy' as const }
+
+  it('synthesises a daily target from a fuzzy query when given a clock', async () => {
+    mockInvoke.mockResolvedValue([]) // no title or alias matches
+
+    await expect(suggestWikiTargets('3 days ago', 8, clock)).resolves.toEqual([
+      {
+        target: '2019-12-29',
+        path: null,
+        title: '2019-12-29',
+        alias: null,
+        date: '2019-12-29',
+        phrase: '3 days ago',
+      },
+    ])
+  })
+
+  it('keeps an exact title match above the generated date (folded key threaded into the merge)', async () => {
+    mockInvoke.mockResolvedValue([]) // aliases query + fallback
+    mockInvoke.mockResolvedValueOnce([
+      { path: 'notes/today.md', title: 'Today', title_key: 'today', daily_date: null, mtime: 1 },
+    ])
+
+    const result = await suggestWikiTargets('today', 8, clock)
+
+    expect(result.map((row) => row.target)).toEqual(['Today', '2020-01-01'])
+    expect(result[0].path).toBe('notes/today.md')
+    expect(result[1]).toMatchObject({ date: '2020-01-01', phrase: 'Today', path: null })
+  })
+
+  it('does not synthesise dates without a clock (legacy callers unchanged)', async () => {
+    mockInvoke.mockResolvedValue([])
+    await expect(suggestWikiTargets('today')).resolves.toEqual([])
+  })
+
+  it('still injects the bare daily for a full ISO query without a clock', async () => {
+    mockInvoke.mockResolvedValue([])
+    await expect(suggestWikiTargets('2020-01-01')).resolves.toEqual([
+      { target: '2020-01-01', path: null, title: '2020-01-01', alias: null, date: '2020-01-01' },
+    ])
   })
 })

@@ -105,6 +105,12 @@ describe('generateDateSuggestions', () => {
     it('parses a full slash date and offers only the valid reading', () => {
       expect(gen('23/2/2023', 'dmy')).toEqual([{ date: '2023-02-23', phrase: '23/2/2023' }])
     })
+
+    it('ignores a typed date whose explicit year is not four digits', () => {
+      // "12/25/23" must not resolve to the year 0023.
+      expect(gen('12/25/23', 'mdy')).toEqual([])
+      expect(gen('1/2/99', 'dmy')).toEqual([])
+    })
   })
 
   describe('month-name dates', () => {
