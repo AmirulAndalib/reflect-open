@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createElement, type ReactNode } from 'react'
 import { setBridge } from '@reflect/core'
 import { useNoteTrash } from './use-note-trash'
@@ -12,7 +12,6 @@ let graphValue: GraphValue
 vi.mock('@/providers/graph-provider', () => ({ useGraph: () => graphValue }))
 
 const mockInvoke = vi.fn<(command: string, args: Record<string, unknown>) => Promise<unknown>>()
-setBridge({ invoke: mockInvoke, listen: async () => () => {} })
 
 let client: QueryClient
 function wrapper({ children }: { children: ReactNode }): ReactNode {
@@ -22,8 +21,13 @@ function wrapper({ children }: { children: ReactNode }): ReactNode {
 beforeEach(() => {
   graphValue = { graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 } }
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  setBridge({ invoke: mockInvoke, listen: async () => () => {} })
   mockInvoke.mockReset()
   mockInvoke.mockResolvedValue(null)
+})
+
+afterEach(() => {
+  setBridge(null) // don't leak the mock transport into other suites in this worker
 })
 
 describe('useNoteTrash', () => {

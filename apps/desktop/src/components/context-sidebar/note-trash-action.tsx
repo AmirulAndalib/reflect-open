@@ -21,8 +21,8 @@ interface NoteTrashActionProps {
 }
 
 /**
- * Moves a regular note to the graph-local trash after confirmation. Daily
- * notes return `null` here as a second UI-layer guard; the shared delete helper
+ * Moves a regular note to the system Trash after confirmation. Daily notes
+ * return `null` here as a second UI-layer guard; the shared delete helper
  * enforces the same rule before touching disk.
  */
 export function NoteTrashAction({ path }: NoteTrashActionProps): ReactElement | null {

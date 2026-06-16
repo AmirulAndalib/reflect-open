@@ -12,4 +12,6 @@ import { useListSelection, type ListSelection } from '@/lib/selection/use-list-s
  */
 export type TaskSelection = ListSelection
 
-export const useTaskSelection = useListSelection
+export function useTaskSelection(orderedKeys: readonly string[]): TaskSelection {
+  return useListSelection(orderedKeys)
+}

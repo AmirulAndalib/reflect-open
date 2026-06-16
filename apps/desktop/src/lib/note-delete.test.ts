@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '@reflect/core'
 import type { NoteSession } from '@/editor/note-session'
 import { openSession } from '@/editor/open-documents'
@@ -7,12 +7,16 @@ import { deleteOpenNote } from './note-delete'
 vi.mock('@/editor/open-documents', () => ({ openSession: vi.fn() }))
 
 const mockInvoke = vi.fn<(command: string, args: Record<string, unknown>) => Promise<unknown>>()
-setBridge({ invoke: mockInvoke, listen: async () => () => {} })
 
 beforeEach(() => {
+  setBridge({ invoke: mockInvoke, listen: async () => () => {} })
   mockInvoke.mockReset()
   mockInvoke.mockResolvedValue(null)
   vi.mocked(openSession).mockReset()
+})
+
+afterEach(() => {
+  setBridge(null) // don't leak the mock transport into other suites in this worker
 })
 
 describe('deleteOpenNote', () => {
