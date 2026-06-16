@@ -56,6 +56,7 @@ export function useEditorAutocomplete(): EditorAutocomplete {
       const suggestions = await suggestWikiTargets(query, 8, {
         today: todayIso(),
         dateFormat: settings.dateFormat,
+        weekStartDay: settings.weekStartDay,
       })
       return buildAutocompleteEntries(query, suggestions, { offerCreate: true }).map((entry) => {
         if (entry.kind === 'create') {
@@ -71,11 +72,11 @@ export function useEditorAutocomplete(): EditorAutocomplete {
             },
           }
         }
-        const { target, title, alias, date, path, phrase } = entry.suggestion
+        const { target, title, alias, date, path, generated } = entry.suggestion
         // A generated date leads with its phrase ("Next Friday"), resolved day
         // as the detail; everything else keeps the title/alias/daily form.
-        if (phrase !== undefined && date !== null) {
-          return { target, label: phrase, detail: formatDayLabel(date, settings.dateFormat) }
+        if (generated !== undefined && date !== null) {
+          return { target, label: generated.phrase, detail: formatDayLabel(date, settings.dateFormat) }
         }
         const label = date !== null ? formatDayLabel(date, settings.dateFormat) : title
         const detail =
@@ -89,7 +90,7 @@ export function useEditorAutocomplete(): EditorAutocomplete {
         return { target, label, ...(detail !== undefined ? { detail } : {}) }
       })
     },
-    [graph, settings.dateFormat, createFromAutocomplete],
+    [graph, settings.dateFormat, settings.weekStartDay, createFromAutocomplete],
   )
 
   const onTagSearch = useCallback(

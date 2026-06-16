@@ -53,7 +53,7 @@ describe('buildAutocompleteEntries', () => {
         title: '2019-12-29',
         path: null,
         date: '2019-12-29',
-        phrase: '3 days ago',
+        generated: { phrase: '3 days ago' },
       }),
     ])
     expect(entries.every((entry) => entry.kind === 'suggestion')).toBe(true)

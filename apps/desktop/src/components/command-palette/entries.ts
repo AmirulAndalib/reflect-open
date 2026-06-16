@@ -94,12 +94,12 @@ export function buildPaletteSections(options: {
   // the rest; one row per note, the stronger (title) form wins.
   const notes: NoteEntry[] = []
   const seen = new Set<string>()
-  // Real note matches lead; generated date suggestions (they carry a phrase)
-  // trail them. In the global palette your existing notes should outrank
-  // "Next Monday" — the opposite of the `[[` menu, where dates lead.
+  // Real note matches lead; generated date suggestions trail them. In the
+  // global palette your existing notes should outrank "Next Monday" — the
+  // opposite of the `[[` menu, where dates lead.
   const orderedSuggestions = [
-    ...suggestions.filter((suggestion) => suggestion.phrase === undefined),
-    ...suggestions.filter((suggestion) => suggestion.phrase !== undefined),
+    ...suggestions.filter((suggestion) => suggestion.generated === undefined),
+    ...suggestions.filter((suggestion) => suggestion.generated !== undefined),
   ]
   for (const suggestion of orderedSuggestions) {
     // A pathless suggestion is a valid daily whose file doesn't exist yet
@@ -115,7 +115,7 @@ export function buildPaletteSections(options: {
         title: suggestion.title,
         date: suggestion.date,
         snippet: null,
-        phrase: suggestion.phrase ?? null,
+        phrase: suggestion.generated?.phrase ?? null,
       })
     }
   }

@@ -178,7 +178,7 @@ describe('suggestWikiTargets', () => {
   // Wednesday, 1 January 2020, day/month — the date generator's worked-example
   // clock. This exercises the live glue (generator + merge) the editor hits;
   // the parts themselves are unit-tested in date-suggestions/suggest.
-  const clock = { today: '2020-01-01', dateFormat: 'dmy' as const }
+  const clock = { today: '2020-01-01', dateFormat: 'dmy' as const, weekStartDay: 'monday' as const }
 
   it('synthesises a daily target from a fuzzy query when given a clock', async () => {
     mockInvoke.mockResolvedValue([]) // no title or alias matches
@@ -190,7 +190,7 @@ describe('suggestWikiTargets', () => {
         title: '2019-12-29',
         alias: null,
         date: '2019-12-29',
-        phrase: '3 days ago',
+        generated: { phrase: '3 days ago' },
       },
     ])
   })
@@ -205,7 +205,7 @@ describe('suggestWikiTargets', () => {
 
     expect(result.map((row) => row.target)).toEqual(['Today', '2020-01-01'])
     expect(result[0]!.path).toBe('notes/today.md')
-    expect(result[1]).toMatchObject({ date: '2020-01-01', phrase: 'Today', path: null })
+    expect(result[1]).toMatchObject({ date: '2020-01-01', generated: { phrase: 'Today' }, path: null })
   })
 
   it('does not synthesise dates without a clock (legacy callers unchanged)', async () => {

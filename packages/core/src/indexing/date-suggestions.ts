@@ -7,16 +7,16 @@
  * — then merges them, de-duplicating by resolved day. See
  * `docs/reflect-v1-backlink-menu.md` for the behaviour this ports.
  *
- * Pure and dependency-free: the clock is injected as `today` (an ISO
- * `YYYY-MM-DD` *local* date, computed at the UI edge) and every offset is
- * computed in UTC on the ISO string, so DST can never skip or repeat a day.
+ * Pure: the clock is injected as `today` (an ISO `YYYY-MM-DD` *local* date,
+ * computed at the UI edge) and the calendar arithmetic comes from
+ * `@reflect/utils`, which works in UTC so DST can never skip or repeat a day.
  * Each result is an ISO `YYYY-MM-DD` — the canonical daily-note form — paired
  * with the human `phrase` to show in the menu (`null` for a bare ISO query,
  * which needs no friendlier label than the date itself).
  */
 
-import { isCalendarDate } from '../markdown/resolve'
-import type { DateFormat } from '../settings/schema'
+import { addDaysIso, addMonthsIso, isCalendarDate, isoFromParts, weekdayIso } from '@reflect/utils'
+import type { DateFormat, WeekStartDay } from '../settings/schema'
 
 /** One synthesised daily-note target: the resolved day plus its menu label. */
 export interface DateSuggestion {
@@ -26,12 +26,14 @@ export interface DateSuggestion {
   phrase: string | null
 }
 
-/** What the generator needs from its caller: the local clock and the slash-date order. */
+/** What the generator needs from its caller: the local clock and display preferences. */
 export interface DateSuggestionContext {
   /** Today's local calendar date, ISO `YYYY-MM-DD`. */
   today: string
   /** Reading order for ambiguous typed slash-dates (`mdy` → M/D, `dmy` → D/M). */
   dateFormat: DateFormat
+  /** Which day "this/next/last week" (and weekend) anchor to. */
+  weekStartDay: WeekStartDay
 }
 
 /** At most this many date suggestions survive into the menu. */
@@ -43,46 +45,12 @@ const MIN_PHRASE_CHARS = 3
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-// --- UTC date arithmetic (no date-fns in core; UTC sidesteps DST entirely) ---
-
-function parseUtc(iso: string): Date {
-  const [year, month, day] = iso.split('-').map(Number) as [number, number, number]
-  return new Date(Date.UTC(year, month - 1, day))
-}
-
-function toIso(date: Date): string {
-  return fromParts(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate())
-}
-
-function fromParts(year: number, month: number, day: number): string {
-  const pad = (value: number, width: number): string => String(value).padStart(width, '0')
-  return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`
-}
-
-function addDays(iso: string, days: number): string {
-  const date = parseUtc(iso)
-  date.setUTCDate(date.getUTCDate() + days)
-  return toIso(date)
-}
-
-/** Add months with end-of-month clamping (date-fns semantics): Jan 31 + 1mo → Feb 28. */
-function addMonths(iso: string, months: number): string {
-  const [year, month, day] = iso.split('-').map(Number) as [number, number, number]
-  const zeroBased = month - 1 + months
-  const targetYear = year + Math.floor(zeroBased / 12)
-  const targetMonth = ((zeroBased % 12) + 12) % 12
-  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate()
-  return fromParts(targetYear, targetMonth + 1, Math.min(day, lastDay))
-}
-
-/** Day of week for an ISO date: 0 = Sunday … 6 = Saturday. */
-function weekday(iso: string): number {
-  return parseUtc(iso).getUTCDay()
-}
-
 /** Is `iso` within {@link MAX_RELATIVE_YEARS} of `today`? ISO strings sort chronologically. */
 function withinRelativeLimit(iso: string, today: string): boolean {
-  return iso >= addMonths(today, -12 * MAX_RELATIVE_YEARS) && iso <= addMonths(today, 12 * MAX_RELATIVE_YEARS)
+  return (
+    iso >= addMonthsIso(today, -12 * MAX_RELATIVE_YEARS) &&
+    iso <= addMonthsIso(today, 12 * MAX_RELATIVE_YEARS)
+  )
 }
 
 function titleCase(word: string): string {
@@ -146,7 +114,8 @@ function extractUnit(tokens: readonly string[]): Unit | null {
 function extractDirection(tokens: readonly string[]): Direction | null {
   const hasPast = tokens.includes('ago')
   const hasFuture = tokens.some(
-    (token) => token === 'from' || token === 'now' || token === 'later' || token === 'in' || token === 'hence',
+    (token) =>
+      token === 'from' || token === 'now' || token === 'later' || token === 'in' || token === 'hence',
   )
   if (hasPast && !hasFuture) {
     return 'past'
@@ -160,13 +129,13 @@ function extractDirection(tokens: readonly string[]): Direction | null {
 function shiftByUnit(today: string, unit: Unit, amount: number): string {
   switch (unit) {
     case 'day':
-      return addDays(today, amount)
+      return addDaysIso(today, amount)
     case 'week':
-      return addDays(today, amount * 7)
+      return addDaysIso(today, amount * 7)
     case 'month':
-      return addMonths(today, amount)
+      return addMonthsIso(today, amount)
     case 'year':
-      return addMonths(today, amount * 12)
+      return addMonthsIso(today, amount * 12)
   }
 }
 
@@ -225,12 +194,19 @@ const WEEKDAYS: readonly { word: string; dow: number }[] = [
 
 /** The smallest date on or after `today` whose weekday is `target` (today counts). */
 function upcomingWeekday(today: string, target: number): string {
-  return addDays(today, (target - weekday(today) + 7) % 7)
+  return addDaysIso(today, (target - weekdayIso(today) + 7) % 7)
 }
 
-/** Monday of `today`'s week — a fixed Monday start, independent of any week-start preference. */
-function mondayOfWeek(today: string): string {
-  return addDays(today, -((weekday(today) + 6) % 7))
+/** The first day of `today`'s week, honouring the user's week-start preference. */
+function firstOfWeek(today: string, weekStartDay: WeekStartDay): string {
+  const startDow = weekStartDay === 'sunday' ? 0 : 1
+  return addDaysIso(today, -((weekdayIso(today) - startDow + 7) % 7))
+}
+
+/** The Saturday of `today`'s week (the same week the week-start preference defines). */
+function weekendOf(today: string, weekStartDay: WeekStartDay): string {
+  const startDow = weekStartDay === 'sunday' ? 0 : 1
+  return addDaysIso(firstOfWeek(today, weekStartDay), (6 - startDow + 7) % 7)
 }
 
 function resolveWeekday(today: string, target: number, modifier: Modifier): string {
@@ -238,14 +214,14 @@ function resolveWeekday(today: string, target: number, modifier: Modifier): stri
   if (modifier === 'this') {
     return upcoming
   }
-  return addDays(upcoming, modifier === 'next' ? 7 : -7)
+  return addDaysIso(upcoming, modifier === 'next' ? 7 : -7)
 }
 
 function resolveFromAnchor(anchor: string, modifier: Modifier, stepDays: number): string {
   if (modifier === 'this') {
     return anchor
   }
-  return addDays(anchor, modifier === 'next' ? stepDays : -stepDays)
+  return addDaysIso(anchor, modifier === 'next' ? stepDays : -stepDays)
 }
 
 interface NlUnit {
@@ -255,42 +231,44 @@ interface NlUnit {
   display: string
   /** Sort weight within a modifier: weekdays (0–6) before week/weekend/month. */
   order: number
-  resolve: (today: string, modifier: Modifier) => string
+  resolve: (context: DateSuggestionContext, modifier: Modifier) => string
 }
 
-function nlUnits(): NlUnit[] {
-  const weekdays: NlUnit[] = WEEKDAYS.map(({ word, dow }, index) => ({
-    word,
-    display: titleCase(word),
-    order: index,
-    resolve: (today, modifier) => resolveWeekday(today, dow, modifier),
-  }))
-  return [
-    ...weekdays,
-    {
-      word: 'week',
-      display: 'Week',
-      order: 7,
-      resolve: (today, modifier) => resolveFromAnchor(mondayOfWeek(today), modifier, 7),
+// Built once at module load — the resolvers take all runtime state as arguments.
+const NL_UNITS: readonly NlUnit[] = [
+  ...WEEKDAYS.map(
+    ({ word, dow }, index): NlUnit => ({
+      word,
+      display: titleCase(word),
+      order: index,
+      resolve: (context, modifier) => resolveWeekday(context.today, dow, modifier),
+    }),
+  ),
+  {
+    word: 'week',
+    display: 'Week',
+    order: 7,
+    resolve: (context, modifier) =>
+      resolveFromAnchor(firstOfWeek(context.today, context.weekStartDay), modifier, 7),
+  },
+  {
+    word: 'weekend',
+    display: 'Weekend',
+    order: 8,
+    resolve: (context, modifier) =>
+      resolveFromAnchor(weekendOf(context.today, context.weekStartDay), modifier, 7),
+  },
+  {
+    word: 'month',
+    display: 'Month',
+    order: 9,
+    resolve: (context, modifier) => {
+      const [year, month] = context.today.split('-').map(Number) as [number, number]
+      const first = isoFromParts(year, month, 1)
+      return modifier === 'this' ? first : addMonthsIso(first, modifier === 'next' ? 1 : -1)
     },
-    {
-      word: 'weekend',
-      display: 'Weekend',
-      order: 8,
-      resolve: (today, modifier) => resolveFromAnchor(addDays(mondayOfWeek(today), 5), modifier, 7),
-    },
-    {
-      word: 'month',
-      display: 'Month',
-      order: 9,
-      resolve: (today, modifier) => {
-        const [year, month] = today.split('-').map(Number) as [number, number]
-        const first = fromParts(year, month, 1)
-        return modifier === 'this' ? first : addMonths(first, modifier === 'next' ? 1 : -1)
-      },
-    },
-  ]
-}
+  },
+]
 
 interface NlCandidate {
   phrase: string
@@ -326,15 +304,14 @@ function naturalLanguageSuggestions(
   }
   const candidates: NlCandidate[] = [
     { phrase: 'Today', date: context.today, modifier: null, unitWord: 'today', sort: 0 },
-    { phrase: 'Yesterday', date: addDays(context.today, -1), modifier: null, unitWord: 'yesterday', sort: 1 },
-    { phrase: 'Tomorrow', date: addDays(context.today, 1), modifier: null, unitWord: 'tomorrow', sort: 2 },
+    { phrase: 'Yesterday', date: addDaysIso(context.today, -1), modifier: null, unitWord: 'yesterday', sort: 1 },
+    { phrase: 'Tomorrow', date: addDaysIso(context.today, 1), modifier: null, unitWord: 'tomorrow', sort: 2 },
   ]
-  const units = nlUnits()
   MODIFIERS.forEach((modifier, modifierIndex) => {
-    for (const unit of units) {
+    for (const unit of NL_UNITS) {
       candidates.push({
         phrase: `${titleCase(modifier)} ${unit.display}`,
-        date: unit.resolve(context.today, modifier),
+        date: unit.resolve(context, modifier),
         modifier,
         unitWord: unit.word,
         // Sort by unit first (so `mon` yields the three Mondays before Months),
@@ -353,7 +330,7 @@ function naturalLanguageSuggestions(
 
 function typedDateSuggestions(
   lower: string,
-  echo: string,
+  rawQuery: string,
   context: DateSuggestionContext,
 ): DateSuggestion[] {
   if (ISO_DATE_RE.test(lower)) {
@@ -400,12 +377,12 @@ function typedDateSuggestions(
     if (reading.month < 1 || reading.month > 12) {
       return
     }
-    const iso = fromParts(year, reading.month, reading.day)
+    const iso = isoFromParts(year, reading.month, reading.day)
     if (!isCalendarDate(iso) || seen.has(iso)) {
       return
     }
     seen.add(iso)
-    results.push({ date: iso, phrase: echo })
+    results.push({ date: iso, phrase: rawQuery })
   })
   return results
 }
@@ -466,7 +443,7 @@ function matchDay(token: string): number | null {
 function monthNameSuggestions(
   query: string,
   tokens: readonly string[],
-  echo: string,
+  rawQuery: string,
   context: DateSuggestionContext,
 ): DateSuggestion[] {
   if (query.length < MIN_PHRASE_CHARS) {
@@ -476,23 +453,25 @@ function monthNameSuggestions(
   let day: number | null = null
   let year: number | null = null
   for (const token of tokens) {
-    if (month === null && matchMonth(token) !== null) {
-      month = matchMonth(token)
+    const matchedMonth = matchMonth(token)
+    if (month === null && matchedMonth !== null) {
+      month = matchedMonth
       continue
     }
     if (year === null && /^\d{4}$/.test(token)) {
       year = Number(token)
       continue
     }
-    if (day === null && matchDay(token) !== null) {
-      day = matchDay(token)
+    const matchedDay = matchDay(token)
+    if (day === null && matchedDay !== null) {
+      day = matchedDay
     }
   }
   if (month === null || day === null) {
     return []
   }
-  const iso = fromParts(year ?? Number(context.today.slice(0, 4)), month, day)
-  return isCalendarDate(iso) ? [{ date: iso, phrase: echo }] : []
+  const iso = isoFromParts(year ?? Number(context.today.slice(0, 4)), month, day)
+  return isCalendarDate(iso) ? [{ date: iso, phrase: rawQuery }] : []
 }
 
 /**

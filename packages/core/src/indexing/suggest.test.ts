@@ -104,7 +104,11 @@ describe('mergeDateSuggestions', () => {
       { key: 'mon', limit: 8 },
     )
     expect(result.map((row) => row.target)).toEqual(['2020-01-06', 'Monday Standup'])
-    expect(result[0]).toMatchObject({ date: '2020-01-06', phrase: 'This Monday', path: null })
+    expect(result[0]).toMatchObject({
+      date: '2020-01-06',
+      generated: { phrase: 'This Monday' },
+      path: null,
+    })
   })
 
   it('keeps an exact title match in the very top slot, dates next', () => {
@@ -116,7 +120,7 @@ describe('mergeDateSuggestions', () => {
     expect(result.map((row) => row.target)).toEqual(['Today', '2020-01-01', 'Today Notes'])
   })
 
-  it('reuses an existing daily row (real path) and attaches the phrase once', () => {
+  it('reuses an existing daily row (real path) and marks it generated once', () => {
     const existingDaily = ranked('2020-01-06', {
       target: '2020-01-06',
       path: 'daily/2020-01-06.md',
@@ -128,16 +132,19 @@ describe('mergeDateSuggestions', () => {
       { key: 'mon', limit: 8 },
     )
     expect(result).toHaveLength(2)
-    expect(result[0]).toMatchObject({ path: 'daily/2020-01-06.md', phrase: 'This Monday' })
+    expect(result[0]).toMatchObject({
+      path: 'daily/2020-01-06.md',
+      generated: { phrase: 'This Monday' },
+    })
     expect(result.map((row) => row.target)).toEqual(['2020-01-06', 'Other'])
   })
 
-  it('a bare-ISO date carries no phrase', () => {
+  it('a bare-ISO date is not marked generated', () => {
     const result = mergeDateSuggestions([], [{ date: '2026-06-19', phrase: null }], {
       key: '2026-06-19',
       limit: 8,
     })
-    expect(result[0]!.phrase).toBeUndefined()
+    expect(result[0]!.generated).toBeUndefined()
   })
 
   it('honours the limit across dates plus matches', () => {

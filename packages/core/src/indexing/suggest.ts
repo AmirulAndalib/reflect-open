@@ -9,6 +9,18 @@
 import { foldKey } from '../markdown/keys'
 import type { DateSuggestion } from './date-suggestions'
 
+/**
+ * Marks a suggestion the date generator synthesised from a fuzzy query and
+ * carries its menu label. The presence of this object — not a bare optional
+ * field — is the explicit discriminator hosts branch on (suppress the "Create"
+ * row, trail real notes in the palette); the `phrase` can never drift onto a
+ * non-generated row.
+ */
+export interface GeneratedDate {
+  /** Human label for the menu ("3 days ago", "Next Friday"). */
+  phrase: string
+}
+
 /** A `[[` autocomplete candidate. */
 export interface WikiSuggestion {
   /** What `[[…]]` should contain when chosen (the canonical title, or an ISO date). */
@@ -21,12 +33,8 @@ export interface WikiSuggestion {
   alias: string | null
   /** Set on daily-note suggestions. */
   date: string | null
-  /**
-   * Human label for a generated date suggestion ("3 days ago", "Next Friday").
-   * Present only on rows synthesised by the date generator — its absence is how
-   * hosts tell a generated daily apart from a real note or an existing daily.
-   */
-  phrase?: string
+  /** Set only on rows the date generator synthesised; see {@link GeneratedDate}. */
+  generated?: GeneratedDate
 }
 
 /** One `notes` row considered for suggestion (a title match or recency fill). */
@@ -151,10 +159,13 @@ export function mergeDateSuggestions(
 
   const reused = new Set<WikiSuggestion>()
   const dateRows: WikiSuggestion[] = dates.map(({ date, phrase }) => {
+    // A bare ISO query has no friendlier phrase, so it stays a plain daily (no
+    // `generated` marker) and behaves like an existing daily, not a synthesised one.
+    const generated = phrase === null ? undefined : { phrase }
     const existing = rankedByDate.get(date)
     if (existing !== undefined) {
       reused.add(existing)
-      return phrase === null ? existing : { ...existing, phrase }
+      return generated === undefined ? existing : { ...existing, generated }
     }
     return {
       target: date,
@@ -162,7 +173,7 @@ export function mergeDateSuggestions(
       title: date,
       alias: null,
       date,
-      ...(phrase === null ? {} : { phrase }),
+      ...(generated === undefined ? {} : { generated }),
     }
   })
 

@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { generateDateSuggestions, type DateSuggestion } from './date-suggestions'
-import type { DateFormat } from '../settings/schema'
+import type { DateFormat, WeekStartDay } from '../settings/schema'
 
 /**
  * The V1 backlink-menu doc's worked examples are the spec here: today is
- * Wednesday, 1 January 2020, date format day/month (`dmy`) unless a case says
- * otherwise. See `docs/reflect-v1-backlink-menu.md`.
+ * Wednesday, 1 January 2020, date format day/month (`dmy`) and a Monday week
+ * start unless a case says otherwise. See `docs/reflect-v1-backlink-menu.md`.
  */
 const TODAY = '2020-01-01'
 
-function gen(query: string, dateFormat: DateFormat = 'dmy'): DateSuggestion[] {
-  return generateDateSuggestions(query, { today: TODAY, dateFormat })
+function gen(
+  query: string,
+  dateFormat: DateFormat = 'dmy',
+  weekStartDay: WeekStartDay = 'monday',
+): DateSuggestion[] {
+  return generateDateSuggestions(query, { today: TODAY, dateFormat, weekStartDay })
 }
 
 describe('generateDateSuggestions', () => {
@@ -76,6 +80,24 @@ describe('generateDateSuggestions', () => {
         { date: '2020-01-13', phrase: 'Next Monday' },
         { date: '2019-12-30', phrase: 'Last Monday' },
       ])
+    })
+  })
+
+  describe('week-start preference', () => {
+    // "this week" also prefix-matches "weekend", so the Week row leads and the
+    // Weekend row follows — we assert the leading Week row's anchor date.
+    it('anchors this/next week to a Monday start', () => {
+      expect(gen('this week', 'dmy', 'monday')[0]).toEqual({ date: '2019-12-30', phrase: 'This Week' })
+      expect(gen('next week', 'dmy', 'monday')[0]).toEqual({ date: '2020-01-06', phrase: 'Next Week' })
+    })
+
+    it('anchors this/next week to a Sunday start when configured', () => {
+      expect(gen('this week', 'dmy', 'sunday')[0]).toEqual({ date: '2019-12-29', phrase: 'This Week' })
+      expect(gen('next week', 'dmy', 'sunday')[0]).toEqual({ date: '2020-01-05', phrase: 'Next Week' })
+    })
+
+    it('leaves weekday phrases unaffected by the week start', () => {
+      expect(gen('this monday', 'dmy', 'sunday')).toEqual([{ date: '2020-01-06', phrase: 'This Monday' }])
     })
   })
 

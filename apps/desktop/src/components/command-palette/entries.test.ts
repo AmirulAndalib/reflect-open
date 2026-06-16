@@ -41,7 +41,7 @@ describe('buildPaletteSections', () => {
       title: '2020-01-06',
       alias: null,
       date: '2020-01-06',
-      phrase: 'This Monday',
+      generated: { phrase: 'This Monday' },
     }
     const result = sections({
       query: 'mon',

@@ -9,23 +9,10 @@
  * id when present" is honoured at the lookup layer.
  */
 
+import { isCalendarDate } from '@reflect/utils'
 import { foldKey } from './keys'
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-
-/**
- * Is `value` a real calendar day (not just `YYYY-MM-DD`-shaped)? Callers gate on
- * {@link ISO_DATE_RE} first, so the split always yields three numeric parts.
- */
-export function isCalendarDate(value: string): boolean {
-  const [year, month, day] = value.split('-').map(Number) as [number, number, number]
-  if (month < 1 || month > 12) {
-    return false
-  }
-  // Day 0 of the next month = the last day of `month` (leap-years included).
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
-  return day >= 1 && day <= daysInMonth
-}
 
 /** A wiki-link target normalized for matching. */
 export interface NormalizedTarget {

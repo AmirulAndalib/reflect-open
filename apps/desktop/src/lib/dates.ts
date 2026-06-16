@@ -1,12 +1,16 @@
-import { addDays, format, isSameDay, isSameWeek, isValid, parse } from 'date-fns'
+import { format, isSameDay, isSameWeek, parse } from 'date-fns'
 import type { DateFormat, TimeFormat } from '@reflect/core'
 
 /**
- * The one date module (Plan 06). Daily notes are keyed by **local** calendar
- * dates as ISO `YYYY-MM-DD` strings — "today" follows the user's clock, and all
- * arithmetic round-trips through date-fns so DST transitions can't skip or
- * repeat a day. Nothing else in the app may compute dates by hand.
+ * The app's date layer (Plan 06). Daily notes are keyed by **local** calendar
+ * dates as ISO `YYYY-MM-DD` strings — "today" follows the user's clock. Pure
+ * calendar arithmetic (`addDaysIso`, `isIsoDate`) lives in `@reflect/utils` and
+ * is re-exported here; this module owns the date-fns-backed *display* formatting
+ * and the local clock. Nothing else in the app may compute dates by hand.
  */
+
+// Pure calendar math is shared with the indexing layer — one implementation.
+export { addDaysIso, isIsoDate } from '@reflect/utils'
 
 const ISO_DATE_FORMAT = 'yyyy-MM-dd'
 
@@ -18,19 +22,6 @@ export function parseIsoDate(date: string): Date {
 /** Today's local calendar date as `YYYY-MM-DD`. */
 export function todayIso(): string {
   return format(new Date(), ISO_DATE_FORMAT)
-}
-
-/** Is `value` a real calendar date in ISO `YYYY-MM-DD` form? */
-export function isIsoDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return false
-  }
-  return isValid(parseIsoDate(value))
-}
-
-/** The ISO date `days` after `date` (negative for before). DST-safe. */
-export function addDaysIso(date: string, days: number): string {
-  return format(addDays(parseIsoDate(date), days), ISO_DATE_FORMAT)
 }
 
 /**
