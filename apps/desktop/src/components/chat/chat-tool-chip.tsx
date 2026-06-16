@@ -1,6 +1,6 @@
 import { Fragment, type ReactElement, type ReactNode } from 'react'
 import { CalendarDays, FileText, History, Search } from 'lucide-react'
-import { isTagName, isToolPending, type AssistantPart } from '@reflect/core'
+import { isTagName, isToolPending, type AssistantPart, type NoteHitSummary } from '@reflect/core'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
 import { Spinner } from '@/components/ui/spinner'
@@ -30,6 +30,35 @@ function ChipFrame({ pending, icon, children }: ChipFrameProps): ReactElement {
   )
 }
 
+interface NoteLinksProps {
+  notes: readonly NoteHitSummary[]
+  onOpen: (path: string) => void
+}
+
+function NoteLinks({ notes, onOpen }: NoteLinksProps): ReactElement | null {
+  if (notes.length === 0) {
+    return null
+  }
+
+  return (
+    <>
+      {': '}
+      {notes.map((note, index) => (
+        <Fragment key={`${note.path}-${index}`}>
+          {index > 0 ? ', ' : ''}
+          <button
+            type="button"
+            onClick={() => onOpen(note.path)}
+            className="underline-offset-2 hover:text-text hover:underline"
+          >
+            {note.title}
+          </button>
+        </Fragment>
+      ))}
+    </>
+  )
+}
+
 /**
  * The transparent-context chip for one tool call: what the assistant searched
  * for or listed (and how many notes came back), or which note it read.
@@ -39,6 +68,7 @@ function ChipFrame({ pending, icon, children }: ChipFrameProps): ReactElement {
  */
 export function ChatToolChip({ part }: ChatToolChipProps): ReactElement {
   const { navigate } = useRouter()
+  const openNote = (path: string) => navigate(routeForPath(path))
   const pending = isToolPending(part)
   const call = part.call
 
@@ -49,6 +79,7 @@ export function ChatToolChip({ part }: ChatToolChipProps): ReactElement {
         <span className="truncate">
           Searched “{call.query}”
           {result !== null ? countSuffix(result.hits.length, 'note') : ''}
+          {result !== null ? <NoteLinks notes={result.hits} onOpen={openNote} /> : null}
         </span>
       </ChipFrame>
     )
@@ -77,6 +108,9 @@ export function ChatToolChip({ part }: ChatToolChipProps): ReactElement {
               ? ` — ${result.error}`
               : countSuffix(result.notes.length, 'note')
             : ''}
+          {result !== null && result.error === null ? (
+            <NoteLinks notes={result.notes} onOpen={openNote} />
+          ) : null}
         </span>
       </ChipFrame>
     )
@@ -89,6 +123,7 @@ export function ChatToolChip({ part }: ChatToolChipProps): ReactElement {
         <span className="truncate">
           Listed daily notes {call.start} – {call.end}
           {result !== null ? countSuffix(result.days.length, 'day') : ''}
+          {result !== null ? <NoteLinks notes={result.days} onOpen={openNote} /> : null}
         </span>
       </ChipFrame>
     )
@@ -120,7 +155,7 @@ export function ChatToolChip({ part }: ChatToolChipProps): ReactElement {
               {!pending && note.error === null ? (
                 <button
                   type="button"
-                  onClick={() => navigate(routeForPath(note.path))}
+                  onClick={() => openNote(note.path)}
                   className="underline-offset-2 hover:text-text hover:underline"
                 >
                   {label}

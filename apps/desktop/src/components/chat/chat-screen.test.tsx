@@ -226,6 +226,8 @@ describe('ChatScreen', () => {
     await waitFor(() =>
       expect(view.getByTestId('markdown-preview').textContent).toContain('It ships in June.'),
     )
+    await userEvent.click(view.getByRole('button', { name: 'Atlas' }))
+    expect(probedRoute).toEqual({ kind: 'note', path: 'notes/atlas.md' })
 
     // The turn went out with the keychain key and the full derived history.
     expect(getSecret).toHaveBeenCalledWith('ai-api-key:m1')
@@ -375,9 +377,13 @@ describe('ChatScreen', () => {
 
     await userEvent.click(await view.findByRole('button', { name: '#book' }))
     expect(probedRoute).toEqual({ kind: 'allNotes', tag: 'book' })
+    await userEvent.click(view.getByRole('button', { name: 'Atlas' }))
+    expect(probedRoute).toEqual({ kind: 'note', path: 'notes/atlas.md' })
     // A refused listing shows the refusal, not a misleading count.
     await view.findByText(/Listed #\* notes — Not a tag/)
     await view.findByText(/Listed daily notes 2026-06-01 – 2026-06-11 · 2 days/)
+    await userEvent.click(view.getByRole('button', { name: '2026-06-10' }))
+    expect(probedRoute).toEqual({ kind: 'daily', date: '2026-06-10' })
   })
 
   it('renders streaming text as plain text until the turn settles', async () => {
