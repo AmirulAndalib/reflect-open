@@ -218,8 +218,16 @@ describe('Kysely → db_query bridge', () => {
     const hits = await searchNotes('hello')
     const query = mockInvoke.mock.calls.find(([cmd]) => cmd === 'db_query')
     const sql = (query![1] as { sql: string }).sql
+    const params = (query![1] as { params: unknown[] }).params
     expect(sql).toContain('search_fts')
     expect(sql.toLowerCase()).toContain('match')
+    expect(sql).toContain('inner join "notes"')
+    expect(sql).toContain('CASE WHEN notes.title_key =')
+    expect(sql).toContain('bm25(search_fts, 0, 10.0, 1.0)')
+    expect(sql).toContain('"notes"."is_pinned" desc')
+    expect(sql).toContain('"notes"."mtime" desc')
+    expect(sql).toContain('"notes"."path"')
+    expect(params).toEqual(expect.arrayContaining(['hello', '"hello"', 50]))
     expect(hits).toEqual([{ path: 'notes/a.md', title: 'A' }])
   })
 

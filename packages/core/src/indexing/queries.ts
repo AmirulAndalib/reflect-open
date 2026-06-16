@@ -2,6 +2,7 @@ import type { Database } from '@reflect/db'
 import { sql, type Selectable } from 'kysely'
 import { readNote } from '../graph/commands'
 import {
+  foldKey,
   foldTag,
   normalizeWikiTarget,
   resolveWikiLinkAsync,
@@ -526,11 +527,19 @@ export async function searchNotes(query: string, limit = 50): Promise<SearchHit[
   if (match === null) {
     return [] // nothing to search (FTS5 also errors on an empty MATCH).
   }
+  const titleKey = foldKey(query)
+  const titleRank = sql<number>`CASE WHEN notes.title_key = ${titleKey} THEN 0 ELSE 1 END`
+  const bm25Rank = sql<number>`bm25(search_fts, 0, 10.0, 1.0)`
   return db
     .selectFrom('searchFts')
-    .select(['path', 'title'])
+    .innerJoin('notes', 'notes.path', 'searchFts.path')
+    .select(['searchFts.path as path', 'searchFts.title as title'])
     .where(sql<boolean>`search_fts MATCH ${match}`)
-    .orderBy(sql`rank`)
+    .orderBy(titleRank)
+    .orderBy(bm25Rank)
+    .orderBy('notes.isPinned', 'desc')
+    .orderBy('notes.mtime', 'desc')
+    .orderBy('notes.path')
     .limit(limit)
     .execute()
 }

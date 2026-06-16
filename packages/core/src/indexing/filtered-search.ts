@@ -1,6 +1,7 @@
 import { sql } from 'kysely'
 import { db } from './db'
 import type { ParsedSearchQuery } from './filter-query'
+import { foldKey } from '../markdown'
 import { resolveWikiTarget } from './queries'
 import { HIGHLIGHT_END, HIGHLIGHT_START } from './search'
 import { buildFtsMatch } from './search-query'
@@ -8,9 +9,10 @@ import { buildFtsMatch } from './search-query'
 /**
  * The one palette search (Plan 08): parsed filter tokens become composable
  * predicates on `notes` (EXISTS subqueries against `tags` and the `backlinks`
- * view), with free text constraining and ranking through FTS (title-boosted
- * bm25, highlighted snippets). Filters may be empty — plain text search is the
- * degenerate case, so there is exactly one search path to keep correct.
+ * view), with free text constraining and ranking through FTS (exact-title
+ * promotion, title-boosted bm25, highlighted snippets). Filters may be empty —
+ * plain text search is the degenerate case, so there is exactly one search path
+ * to keep correct.
  * Without text, results order by recency — a (possibly filtered) recall feed.
  */
 
@@ -169,8 +171,12 @@ export async function searchWithFilters(
     return rows.map((row) => ({ ...row, snippet: null }))
   }
 
-  // Free text: constrain + rank + snippet through FTS (title-boosted bm25,
-  // same weights as the unfiltered palette search).
+  // Free text: constrain + rank + snippet through FTS. The exact-title
+  // promotion mirrors V1's strongest useful signal without expanding recall:
+  // prefix/typeahead still belongs to suggestWikiTargets.
+  const titleKey = foldKey(parsed.text)
+  const titleRank = sql<number>`CASE WHEN notes.title_key = ${titleKey} THEN 0 ELSE 1 END`
+  const bm25Rank = sql<number>`bm25(search_fts, 0, 10.0, 1.0)`
   const rows = await query
     .innerJoin('searchFts', 'searchFts.path', 'notes.path')
     .select(
@@ -179,7 +185,11 @@ export async function searchWithFilters(
       ),
     )
     .where(sql<boolean>`search_fts MATCH ${match}`)
-    .orderBy(sql`bm25(search_fts, 0, 10.0, 1.0)`)
+    .orderBy(titleRank)
+    .orderBy(bm25Rank)
+    .orderBy('notes.isPinned', 'desc')
+    .orderBy('notes.mtime', 'desc')
+    .orderBy('notes.path')
     .execute()
   return rows
 }

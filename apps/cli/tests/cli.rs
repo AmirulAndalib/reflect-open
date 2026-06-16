@@ -257,6 +257,61 @@ fn search_boosts_title_matches_over_body_matches() {
 }
 
 #[test]
+fn search_promotes_exact_title_matches_before_body_strength() {
+    let fixture = graph();
+    fixture.write_note("notes/title-hit.md", "# Quokka\nplain note\n");
+    fixture.write_note(
+        "notes/body-hit.md",
+        "# Unrelated\nquokka quokka quokka quokka quokka\n",
+    );
+    fixture.build_index();
+
+    let text = stdout(&reflect(&fixture, &["search", "quokka"]));
+    let title_pos = text.find("notes/title-hit.md").unwrap();
+    let body_pos = text.find("notes/body-hit.md").unwrap();
+    assert!(
+        title_pos < body_pos,
+        "expected the exact title match ranked first:\n{text}"
+    );
+}
+
+#[test]
+fn search_uses_pinned_and_recency_after_bm25_ties() {
+    let fixture = graph();
+    fixture.write_note("notes/alpha.md", "# Same\nquokka\n");
+    fixture.write_note("notes/pinned.md", "# Same\nquokka\n");
+    fixture.write_note("notes/recent.md", "# Same\nquokka\n");
+    fixture.build_index();
+
+    let conn = rusqlite::Connection::open(fixture.root().join(".reflect/index.sqlite")).unwrap();
+    conn.execute(
+        "UPDATE notes SET is_pinned = 1, mtime = 1 WHERE path = 'notes/pinned.md'",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE notes SET is_pinned = 0, mtime = 100 WHERE path = 'notes/recent.md'",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE notes SET is_pinned = 0, mtime = 10 WHERE path = 'notes/alpha.md'",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let text = stdout(&reflect(&fixture, &["search", "quokka"]));
+    let pinned_pos = text.find("notes/pinned.md").unwrap();
+    let recent_pos = text.find("notes/recent.md").unwrap();
+    let alpha_pos = text.find("notes/alpha.md").unwrap();
+    assert!(
+        pinned_pos < recent_pos && recent_pos < alpha_pos,
+        "expected pinned before recent before older when bm25 ties:\n{text}"
+    );
+}
+
+#[test]
 fn search_without_an_index_exits_4() {
     let fixture = graph();
     fixture.write_note("notes/a.md", "anything\n");

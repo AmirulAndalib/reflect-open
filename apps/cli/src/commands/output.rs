@@ -46,7 +46,8 @@ pub struct HitJson {
     pub path: String,
     pub title: String,
     pub snippet: String,
-    /// bm25 rank (more negative = better match).
+    /// bm25 rank component (more negative = better match); final ordering also
+    /// considers exact-title, pinned, recency, and path.
     pub score: f64,
 }
 

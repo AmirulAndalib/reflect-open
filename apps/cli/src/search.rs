@@ -1,9 +1,9 @@
 //! Lexical search over the FTS index. The `MATCH` expression is built exactly
 //! like `buildFtsMatch` (`packages/core/src/indexing/search-query.ts`) and
 //! ranking matches the desktop's palette search (`filtered-search.ts`):
-//! title-boosted bm25 with the same column weights, so the same query against
-//! the same index orders the same in the CLI and the app. The CLI adds its
-//! privacy filter (`notes.is_private = 0`) and FTS5 `snippet()`.
+//! exact-title promotion, title-boosted bm25, pinned, recency, and stable path
+//! ordering. The CLI adds its privacy filter (`notes.is_private = 0`) and FTS5
+//! `snippet()`.
 
 use rusqlite::{params, Connection};
 
@@ -31,7 +31,8 @@ pub struct SearchHit {
     pub title: String,
     /// FTS5 `snippet()` over the indexed plain-text body.
     pub snippet: String,
-    /// Title-boosted bm25 score (more negative = better match).
+    /// Title-boosted bm25 component (more negative = better match); final
+    /// ordering also considers exact-title, pinned, recency, and path.
     pub score: f64,
 }
 
@@ -44,6 +45,7 @@ const RANK_EXPR: &str = "bm25(search_fts, 0, 10.0, 1.0)";
 pub fn search_index(
     conn: &Connection,
     match_expr: &str,
+    title_key: &str,
     limit: usize,
 ) -> Result<Vec<SearchHit>, CliError> {
     let mut statement = conn.prepare(&format!(
@@ -52,10 +54,14 @@ pub fn search_index(
          FROM search_fts
          JOIN notes ON notes.path = search_fts.path
          WHERE search_fts MATCH ?1 AND notes.is_private = 0
-         ORDER BY {RANK_EXPR}
-         LIMIT ?2",
+         ORDER BY CASE WHEN notes.title_key = ?2 THEN 0 ELSE 1 END,
+                  {RANK_EXPR},
+                  notes.is_pinned DESC,
+                  notes.mtime DESC,
+                  notes.path
+         LIMIT ?3",
     ))?;
-    let rows = statement.query_map(params![match_expr, limit as i64], |row| {
+    let rows = statement.query_map(params![match_expr, title_key, limit as i64], |row| {
         Ok(SearchHit {
             path: row.get(0)?,
             title: row.get(1)?,

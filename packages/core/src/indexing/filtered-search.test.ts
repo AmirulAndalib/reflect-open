@@ -84,4 +84,25 @@ describe('searchWithFilters', () => {
     expect(sql).not.toContain('search_fts')
     expect(args['params']).toEqual(['work', 1, startOfLocalDay('2026-01-01'), 12])
   })
+
+  it('ranks text searches by exact title, bm25, pinned, recency, then path', async () => {
+    mockInvoke.mockResolvedValueOnce([
+      { path: 'notes/rust.md', title: 'Rust Notes', daily_date: null, snippet: 'about rust' },
+    ])
+
+    await searchWithFilters(parseSearchQuery('Rust Notes'), 12)
+
+    const [command, args] = mockInvoke.mock.calls[0]!
+    expect(command).toBe('db_query')
+    const query = String(args['sql'])
+    expect(query).toContain('inner join "search_fts"')
+    expect(query).toContain('CASE WHEN notes.title_key =')
+    expect(query).toContain('bm25(search_fts, 0, 10.0, 1.0)')
+    expect(query).toContain('"notes"."is_pinned" desc')
+    expect(query).toContain('"notes"."mtime" desc')
+    expect(query).toContain('"notes"."path"')
+    expect(args['params']).toEqual(
+      expect.arrayContaining(['rust notes', '"Rust" "Notes"', 12]),
+    )
+  })
 })
