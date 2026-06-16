@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createElement, type ReactNode } from 'react'
 import { setBridge } from '@reflect/core'
+import { resetOperations } from '@/lib/operations'
 import { useNoteTrash } from './use-note-trash'
 
 interface GraphValue {
@@ -28,38 +29,39 @@ beforeEach(() => {
 
 afterEach(() => {
   setBridge(null) // don't leak the mock transport into other suites in this worker
+  resetOperations() // drop the operations a failed run leaves lingering
 })
 
 describe('useNoteTrash', () => {
-  it('rejects without trashing when no graph is open (never a silent no-op success)', async () => {
+  it('reports a failure without trashing when no graph is open (never a silent success)', async () => {
     graphValue = { graph: null }
     const { result } = renderHook(() => useNoteTrash(), { wrapper })
 
-    await expect(result.current.trash(['notes/a.md'])).rejects.toThrow(/no graph/i)
+    await expect(result.current.trash(['notes/a.md'])).resolves.toBe(false)
     expect(mockInvoke).not.toHaveBeenCalled()
   })
 
   it('is a no-op for an empty selection', async () => {
     const { result } = renderHook(() => useNoteTrash(), { wrapper })
 
-    await expect(result.current.trash([])).resolves.toEqual([])
+    await expect(result.current.trash([])).resolves.toBe(true)
     expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it('trashes every note and resolves with no leftovers', async () => {
+  it('trashes every note and resolves true', async () => {
     const { result } = renderHook(() => useNoteTrash(), { wrapper })
 
-    let failed: readonly string[] = ['unset']
+    let trashed = false
     await act(async () => {
-      failed = await result.current.trash(['notes/a.md', 'notes/b.md'])
+      trashed = await result.current.trash(['notes/a.md', 'notes/b.md'])
     })
 
-    expect(failed).toEqual([])
+    expect(trashed).toBe(true)
     expect(mockInvoke).toHaveBeenCalledWith('note_delete', { path: 'notes/a.md', generation: 1 })
     expect(mockInvoke).toHaveBeenCalledWith('note_delete', { path: 'notes/b.md', generation: 1 })
   })
 
-  it('keeps going past a per-note failure and returns the leftovers', async () => {
+  it('keeps going past a per-note failure and resolves false', async () => {
     mockInvoke.mockImplementation(async (command, args) => {
       if (command === 'note_delete' && args.path === 'notes/b.md') {
         throw new Error('locked')
@@ -68,13 +70,13 @@ describe('useNoteTrash', () => {
     })
     const { result } = renderHook(() => useNoteTrash(), { wrapper })
 
-    let failed: readonly string[] = []
+    let trashed = true
     await act(async () => {
-      failed = await result.current.trash(['notes/a.md', 'notes/b.md', 'notes/c.md'])
+      trashed = await result.current.trash(['notes/a.md', 'notes/b.md', 'notes/c.md'])
     })
 
-    // Only the failure comes back; the others were still attempted and trashed.
-    expect(failed).toEqual(['notes/b.md'])
+    // The batch reports failure but still attempted (and trashed) the others.
+    expect(trashed).toBe(false)
     expect(mockInvoke).toHaveBeenCalledWith('note_delete', { path: 'notes/a.md', generation: 1 })
     expect(mockInvoke).toHaveBeenCalledWith('note_delete', { path: 'notes/c.md', generation: 1 })
   })

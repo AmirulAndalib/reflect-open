@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { setBridge } from '@reflect/core'
+import { resetOperations, useOperations } from '@/lib/operations'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { AllNotesScreen } from './all-notes-screen'
@@ -97,6 +98,7 @@ const mockInvoke = vi.fn<(command: string, args: Record<string, unknown>) => Pro
 setBridge({ invoke: mockInvoke, listen: async () => () => {} })
 
 beforeEach(() => {
+  resetOperations()
   mockInvoke.mockReset()
   mockInvoke.mockImplementation(async (command, args) => {
     if (command !== 'db_query') {
@@ -129,6 +131,16 @@ function RouteProbe(): ReactElement {
   return <output data-testid="route">{JSON.stringify(route)}</output>
 }
 
+/** Surfaces the operations store so tests can assert a failure was reported. */
+function OperationsProbe(): ReactElement {
+  const operations = useOperations()
+  return (
+    <output data-testid="operations">
+      {operations.map((operation) => `${operation.status}:${operation.message ?? ''}`).join('|')}
+    </output>
+  )
+}
+
 function RoutedScreen(): ReactElement {
   const { route } = useRouter()
   return <AllNotesScreen tag={route.kind === 'allNotes' ? route.tag : null} />
@@ -152,6 +164,7 @@ function renderScreen(
       <RouterProvider initialRoute={{ kind: 'allNotes', tag: null }}>
         <RoutedScreen />
         <RouteProbe />
+        <OperationsProbe />
         <ReArrive />
       </RouterProvider>
     </QueryClientProvider>,
@@ -498,7 +511,7 @@ describe('AllNotesScreen — selection and bulk trash', () => {
     view.unmount()
   })
 
-  it('keeps the confirm open with the error when a delete fails', async () => {
+  it('closes the confirm and reports the failure via the operations toast', async () => {
     mockInvoke.mockImplementation(async (command, args) => {
       if (command === 'note_delete') {
         throw new Error('disk on fire')
@@ -526,69 +539,13 @@ describe('AllNotesScreen — selection and bulk trash', () => {
     await view.findByText('Trash 1 note?')
     fireEvent.click(view.getByRole('button', { name: 'Trash' }))
 
-    // The failure message shows and the dialog stays open — the optimistic
-    // removal pruning the selection to zero must not auto-dismiss it.
-    expect(await view.findByText(/Couldn’t trash 1 note|Couldn't trash 1 note/)).toBeDefined()
-    expect(view.getByText('Trash 1 note?')).toBeDefined()
-    // The optimistically-removed row reappears as the failed delete reconciles.
-    await waitFor(() => expect(view.getByText('Health Stacked')).toBeDefined())
-
-    // Dismissing and reopening starts clean — the prior failure isn't stale.
-    fireEvent.click(view.getByRole('button', { name: 'Cancel' }))
-    await waitFor(() => expect(view.queryByText(/Couldn.t trash/)).toBeNull())
-    fireEvent.click(view.getByText('Shop your health goals.'))
-    fireEvent.click(view.getByRole('button', { name: /Trash \(1\)/ }))
-    await view.findByText('Trash 1 note?')
-    expect(view.queryByText(/Couldn.t trash/)).toBeNull()
-    view.unmount()
-  })
-
-  it('retries only the notes that failed, never re-trashing the ones already gone', async () => {
-    let failTokyo = true
-    mockInvoke.mockImplementation(async (command, args) => {
-      if (command === 'note_delete') {
-        if (args.path === 'notes/tokyo.md' && failTokyo) {
-          failTokyo = false // succeed on the retry
-          throw new Error('locked')
-        }
-        return null
-      }
-      if (command !== 'db_query') {
-        return null
-      }
-      const sql = String(args.sql)
-      if (sql.includes('group by')) {
-        return facetRows
-      }
-      if (sql.includes('"preview"')) {
-        return sql.includes('from "tags"') ? [] : noteRows
-      }
-      if (sql.includes('from "tags"')) {
-        return tagRows
-      }
-      return []
-    })
-    const view = renderScreen()
-    await view.findByText('Health Stacked')
-
-    // Select both, confirm: health trashes, tokyo fails → the dialog narrows to
-    // the one leftover.
-    fireEvent.click(view.getByText('Shop your health goals.'))
-    fireEvent.click(view.getByText('Dandelion chocolate.'), { metaKey: true })
-    fireEvent.click(view.getByRole('button', { name: /Trash \(2\)/ }))
-    await view.findByText('Trash 2 notes?')
-    fireEvent.click(view.getByRole('button', { name: 'Trash' }))
-    await view.findByText('Trash 1 note?') // remaining narrowed to the failure
-
-    // Retry: only tokyo is attempted again, and it succeeds → dialog closes.
-    fireEvent.click(view.getByRole('button', { name: 'Trash' }))
+    // The confirm closes either way; the reason lands in the operations toast.
     await waitFor(() => expect(view.queryByText('Trash 1 note?')).toBeNull())
-
-    const deletes = mockInvoke.mock.calls.filter(([command]) => command === 'note_delete')
-    const healthDeletes = deletes.filter(([, args]) => args.path === 'notes/health.md')
-    const tokyoDeletes = deletes.filter(([, args]) => args.path === 'notes/tokyo.md')
-    expect(healthDeletes).toHaveLength(1) // not re-trashed on the retry
-    expect(tokyoDeletes).toHaveLength(2) // failed once, then retried
+    await waitFor(() =>
+      expect(view.getByTestId('operations').textContent).toContain('failed:disk on fire'),
+    )
+    // The note wasn't actually trashed, so it reconciles back into the list.
+    await waitFor(() => expect(view.getByText('Health Stacked')).toBeDefined())
     view.unmount()
   })
 })
