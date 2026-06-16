@@ -27,8 +27,8 @@ export interface EditorAutocomplete {
  * index's job, so neither menu re-sorts what the host returns. Both handlers
  * are no-ops without a bridge or an open graph.
  *
- * A consumer wires whichever menus it wants — the note pane takes only
- * `onWikilinkSearch`, the task editor takes both — so returning both here never
+ * A consumer wires whichever menus it wants — the note pane and the task editor
+ * both take `onWikilinkSearch` and `onTagSearch` — so returning both here never
  * forces a menu onto an editor that doesn't pass it through.
  */
 export function useEditorAutocomplete(): EditorAutocomplete {
