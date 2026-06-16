@@ -58,7 +58,7 @@ describe('NoteActionsMenu', () => {
 
     await waitFor(() => {
       const write = calls.find((call) => call.command === 'note_write')
-      expect(write?.args.contents).toContain('pinned: true')
+      expect(write?.args['contents']).toContain('pinned: true')
     })
   })
 
