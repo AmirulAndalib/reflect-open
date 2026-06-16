@@ -18,14 +18,26 @@ const BUCKET_FILTERS: ReadonlyArray<{ key: keyof TaskFilters; label: string }> =
   { key: 'other', label: 'Other tasks' },
 ]
 
+interface TaskFiltersMenuProps extends TaskFiltersControl {
+  /** Controlled open state, so ⌘⇧E can toggle the menu (V1). */
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
 /**
  * The Tasks view's "Task filters" dropdown (V1): per-bucket toggles plus
  * "Show archived tasks". Toggling keeps the menu open (`preventDefault` on
- * select) so several filters can be flipped at once.
+ * select) so several filters can be flipped at once. Open state is controlled so
+ * the ⌘⇧E shortcut can open and close it.
  */
-export function TaskFiltersMenu({ filters, toggle }: TaskFiltersControl): ReactElement {
+export function TaskFiltersMenu({
+  filters,
+  toggle,
+  open,
+  onOpenChange,
+}: TaskFiltersMenuProps): ReactElement {
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-text-muted transition-colors hover:text-text focus-visible:text-text focus-visible:outline-none">
         <ListFilter aria-hidden className="size-4" />
         Task filters

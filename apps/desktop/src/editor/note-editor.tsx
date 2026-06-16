@@ -1,6 +1,18 @@
-import { useCallback, useImperativeHandle, useRef, type ReactElement, type Ref } from 'react'
+import {
+  useCallback,
+  useImperativeHandle,
+  useRef,
+  type ReactElement,
+  type ReactNode,
+  type Ref,
+} from 'react'
 import { type MarkMode } from '@meowdown/core'
-import { MeowdownEditor, type EditorHandle, type WikilinkSearchHandler } from '@meowdown/react'
+import {
+  MeowdownEditor,
+  type EditorHandle,
+  type TagSearchHandler,
+  type WikilinkSearchHandler,
+} from '@meowdown/react'
 import '@meowdown/core/style.css'
 import '@meowdown/react/style.css'
 import { BulletAfterHeadingKeymap } from '@/editor/bullet-after-heading-keymap'
@@ -53,6 +65,8 @@ interface NoteEditorProps {
   onWikiLinkClick?: (target: string) => void
   /** Search notes for the `[[` autocomplete menu. */
   onWikilinkSearch?: WikilinkSearchHandler
+  /** Search tags for the `#` autocomplete menu. */
+  onTagSearch?: TagSearchHandler
   /**
    * Ghost text over a leading empty H1 (the new-note flow's "Untitled");
    * omitted for documents without title semantics (the daily stream).
@@ -66,6 +80,12 @@ interface NoteEditorProps {
   className?: string
   /** Imperative handle (React 19 ref-as-prop). */
   handleRef?: Ref<NoteEditorHandle>
+  /**
+   * Extra nodes rendered inside meowdown's ProseKit context (rich modes) — e.g.
+   * a feature keymap via `useKeymap`. They mount alongside the always-on
+   * bullet-after-heading keymap.
+   */
+  children?: ReactNode
 }
 
 export function NoteEditor({
@@ -79,6 +99,8 @@ export function NoteEditor({
   onImageSaveError,
   onWikiLinkClick,
   onWikilinkSearch,
+  onTagSearch,
+  children,
   titlePlaceholder,
   className,
   handleRef,
@@ -140,11 +162,13 @@ export function NoteEditor({
       onDocChange={handleDocChange}
       onWikilinkClick={handleWikilinkClick}
       onWikilinkSearch={onWikilinkSearch}
+      onTagSearch={onTagSearch}
       resolveImageUrl={handleResolveImageUrl}
       onImagePaste={handleImagePaste}
       onImageSaveError={handleImageSaveError}
     >
       <BulletAfterHeadingKeymap enabled={bulletAfterHeading} />
+      {children}
     </MeowdownEditor>
   )
 }

@@ -1,6 +1,5 @@
 import { useCallback, useRef, type ReactElement } from 'react'
-import { type WikilinkItem } from '@meowdown/react'
-import { hasBridge, isDaily, suggestWikiTargets } from '@reflect/core'
+import { isDaily } from '@reflect/core'
 import { BacklinksPanel } from '@/components/backlinks-panel'
 import { InlineAlert } from '@/components/inline-alert'
 import { NoteConflictBanner } from '@/components/note-conflict-banner'
@@ -8,12 +7,11 @@ import { ProtectedNoteView } from '@/components/protected-note-view'
 import { SyncConflictNotice } from '@/components/sync-conflict-notice'
 import { editorBodyWithDefaultBullet } from '@/editor/default-bullet'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
+import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
 import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
 import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
-import { buildAutocompleteEntries } from '@/editor/wiki-autocomplete-entries'
-import { createNoteWithTitle, untitledNoteSeed } from '@/lib/create-note'
-import { formatDayLabel } from '@/lib/dates'
+import { untitledNoteSeed } from '@/lib/create-note'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
@@ -106,53 +104,7 @@ export function NotePane({
     saveError: imageSaveError,
   } = useImagePersistence(graphRoot, generation)
   const onWikiLinkClick = useWikiLinkNavigation(generation)
-
-  // The `[[` autocomplete's create row: make the file; the menu inserts the
-  // link text either way (a failed create just leaves an unresolved link).
-  const createFromAutocomplete = useCallback(
-    async (title: string) => {
-      if (generation !== null) {
-        await createNoteWithTitle(title, generation)
-      }
-    },
-    [generation],
-  )
-
-  // The `[[` menu's rows: ranked index suggestions plus a trailing "Create"
-  // row. meowdown owns the menu UI and gives us the (lowercased, punctuation
-  // stripped) query; ranking stays the index's job, so the menu never re-sorts.
-  const onWikilinkSearch = useCallback(
-    async (query: string): Promise<WikilinkItem[]> => {
-      if (!hasBridge() || graph === null) {
-        return []
-      }
-      const suggestions = await suggestWikiTargets(query)
-      return buildAutocompleteEntries(query, suggestions, { offerCreate: true }).map((entry) => {
-        if (entry.kind === 'create') {
-          return {
-            target: entry.title,
-            label: `Create “${entry.title}”`,
-            // Insert happens in the menu; create the note in the background.
-            onSelect: () => {
-              void createFromAutocomplete(entry.title)
-            },
-          }
-        }
-        const { target, title, alias, date, path } = entry.suggestion
-        const label = date !== null ? formatDayLabel(date, settings.dateFormat) : title
-        const detail =
-          alias !== null
-            ? `${alias} → ${title}`
-            : date !== null
-              ? path === null
-                ? `${date} · new`
-                : date
-              : undefined
-        return { target, label, detail }
-      })
-    },
-    [graph, settings.dateFormat, createFromAutocomplete],
-  )
+  const { onWikilinkSearch } = useEditorAutocomplete()
 
   const bindEditor = document.bindEditor
   const handleRef = useCallback(

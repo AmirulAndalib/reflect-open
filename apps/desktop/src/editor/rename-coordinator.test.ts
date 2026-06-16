@@ -109,6 +109,8 @@ function fakeSession(content: string): NoteSession & {
     liveContent: () => content,
     updateFrontmatter: vi.fn(() => true),
     commitTaskToggle: async () => false,
+    commitTaskEdit: async () => false,
+    commitTaskRemove: async () => false,
     dispose: () => {},
     discard: () => {},
   }

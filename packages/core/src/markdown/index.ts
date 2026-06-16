@@ -39,10 +39,16 @@ export {
 export {
   appendBlock,
   appendUnderHeading,
+  appendTaskLine,
+  editTaskLine,
+  removeTaskLine,
   renameWikiLink,
+  setTaskDueDate,
+  clearTaskDueDate,
   toggleTaskMarker,
   TaskStaleError,
 } from './edit'
+export { parseTaskMarker } from './task-marker'
 export {
   detectConflictMarkers,
   resolveConflictMarkers,

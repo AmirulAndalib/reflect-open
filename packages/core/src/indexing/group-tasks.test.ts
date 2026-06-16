@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupTasks } from './group-tasks'
+import { groupTasks, taskDateBucket } from './group-tasks'
 import type { OpenTask } from './queries'
 
 const TODAY = '2026-06-14'
@@ -23,6 +23,22 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
     ...overrides,
   }
 }
+
+describe('taskDateBucket', () => {
+  it('classifies one task by the same rules as the grouping', () => {
+    // Undated → grouped under its note.
+    expect(taskDateBucket(task(), TODAY)).toBe('note')
+    // A bare daily-note task (no due date) is Current even when the day is past.
+    expect(taskDateBucket(task({ dailyDate: PAST }), TODAY)).toBe('current')
+    expect(taskDateBucket(task({ dailyDate: TODAY }), TODAY)).toBe('current')
+    expect(taskDateBucket(task({ dailyDate: FUTURE }), TODAY)).toBe('upcoming')
+    // Overdue keys off an explicit past due date alone.
+    expect(taskDateBucket(task({ dueDate: PAST }), TODAY)).toBe('overdue')
+    expect(taskDateBucket(task({ dueDate: FUTURE }), TODAY)).toBe('upcoming')
+    // An explicit due date overrides the note's daily date, both directions.
+    expect(taskDateBucket(task({ dueDate: FUTURE, dailyDate: PAST }), TODAY)).toBe('upcoming')
+  })
+})
 
 describe('groupTasks', () => {
   it('treats a bare task in a past daily note as Current, not Overdue (V1 asymmetry)', () => {

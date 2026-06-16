@@ -1,9 +1,10 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { errorMessage, type OpenTask } from '@reflect/core'
+import { useMutation } from '@tanstack/react-query'
+import { type OpenTask } from '@reflect/core'
 import { toggleTask } from '@/lib/note-task'
-import { startOperation } from '@/lib/operations'
-import { sameTask } from '@/lib/tasks/task-identity'
-import { completedTasksQueryKey, tasksQueryKey } from '@/lib/tasks/tasks-query'
+import { forgetRecentlyCompleted, markRecentlyCompleted } from '@/lib/tasks/recently-completed'
+import { asCompleted, withoutTasks } from '@/lib/tasks/task-cache'
+import { taskKey } from '@/lib/tasks/task-identity'
+import { useTaskCacheWriter } from '@/lib/tasks/use-task-cache'
 import { useGraph } from '@/providers/graph-provider'
 
 /**
@@ -13,45 +14,40 @@ import { useGraph } from '@/providers/graph-provider'
  * (stale index, or the note is busy) via the operations toast. `complete` is a
  * no-op while a write is in flight or before a graph generation is available.
  *
- * The optimistic edit mirrors the real transition across BOTH task caches: drop
- * the task from the open list and, when the completed ("show archived") list is
- * loaded, add it there as checked — so with archived on the row stays visible,
- * struck through, instead of vanishing until the refetch. When archived is off
- * the completed cache is absent and that half is a no-op.
+ * The optimistic edit mirrors the real transition across BOTH task caches —
+ * dropping the row from the open list and, when the completed ("show archived")
+ * list is loaded, prepending it there as checked — via the shared
+ * {@link useTaskCacheWriter}, the same path the bulk {@link useTaskActions} uses,
+ * so a one-row completion and a bulk completion can't drift apart.
  *
  * Pulled out of {@link TaskRow} so the cache surgery stays testable apart from
  * rendering, and the row reads as plain markup.
  */
 export function useCompleteTask(task: OpenTask): { complete: () => void; isPending: boolean } {
   const { graph } = useGraph()
-  const queryClient = useQueryClient()
-  const openKey = tasksQueryKey(graph?.root)
-  const completedKey = completedTasksQueryKey(graph?.root)
+  const cache = useTaskCacheWriter()
 
+  const root = graph?.root ?? null
+  // Pass the task *into* the mutation rather than closing over the prop: completing
+  // optimistically flips the struck row's `raw` to `[x]` (so a later reopen/edit
+  // can locate it), which re-renders this row with a `[x]` prop before the write
+  // runs — and `toggleTask` must use the pre-toggle `[ ]` line still on disk.
   const mutation = useMutation({
-    mutationFn: (generation: number) => toggleTask(task, generation),
-    onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: openKey })
-      await queryClient.cancelQueries({ queryKey: completedKey })
-      const previousOpen = queryClient.getQueryData<OpenTask[]>(openKey)
-      const previousCompleted = queryClient.getQueryData<OpenTask[]>(completedKey)
-      queryClient.setQueryData<OpenTask[]>(openKey, (rows) =>
-        rows?.filter((row) => !sameTask(row, task)),
+    mutationFn: ({ task: target, generation }: { task: OpenTask; generation: number }) =>
+      toggleTask(target, generation),
+    onMutate: async ({ task: target }: { task: OpenTask; generation: number }) => {
+      const snapshot = await cache.snapshot()
+      cache.patch(
+        (rows) => withoutTasks(rows, [target]),
+        (rows) => asCompleted(rows, [target]),
       )
-      // Only when the completed list is loaded (archived on); else a no-op.
-      queryClient.setQueryData<OpenTask[]>(completedKey, (rows) =>
-        rows ? [{ ...task, checked: true }, ...rows.filter((row) => !sameTask(row, task))] : rows,
-      )
-      return { previousOpen, previousCompleted }
+      // Keep it showing struck in the active list (V1's middle state) until archived.
+      markRecentlyCompleted(root, [target])
+      return snapshot
     },
-    onError: (cause, _generation, context) => {
-      if (context?.previousOpen !== undefined) {
-        queryClient.setQueryData(openKey, context.previousOpen)
-      }
-      if (context?.previousCompleted !== undefined) {
-        queryClient.setQueryData(completedKey, context.previousCompleted)
-      }
-      startOperation('Completing task').fail(errorMessage(cause))
+    onError: (cause, { task: target }, context) => {
+      cache.rollback(context, 'Completing task', cause)
+      forgetRecentlyCompleted(root, [taskKey(target)])
     },
   })
 
@@ -62,7 +58,7 @@ export function useCompleteTask(task: OpenTask): { complete: () => void; isPendi
       if (generation === undefined || mutation.isPending) {
         return
       }
-      mutation.mutate(generation)
+      mutation.mutate({ task, generation })
     },
   }
 }

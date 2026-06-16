@@ -63,6 +63,7 @@ export {
   getPinnedNotes,
   searchNotes,
   suggestWikiTargets,
+  suggestTags,
   getIndexedHashes,
   listDailyNotes,
   resolveWikiTarget,
@@ -76,8 +77,9 @@ export {
   type OpenTask,
   type PinnedNote,
   type SearchHit,
+  type TagSuggestion,
 } from './queries'
-export { groupTasks, type TaskGroup, type TaskGroupKind } from './group-tasks'
+export { groupTasks, taskDateBucket, type TaskGroup, type TaskGroupKind } from './group-tasks'
 export {
   listNotes,
   listNoteTags,

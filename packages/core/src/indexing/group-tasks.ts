@@ -35,6 +35,26 @@ function effectiveDate(task: OpenTask): string | null {
   return task.dueDate ?? task.dailyDate
 }
 
+/**
+ * Which bucket a single task falls in, by the same rules {@link groupTasks} uses
+ * — so a caller (e.g. the view's Return-to-add, deciding which note a new task
+ * joins) can place one task without rebuilding every group. `today` is an ISO
+ * `YYYY-MM-DD`. `'note'` means undated (grouped under its source note).
+ */
+export function taskDateBucket(task: OpenTask, today: string): TaskGroupKind {
+  const date = effectiveDate(task)
+  if (date === null) {
+    return 'note'
+  }
+  if (task.dueDate !== null && task.dueDate < today) {
+    return 'overdue'
+  }
+  if (date > today) {
+    return 'upcoming'
+  }
+  return 'current'
+}
+
 /** Within a date bucket: earliest effective date first, then document order. */
 function compareDated(left: OpenTask, right: OpenTask): number {
   // Every task in a date bucket has an effective date; ISO `YYYY-MM-DD` sorts

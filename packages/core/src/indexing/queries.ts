@@ -191,6 +191,35 @@ function likeContains(key: string): string {
   return `%${key.replaceAll(/[\\%_]/g, (match) => `\\${match}`)}%`
 }
 
+/** One `#tag` autocomplete candidate: display casing + how many notes carry it. */
+export interface TagSuggestion {
+  tag: string
+  count: number
+}
+
+/**
+ * `#` autocomplete candidates for `query` (Plan 18): tags whose folded key
+ * contains the query, most-used first, deduped on the stored `tag_key` so
+ * `#Book`/`#book` are one row with one deterministic casing. An empty query
+ * suggests the most-used tags. Mirrors how {@link suggestWikiTargets} feeds the
+ * `[[` menu — the host ranks, the editor's menu does not re-sort.
+ */
+export async function suggestTags(query: string, limit = 8): Promise<TagSuggestion[]> {
+  const key = foldTag(query.trim())
+  let candidates = db
+    .selectFrom('tags')
+    .select([sql<string>`min(tags.tag)`.as('tag'), sql<number>`count(*)`.as('count')])
+    .groupBy('tags.tagKey')
+    .orderBy(sql`count(*)`, 'desc')
+    .orderBy(sql`min(tags.tag)`)
+    .limit(limit)
+  if (key !== '') {
+    candidates = candidates.where(sql<boolean>`tag_key LIKE ${likeContains(key)} ESCAPE '\\'`)
+  }
+  const rows = await candidates.execute()
+  return rows.map((row) => ({ tag: row.tag, count: Number(row.count) }))
+}
+
 /**
  * `[[` autocomplete candidates for `query` (Plan 07): title and alias contains-
  * matches ranked by {@link rankWikiSuggestions} (exact < prefix < substring,

@@ -780,3 +780,100 @@ describe('commitTaskToggle', () => {
     await expect(h.session.commitTaskToggle(firstTask(source))).rejects.toBeInstanceOf(TaskStaleError)
   })
 })
+
+describe('commitTaskEdit', () => {
+  it('rewrites the content while preserving unsaved edits, reflected in the editor', async () => {
+    const source = '# Todo\n\n- [ ] buy milk\n'
+    const h = harness({ disk: source })
+    h.session.load()
+    await settled()
+
+    h.session.editorChanged('# Todo\n\n- [ ] buy milk\n\njot\n') // unsaved when the edit arrives
+    expect(await h.session.commitTaskEdit(firstTask(source), 'buy oat milk')).toBe(true)
+    expect(h.writes.at(-1)?.contents).toBe('# Todo\n\n- [ ] buy oat milk\n\njot\n')
+    expect(h.applied.at(-1)).toBe('# Todo\n\n- [ ] buy oat milk\n\njot\n')
+  })
+
+  it('keeps a checked marker when editing a completed task', async () => {
+    const source = '- [x] done\n'
+    const h = harness({ disk: source })
+    h.session.load()
+    await settled()
+
+    expect(await h.session.commitTaskEdit(firstTask(source), 'really done')).toBe(true)
+    expect(h.writes.at(-1)?.contents).toBe('- [x] really done\n')
+  })
+
+  it('refuses (returns false) a protected note rather than write', async () => {
+    const h = harness({ disk: '- [ ] x\n', classify: () => 'lossy' })
+    h.session.load()
+    await settled()
+
+    expect(await h.session.commitTaskEdit(firstTask('- [ ] x\n'), 'y')).toBe(false)
+    expect(h.writes).toEqual([])
+  })
+
+  it('reverts and surfaces the error when the write fails', async () => {
+    const source = '- [ ] x\n'
+    const h = harness({ disk: source })
+    h.session.load()
+    await settled()
+
+    h.failWrites('disk full')
+    await expect(h.session.commitTaskEdit(firstTask(source), 'y')).rejects.toThrow('disk full')
+    expect(h.session.content()).toBe('- [ ] x\n')
+    expect(h.applied.at(-1)).toBe('- [ ] x\n')
+    expect(h.snapshots.at(-1)?.error).toBeNull()
+  })
+
+  it('propagates TaskStaleError when the task line is gone', async () => {
+    const source = '- [ ] gone\n'
+    const h = harness({ disk: source })
+    h.session.load()
+    await settled()
+
+    h.session.editorChanged('- [ ] something else entirely\n')
+    await expect(h.session.commitTaskEdit(firstTask(source), 'y')).rejects.toBeInstanceOf(
+      TaskStaleError,
+    )
+  })
+})
+
+describe('commitTaskRemove', () => {
+  it('removes the task line while preserving unsaved edits, reflected in the editor', async () => {
+    const source = '- [ ] buy milk\n- [ ] call mum\n'
+    const h = harness({ disk: source })
+    h.session.load()
+    await settled()
+
+    expect(await h.session.commitTaskRemove(firstTask(source))).toBe(true)
+    expect(h.writes.at(-1)?.contents).toBe('- [ ] call mum\n')
+    expect(h.applied.at(-1)).toBe('- [ ] call mum\n')
+  })
+
+  it('refuses (returns false) while a conflict is parked', async () => {
+    const source = '- [ ] x\n'
+    const h = harness({ disk: source })
+    h.session.load()
+    await settled()
+
+    h.session.editorChanged('- [ ] x edited\n')
+    h.setDisk('- [ ] x external\n')
+    h.session.externalChanged()
+    await settled()
+
+    expect(await h.session.commitTaskRemove(firstTask(source))).toBe(false)
+  })
+
+  it('reverts and surfaces the error when the write fails', async () => {
+    const source = '- [ ] x\n'
+    const h = harness({ disk: source })
+    h.session.load()
+    await settled()
+
+    h.failWrites('disk full')
+    await expect(h.session.commitTaskRemove(firstTask(source))).rejects.toThrow('disk full')
+    expect(h.session.content()).toBe('- [ ] x\n')
+    expect(h.applied.at(-1)).toBe('- [ ] x\n')
+  })
+})

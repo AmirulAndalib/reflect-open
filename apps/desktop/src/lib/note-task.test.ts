@@ -1,6 +1,6 @@
 import { TaskStaleError } from '@reflect/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { NoteBusyError, toggleTask } from './note-task'
+import { deleteTask, editTask, NoteBusyError, toggleTask } from './note-task'
 
 const openSession = vi.hoisted(() => vi.fn())
 vi.mock('@/editor/open-documents', () => ({ openSession }))
@@ -20,6 +20,50 @@ beforeEach(() => {
   openSession.mockReset()
   readNote.mockReset()
   writeNote.mockReset()
+})
+
+const flushMicrotasks = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+describe('write serialization', () => {
+  it('serializes concurrent writes to the same note — no read/write interleave', async () => {
+    openSession.mockReturnValue(null)
+    readNote.mockResolvedValue('- [ ] do it\n')
+    let releaseFirstWrite: () => void = () => {}
+    let writes = 0
+    writeNote.mockImplementation(() => {
+      writes += 1
+      return writes === 1
+        ? new Promise<void>((resolve) => {
+            releaseFirstWrite = resolve
+          })
+        : Promise.resolve()
+    })
+
+    const first = toggleTask(task, 7)
+    const second = toggleTask(task, 7)
+    await flushMicrotasks()
+
+    // The first write is in flight; the second hasn't even read yet — it's queued.
+    expect(readNote).toHaveBeenCalledTimes(1)
+    expect(writeNote).toHaveBeenCalledTimes(1)
+
+    releaseFirstWrite()
+    await Promise.all([first, second])
+    // The second only read after the first's write settled.
+    expect(readNote).toHaveBeenCalledTimes(2)
+    expect(writeNote).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the chain alive when a write fails', async () => {
+    openSession.mockReturnValue(null)
+    readNote.mockResolvedValue('- [ ] do it\n')
+    writeNote.mockRejectedValueOnce(new Error('disk full')).mockResolvedValue(undefined)
+
+    const first = toggleTask(task, 7)
+    const second = toggleTask(task, 7)
+    await expect(first).rejects.toThrow('disk full')
+    await expect(second).resolves.toBeUndefined() // not wedged by the prior failure
+  })
 })
 
 describe('toggleTask', () => {
@@ -57,6 +101,65 @@ describe('toggleTask', () => {
     readNote.mockResolvedValue('- [ ] something else entirely\n')
 
     await expect(toggleTask(task, 7)).rejects.toBeInstanceOf(TaskStaleError)
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+})
+
+describe('editTask', () => {
+  it('writes the rewritten content to disk when the note is not open', async () => {
+    openSession.mockReturnValue(null)
+    readNote.mockResolvedValue('- [ ] do it\n')
+    writeNote.mockResolvedValue(undefined)
+
+    await editTask(task, 'do it well', 7)
+    expect(writeNote).toHaveBeenCalledWith('notes/a.md', '- [ ] do it well\n', 7)
+  })
+
+  it('routes the new content through the live session when the note is open', async () => {
+    const commitTaskEdit = vi.fn().mockResolvedValue(true)
+    openSession.mockReturnValue({ commitTaskEdit })
+
+    await editTask(task, 'do it well', 7)
+    expect(commitTaskEdit).toHaveBeenCalledWith({ markerOffset: 2, raw: '[ ] do it' }, 'do it well')
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('throws NoteBusyError when the session declines, never clobbering via disk', async () => {
+    openSession.mockReturnValue({ commitTaskEdit: vi.fn().mockResolvedValue(false) })
+    await expect(editTask(task, 'x', 7)).rejects.toBeInstanceOf(NoteBusyError)
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('propagates TaskStaleError from the disk path when the index is stale', async () => {
+    openSession.mockReturnValue(null)
+    readNote.mockResolvedValue('- [ ] something else entirely\n')
+    await expect(editTask(task, 'x', 7)).rejects.toBeInstanceOf(TaskStaleError)
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+})
+
+describe('deleteTask', () => {
+  it('removes the task line on disk when the note is not open', async () => {
+    openSession.mockReturnValue(null)
+    readNote.mockResolvedValue('- [ ] do it\n- [ ] keep\n')
+    writeNote.mockResolvedValue(undefined)
+
+    await deleteTask(task, 7)
+    expect(writeNote).toHaveBeenCalledWith('notes/a.md', '- [ ] keep\n', 7)
+  })
+
+  it('routes through the live session when the note is open', async () => {
+    const commitTaskRemove = vi.fn().mockResolvedValue(true)
+    openSession.mockReturnValue({ commitTaskRemove })
+
+    await deleteTask(task, 7)
+    expect(commitTaskRemove).toHaveBeenCalledWith({ markerOffset: 2, raw: '[ ] do it' })
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
+  it('throws NoteBusyError when the session declines, never clobbering via disk', async () => {
+    openSession.mockReturnValue({ commitTaskRemove: vi.fn().mockResolvedValue(false) })
+    await expect(deleteTask(task, 7)).rejects.toBeInstanceOf(NoteBusyError)
     expect(writeNote).not.toHaveBeenCalled()
   })
 })

@@ -1,6 +1,8 @@
 import {
+  editTaskLine,
   errorMessage,
   isAppError,
+  removeTaskLine,
   splitFrontmatter,
   toggleTaskMarker,
   upsertFrontmatter,
@@ -273,6 +275,21 @@ export interface NoteSession {
    * exact-fidelity note stays byte-identical apart from the marker).
    */
   commitTaskToggle: (task: TaskMarker) => Promise<boolean>
+  /**
+   * Replace a task's text from the inline Tasks editor (Plan 18): rewrites the
+   * marker's content line in the live buffer (preserving the marker and so the
+   * checked state), reflects it in the open editor, and flushes now. Same gating,
+   * `false`-when-busy, transactional revert, and `TaskStaleError` propagation as
+   * {@link commitTaskToggle}. `content` is one line of markdown.
+   */
+  commitTaskEdit: (task: TaskMarker, content: string) => Promise<boolean>
+  /**
+   * Delete a task's whole line from the Tasks view (Plan 18) — the ⌫/⌘⌫ path.
+   * Removes the physical line from the live buffer and flushes now; same gating,
+   * `false`-when-busy, transactional revert, and `TaskStaleError` propagation as
+   * {@link commitTaskToggle}.
+   */
+  commitTaskRemove: (task: TaskMarker) => Promise<boolean>
   /** Flush pending edits and detach: no further snapshots are emitted. */
   dispose: () => void
   /**
@@ -669,32 +686,37 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     return true
   }
 
-  async function commitTaskToggle(task: TaskMarker): Promise<boolean> {
-    // Refuse when the session can't safely take a body edit: no write channel,
-    // disposed, protected (read-only), still loading, or a parked conflict. The
-    // caller then refuses rather than risk a disk write clobbering the buffer.
+  /**
+   * Apply a Tasks-view body edit (toggle / edit / delete, Plan 18) transactionally:
+   * `transform` rewrites the live document — header plus the unsaved buffer, so
+   * concurrent editor edits survive — then we land it now so the Tasks view
+   * refreshes promptly. Returns false when the session can't safely take a body
+   * edit (no write channel, disposed, protected/read-only, still loading, or a
+   * parked conflict) so the caller refuses rather than clobber the buffer via disk.
+   * `transform` runs before any mutation, so a `TaskStaleError` (the marker can't
+   * be located) propagates with nothing changed. And the write is all-or-nothing:
+   * a failed flush reverts the in-memory edit so the editor and the Tasks list
+   * can't diverge, then re-throws the failure.
+   */
+  async function commitBodyEdit(transform: (full: string) => string): Promise<boolean> {
     if (io.write === null || disposed || isProtected || status !== 'ready' || conflict !== null) {
       return false
     }
-    // Snapshot the pre-toggle document so a failed write reverts cleanly.
     const previousHeader = header
     const previousBuffer = buffer
-    // Toggle the live document — header plus the unsaved buffer — so concurrent
-    // edits survive. `toggleTaskMarker` relocates by `raw` if the offset drifted
-    // and throws TaskStaleError when it can't; that propagates to the caller.
-    const toggled = toggleTaskMarker(header + buffer, task)
-    const doc = splitDoc(toggled.source)
+    const doc = splitDoc(transform(header + buffer))
     header = doc.header
     buffer = doc.body
-    applyToEditor(doc.body) // the open editor shows the toggled checkbox
+    applyToEditor(doc.body) // the open editor shows the edited line
     dirty = header + buffer !== disk
+    // A no-op edit (transform changed nothing) writes nothing, so a *prior*
+    // surfaced save error must not be mistaken for this edit's failure.
+    const shouldPersist = dirty
     emit()
-    await flush() // land it now so the Tasks view refreshes promptly
+    await flush()
     // `flush()` resolves even when the write failed (captured in `error`, not
-    // thrown). Revert the in-memory toggle so the editor and the Tasks list can't
-    // diverge — the row stays open everywhere — then surface the failure. The
-    // toggle is transactional: it persists, or nothing changes.
-    if (error !== null) {
+    // thrown). Revert and surface the failure: it persists, or nothing changes.
+    if (shouldPersist && error !== null) {
       const message = error
       header = previousHeader
       buffer = previousBuffer
@@ -705,6 +727,18 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
       throw new Error(message)
     }
     return true
+  }
+
+  function commitTaskToggle(task: TaskMarker): Promise<boolean> {
+    return commitBodyEdit((full) => toggleTaskMarker(full, task).source)
+  }
+
+  function commitTaskEdit(task: TaskMarker, content: string): Promise<boolean> {
+    return commitBodyEdit((full) => editTaskLine(full, task, content))
+  }
+
+  function commitTaskRemove(task: TaskMarker): Promise<boolean> {
+    return commitBodyEdit((full) => removeTaskLine(full, task))
   }
 
   function dispose(): void {
@@ -742,6 +776,8 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     updateFrontmatter,
     commitFrontmatter,
     commitTaskToggle,
+    commitTaskEdit,
+    commitTaskRemove,
     dispose,
     discard,
   }

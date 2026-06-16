@@ -1,11 +1,15 @@
-import { render, waitFor } from '@testing-library/react'
+import { fireEvent, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenTask } from '@reflect/core'
 import type { ReactNode } from 'react'
+import { resetRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { TasksScreen } from './tasks-screen'
+
+// jsdom doesn't implement scrollIntoView; the keyboard nav scrolls the active row.
+Element.prototype.scrollIntoView ??= () => {}
 
 const getOpenTasks = vi.hoisted(() => vi.fn())
 const getCompletedTasks = vi.hoisted(() => vi.fn())
@@ -24,7 +28,78 @@ vi.mock('@/providers/settings-provider', () => ({
 }))
 
 const toggleTask = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/note-task', () => ({ toggleTask }))
+const deleteTask = vi.hoisted(() => vi.fn())
+const editTask = vi.hoisted(() => vi.fn())
+const insertTask = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/note-task', () => ({ toggleTask, deleteTask, editTask, insertTask }))
+
+// The real inline editor mounts ProseKit, which jsdom can't render (no
+// getClientRects/getAnimations). Stub it with the callback surface the row
+// wires up, so selection + edit/delete/cancel routing is testable here; the
+// editor's own commit/cancel decision is unit-tested via resolveTaskEdit.
+vi.mock('./task-editor', () => ({
+  TaskEditor: ({
+    task,
+    onCommit,
+    onContinue,
+    onDelete,
+    onDeleteEmpty,
+    onCancel,
+    onComplete,
+    onFlush,
+    onNavigate,
+  }: {
+    task: { text: string }
+    onCommit: (content: string) => void
+    onContinue: (content: string | null) => void
+    onDelete: () => void
+    onDeleteEmpty: () => void
+    onCancel: () => void
+    onComplete: (content: string | null) => void
+    onFlush: (content: string) => void
+    onNavigate: (direction: -1 | 1, options: { span: boolean }) => void
+  }) => (
+    <div data-task-editor data-testid="task-editor">
+      <span>editing: {task.text}</span>
+      <button type="button" onClick={() => onCommit('edited content')}>
+        commit-edit
+      </button>
+      <button type="button" onClick={() => onContinue('edited content')}>
+        continue-edit
+      </button>
+      <button type="button" onClick={() => onContinue(null)}>
+        continue-unchanged
+      </button>
+      <button type="button" onClick={() => onContinue('')}>
+        continue-empty
+      </button>
+      <button type="button" onClick={() => onDelete()}>
+        delete-edit
+      </button>
+      <button type="button" onClick={() => onDeleteEmpty()}>
+        delete-empty-edit
+      </button>
+      <button type="button" onClick={() => onCancel()}>
+        cancel-edit
+      </button>
+      <button type="button" onClick={() => onComplete('edited content')}>
+        complete-edited
+      </button>
+      <button type="button" onClick={() => onComplete(null)}>
+        complete-unchanged
+      </button>
+      <button type="button" onClick={() => onFlush('edited content')}>
+        flush-edit
+      </button>
+      <button type="button" onClick={() => onNavigate(1, { span: false })}>
+        nav-down
+      </button>
+      <button type="button" onClick={() => onNavigate(-1, { span: false })}>
+        nav-up
+      </button>
+    </div>
+  ),
+}))
 
 const fail = vi.hoisted(() => vi.fn())
 const startOperation = vi.hoisted(() => vi.fn(() => ({ fail })))
@@ -76,8 +151,13 @@ beforeEach(() => {
   getCompletedTasks.mockReset()
   getCompletedTasks.mockResolvedValue([])
   toggleTask.mockReset()
+  deleteTask.mockReset()
+  editTask.mockReset()
+  insertTask.mockReset()
+  insertTask.mockResolvedValue(0)
   startOperation.mockClear()
   fail.mockReset()
+  resetRecentlyCompleted()
 })
 
 describe('TasksScreen', () => {
@@ -166,14 +246,491 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
-  it('opens a task’s source note on row click', async () => {
+  it('opens a task’s source note via the open arrow', async () => {
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'notes/p.md', dailyDate: null, text: 'project task', noteTitle: 'Project' }),
     ])
     const view = renderScreen()
 
-    await userEvent.click(await view.findByText('project task'))
+    await view.findByText('project task')
+    await userEvent.click(view.getByRole('button', { name: 'Open Project' }))
     expect(view.getByTestId('route').textContent).toContain('notes/p.md')
+    view.unmount()
+  })
+
+  it('opens the inline editor on a sole selection, and Escape exits it', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, text: 'first', noteTitle: 'Project' }),
+      task({ notePath: 'notes/p.md', markerOffset: 3, text: 'second', noteTitle: 'Project' }),
+    ])
+    const view = renderScreen()
+
+    // A single click selects exclusively → that row swaps to the inline editor.
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    expect(view.getByTestId('task-editor').textContent).toContain('first')
+    expect(view.getByRole('button', { name: 'second' }).getAttribute('aria-pressed')).toBe('false')
+
+    // Clicking another row moves the sole selection (and the editor) to it.
+    await userEvent.click(view.getByRole('button', { name: 'second' }))
+    expect(view.getByTestId('task-editor').textContent).toContain('second')
+
+    await userEvent.keyboard('{Escape}')
+    expect(view.queryByTestId('task-editor')).toBeNull()
+    expect(view.getByRole('button', { name: 'first' }).getAttribute('aria-pressed')).toBe('false')
+    view.unmount()
+  })
+
+  it('commits, deletes, or cancels an inline edit through the editor', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    editTask.mockResolvedValue(undefined)
+    deleteTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'P' }),
+    ])
+    const view = renderScreen()
+
+    // Commit → editTask with the new content, and edit mode exits.
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByText('commit-edit'))
+    await waitFor(() =>
+      expect(editTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 2 }),
+        'edited content',
+        1,
+      ),
+    )
+    await waitFor(() => expect(view.queryByTestId('task-editor')).toBeNull())
+
+    // Re-select and cancel → no further write, edit mode exits.
+    await userEvent.click(view.getByRole('button', { name: 'edited content' }))
+    await userEvent.click(view.getByText('cancel-edit'))
+    expect(view.queryByTestId('task-editor')).toBeNull()
+
+    // Re-select and delete → deleteTask, row gone.
+    await userEvent.click(view.getByRole('button', { name: 'edited content' }))
+    await userEvent.click(view.getByText('delete-edit'))
+    await waitFor(() => expect(deleteTask).toHaveBeenCalled())
+    view.unmount()
+  })
+
+  it('flush persists an edit without exiting edit mode (selection unchanged)', async () => {
+    editTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'P' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByText('flush-edit'))
+    await waitFor(() =>
+      expect(editTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 2 }),
+        'edited content',
+        1,
+      ),
+    )
+    // The selection (and so the inline editor) is left intact — flush never clears.
+    expect(view.getByTestId('task-editor')).toBeDefined()
+    view.unmount()
+  })
+
+  it('completes from the editor: edit+complete sequences the two writes', async () => {
+    editTask.mockResolvedValue(undefined)
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'P' }),
+    ])
+    const view = renderScreen()
+
+    // ⌘↵ with an edit → save the content, then toggle the rewritten line.
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByText('complete-edited'))
+    await waitFor(() =>
+      expect(editTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/p.md', markerOffset: 2 }),
+        'edited content',
+        1,
+      ),
+    )
+    await waitFor(() =>
+      expect(toggleTask).toHaveBeenCalledWith(
+        expect.objectContaining({ markerOffset: 2, raw: '[ ] edited content' }),
+        1,
+      ),
+    )
+    view.unmount()
+  })
+
+  it('editing an already-completed task with ⌘↵ saves the text, never reopens it', async () => {
+    window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
+    editTask.mockResolvedValue(undefined)
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([])
+    getCompletedTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 2,
+        raw: '[x] done task',
+        text: 'done task',
+        checked: true,
+        noteTitle: 'P',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'done task' }))
+    await userEvent.click(view.getByText('complete-edited'))
+    await waitFor(() => expect(editTask).toHaveBeenCalled())
+    // The marker stays `[x]` — no toggle back to open.
+    expect(toggleTask).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
+  it('completes from the editor: an unchanged task just toggles, no edit', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'P' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByText('complete-unchanged'))
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(1))
+    expect(editTask).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
+  it('toggles rows with ⌘-click and selects a range with shift-click', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, text: 'first', noteTitle: 'Project' }),
+      task({ notePath: 'notes/p.md', markerOffset: 3, text: 'second', noteTitle: 'Project' }),
+      task({ notePath: 'notes/p.md', markerOffset: 4, text: 'third', noteTitle: 'Project' }),
+    ])
+    const view = renderScreen()
+    const pressed = (name: string) =>
+      view.getByRole('button', { name }).getAttribute('aria-pressed') === 'true'
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    // ⌘-click adds the row without clearing the rest (modifier set explicitly —
+    // userEvent's held modifiers don't reach its synthetic click).
+    fireEvent.click(view.getByRole('button', { name: 'third' }), { metaKey: true })
+    expect([pressed('first'), pressed('second'), pressed('third')]).toEqual([true, false, true])
+
+    // Shift-click from the anchor (third) back to first selects the whole range.
+    fireEvent.click(view.getByRole('button', { name: 'first' }), { shiftKey: true })
+    expect([pressed('first'), pressed('second'), pressed('third')]).toEqual([true, true, true])
+    view.unmount()
+  })
+
+  it('selects all with ⌘A and moves a single selection with the arrow keys', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+    const pressed = (name: string) =>
+      view.getByRole('button', { name }).getAttribute('aria-pressed') === 'true'
+
+    await view.findByRole('button', { name: 'first' })
+    await userEvent.keyboard('{Meta>}a{/Meta}')
+    // Two selected → both stay buttons (the editor only opens for a sole row).
+    expect([pressed('first'), pressed('second')]).toEqual([true, true])
+
+    // ↓ collapses to a single moving selection → that row opens the editor.
+    await userEvent.keyboard('{ArrowDown}')
+    expect(view.getByTestId('task-editor').textContent).toContain('second')
+    await userEvent.keyboard('{ArrowUp}')
+    expect(view.getByTestId('task-editor').textContent).toContain('first')
+    view.unmount()
+  })
+
+  it('completes the selection with ⌘↵', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] second', text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByRole('button', { name: 'first' })
+    await userEvent.keyboard('{Meta>}a{/Meta}') // select all
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(2))
+    // Completing keeps both showing struck (the middle state), not dropped.
+    await waitFor(() => expect(view.getAllByRole('button', { name: 'Completed task' })).toHaveLength(2))
+    expect(view.getByText('first')).toBeDefined()
+    view.unmount()
+  })
+
+  it('deletes a multi-selection with ⌘⌫', async () => {
+    deleteTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] second', text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    // ⌘⌫ deletes only outside the inline editor (a multi-selection mounts none);
+    // while editing a sole task it's a text edit, so it can't race the commit.
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    fireEvent.click(view.getByRole('button', { name: 'second' }), { metaKey: true })
+    await userEvent.keyboard('{Meta>}{Backspace}{/Meta}')
+    await waitFor(() => expect(deleteTask).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(view.queryByText('first')).toBeNull())
+    view.unmount()
+  })
+
+  it('a note group’s "+ Add" button inserts into that note and opens the editor', async () => {
+    insertTask.mockResolvedValue(0)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/proj.md', markerOffset: 2, raw: '[ ] a', text: 'a', noteTitle: 'Project' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('a')
+    await userEvent.click(await view.findByRole('button', { name: 'Add a task to Project' }))
+    await waitFor(() => expect(insertTask).toHaveBeenCalledWith('notes/proj.md', 1))
+    // The new row's editor opens, ready to type.
+    await view.findByTestId('task-editor')
+    view.unmount()
+  })
+
+  it('Overdue tasks show no "+ Add" button (V1 can’t add to an aggregate bucket)', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 2,
+        raw: '[ ] late',
+        text: 'late',
+        noteTitle: 'P',
+        dueDate: '2026-06-01',
+      }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('late')
+    expect(view.queryByRole('button', { name: /Add a task/ })).toBeNull()
+    view.unmount()
+  })
+
+  it('Return adds a task to today’s daily and opens its inline editor', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByRole('button', { name: 'first' })
+    await userEvent.keyboard('{Enter}')
+    // Nothing was selected, so the new task lands in today's daily note.
+    await waitFor(() => expect(insertTask).toHaveBeenCalledWith('daily/2026-06-14.md', 1))
+    // The optimistic empty row mounts its inline editor, ready to type into.
+    await view.findByTestId('task-editor')
+    view.unmount()
+  })
+
+  it('dismissing the inserted row deletes the right note line (V1 empty cleanup)', async () => {
+    deleteTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByRole('button', { name: 'first' })
+    await userEvent.keyboard('{Enter}')
+    await view.findByTestId('task-editor')
+    // An empty Return-to-add row, left untouched, is removed rather than left as a
+    // blank `- [ ] ` line — the real editor routes that empty exit to delete (see
+    // the finalizer unit test); here we check the optimistic row's identity flows
+    // through, deleting the freshly written daily-note line, not some other row.
+    await userEvent.click(view.getByRole('button', { name: 'delete-edit' }))
+    await waitFor(() =>
+      expect(deleteTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'daily/2026-06-14.md' }),
+        1,
+      ),
+    )
+    view.unmount()
+  })
+
+  it('Backspace deletes a row and lands the editor on the previous one (V1)', async () => {
+    deleteTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] second', text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    // Select the second row (its editor opens), then ⌫-delete it.
+    await userEvent.click(await view.findByRole('button', { name: 'second' }))
+    await view.findByTestId('task-editor')
+    await userEvent.click(view.getByRole('button', { name: 'delete-empty-edit' }))
+
+    await waitFor(() =>
+      expect(deleteTask).toHaveBeenCalledWith(expect.objectContaining({ notePath: 'notes/b.md' }), 1),
+    )
+    // Lands on the previous row, whose editor now opens.
+    await view.findByText('editing: first')
+    view.unmount()
+  })
+
+  it('plain ⌫ leaves a multi-selection untouched (ambiguous, V1)', async () => {
+    deleteTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ]', text: '', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] keep', text: 'keep', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('keep')
+    await userEvent.keyboard('{Meta>}a{/Meta}') // select both
+    await userEvent.keyboard('{Backspace}')
+    await Promise.resolve()
+    // V1 refuses a multi-row ⌫ (which row would survive is unclear).
+    expect(deleteTask).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
+  it('Enter in the editor saves the row and opens the next task (continuous entry)', async () => {
+    editTask.mockResolvedValue(undefined)
+    insertTask.mockResolvedValue(7)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await view.findByTestId('task-editor')
+    await userEvent.click(view.getByRole('button', { name: 'continue-edit' }))
+
+    // Persists this row's edit, then appends the next task in the same note.
+    await waitFor(() => expect(editTask).toHaveBeenCalled())
+    await waitFor(() => expect(insertTask).toHaveBeenCalledWith('notes/a.md', 1))
+    view.unmount()
+  })
+
+  it('Enter on a cleared row deletes it instead of leaving a bare task (no ghost)', async () => {
+    deleteTask.mockResolvedValue(undefined)
+    insertTask.mockResolvedValue(0)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await view.findByTestId('task-editor')
+    await userEvent.click(view.getByRole('button', { name: 'continue-empty' }))
+    // The cleared row is deleted (not edited to `- [ ]`); editTask is never called.
+    await waitFor(() =>
+      expect(deleteTask).toHaveBeenCalledWith(expect.objectContaining({ notePath: 'notes/a.md' }), 1),
+    )
+    expect(editTask).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
+  it('↑/↓ in the editor move the selection between rows (V1)', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] second', text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await view.findByText('editing: first')
+    await userEvent.click(view.getByRole('button', { name: 'nav-down' }))
+    // The editor follows the selection to the next row.
+    await view.findByText('editing: second')
+    view.unmount()
+  })
+
+  it('does not reopen an already-completed task when ⌘↵ hits the selection', async () => {
+    window.sessionStorage.setItem('reflect.tasks.filter.archived', 'true')
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] open', text: 'open', noteTitle: 'A' }),
+    ])
+    getCompletedTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/b.md',
+        markerOffset: 2,
+        raw: '[x] done',
+        text: 'done',
+        checked: true,
+        noteTitle: 'B',
+      }),
+    ])
+    const view = renderScreen()
+
+    await view.findByRole('button', { name: 'open' })
+    await userEvent.keyboard('{Meta>}a{/Meta}') // selects the open and the completed row
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
+    // Only the open row toggles; the completed one is left untouched.
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(1))
+    expect(toggleTask).toHaveBeenCalledWith(expect.objectContaining({ notePath: 'notes/a.md' }), 1)
+    view.unmount()
+  })
+
+  it('scheduling the selection writes a due-date link to each task (V1)', async () => {
+    editTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] plan', text: 'plan', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] ship', text: 'ship', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('plan')
+    await userEvent.keyboard('{Meta>}a{/Meta}') // select both (no editor)
+    await userEvent.click(view.getByRole('button', { name: /Schedule \(2\)/ }))
+    // Pick June 20 in the calendar (today mock = 2026-06-14, so it opens on June).
+    await userEvent.click(await view.findByText('20'))
+
+    await waitFor(() => expect(editTask).toHaveBeenCalledTimes(2))
+    expect(editTask).toHaveBeenCalledWith(
+      expect.objectContaining({ notePath: 'notes/a.md' }),
+      'plan [[2026-06-20]]',
+      1,
+    )
+    view.unmount()
+  })
+
+  it('⌘↵ reopens a selection that is already all checked (toggle both ways, V1)', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] one', text: 'one', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] two', text: 'two', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('one')
+    await userEvent.keyboard('{Meta>}a{/Meta}') // select both (no editor)
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}') // complete both
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(2))
+
+    // The struck rows stay selected; ⌘↵ again reopens them (two more toggles).
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
+    await waitFor(() => expect(toggleTask).toHaveBeenCalledTimes(4))
+    view.unmount()
+  })
+
+  it('ignores task shortcuts coming from a portaled overlay (the filters menu)', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, text: 'second', noteTitle: 'B' }),
+    ])
+    const view = renderScreen()
+    await view.findByRole('button', { name: 'first' })
+
+    // The filters menu portals a role="menu" outside the list and owns its own
+    // arrow navigation — a keydown from there must not drive the task selection.
+    const menu = document.createElement('div')
+    menu.setAttribute('role', 'menu')
+    const item = document.createElement('button')
+    menu.appendChild(item)
+    document.body.appendChild(menu)
+    fireEvent.keyDown(item, { key: 'ArrowDown' })
+
+    expect(view.queryByTestId('task-editor')).toBeNull()
+    expect(view.getByRole('button', { name: 'first' }).getAttribute('aria-pressed')).toBe('false')
+    menu.remove()
     view.unmount()
   })
 
@@ -197,8 +754,9 @@ describe('TasksScreen', () => {
         1,
       ),
     )
-    // Optimistically removed from the list on completion.
-    await waitFor(() => expect(view.queryByText('project task')).toBeNull())
+    // V1's middle state: the row stays visible, struck, until archived.
+    await view.findByRole('button', { name: 'Completed task' })
+    expect(view.getByText('project task')).toBeDefined()
     view.unmount()
   })
 
@@ -226,6 +784,60 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
+  it('shows the Archive button after completing, and Archive hides the row', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 5, raw: '[ ] project task', text: 'project task', noteTitle: 'P' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'Complete: project task' }))
+    // The row lingers struck and an Archive (1) action appears.
+    const archive = await view.findByRole('button', { name: /Archive \(1\)/ })
+    expect(view.getByText('project task')).toBeDefined()
+
+    await userEvent.click(archive)
+    // Archiving hides this session's completed rows (still `[x]` on disk).
+    await waitFor(() => expect(view.queryByText('project task')).toBeNull())
+    expect(view.queryByRole('button', { name: /Archive/ })).toBeNull()
+    view.unmount()
+  })
+
+  it('archives the session’s completed tasks with ⌘⇧↵', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 5, raw: '[ ] project task', text: 'project task', noteTitle: 'P' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'Complete: project task' }))
+    await view.findByRole('button', { name: 'Completed task' })
+    await userEvent.keyboard('{Meta>}{Shift>}{Enter}{/Shift}{/Meta}')
+    await waitFor(() => expect(view.queryByText('project task')).toBeNull())
+    view.unmount()
+  })
+
+  it('a failed delete restores a struck task instead of dropping it (V1 middle state)', async () => {
+    toggleTask.mockResolvedValue(undefined)
+    deleteTask.mockRejectedValue(new Error('disk full'))
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] one', text: 'one', noteTitle: 'A' }),
+    ])
+    const view = renderScreen()
+
+    // Complete it → struck (kept showing via the session set), then try to delete.
+    await userEvent.click(await view.findByRole('button', { name: 'Complete: one' }))
+    await view.findByRole('button', { name: 'Completed task' })
+    await userEvent.click(view.getByText('one')) // select the struck row → editor opens
+    await view.findByTestId('task-editor')
+    await userEvent.click(view.getByRole('button', { name: 'delete-edit' }))
+
+    await waitFor(() => expect(deleteTask).toHaveBeenCalled())
+    // The write failed, so the struck row is restored, not lost.
+    await view.findByRole('button', { name: 'Completed task' })
+    view.unmount()
+  })
+
   it('rolls the row back and surfaces a failed completion via the operations toast', async () => {
     toggleTask.mockRejectedValue(new Error('stale index'))
     getOpenTasks.mockResolvedValue([
@@ -241,19 +853,21 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
-  it('moves focus between task checkboxes with the arrow keys', async () => {
+  it('refetches (does not restore a stale snapshot) when a bulk complete fails', async () => {
+    toggleTask.mockRejectedValue(new Error('stale index'))
     getOpenTasks.mockResolvedValue([
-      task({ notePath: 'notes/a.md', markerOffset: 2, text: 'first', noteTitle: 'A' }),
-      task({ notePath: 'notes/b.md', markerOffset: 2, text: 'second', noteTitle: 'B' }),
+      task({ notePath: 'notes/a.md', markerOffset: 2, raw: '[ ] first', text: 'first', noteTitle: 'A' }),
+      task({ notePath: 'notes/b.md', markerOffset: 2, raw: '[ ] second', text: 'second', noteTitle: 'B' }),
     ])
     const view = renderScreen()
 
-    const first = await view.findByRole('button', { name: 'Complete: first' })
-    first.focus()
-    await userEvent.keyboard('{ArrowDown}')
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Complete: second')
-    await userEvent.keyboard('{ArrowUp}')
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Complete: first')
+    await view.findByRole('button', { name: 'first' })
+    await userEvent.keyboard('{Meta>}a{/Meta}')
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
+    await waitFor(() => expect(fail).toHaveBeenCalledWith('stale index'))
+    // A batch failure reconciles by refetching the index, not by restoring the
+    // pre-batch snapshot (which would un-do any write that already landed).
+    await waitFor(() => expect(getOpenTasks.mock.calls.length).toBeGreaterThan(1))
     view.unmount()
   })
 })

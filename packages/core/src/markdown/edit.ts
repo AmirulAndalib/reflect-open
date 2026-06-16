@@ -1,4 +1,6 @@
 import { parseNote } from './extract'
+import { normalizeWikiTarget } from './resolve'
+import { scanInlineWikiLinks } from './scan'
 import { parseTaskMarker } from './task-marker'
 import type { Heading, TaskMarker } from './model'
 
@@ -70,6 +72,98 @@ export function toggleTaskMarker(
     source: source.slice(0, offset) + next + source.slice(offset + 3),
     checked: !parsed.checked,
   }
+}
+
+/**
+ * Replace a task's content — everything after its `[ ]`/`[x]` marker — with
+ * `content`, leaving the list bullet, indentation, and the marker (and so its
+ * checked state) untouched. The task is located by {@link locateTaskMarker}, the
+ * same staleness guard the toggle uses, so a drifted or ambiguous line refuses
+ * loudly rather than editing the wrong row. `content` is one line of markdown
+ * (the inline editor's serialization); an embedded newline would split the item
+ * into fresh lines or tasks, so it throws. Empty content is the caller's signal
+ * to delete (see {@link removeTaskLine}) — here it just clears to a bare marker.
+ */
+export function editTaskLine(source: string, task: TaskMarker, content: string): string {
+  const text = content.trim()
+  if (text.includes('\n') || text.includes('\r')) {
+    throw new TaskStaleError(`task content must be a single line: ${JSON.stringify(content)}`)
+  }
+  const offset = locateTaskMarker(source, task.markerOffset, task.raw)
+  const marker = source.slice(offset, offset + 3)
+  if (parseTaskMarker(marker) === null) {
+    throw new TaskStaleError(`no task marker at offset ${offset}: ${JSON.stringify(marker)}`)
+  }
+  const newline = source.indexOf('\n', offset)
+  const lineEnd = newline === -1 ? source.length : newline
+  const rewritten = text.length > 0 ? `${marker} ${text}` : marker
+  return source.slice(0, offset) + rewritten + source.slice(lineEnd)
+}
+
+/**
+ * Remove a task's whole physical line — its list bullet, marker, and content —
+ * along with the trailing newline, so deleting a middle task closes the gap and
+ * deleting the only task empties the note. Located by {@link locateTaskMarker};
+ * a stale or ambiguous line refuses loudly. Continuation lines of a multi-line
+ * item aren't removed — the projection (and so a task's identity) is one line.
+ */
+export function removeTaskLine(source: string, task: TaskMarker): string {
+  const offset = locateTaskMarker(source, task.markerOffset, task.raw)
+  const lineStart = source.lastIndexOf('\n', offset - 1) + 1
+  const newline = source.indexOf('\n', offset)
+  const lineEnd = newline === -1 ? source.length : newline + 1
+  return source.slice(0, lineStart) + source.slice(lineEnd)
+}
+
+/**
+ * Append a new empty task — a `- [ ] ` line — to the end of `source`, returning
+ * the new source and the marker's offset (the `[`). The Tasks view's Return-to-add
+ * (Plan 18) writes the empty line, then the inline editor on the new row fills it.
+ * A single newline separates it from existing content (continuing a trailing
+ * list, or interrupting a paragraph — a non-empty task item is allowed to); an
+ * empty note just becomes the one task. The trailing space keeps it a valid GFM
+ * checkbox and seats the caret.
+ */
+export function appendTaskLine(source: string): { source: string; markerOffset: number } {
+  const base = source.replace(/\s*$/, '')
+  const prefix = base.length > 0 ? `${base}\n- ` : '- '
+  return { source: `${prefix}[ ] \n`, markerOffset: prefix.length }
+}
+
+/**
+ * Schedule a task by setting its due date to `isoDate` (a `YYYY-MM-DD`), working
+ * on the task's **content** — the markdown after the marker. A task's due date is
+ * the first calendar-valid `[[YYYY-MM-DD]]` link inside it (the same rule the
+ * projection reads), so this replaces that link's target when one exists, else
+ * appends `[[isoDate]]` to the content. Returned content is fed back through
+ * {@link editTaskLine}; the caller supplies a valid ISO date (the calendar only
+ * yields real days).
+ */
+export function setTaskDueDate(content: string, isoDate: string): string {
+  const existing = scanInlineWikiLinks(content).find(
+    (link) => normalizeWikiTarget(link.target).date !== undefined,
+  )
+  if (existing !== undefined) {
+    return content.slice(0, existing.from) + `[[${isoDate}]]` + content.slice(existing.to)
+  }
+  const trimmed = content.replace(/\s+$/, '')
+  return trimmed.length > 0 ? `${trimmed} [[${isoDate}]]` : `[[${isoDate}]]`
+}
+
+/**
+ * Unschedule a task: drop its first calendar-valid `[[YYYY-MM-DD]]` due-date link
+ * from the content (collapsing the surrounding whitespace), or return the content
+ * unchanged when it has no due date. The inverse of {@link setTaskDueDate}.
+ */
+export function clearTaskDueDate(content: string): string {
+  const existing = scanInlineWikiLinks(content).find(
+    (link) => normalizeWikiTarget(link.target).date !== undefined,
+  )
+  if (existing === undefined) {
+    return content
+  }
+  const removed = content.slice(0, existing.from) + content.slice(existing.to)
+  return removed.replace(/[ \t]{2,}/g, ' ').trim()
 }
 
 interface Splice {
