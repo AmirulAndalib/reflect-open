@@ -8,6 +8,14 @@ const MobileRoot = lazy(() =>
   import('@/mobile/mobile-root').then((module) => ({ default: module.MobileRoot })),
 )
 
+// Eagerly start the platform IPC call at module evaluation time — this is a
+// build-time constant (the Rust shell's compile-time platform tag) that never
+// changes within a session. Hoisting it here makes the round-trip concurrent
+// with JS parse/React mount rather than serial after the first paint.
+const platformPromise: Promise<AppPlatform> = hasBridge()
+  ? getAppPlatform().catch(() => 'desktop' as AppPlatform)
+  : Promise.resolve('desktop' as AppPlatform)
+
 /**
  * The Plan 19 root gate: one bundle, two surface trees. The shell reports
  * which platform it was built for and the matching tree loads as a lazy
@@ -16,7 +24,8 @@ const MobileRoot = lazy(() =>
  */
 export function PlatformRoot(): ReactElement {
   // Plain-browser dev has no bridge — start on the desktop tree directly. With a
-  // bridge, resolve the real platform asynchronously in the effect below.
+  // bridge, resolve the real platform from the already-in-flight module-scope
+  // promise so the IPC call started before React mounted.
   const [platform, setPlatform] = useState<AppPlatform | null>(() =>
     hasBridge() ? null : 'desktop',
   )
@@ -26,17 +35,11 @@ export function PlatformRoot(): ReactElement {
       return
     }
     let active = true
-    void getAppPlatform()
-      .then((resolved) => {
-        if (active) {
-          setPlatform(resolved)
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setPlatform('desktop')
-        }
-      })
+    void platformPromise.then((resolved) => {
+      if (active) {
+        setPlatform(resolved)
+      }
+    })
     return () => {
       active = false
     }

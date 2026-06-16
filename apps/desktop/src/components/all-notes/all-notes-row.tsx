@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactElement } from 'react'
+import { memo, type MouseEvent, type ReactElement } from 'react'
 import { Circle, CircleCheck } from 'lucide-react'
 import type { NoteListEntry } from '@reflect/core'
 import { formatRecencyLabel } from '@/lib/dates'
@@ -18,9 +18,9 @@ interface AllNotesRowProps {
   /** Whether this row is part of the current multi-selection. */
   selected: boolean
   /** Body click: select, honoring ⌘/Ctrl (toggle) and Shift (range) modifiers. */
-  onSelect: (event: Pick<MouseEvent, 'metaKey' | 'ctrlKey' | 'shiftKey'>) => void
+  onSelect: (path: string, event: Pick<MouseEvent, 'metaKey' | 'ctrlKey' | 'shiftKey'>) => void
   /** Indicator click: toggle this row (Shift extends a range) — V1's check gutter. */
-  onToggle: (event: Pick<MouseEvent, 'shiftKey'>) => void
+  onToggle: (path: string, event: Pick<MouseEvent, 'shiftKey'>) => void
   /** Open the note (subject click / double-click). */
   onOpen: (path: string) => void
 }
@@ -30,7 +30,7 @@ interface AllNotesRowProps {
  * multi-select: plain = exclusive, ⌘/Ctrl = toggle, Shift = range); the
  * indicator gutter toggles it; the subject or a double-click opens the note.
  */
-export function AllNotesRow({ note, selected, onSelect, onToggle, onOpen }: AllNotesRowProps): ReactElement {
+export const AllNotesRow = memo(function AllNotesRow({ note, selected, onSelect, onToggle, onOpen }: AllNotesRowProps): ReactElement {
   const { settings } = useSettings()
   return (
     <div
@@ -40,7 +40,7 @@ export function AllNotesRow({ note, selected, onSelect, onToggle, onOpen }: AllN
         if (event.shiftKey) {
           event.preventDefault()
         }
-        onSelect(event)
+        onSelect(note.path, event)
       }}
       onDoubleClick={() => onOpen(note.path)}
       className={cn(
@@ -55,7 +55,7 @@ export function AllNotesRow({ note, selected, onSelect, onToggle, onOpen }: AllN
         aria-pressed={selected}
         onClick={(event) => {
           event.stopPropagation()
-          onToggle(event)
+          onToggle(note.path, event)
         }}
         className={cn(
           'flex size-[18px] items-center justify-center text-text-muted transition-opacity duration-100 hover:text-text focus-visible:opacity-100 focus-visible:outline-none',
@@ -87,4 +87,4 @@ export function AllNotesRow({ note, selected, onSelect, onToggle, onOpen }: AllN
       </span>
     </div>
   )
-}
+})

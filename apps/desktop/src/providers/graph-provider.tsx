@@ -176,26 +176,36 @@ export function GraphProvider({
           if (seq !== openSeq.current) {
             return false
           }
-          // Onboarding, considered exactly once per graph (the `welcomeSeeded`
-          // meta marker): an empty graph gets the pinned "How to use Reflect"
-          // note, seeded before the index pass starts so the reconcile indexes
-          // it like any other file. Needs the index for the marker, so a graph
-          // whose index failed to open simply tries again next time.
-          // Best-effort — a failed seed must never block opening.
-          if (generation !== null) {
-            try {
-              await ensureWelcomeNote({ fileGeneration: info.generation, indexGeneration: generation })
-            } catch (err) {
-              console.error('welcome seed failed:', errorMessage(err))
-            }
-          }
+          // Transition to 'ready' immediately — the user can start editing.
           setGraph(info)
           setIndexGeneration(generation)
           setStatus('ready')
           opened = true
-          // Background-sync the index (reconcile → subscribe → watch), bailing if
-          // a newer open supersedes this one.
-          index.sync(generation, () => seq !== openSeq.current)
+          // Onboarding, considered exactly once per graph (the `welcomeSeeded`
+          // meta marker): an empty graph gets the pinned "How to use Reflect"
+          // note. Needs the index for the marker, so a graph whose index failed
+          // to open simply tries again next time. On all launches after the
+          // first, ensureWelcomeNote returns immediately (marker already set),
+          // so it no longer blocks time-to-first-workspace-paint. The note must
+          // land before the reconcile indexes files — index.sync starts in the
+          // .finally so it always runs after the seed attempt.
+          // Best-effort — a failed seed must never block opening.
+          if (generation !== null) {
+            ensureWelcomeNote({ fileGeneration: info.generation, indexGeneration: generation })
+              .catch((err) => {
+                console.error('welcome seed failed:', errorMessage(err))
+              })
+              .finally(() => {
+                if (seq === openSeq.current) {
+                  // Background-sync the index (reconcile → subscribe → watch),
+                  // bailing if a newer open supersedes this one.
+                  index.sync(generation, () => seq !== openSeq.current)
+                }
+              })
+          } else {
+            // No index — sync with null generation immediately.
+            index.sync(generation, () => seq !== openSeq.current)
+          }
         } catch (err) {
           if (seq !== openSeq.current) {
             return false

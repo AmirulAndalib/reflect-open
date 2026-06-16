@@ -1,4 +1,4 @@
-import { useEffect, type ReactElement } from 'react'
+import { useCallback, useEffect, type MouseEvent, type ReactElement } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { NoteListEntry } from '@reflect/core'
 import { type ListSelection } from '@/lib/selection/use-list-selection'
@@ -45,6 +45,16 @@ export function AllNotesTable({
   registerScrollToIndex,
 }: AllNotesTableProps): ReactElement | null {
   const rows = notes ?? []
+  const handleToggle = useCallback(
+    (path: string, event: Pick<MouseEvent, 'shiftKey'>) =>
+      selection.clickSelect(
+        path,
+        event.shiftKey
+          ? { metaKey: false, ctrlKey: false, shiftKey: true }
+          : { metaKey: true, ctrlKey: false, shiftKey: false },
+      ),
+    [selection.clickSelect],
+  )
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollElement,
@@ -96,15 +106,8 @@ export function AllNotesTable({
                 <AllNotesRow
                   note={note}
                   selected={selection.isSelected(note.path)}
-                  onSelect={(event) => selection.clickSelect(note.path, event)}
-                  onToggle={(event) =>
-                    selection.clickSelect(
-                      note.path,
-                      event.shiftKey
-                        ? { metaKey: false, ctrlKey: false, shiftKey: true }
-                        : { metaKey: true, ctrlKey: false, shiftKey: false },
-                    )
-                  }
+                  onSelect={selection.clickSelect}
+                  onToggle={handleToggle}
                   onOpen={onOpen}
                 />
               </li>

@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useCallback, useMemo, type ReactElement } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { getBacklinksWithContext, hasBridge } from '@reflect/core'
@@ -45,6 +45,8 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
   // Shared across every mounted panel: the daily stream shows one per day,
   // and the header toggle must move them together, not just this instance.
   const [expanded, setExpanded] = useSessionFlag(EXPANDED_STORAGE_KEY, true)
+  const groups = useMemo(() => (data ? groupBacklinksBySource(data) : []), [data])
+  const handleOpen = useCallback((target: string) => navigate(routeForPath(target)), [navigate])
 
   if (isError) {
     return (
@@ -65,7 +67,6 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
   }
 
   const count = data.length
-  const groups = groupBacklinksBySource(data)
 
   return (
     <section aria-label="Incoming backlinks" className="mt-8">
@@ -101,7 +102,7 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
             source={group}
             first={index === 0}
             expanded={expanded}
-            onOpen={(target) => navigate(routeForPath(target))}
+            onOpen={handleOpen}
           />
         ))}
       </div>
