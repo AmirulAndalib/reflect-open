@@ -1,14 +1,19 @@
-import { useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { foldTag, hasBridge, listNotes, listNoteTags } from '@reflect/core'
-import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
+import { hasBridge, listNotes, listNoteTags } from '@reflect/core'
+import { Trash2 } from 'lucide-react'
+import { allNotesQueryKey, allNotesTagsQueryKey } from '@/lib/notes/all-notes-query'
+import { useListSelection } from '@/lib/selection/use-list-selection'
 import { useScrollRestoration } from '@/lib/use-scroll-restoration'
+import { useScrollToIndexBridge } from '@/lib/use-scroll-to-index-bridge'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
 import { AllNotesFilters } from './all-notes-filters'
 import { AllNotesTable } from './all-notes-table'
+import { AllNotesTrashDialog } from './all-notes-trash-dialog'
 import { NewNoteButton } from './new-note-button'
+import { useAllNotesKeyboard } from './use-all-notes-keyboard'
 
 interface AllNotesScreenProps {
   /** Active tag filter carried by the route (`null` = all non-daily notes). */
@@ -20,6 +25,11 @@ interface AllNotesScreenProps {
  * newest first, filterable by tag. The active tag lives on the route so
  * back/forward and "open a note, come back" keep the filter. Daily notes are
  * deliberately absent — the stream is their home.
+ *
+ * Rows are multi-selectable (V1 parity): click to select (⌘ toggle, Shift
+ * range), the indicator gutter toggles, the subject or a double-click opens.
+ * Keyboard shortcuts act on the selection — ↑/↓ (Shift to extend), ⌘A select
+ * all, Return open, ⌘⌫ trash (to the OS trash, after a confirm), Esc clear.
  *
  * Owns its scroll container (the daily stream's shape, not `ScrollRestored`'s)
  * so the header and filter bar stay put while the virtualized table scrolls,
@@ -36,15 +46,17 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
   // element and the list would stay blank. State forces the post-attach
   // re-render that hands the element over.
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
+  // The surface, so the keyboard shortcuts can scope to it (and focus it on mount).
+  const rootRef = useRef<HTMLDivElement>(null)
   const enabled = hasBridge() && graph !== null
 
   const { data: notes } = useQuery({
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'all-notes', tag === null ? null : foldTag(tag)],
+    queryKey: allNotesQueryKey(graph?.root, tag),
     queryFn: () => listNotes({ tag }),
     enabled,
   })
   const { data: facets } = useQuery({
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'all-notes-tags'],
+    queryKey: allNotesTagsQueryKey(graph?.root),
     queryFn: () => listNoteTags(),
     enabled,
   })
@@ -52,8 +64,50 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
   const ready = notes !== undefined
   const { onScroll } = useScrollRestoration(scrollElement, ready)
 
+  // The flat, render-order paths the selection and its shortcuts act on.
+  const orderedPaths = useMemo(() => (notes ?? []).map((note) => note.path), [notes])
+  const selection = useListSelection(orderedPaths)
+  const openNote = useCallback((path: string) => navigate(routeForPath(path)), [navigate])
+
+  // The bulk-trash confirm: the screen owns whether it's open and which paths it
+  // acts on (snapshotted at open time, since the delete prunes the live
+  // selection); the dialog owns the delete and its error.
+  const [confirmingTrash, setConfirmingTrash] = useState(false)
+  const [pendingPaths, setPendingPaths] = useState<readonly string[]>([])
+  const openTrashConfirm = useCallback(() => {
+    if (selection.selectedCount === 0) {
+      return
+    }
+    setPendingPaths([...selection.selected])
+    setConfirmingTrash(true)
+  }, [selection])
+
+  // The table owns the virtualizer; the bridge lets the keyboard nav pull an
+  // off-screen (unmounted) row into view through the virtualizer's scrollToIndex.
+  const { scrollToIndex, registerScrollToIndex } = useScrollToIndexBridge()
+
+  useAllNotesKeyboard({
+    selection,
+    orderedPaths,
+    onOpen: openNote,
+    onRequestTrash: openTrashConfirm,
+    rootRef,
+    scrollToIndex,
+  })
+
+  // Move focus into the surface on mount so the shortcuts work the moment you
+  // navigate here, without first clicking the list (mirrors the Tasks view).
+  useEffect(() => {
+    rootRef.current?.focus({ preventScroll: true })
+  }, [])
+
   return (
-    <div aria-label="All notes" className="flex h-full min-h-0 flex-col">
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      aria-label="All notes"
+      className="flex h-full min-h-0 flex-col outline-none"
+    >
       <header className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-border py-4 pl-4 pr-7 lg:pl-12">
         <h1 className="text-[15px] font-semibold text-text">Notes</h1>
         <div className="flex flex-wrap items-center gap-3">
@@ -62,6 +116,16 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
             facets={facets ?? []}
             onSelect={(next) => navigate({ kind: 'allNotes', tag: next })}
           />
+          {selection.selectedCount > 0 ? (
+            <button
+              type="button"
+              onClick={openTrashConfirm}
+              className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text-secondary shadow-sm transition-colors duration-100 hover:bg-surface-hover hover:text-destructive"
+            >
+              <Trash2 aria-hidden className="size-4" />
+              Trash ({selection.selectedCount})
+            </button>
+          ) : null}
           <NewNoteButton />
         </div>
       </header>
@@ -74,10 +138,19 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
         <AllNotesTable
           notes={notes}
           tag={tag}
-          onOpen={(path) => navigate(routeForPath(path))}
+          selection={selection}
+          onOpen={openNote}
           scrollElement={scrollElement}
+          registerScrollToIndex={registerScrollToIndex}
         />
       </div>
+
+      <AllNotesTrashDialog
+        open={confirmingTrash}
+        onOpenChange={setConfirmingTrash}
+        paths={pendingPaths}
+        onTrashed={selection.clear}
+      />
     </div>
   )
 }

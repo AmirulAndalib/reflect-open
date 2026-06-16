@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { setBridge } from '@reflect/core'
+import { resetOperations, useOperations } from '@/lib/operations'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { AllNotesScreen } from './all-notes-screen'
@@ -97,6 +98,7 @@ const mockInvoke = vi.fn<(command: string, args: Record<string, unknown>) => Pro
 setBridge({ invoke: mockInvoke, listen: async () => () => {} })
 
 beforeEach(() => {
+  resetOperations()
   mockInvoke.mockReset()
   mockInvoke.mockImplementation(async (command, args) => {
     if (command !== 'db_query') {
@@ -129,6 +131,16 @@ function RouteProbe(): ReactElement {
   return <output data-testid="route">{JSON.stringify(route)}</output>
 }
 
+/** Surfaces the operations store so tests can assert a failure was reported. */
+function OperationsProbe(): ReactElement {
+  const operations = useOperations()
+  return (
+    <output data-testid="operations">
+      {operations.map((operation) => `${operation.status}:${operation.message ?? ''}`).join('|')}
+    </output>
+  )
+}
+
 function RoutedScreen(): ReactElement {
   const { route } = useRouter()
   return <AllNotesScreen tag={route.kind === 'allNotes' ? route.tag : null} />
@@ -152,6 +164,7 @@ function renderScreen(
       <RouterProvider initialRoute={{ kind: 'allNotes', tag: null }}>
         <RoutedScreen />
         <RouteProbe />
+        <OperationsProbe />
         <ReArrive />
       </RouterProvider>
     </QueryClientProvider>,
@@ -358,6 +371,244 @@ describe('AllNotesScreen', () => {
 
     fireEvent.click(view.getByRole('option', { name: /#travel/ }))
     expect(probedRoute(view)).toEqual({ kind: 'allNotes', tag: 'travel' })
+    view.unmount()
+  })
+})
+
+describe('AllNotesScreen — selection and bulk trash', () => {
+  it('selects a row on click and reveals the bulk Trash action', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    // Clicking the row body (the snippet, not a button) selects without opening.
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    expect(probedRoute(view)).toEqual({ kind: 'allNotes', tag: null })
+    expect(view.getByRole('button', { name: /Trash \(1\)/ })).toBeDefined()
+
+    // ⌘-click a second row extends the selection.
+    fireEvent.click(view.getByText('Dandelion chocolate.'), { metaKey: true })
+    expect(view.getByRole('button', { name: /Trash \(2\)/ })).toBeDefined()
+    view.unmount()
+  })
+
+  it('range-selects rows with Shift-click', async () => {
+    const rows = [
+      { path: 'notes/a.md', title: 'Note A', mtime: 3, preview: 'alpha' },
+      { path: 'notes/b.md', title: 'Note B', mtime: 2, preview: 'bravo' },
+      { path: 'notes/c.md', title: 'Note C', mtime: 1, preview: 'charlie' },
+    ]
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command !== 'db_query') {
+        return null
+      }
+      const sql = String(args['sql'])
+      if (sql.includes('group by')) {
+        return facetRows
+      }
+      if (sql.includes('"preview"')) {
+        return sql.includes('from "tags"') ? [] : rows
+      }
+      return []
+    })
+    const view = renderScreen()
+    await view.findByText('Note A')
+
+    // Click the first row's body (the snippet), then Shift-click the third →
+    // the whole range is selected (the row passes the modifier through).
+    fireEvent.click(view.getByText('alpha'))
+    fireEvent.click(view.getByText('charlie'), { shiftKey: true })
+
+    expect(view.getByRole('button', { name: /Trash \(3\)/ })).toBeDefined()
+    view.unmount()
+  })
+
+  it('opens a note on double-click', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    fireEvent.doubleClick(view.getByText('Shop your health goals.'))
+    expect(probedRoute(view)).toEqual({ kind: 'note', path: 'notes/health.md' })
+    view.unmount()
+  })
+
+  it('drives selection from the keyboard and opens with Return', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+    const surface = view.getByLabelText('All notes')
+
+    fireEvent.keyDown(surface, { key: 'ArrowDown' }) // selects the first row
+    expect(view.getByRole('button', { name: /Trash \(1\)/ })).toBeDefined()
+
+    fireEvent.keyDown(surface, { key: 'Enter' })
+    expect(probedRoute(view)).toEqual({ kind: 'note', path: 'notes/health.md' })
+    view.unmount()
+  })
+
+  it('clears the selection on Escape', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+    const surface = view.getByLabelText('All notes')
+
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    expect(view.queryByRole('button', { name: /Trash \(1\)/ })).not.toBeNull()
+
+    fireEvent.keyDown(surface, { key: 'Escape' })
+    expect(view.queryByRole('button', { name: /Trash \(/ })).toBeNull()
+    view.unmount()
+  })
+
+  it('bulk-trashes the selection to the OS trash and drops the rows', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    fireEvent.click(view.getByText('Dandelion chocolate.'), { metaKey: true })
+    fireEvent.click(view.getByRole('button', { name: /Trash \(2\)/ }))
+
+    // Confirm, then the two notes go to the trash via `note_delete`.
+    await view.findByText('Trash 2 notes?')
+    fireEvent.click(view.getByRole('button', { name: 'Trash' }))
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('note_delete', {
+        path: 'notes/health.md',
+        generation: 1,
+      })
+      expect(mockInvoke).toHaveBeenCalledWith('note_delete', {
+        path: 'notes/tokyo.md',
+        generation: 1,
+      })
+    })
+    // Optimistic removal: the rows leave at once — the test harness has no file
+    // watcher to drive the reindex that would otherwise refresh the list.
+    await waitFor(() => expect(view.queryByText('Health Stacked')).toBeNull())
+    expect(view.queryByText('Tokyo Gâteau')).toBeNull()
+    view.unmount()
+  })
+
+  it('opens the confirm dialog from the ⌘⌫ shortcut', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+    const surface = view.getByLabelText('All notes')
+
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    fireEvent.keyDown(surface, { key: 'Backspace', metaKey: true })
+
+    expect(await view.findByText('Trash 1 note?')).toBeDefined()
+    view.unmount()
+  })
+
+  it('does not open a note when Return activates a focused header button', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    // Select a note, then send Return to the New note button: a focused control
+    // owns Return, so the document-level shortcut must back off and not open.
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    fireEvent.keyDown(view.getByRole('button', { name: /New note/ }), { key: 'Enter' })
+
+    expect(probedRoute(view)).toEqual({ kind: 'allNotes', tag: null })
+    view.unmount()
+  })
+
+  it('closes the confirm and reports the failure via the operations toast', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'note_delete') {
+        throw new Error('disk on fire')
+      }
+      if (command !== 'db_query') {
+        return null
+      }
+      const sql = String(args['sql'])
+      if (sql.includes('group by')) {
+        return facetRows
+      }
+      if (sql.includes('"preview"')) {
+        return sql.includes('from "tags"') ? [] : noteRows
+      }
+      if (sql.includes('from "tags"')) {
+        return tagRows
+      }
+      return []
+    })
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    fireEvent.click(view.getByRole('button', { name: /Trash \(1\)/ }))
+    await view.findByText('Trash 1 note?')
+    fireEvent.click(view.getByRole('button', { name: 'Trash' }))
+
+    // The confirm closes either way; the reason lands in the operations toast.
+    await waitFor(() => expect(view.queryByText('Trash 1 note?')).toBeNull())
+    await waitFor(() =>
+      expect(view.getByTestId('operations').textContent).toContain('failed:disk on fire'),
+    )
+    // The note that failed to trash is left in the list and stays selected, so
+    // the bulk action is still available for an immediate retry (no re-select).
+    expect(view.getByText('Health Stacked')).toBeDefined()
+    expect(view.getByRole('button', { name: /Trash \(1\)/ })).toBeDefined()
+    view.unmount()
+  })
+
+  it('keeps trashed rows gone on a partial failure (no index resurrection)', async () => {
+    // health trashes; tokyo fails. The index still lists health until the
+    // watcher reindexes, so a refetch here would wrongly bring it back.
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'note_delete') {
+        if (args['path'] === 'notes/tokyo.md') {
+          throw new Error('locked')
+        }
+        return null
+      }
+      if (command !== 'db_query') {
+        return null
+      }
+      const sql = String(args['sql'])
+      if (sql.includes('group by')) {
+        return facetRows
+      }
+      if (sql.includes('"preview"')) {
+        return sql.includes('from "tags"') ? [] : noteRows
+      }
+      if (sql.includes('from "tags"')) {
+        return tagRows
+      }
+      return []
+    })
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    fireEvent.click(view.getByText('Dandelion chocolate.'), { metaKey: true })
+    fireEvent.click(view.getByRole('button', { name: /Trash \(2\)/ }))
+    await view.findByText('Trash 2 notes?')
+    fireEvent.click(view.getByRole('button', { name: 'Trash' }))
+
+    // The successfully-trashed note stays gone; the failed one stays selected.
+    await waitFor(() => expect(view.queryByText('Health Stacked')).toBeNull())
+    expect(view.getByText('Tokyo Gâteau')).toBeDefined()
+    expect(view.getByRole('button', { name: /Trash \(1\)/ })).toBeDefined()
+    view.unmount()
+  })
+
+  it('ignores a second confirm click while a trash is in flight', async () => {
+    const view = renderScreen()
+    await view.findByText('Health Stacked')
+
+    fireEvent.click(view.getByText('Shop your health goals.'))
+    fireEvent.click(view.getByRole('button', { name: /Trash \(1\)/ }))
+    await view.findByText('Trash 1 note?')
+
+    const confirm = view.getByRole('button', { name: 'Trash' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm) // a rapid second click must not double-delete
+
+    await waitFor(() => expect(view.queryByText('Trash 1 note?')).toBeNull())
+    const healthDeletes = mockInvoke.mock.calls.filter(
+      ([command, args]) => command === 'note_delete' && args['path'] === 'notes/health.md',
+    )
+    expect(healthDeletes).toHaveLength(1)
     view.unmount()
   })
 })
