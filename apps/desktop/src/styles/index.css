@@ -10,6 +10,13 @@
    ThemeProvider on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Controls that sit inside the overlaid macOS title-bar drag strip must share
+   the strip's z-index so they win by tree order without jumping above overlays. */
+@utility window-drag-control {
+  position: relative;
+  z-index: 40;
+}
+
 /* Design-system tokens exposed as Tailwind theme keys, 1:1 by name, so
    product code writes `text-text-muted` / `bg-surface-hover` instead of
    arbitrary `text-[color:var(--text-muted)]` escapes. `inline` makes the

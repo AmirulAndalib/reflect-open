@@ -76,10 +76,9 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
         <div className="cursor-default text-sm font-semibold text-text">
           {monthLabel(month)}
         </div>
-        {/* z-40 lifts the buttons above the WindowDragRegion strip overlaying
-            the title-bar band, so clicks land instead of dragging the window
-            (see NavigateArrows for the stacking contract). */}
-        <nav className="relative z-40 flex items-center justify-center space-x-1 text-text-muted">
+        {/* window-drag-control lifts the buttons above the WindowDragRegion strip
+            overlaying the title-bar band (see NavigateArrows for the contract). */}
+        <nav className="window-drag-control flex items-center justify-center space-x-1 text-text-muted">
           <button
             type="button"
             aria-label="Previous month"

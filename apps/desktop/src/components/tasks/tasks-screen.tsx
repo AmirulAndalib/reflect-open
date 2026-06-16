@@ -228,7 +228,7 @@ export function TasksScreen(): ReactElement {
       className="flex h-full min-h-0 flex-col outline-none"
     >
       <header className="flex flex-none items-center gap-2 border-b border-border py-2.5 pl-2 pr-3 lg:pl-10">
-        <div className="relative min-w-0 flex-1">
+        <div className="window-drag-control min-w-0 flex-1">
           <Search
             aria-hidden
             className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-text-muted"
@@ -248,7 +248,7 @@ export function TasksScreen(): ReactElement {
             today={today}
             onSchedule={onSchedule}
           >
-            <Button type="button" variant="ghost" className="text-text-muted">
+            <Button type="button" variant="ghost" className="window-drag-control text-text-muted">
               <CalendarClock aria-hidden className="size-4" />
               Schedule ({selection.selectedCount})
             </Button>
@@ -260,14 +260,19 @@ export function TasksScreen(): ReactElement {
             variant="ghost"
             onClick={onConvertToBullet}
             title="Drop the checkbox, keeping the line as a plain bullet — leaves the Tasks list"
-            className="text-text-muted"
+            className="window-drag-control text-text-muted"
           >
             <List aria-hidden className="size-4" />
             Convert to bullet ({selection.selectedCount})
           </Button>
         ) : null}
         {recentlyCompleted.length > 0 ? (
-          <Button type="button" variant="ghost" onClick={actions.archive} className="text-text-muted">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={actions.archive}
+            className="window-drag-control text-text-muted"
+          >
             <Archive aria-hidden className="size-4" />
             Archive ({recentlyCompleted.length})
           </Button>

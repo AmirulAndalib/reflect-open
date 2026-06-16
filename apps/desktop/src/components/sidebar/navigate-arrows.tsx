@@ -23,11 +23,10 @@ export function NavigateArrows(): ReactElement {
 
   return (
     // The arrows sit inside the overlaid macOS title-bar band, where the
-    // WindowDragRegion strip (z-40, mounted before the app) would otherwise
-    // swallow their clicks into a window drag. Matching its z-index puts the
-    // buttons above it by tree order while same-z overlays mounted later
-    // (the command palette) still cover them.
-    <div className="relative z-40 flex items-center">
+    // WindowDragRegion strip would otherwise swallow their clicks into a
+    // window drag; window-drag-control keeps them above it without outranking
+    // same-z overlays mounted later, such as the command palette.
+    <div className="window-drag-control flex items-center">
       <Tooltip>
         {/* Span wrapper keeps pointer events alive when the button is disabled,
             so the tooltip still opens at the start of the history stack. */}
