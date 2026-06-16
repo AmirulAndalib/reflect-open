@@ -68,6 +68,10 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
   const orderedPaths = useMemo(() => (notes ?? []).map((note) => note.path), [notes])
   const selection = useListSelection(orderedPaths)
   const openNote = useCallback((path: string) => navigate(routeForPath(path)), [navigate])
+  const handleFilterSelect = useCallback(
+    (next: string | null) => navigate({ kind: 'allNotes', tag: next }),
+    [navigate],
+  )
 
   // The bulk-trash confirm: the screen owns whether it's open and which paths it
   // acts on (snapshotted at open time, since the delete prunes the live
@@ -114,7 +118,7 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
           <AllNotesFilters
             tag={tag}
             facets={facets ?? []}
-            onSelect={(next) => navigate({ kind: 'allNotes', tag: next })}
+            onSelect={handleFilterSelect}
           />
           {selection.selectedCount > 0 ? (
             <button
