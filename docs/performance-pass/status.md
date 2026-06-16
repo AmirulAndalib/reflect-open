@@ -40,3 +40,9 @@ Items from the original plan that were not addressed:
 - **P12/P13** — store backlink snippets in the index.
 
 These are tracked in `docs/performance-pass/plan.md` and can be picked up in a follow-on pass.
+
+---
+
+## CI Fix (2026-06-15)
+
+Two Rust tests (`db::tests::migrations_are_valid_and_idempotent` and `db::tests::open_index_at_creates_migrates_and_reopens`) were asserting the migration version was 12, but migration `0013_perf_indexes.sql` added by this performance pass brought the count to 13. Updated both assertions to 13.
