@@ -76,7 +76,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 12); // applied migrations (0001 through 0012)
+    assert_eq!(version, 13); // applied migrations (0001 through 0013)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -466,7 +466,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 12);
+    assert_eq!(version, 13);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();
