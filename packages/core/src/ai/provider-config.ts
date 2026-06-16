@@ -101,3 +101,13 @@ export function pickTranscriptionConfig(state: AiProvidersState): TranscriptionC
   }
   return null
 }
+
+/**
+ * The configured entry asset descriptions should run on: the app-wide default,
+ * falling back to the first configured provider when the default id is missing
+ * or dangling. Asset descriptions use normal multimodal chat/generation models,
+ * so the configured model id is meaningful here (unlike transcription).
+ */
+export function pickAssetDescriptionConfig(state: AiProvidersState): AiProviderConfig | null {
+  return defaultAiProvider(state)
+}

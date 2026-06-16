@@ -4,6 +4,7 @@ import { InlineAlert } from '@/components/inline-alert'
 import { ensureEmbeddingsVisibly, retryFailedEmbeddings } from '@/lib/semantic'
 import { useEmbedStatus } from '@/lib/use-embed-status'
 import { useSettings } from '@/providers/settings-provider'
+import { AssetDescriptionsField } from './asset-descriptions-field'
 import { SettingsField } from './field'
 import { ModelDownloadProgress } from './model-download-progress'
 import { RebuildIndexField } from './rebuild-index-field'
@@ -92,6 +93,7 @@ export function SearchSection(): ReactElement {
       >
         <div className="mt-3">{control}</div>
       </SettingsField>
+      <AssetDescriptionsField />
       <RebuildIndexField />
     </SettingsSection>
   )

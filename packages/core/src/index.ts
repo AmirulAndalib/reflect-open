@@ -159,17 +159,13 @@ export {
   withAiProviderAdded,
   withAiProviderRemoved,
   defaultAiProvider,
+  pickAssetDescriptionConfig,
   pickTranscriptionConfig,
   type AiProvidersState,
   type TranscriptionConfig,
   type TranscriptionProvider,
 } from './ai/provider-config'
-export {
-  chatModelOptions,
-  resolveChatModel,
-  type ChatModelOption,
-  type ChatModelSelection,
-} from './ai/chat/model-options'
+export { chatModelOptions, resolveChatModel, type ChatModelOption, type ChatModelSelection } from './ai/chat/model-options'
 export { validateApiKey, type ApiKeyValidation } from './ai/validate-key'
 export {
   assertCloudAllowed,
@@ -204,16 +200,8 @@ export {
   type SearchNotesOutput,
 } from './ai/chat/tools'
 export { chatSystemPrompt, type SystemPromptInput } from './ai/chat/system-prompt'
-export {
-  loadChatGraphContext,
-  MAX_CONTEXT_TAGS,
-  type GraphContextDeps,
-} from './ai/chat/graph-context'
-export {
-  streamChat,
-  type ChatStreamEvent,
-  type StreamChatOptions,
-} from './ai/chat/stream-chat'
+export { loadChatGraphContext, MAX_CONTEXT_TAGS, type GraphContextDeps } from './ai/chat/graph-context'
+export { streamChat, type ChatStreamEvent, type StreamChatOptions } from './ai/chat/stream-chat'
 export {
   appendEvent,
   buildHistory,
@@ -224,27 +212,13 @@ export {
   type ChatAttachment,
   type ChatTurn,
 } from './ai/chat/transcript'
-export {
-  deleteChatConversation,
-  listChatConversations,
-  loadChatMessages,
-  saveChatMessage,
-  type ChatConversation,
-} from './ai/chat/store'
-export {
-  estimateTokens,
-  fitToContextWindow,
-  type ContextWindowOptions,
-} from './ai/chat/context-window'
+export { deleteChatConversation, listChatConversations, loadChatMessages, saveChatMessage, type ChatConversation } from './ai/chat/store'
+export { estimateTokens, fitToContextWindow, type ContextWindowOptions } from './ai/chat/context-window'
 export type { ModelMessage as ChatModelMessage } from 'ai'
 // The fixed per-provider model ids stay internal to `ai/transcribe` —
 // exporting them would let callers couple to vendor model names.
-export {
-  isTranscriptionRejected,
-  transcribeAudio,
-  TranscriptionRejectedError,
-  type TranscriptionRequest,
-} from './ai/transcribe'
+export { isTranscriptionRejected, transcribeAudio, TranscriptionRejectedError, type TranscriptionRequest } from './ai/transcribe'
+export { describeAsset, isAssetDescriptionRejected, AssetDescriptionRejectedError, type DescribeAssetRequest } from './ai/describe-asset'
 
 // Capture actions (audio memos; Plan 11's link capture joins here)
 export {
@@ -260,6 +234,7 @@ export {
   type ReconcileAudioMemosOutcome,
   type ReconcileStop,
 } from './actions/audio-memo'
+export { assetDescriptionPending, assetDescriptionSidecarPath, isDescribableAssetPath, listDescribableAssets, mediaTypeForAsset, parseAssetDescriptionSidecarMeta, reconcileAssetDescriptions, type AssetDescriptionCandidate, type AssetDescriptionSidecarMeta, type AssetDescriptionSkipReason, type ReconcileAssetDescriptionsInput, type ReconcileAssetDescriptionsOutcome } from './actions/asset-description'
 
 // Link capture (Plan 11) — the envelope also ships to the extension via the
 // `./capture-envelope` subpath export (browser-safe, zod-only)
