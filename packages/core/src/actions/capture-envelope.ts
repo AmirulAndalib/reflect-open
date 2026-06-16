@@ -30,9 +30,9 @@ export const captureEnvelopeSchema = z.object({
   /** Envelope format version; bump on breaking changes. */
   version: z.literal(1),
   /** Producer-generated UUID — names the spool files, dedups host retries. */
-  id: z.string().uuid(),
+  id: z.uuid(),
   /** The captured page's URL. */
-  url: z.string().url().refine(isHttpUrl, 'must be an http(s) url'),
+  url: z.url().refine(isHttpUrl, 'must be an http(s) url'),
   /** The page title at capture time (may be empty on restricted pages). */
   title: z.string(),
   /** Text the user had selected, verbatim. */
@@ -47,7 +47,7 @@ export const captureEnvelopeSchema = z.object({
    */
   screenshotRef: z.string().optional(),
   /** When the capture happened, ISO-8601 — decides the daily note it lands on. */
-  capturedAt: z.string().datetime({ offset: true }),
+  capturedAt: z.iso.datetime({ offset: true }),
   /** Where the capture originated. */
   source: captureSourceSchema,
 })
