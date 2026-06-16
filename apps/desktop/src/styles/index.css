@@ -269,7 +269,7 @@ body {
   font-size: inherit;
 }
 
-/* meowdown 0.8.1 ships a per-block gutter handle (a grip for drag-reordering and
+/* meowdown ships a per-block gutter handle (a grip for drag-reordering and
    a "+" add button). Reflect doesn't use block reordering — and the grip showed
    up beside the Tasks inline editor — so hide the whole gutter. Matched by the
    stable `meow_<Name>_` class prefix so a meowdown hash bump doesn't revive it.
