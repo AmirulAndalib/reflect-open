@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Archive, CalendarClock, List, Search } from 'lucide-react'
-import { getCompletedTasks, getOpenTasks, groupTasks, hasBridge, type TaskGroup } from '@reflect/core'
+import {
+  getCompletedTasks,
+  getOpenTasks,
+  groupTasks,
+  hasBridge,
+  type OpenTask,
+  type TaskGroup,
+} from '@reflect/core'
 import { Input } from '@/components/ui/input'
 import { useRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { sameTask, taskKey } from '@/lib/tasks/task-identity'
@@ -156,26 +163,30 @@ export function TasksScreen(): ReactElement {
     },
     [actions, selection, scrollToKey],
   )
+  // The tasks behind the current selection's keys, in selection order — what the
+  // toolbar actions (schedule, convert) act on. A row whose key no longer
+  // resolves (pruned by a reindex) is dropped rather than acted on.
+  const selectedTasks = useCallback(
+    (): OpenTask[] =>
+      [...selection.selected]
+        .map((key) => tasksByKey.get(key))
+        .filter((task): task is OpenTask => task !== undefined),
+    [selection, tasksByKey],
+  )
   // Schedule the current selection (the calendar / ⌘⇧S), then deselect (V1).
   const onSchedule = useCallback(
     (isoDate: string | null) => {
-      const tasks = [...selection.selected]
-        .map((key) => tasksByKey.get(key))
-        .filter((task): task is NonNullable<typeof task> => task !== undefined)
-      actions.schedule(tasks, isoDate)
+      actions.schedule(selectedTasks(), isoDate)
       selection.clear()
     },
-    [actions, selection, tasksByKey],
+    [actions, selection, selectedTasks],
   )
   // Convert the current selection to plain bullets (the toolbar / ⌘⇧K): the rows
   // leave the Tasks view, so deselect after, like scheduling.
   const onConvertToBullet = useCallback(() => {
-    const tasks = [...selection.selected]
-      .map((key) => tasksByKey.get(key))
-      .filter((task): task is NonNullable<typeof task> => task !== undefined)
-    actions.convertToBullet(tasks)
+    actions.convertToBullet(selectedTasks())
     selection.clear()
-  }, [actions, selection, tasksByKey])
+  }, [actions, selection, selectedTasks])
   useTaskKeyboard({
     selection,
     actions,
