@@ -46,7 +46,7 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 // --- UTC date arithmetic (no date-fns in core; UTC sidesteps DST entirely) ---
 
 function parseUtc(iso: string): Date {
-  const [year, month, day] = iso.split('-').map(Number)
+  const [year, month, day] = iso.split('-').map(Number) as [number, number, number]
   return new Date(Date.UTC(year, month - 1, day))
 }
 
@@ -67,7 +67,7 @@ function addDays(iso: string, days: number): string {
 
 /** Add months with end-of-month clamping (date-fns semantics): Jan 31 + 1mo → Feb 28. */
 function addMonths(iso: string, months: number): string {
-  const [year, month, day] = iso.split('-').map(Number)
+  const [year, month, day] = iso.split('-').map(Number) as [number, number, number]
   const zeroBased = month - 1 + months
   const targetYear = year + Math.floor(zeroBased / 12)
   const targetMonth = ((zeroBased % 12) + 12) % 12
@@ -125,8 +125,9 @@ function extractNumber(tokens: readonly string[]): number | null {
     if (/^\d+$/.test(token)) {
       return Number(token)
     }
-    if (token in SPELLED_NUMBERS) {
-      return SPELLED_NUMBERS[token]
+    const spelled = SPELLED_NUMBERS[token]
+    if (spelled !== undefined) {
+      return spelled
     }
   }
   return null
@@ -134,8 +135,9 @@ function extractNumber(tokens: readonly string[]): number | null {
 
 function extractUnit(tokens: readonly string[]): Unit | null {
   for (const token of tokens) {
-    if (token in UNIT_WORDS) {
-      return UNIT_WORDS[token]
+    const unit = UNIT_WORDS[token]
+    if (unit !== undefined) {
+      return unit
     }
   }
   return null
@@ -209,24 +211,17 @@ function relativeSuggestions(tokens: readonly string[], context: DateSuggestionC
 type Modifier = 'this' | 'next' | 'last'
 const MODIFIERS: readonly Modifier[] = ['this', 'next', 'last']
 
-const WEEKDAY_ORDER: readonly string[] = [
-  'monday',
-  'tuesday',
-  'wednesday',
-  'thursday',
-  'friday',
-  'saturday',
-  'sunday',
+// Weekdays in display order (Monday first), paired with their JS `getUTCDay`
+// index (Sunday = 0). One table avoids an unchecked name→index lookup.
+const WEEKDAYS: readonly { word: string; dow: number }[] = [
+  { word: 'monday', dow: 1 },
+  { word: 'tuesday', dow: 2 },
+  { word: 'wednesday', dow: 3 },
+  { word: 'thursday', dow: 4 },
+  { word: 'friday', dow: 5 },
+  { word: 'saturday', dow: 6 },
+  { word: 'sunday', dow: 0 },
 ]
-const WEEKDAY_INDEX: Record<string, number> = {
-  sunday: 0,
-  monday: 1,
-  tuesday: 2,
-  wednesday: 3,
-  thursday: 4,
-  friday: 5,
-  saturday: 6,
-}
 
 /** The smallest date on or after `today` whose weekday is `target` (today counts). */
 function upcomingWeekday(today: string, target: number): string {
@@ -264,11 +259,11 @@ interface NlUnit {
 }
 
 function nlUnits(): NlUnit[] {
-  const weekdays: NlUnit[] = WEEKDAY_ORDER.map((name, index) => ({
-    word: name,
-    display: titleCase(name),
+  const weekdays: NlUnit[] = WEEKDAYS.map(({ word, dow }, index) => ({
+    word,
+    display: titleCase(word),
     order: index,
-    resolve: (today, modifier) => resolveWeekday(today, WEEKDAY_INDEX[name], modifier),
+    resolve: (today, modifier) => resolveWeekday(today, dow, modifier),
   }))
   return [
     ...weekdays,
@@ -289,7 +284,7 @@ function nlUnits(): NlUnit[] {
       display: 'Month',
       order: 9,
       resolve: (today, modifier) => {
-        const [year, month] = today.split('-').map(Number)
+        const [year, month] = today.split('-').map(Number) as [number, number]
         const first = fromParts(year, month, 1)
         return modifier === 'this' ? first : addMonths(first, modifier === 'next' ? 1 : -1)
       },
@@ -311,11 +306,12 @@ interface NlCandidate {
  * modifier then the unit (`next fri` → *Next Friday*).
  */
 function phraseMatches(tokens: readonly string[], modifier: Modifier | null, unitWord: string): boolean {
-  if (tokens.length === 1) {
-    return unitWord.startsWith(tokens[0])
+  const [first, second] = tokens
+  if (tokens.length === 1 && first !== undefined) {
+    return unitWord.startsWith(first)
   }
-  if (tokens.length === 2) {
-    return modifier !== null && modifier.startsWith(tokens[0]) && unitWord.startsWith(tokens[1])
+  if (tokens.length === 2 && first !== undefined && second !== undefined) {
+    return modifier !== null && modifier.startsWith(first) && unitWord.startsWith(second)
   }
   return false
 }
@@ -370,13 +366,18 @@ function typedDateSuggestions(
   if (parts.length < 2 || parts.length > 3 || !parts.every((part) => /^\d+$/.test(part))) {
     return []
   }
-  // An explicit year must be four digits — "12/25/23" must resolve to nothing,
-  // not the year 23. We don't guess a century for a two-digit year.
-  if (parts.length === 3 && parts[2].length !== 4) {
+  const [firstPart, secondPart, yearPart] = parts
+  if (firstPart === undefined || secondPart === undefined) {
     return []
   }
-  const [first, second] = parts.map(Number)
-  const year = parts.length === 3 ? Number(parts[2]) : Number(context.today.slice(0, 4))
+  // An explicit year must be four digits — "12/25/23" must resolve to nothing,
+  // not the year 23. We don't guess a century for a two-digit year.
+  if (yearPart !== undefined && yearPart.length !== 4) {
+    return []
+  }
+  const first = Number(firstPart)
+  const second = Number(secondPart)
+  const year = yearPart !== undefined ? Number(yearPart) : Number(context.today.slice(0, 4))
   // The preferred reading follows the date-format setting; the swapped reading
   // is offered only for bare shorthand, where "12/10" is genuinely ambiguous.
   const readings =
@@ -389,7 +390,7 @@ function typedDateSuggestions(
           { month: first, day: second },
           { month: second, day: first },
         ]
-  const allowSwap = parts.length === 2
+  const allowSwap = yearPart === undefined
   const seen = new Set<string>()
   const results: DateSuggestion[] = []
   readings.forEach((reading, index) => {
@@ -445,8 +446,9 @@ function matchMonth(token: string): number | null {
   if (token.length < 3) {
     return null
   }
-  if (token in MONTH_ABBREVIATIONS) {
-    return MONTH_ABBREVIATIONS[token]
+  const abbreviation = MONTH_ABBREVIATIONS[token]
+  if (abbreviation !== undefined) {
+    return abbreviation
   }
   const index = MONTH_NAMES.findIndex((name) => name.startsWith(token))
   return index === -1 ? null : index + 1

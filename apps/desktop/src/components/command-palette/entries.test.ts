@@ -90,8 +90,8 @@ describe('buildPaletteSections', () => {
       hits: [hit('notes/a.md', 'Alpha'), hit('notes/b.md', 'Beta', 'about alpha')],
     })
     expect(result.notes.map((note) => note.path)).toEqual(['notes/a.md', 'notes/b.md'])
-    expect(result.notes[0].snippet).toBeNull() // the title form won
-    expect(result.notes[1].snippet).toContain('alpha')
+    expect(result.notes[0]!.snippet).toBeNull() // the title form won
+    expect(result.notes[1]!.snippet).toContain('alpha')
   })
 
   it('a daily body hit keeps its day label in the merge', () => {
@@ -99,7 +99,7 @@ describe('buildPaletteSections', () => {
       query: 'standup',
       hits: [hit('daily/2026-06-05.md', '2026-06-05', 'standup notes', '2026-06-05')],
     })
-    expect(result.notes[0].date).toBe('2026-06-05')
+    expect(result.notes[0]!.date).toBe('2026-06-05')
   })
 
   it('a not-yet-created daily (pathless suggestion) is still jumpable', () => {
@@ -148,7 +148,7 @@ describe('buildPaletteSections', () => {
       commands: COMMANDS,
     })
     expect(result.notes.map((note) => note.path)).toEqual(['daily/2026-06-08.md', 'notes/w.md'])
-    expect(result.notes[0].date).toBe('2026-06-08')
+    expect(result.notes[0]!.date).toBe('2026-06-08')
     expect(result.commands).toEqual([])
   })
 
@@ -204,6 +204,6 @@ describe('buildPaletteSections', () => {
         },
       ],
     })
-    expect(result.notes[0].date).toBe('2026-06-09')
+    expect(result.notes[0]!.date).toBe('2026-06-09')
   })
 })
