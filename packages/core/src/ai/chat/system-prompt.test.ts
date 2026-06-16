@@ -28,8 +28,8 @@ describe('chatSystemPrompt', () => {
 
   it('steers the model away from redundant searches and serial reads', () => {
     const prompt = chatSystemPrompt({ today: '2026-06-12', context: null })
-    expect(prompt).toContain('Search matches by meaning, not exact keywords')
-    expect(prompt).toContain('raise search_notes’ “limit” (up to 20) in one call')
+    expect(prompt).toContain('search_notes matches on both keywords and meaning')
+    expect(prompt).toContain('raise its “limit” (up to 20) in one call')
     expect(prompt).toContain('read them in the same round')
     expect(prompt).toContain('limited number of tool rounds')
   })
