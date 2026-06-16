@@ -2,7 +2,7 @@
 
 **Branch:** `claude/performance-pass-20260615`  
 **Date:** 2026-06-15  
-**PR URL:** (filled in after PR creation)
+**PR URL:** https://github.com/team-reflect/reflect-open/pull/233
 
 ---
 
@@ -83,4 +83,4 @@ Lint warnings (pre-existing, not introduced by this pass):
 
 ## PR URL
 
-(filled in after `gh pr create`)
+https://github.com/team-reflect/reflect-open/pull/233
