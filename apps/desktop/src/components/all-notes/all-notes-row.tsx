@@ -6,12 +6,12 @@ import { cn } from '@/lib/utils'
 import { useSettings } from '@/providers/settings-provider'
 
 /**
- * The shared column template (Indicator · Subject · Snippet · Tags · Updated) —
- * the header row in {@link AllNotesTable} uses the same classes so the columns
- * line up. The leading column is the selection-indicator gutter.
+ * The shared column template (Subject · Snippet · Tags · Updated) — the header
+ * row in {@link AllNotesTable} uses the same classes so the columns line up.
+ * The selection indicator is positioned beside the row, outside the column flow.
  */
 export const ALL_NOTES_GRID =
-  'grid grid-cols-[1.25rem_15rem_minmax(0,1fr)_minmax(0,8rem)_5rem] items-center gap-4 pl-4 pr-7 lg:pl-12'
+  'grid grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,8rem)_5rem] items-center gap-4 pl-12 pr-7'
 
 interface AllNotesRowProps {
   note: NoteListEntry
@@ -44,7 +44,7 @@ export const AllNotesRow = memo(function AllNotesRow({ note, selected, onSelect,
       }}
       onDoubleClick={() => onOpen(note.path)}
       className={cn(
-        'group/row h-12 cursor-default select-none transition-colors duration-100',
+        'group/row relative h-12 cursor-default select-none transition-colors duration-100',
         ALL_NOTES_GRID,
         selected ? 'bg-surface-hover ring-1 ring-inset ring-accent' : 'hover:bg-surface-hover',
       )}
@@ -58,7 +58,7 @@ export const AllNotesRow = memo(function AllNotesRow({ note, selected, onSelect,
           onToggle(note.path, event)
         }}
         className={cn(
-          'flex size-[18px] items-center justify-center text-text-muted transition-opacity duration-100 hover:text-text focus-visible:opacity-100 focus-visible:outline-none',
+          'absolute left-4 top-1/2 flex size-[18px] -translate-y-1/2 items-center justify-center text-text-muted transition-opacity duration-100 hover:text-text focus-visible:opacity-100 focus-visible:outline-none',
           selected ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100',
         )}
       >

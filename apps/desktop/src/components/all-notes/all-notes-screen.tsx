@@ -112,7 +112,7 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
       aria-label="All notes"
       className="flex h-full min-h-0 flex-col outline-none"
     >
-      <header className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-border py-4 pl-4 pr-7 lg:pl-12">
+      <header className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-border py-4 pl-12 pr-7">
         <h1 className="text-[15px] font-semibold text-text">Notes</h1>
         <div className="flex flex-wrap items-center gap-3">
           <AllNotesFilters
