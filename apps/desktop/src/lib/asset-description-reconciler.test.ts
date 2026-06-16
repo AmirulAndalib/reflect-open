@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  type ReconcileAssetDescriptionsOutcome,
   pickAssetDescriptionConfig,
   readNote,
   reconcileAssetDescriptions,
@@ -44,8 +45,38 @@ const PROVIDERS = {
   defaultProviderId: 'cfg-openai',
 }
 
+const SUCCESS_OUTCOME: ReconcileAssetDescriptionsOutcome = {
+  considered: 1,
+  described: 1,
+  skipped: {
+    unsupported: 0,
+    unreferenced: 0,
+    private: 0,
+    unmanagedSidecar: 0,
+    fresh: 0,
+    rejected: 0,
+  },
+  stopped: null,
+}
+
 function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+interface DeferredOutcome {
+  promise: Promise<ReconcileAssetDescriptionsOutcome>
+  resolve: (outcome: ReconcileAssetDescriptionsOutcome) => void
+}
+
+function deferredOutcome(): DeferredOutcome {
+  let resolveOutcome: ((outcome: ReconcileAssetDescriptionsOutcome) => void) | null = null
+  const promise = new Promise<ReconcileAssetDescriptionsOutcome>((resolve) => {
+    resolveOutcome = resolve
+  })
+  if (resolveOutcome === null) {
+    throw new Error('deferred outcome was not initialized')
+  }
+  return { promise, resolve: resolveOutcome }
 }
 
 describe('createAssetDescriptionReconciler', () => {
@@ -54,19 +85,7 @@ describe('createAssetDescriptionReconciler', () => {
     vi.clearAllMocks()
     pickAssetDescriptionConfigMock.mockReturnValue(PROVIDERS.providers[0]!)
     readNoteMock.mockResolvedValue('![asset](assets/from-note.png)')
-    reconcileAssetDescriptionsMock.mockResolvedValue({
-      considered: 1,
-      described: 1,
-      skipped: {
-        unsupported: 0,
-        unreferenced: 0,
-        private: 0,
-        unmanagedSidecar: 0,
-        fresh: 0,
-        rejected: 0,
-      },
-      stopped: null,
-    })
+    reconcileAssetDescriptionsMock.mockResolvedValue(SUCCESS_OUTCOME)
   })
 
   it('schedules a changed asset path without backfilling the graph', async () => {
@@ -136,6 +155,37 @@ describe('createAssetDescriptionReconciler', () => {
     await flush()
 
     expect(subscribeFileChangesMock).toHaveBeenCalled()
+    reconciler.dispose()
+  })
+
+  it('does not overlap queued asset work with a running backfill', async () => {
+    const backfill = deferredOutcome()
+    reconcileAssetDescriptionsMock.mockReturnValueOnce(backfill.promise)
+    const reconciler = createAssetDescriptionReconciler({
+      generation: 3,
+      getProviders: () => PROVIDERS,
+    })
+    reconciler.start()
+    await flush()
+
+    const backfillPromise = reconciler.backfill()
+    await flush()
+    for (const handler of handlers) {
+      handler([{ path: 'assets/photo.png', kind: 'upsert' }])
+    }
+    await flush()
+
+    expect(reconcileAssetDescriptionsMock).toHaveBeenCalledTimes(1)
+    expect(reconcileAssetDescriptionsMock.mock.calls[0]?.[0]).not.toHaveProperty('assetPaths')
+
+    backfill.resolve(SUCCESS_OUTCOME)
+    await backfillPromise
+    await flush()
+
+    expect(reconcileAssetDescriptionsMock).toHaveBeenCalledTimes(2)
+    expect(reconcileAssetDescriptionsMock.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ assetPaths: ['assets/photo.png'], generation: 3 }),
+    )
     reconciler.dispose()
   })
 })

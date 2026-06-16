@@ -16,7 +16,6 @@ import {
 } from '@meowdown/react'
 import '@meowdown/core/style.css'
 import '@meowdown/react/style.css'
-import { BulletAfterHeadingKeymap } from '@/editor/bullet-after-heading-keymap'
 import { cn } from '@/lib/utils'
 
 /**
@@ -160,6 +159,7 @@ export function NoteEditor({
       mode={markMode}
       initialMarkdown={initialContent}
       spellCheck={spellCheck}
+      bulletAfterHeading={bulletAfterHeading}
       editorClassName={cn('reflect-editor', className)}
       {...(titlePlaceholder !== undefined ? { placeholder: titlePlaceholder } : {})}
       onDocChange={handleDocChange}
@@ -170,7 +170,6 @@ export function NoteEditor({
       onImagePaste={handleImagePaste}
       onImageSaveError={handleImageSaveError}
     >
-      <BulletAfterHeadingKeymap enabled={bulletAfterHeading} />
       {children}
     </MeowdownEditor>
   )

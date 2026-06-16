@@ -155,7 +155,7 @@ export function createAssetDescriptionReconciler(
         stopped: { reason: 'stale', message: 'the graph session ended before backfill' },
       }
     }
-    if (state.running) {
+    if (running) {
       return {
         considered: 0,
         described: 0,
@@ -170,6 +170,7 @@ export function createAssetDescriptionReconciler(
         stopped: { reason: 'stale', message: 'asset description backfill is already running' },
       }
     }
+    running = true
     controller = new AbortController()
     emit({ running: true, backfilling: true, progress: { done: 0, total: 0, path: null } })
     try {
@@ -182,8 +183,12 @@ export function createAssetDescriptionReconciler(
         onProgress: (progress) => emit({ progress }),
       })
     } finally {
+      running = false
       controller = null
       emit({ running: false, backfilling: false, progress: null })
+      if (!disposed && pendingAssets.size > 0 && hasConfig()) {
+        void runQueued()
+      }
     }
   }
 
