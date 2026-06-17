@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::error::AppResult;
 
-use super::repo::{ensure_clean_state, open_existing, signature};
+use super::repo::{ensure_clean_state, open_for_write, signature};
 
 /// A file whose *changes* were withheld from staging because it is at/above
 /// the size guardrail. Oversized-but-unchanged files are not reported — their
@@ -44,7 +44,7 @@ pub(super) fn commit_all(
     message: &str,
     max_file_bytes: u64,
 ) -> AppResult<CommitOutcome> {
-    let repo = open_existing(root)?;
+    let repo = open_for_write(root)?;
     ensure_clean_state(&repo)?;
 
     let mut index = repo.index()?;

@@ -31,6 +31,16 @@ pub(super) fn open_existing(root: &Path) -> AppResult<Repository> {
     Ok(Repository::open(root)?)
 }
 
+/// Open the graph's repository for a *write* (commit/merge), first clearing a
+/// stale `.git/index.lock` so a backup an earlier crash interrupted can't wedge
+/// every future one. See [`super::lock`]. Read-only callers use
+/// [`open_existing`], which never touches the lock.
+pub(super) fn open_for_write(root: &Path) -> AppResult<Repository> {
+    let repo = open_existing(root)?;
+    super::lock::clear_stale_index_lock(repo.path())?;
+    Ok(repo)
+}
+
 /// Refuse to operate on a repository mid-operation (a rebase/merge the user
 /// started with the git CLI). Guessing here could destroy their state.
 pub(super) fn ensure_clean_state(repo: &Repository) -> AppResult<()> {

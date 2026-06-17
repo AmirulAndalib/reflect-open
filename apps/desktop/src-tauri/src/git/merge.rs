@@ -28,7 +28,7 @@ use serde::Serialize;
 
 use crate::error::AppResult;
 
-use super::repo::{current_branch, ensure_clean_state, open_existing, signature};
+use super::repo::{current_branch, ensure_clean_state, open_for_write, signature};
 
 /// Conflict-marker labels. "this device" is the local side, "other device"
 /// the remote one — product language, not branch names.
@@ -97,7 +97,7 @@ fn side_of(entry: Option<IndexEntry>) -> Option<ConflictSide> {
 /// Merge the fetched `origin/<branch>` into the local branch. Pre-condition
 /// (the sync engine guarantees it): local changes are already committed.
 pub(super) fn merge_remote(root: &Path) -> AppResult<MergeOutcome> {
-    let repo = open_existing(root)?;
+    let repo = open_for_write(root)?;
     ensure_clean_state(&repo)?;
     let branch = current_branch(&repo)?;
     let Ok(remote_oid) = repo.refname_to_id(&format!("refs/remotes/origin/{branch}")) else {

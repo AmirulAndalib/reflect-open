@@ -4,6 +4,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use git2::{Repository, RepositoryInitOptions};
 use tempfile::{tempdir, TempDir};
@@ -145,6 +146,40 @@ fn commit_records_deletions() {
     let outcome = commit_all(root, "delete", MAX_FILE_BYTES).unwrap();
     assert!(outcome.committed);
     assert!(!head_tree_paths(root).contains(&"notes/gone.md".to_string()));
+}
+
+/// Plant a `.git/index.lock` whose mtime is `age` in the past, standing in for
+/// one a crashed or force-quit process left behind.
+fn plant_index_lock(root: &Path, age: Duration) {
+    let lock_path = root.join(".git").join("index.lock");
+    fs::write(&lock_path, b"").unwrap();
+    let file = fs::File::options().write(true).open(&lock_path).unwrap();
+    file.set_modified(SystemTime::now() - age).unwrap();
+}
+
+#[test]
+fn commit_recovers_from_a_stale_index_lock() {
+    let fixture = fixture();
+    let root = &fixture.graph_a;
+    write(root, "notes/a.md", "# A\n");
+    plant_index_lock(root, Duration::from_secs(120));
+
+    let outcome = commit_all(root, "Update notes", MAX_FILE_BYTES).unwrap();
+    assert!(outcome.committed, "a stale lock must not block the commit");
+    assert!(!root.join(".git/index.lock").exists());
+}
+
+#[test]
+fn commit_leaves_a_fresh_index_lock_alone() {
+    let fixture = fixture();
+    let root = &fixture.graph_a;
+    write(root, "notes/a.md", "# A\n");
+    // A lock this young could belong to a live writer; removing it would corrupt
+    // that write, so the commit must fail rather than steal the lock.
+    plant_index_lock(root, Duration::from_secs(1));
+
+    assert!(commit_all(root, "Update notes", MAX_FILE_BYTES).is_err());
+    assert!(root.join(".git/index.lock").exists());
 }
 
 #[test]

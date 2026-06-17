@@ -16,6 +16,7 @@
 //! The one exception is `git_clone`, which runs before any graph is open.
 
 mod commit;
+mod lock;
 mod merge;
 mod remote;
 mod repo;
