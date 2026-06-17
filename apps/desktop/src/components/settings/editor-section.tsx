@@ -75,7 +75,7 @@ export function EditorSection(): ReactElement {
         legend="Spell check"
         description="Underline misspelled words while you type."
       >
-        <div className="mt-3">
+        <div className="mt-3 flex justify-end">
           <Switch
             aria-label="Spell check"
             checked={settings.editorSpellCheck}
@@ -88,7 +88,7 @@ export function EditorSection(): ReactElement {
         legend="Start with a bullet"
         description="New and empty notes open with a single bullet point, ready to type."
       >
-        <div className="mt-3">
+        <div className="mt-3 flex justify-end">
           <Switch
             aria-label="Start with a bullet"
             checked={settings.editorDefaultBullet}
@@ -101,7 +101,7 @@ export function EditorSection(): ReactElement {
         legend="Bullet after a heading"
         description="Pressing Return at the end of a heading starts a new bullet."
       >
-        <div className="mt-3">
+        <div className="mt-3 flex justify-end">
           <Switch
             aria-label="Bullet after a heading"
             checked={settings.editorBulletAfterHeading}
