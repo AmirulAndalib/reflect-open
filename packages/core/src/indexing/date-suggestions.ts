@@ -77,17 +77,6 @@ const SPELLED_NUMBERS: Record<string, number> = {
   ten: 10,
 }
 
-const UNIT_WORDS: Record<string, Unit> = {
-  day: 'day',
-  days: 'day',
-  week: 'week',
-  weeks: 'week',
-  month: 'month',
-  months: 'month',
-  year: 'year',
-  years: 'year',
-}
-
 function extractNumber(tokens: readonly string[]): number | null {
   for (const token of tokens) {
     if (/^\d+$/.test(token)) {
@@ -103,7 +92,7 @@ function extractNumber(tokens: readonly string[]): number | null {
 
 function extractUnit(tokens: readonly string[]): Unit | null {
   for (const token of tokens) {
-    const unit = UNIT_WORDS[token]
+    const unit = UNITS.find((candidate) => candidate.startsWith(token) || `${candidate}s`.startsWith(token))
     if (unit !== undefined) {
       return unit
     }

@@ -48,6 +48,17 @@ describe('generateDateSuggestions', () => {
       ])
     })
 
+    it('prefix-matches relative units as they are typed', () => {
+      expect(gen('3 d')).toEqual([
+        { date: '2020-01-04', phrase: '3 days from now' },
+        { date: '2019-12-29', phrase: '3 days ago' },
+      ])
+      expect(gen('3 w')).toEqual([
+        { date: '2020-01-22', phrase: '3 weeks from now' },
+        { date: '2019-12-11', phrase: '3 weeks ago' },
+      ])
+    })
+
     it('drops offsets beyond the ~15-year sanity limit', () => {
       expect(gen('17 years')).toEqual([])
       expect(gen('1000 years')).toEqual([])
