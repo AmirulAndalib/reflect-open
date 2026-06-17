@@ -42,17 +42,9 @@ export function EditorSection(): ReactElement {
               <SettingsOptionCard
                 key={option.value}
                 selected={selected}
-                className="items-start gap-3 px-3 py-2.5"
+                className="items-start justify-between gap-3 px-3 py-2.5"
               >
-                <input
-                  type="radio"
-                  name="editor-markdown-syntax"
-                  value={option.value}
-                  checked={selected}
-                  onChange={() => updateSettings({ editorMarkdownSyntax: option.value })}
-                  className="mt-0.5 accent-accent"
-                />
-                <span>
+                <span className="min-w-0 flex-1">
                   <span
                     className={cn(
                       'block text-sm font-medium',
@@ -65,6 +57,14 @@ export function EditorSection(): ReactElement {
                     {option.description}
                   </span>
                 </span>
+                <input
+                  type="radio"
+                  name="editor-markdown-syntax"
+                  value={option.value}
+                  checked={selected}
+                  onChange={() => updateSettings({ editorMarkdownSyntax: option.value })}
+                  className="mt-0.5 shrink-0 accent-accent"
+                />
               </SettingsOptionCard>
             )
           })}
