@@ -366,13 +366,12 @@ async function processAsset(assetPath: string, ctx: AssetContext): Promise<Asset
     return { kind: 'skipped', reason: 'unreferenced' }
   }
 
-  // Read the (small) description before the (large) asset. A managed description whose
-  // recorded size matches the file and whose `generatedAt` is at or after the
-  // file's mtime proves the asset hasn't changed since we described it — skip
-  // without ever pulling the bytes. A real content change advances the mtime
-  // (and almost always the size), so this never misses one; at worst a sync that
-  // bumps mtime forward costs the read + rehash below. This spares re-reading
-  // large assets on every edit of a note that merely references them.
+  // Read the (small) description and identify a user-authored file we must never
+  // touch. The up-to-date decision is the content hash below — never mtime/size,
+  // which an mtime-preserving replacement (`cp -p`, a restore, a sync) could spoof
+  // into a false skip and strand a stale description; the index compares content
+  // hashes for the same reason (see indexing/hash). The stat is used only for the
+  // pre-read size cap.
   const stat = ctx.statByPath.get(assetPath)
   const descriptionPath = descriptionPathFor(assetPath)
   const existing = await readDescriptionSource(descriptionPath, ctx.generation)
@@ -381,14 +380,6 @@ async function processAsset(assetPath: string, ctx: AssetContext): Promise<Asset
     managed = readManagedDescription(existing)
     if (managed === null) {
       return { kind: 'skipped', reason: 'user-authored' }
-    }
-    if (
-      stat !== undefined &&
-      managed.sourceSize === stat.size &&
-      managed.generatedAtMs !== null &&
-      stat.modifiedMs <= managed.generatedAtMs
-    ) {
-      return { kind: 'skipped', reason: 'up-to-date' }
     }
   }
 

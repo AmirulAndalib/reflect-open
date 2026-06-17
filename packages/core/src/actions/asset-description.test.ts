@@ -273,8 +273,10 @@ describe('reconcileAssetDescriptions', () => {
     expect(describeMock).not.toHaveBeenCalled()
   })
 
-  it('skips an up-to-date asset by stat, without reading its bytes', async () => {
-    assets.set('assets/a.png', 'aGVsbG8=') // 5 bytes; stat size matches below
+  it('re-reads and rehashes a same-size replacement instead of trusting mtime/size', async () => {
+    // A `cp -p`-style replacement: same byte size, mtime not advanced, different
+    // content. The hash differs, so it must be re-described — never stat-skipped.
+    assets.set('assets/a.png', 'Ym9keTI=') // "body2", 5 bytes
     files.set('notes/pub.md', publicNote('assets/a.png'))
     refs.set('assets/a.png', ['notes/pub.md'])
     files.set(
@@ -282,21 +284,21 @@ describe('reconcileAssetDescriptions', () => {
       buildDescriptionSource(
         {
           source: 'assets/a.png',
-          sourceHash: 'unused-because-we-never-read',
-          sourceSize: 5,
+          sourceHash: 'stale-hash-of-the-old-5-byte-file',
+          sourceSize: 5, // same size as the new bytes
           provider: 'anthropic',
           model: 'm',
-          generatedAt: '2026-06-16T00:00:00.000Z', // after the stat mtime (epoch+1ms)
+          generatedAt: '2026-06-16T00:00:00.000Z', // at/after the stat mtime
         },
-        'old',
+        'old description',
       ),
     )
 
     const outcome = await reconcileAssetDescriptions(input())
 
-    expect(outcome.skippedUpToDate).toBe(1)
-    expect(readAssetMock).not.toHaveBeenCalled() // size + mtime proved it unchanged
-    expect(describeMock).not.toHaveBeenCalled()
+    expect(readAssetMock).toHaveBeenCalled() // the bytes are read + rehashed
+    expect(outcome.described).toBe(1) // hash differs → re-described, not skipped
+    expect(outcome.skippedUpToDate).toBe(0)
   })
 
   it('regenerates a managed description when the source hash changed', async () => {
