@@ -23,6 +23,7 @@ mod repo;
 mod tests;
 
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use serde::Serialize;
 use tauri::State;
@@ -36,6 +37,8 @@ use self::remote::{PushOutcome, RemoteDelta};
 
 /// GitHub rejects files over 100 MB, failing the whole push; stop just under.
 const MAX_FILE_BYTES: u64 = 95 * 1024 * 1024;
+
+static GIT_COMMAND_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// Snapshot of the graph's backup repository for the UI and the sync engine.
 /// Deliberately cheap — refs and config only, no working-tree scan.
@@ -125,6 +128,22 @@ where
         .map_err(|err| AppError::io(format!("git task panicked: {err}")))?
 }
 
+async fn run_serialized_blocking<T, F>(task: F) -> AppResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> AppResult<T> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = GIT_COMMAND_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .map_err(|err| AppError::io(format!("git command lock poisoned: {err}")))?;
+        task()
+    })
+    .await
+    .map_err(|err| AppError::io(format!("git task panicked: {err}")))?
+}
+
 /// Snapshot the backup repository (cheap, no network).
 #[tauri::command]
 pub async fn git_status(generation: u64, state: State<'_, GraphState>) -> AppResult<GitStatus> {
@@ -145,7 +164,7 @@ pub async fn git_setup(
     state: State<'_, GraphState>,
 ) -> AppResult<GitStatus> {
     let root = crate::fs::root_for_generation(&state, generation)?;
-    run_blocking(move || setup(&root, remote_url, branch)).await
+    run_serialized_blocking(move || setup(&root, remote_url, branch)).await
 }
 
 /// Stop backing this graph up (drop `origin`; repo, history, and the
@@ -153,7 +172,7 @@ pub async fn git_setup(
 #[tauri::command]
 pub async fn git_disconnect(generation: u64, state: State<'_, GraphState>) -> AppResult<GitStatus> {
     let root = crate::fs::root_for_generation(&state, generation)?;
-    run_blocking(move || disconnect(&root)).await
+    run_serialized_blocking(move || disconnect(&root)).await
 }
 
 /// Clone a backup repository into `path` (restore on a fresh machine). Runs
@@ -161,7 +180,7 @@ pub async fn git_disconnect(generation: u64, state: State<'_, GraphState>) -> Ap
 /// a graph-relative path; the caller opens the result as a graph afterwards.
 #[tauri::command]
 pub async fn git_clone(url: String, path: String, token: Option<String>) -> AppResult<()> {
-    run_blocking(move || remote::clone(&url, Path::new(&path), token)).await
+    run_serialized_blocking(move || remote::clone(&url, Path::new(&path), token)).await
 }
 
 /// Commit every pending change (no-op when clean). See [`commit::commit_all`].
@@ -172,7 +191,7 @@ pub async fn git_commit_all(
     state: State<'_, GraphState>,
 ) -> AppResult<CommitOutcome> {
     let root = crate::fs::root_for_generation(&state, generation)?;
-    run_blocking(move || commit::commit_all(&root, &message, MAX_FILE_BYTES)).await
+    run_serialized_blocking(move || commit::commit_all(&root, &message, MAX_FILE_BYTES)).await
 }
 
 /// Fetch `origin` and report ahead/behind for the current branch.
@@ -183,7 +202,7 @@ pub async fn git_fetch(
     state: State<'_, GraphState>,
 ) -> AppResult<RemoteDelta> {
     let root = crate::fs::root_for_generation(&state, generation)?;
-    run_blocking(move || remote::fetch(&root, token)).await
+    run_serialized_blocking(move || remote::fetch(&root, token)).await
 }
 
 /// Merge the fetched remote branch; conflicts are committed into the notes as
@@ -194,7 +213,7 @@ pub async fn git_merge_remote(
     state: State<'_, GraphState>,
 ) -> AppResult<MergeOutcome> {
     let root = crate::fs::root_for_generation(&state, generation)?;
-    run_blocking(move || merge::merge_remote(&root)).await
+    run_serialized_blocking(move || merge::merge_remote(&root)).await
 }
 
 /// Push the current branch to `origin`; rejections come back as data so the
@@ -206,5 +225,5 @@ pub async fn git_push(
     state: State<'_, GraphState>,
 ) -> AppResult<PushOutcome> {
     let root = crate::fs::root_for_generation(&state, generation)?;
-    run_blocking(move || remote::push(&root, token)).await
+    run_serialized_blocking(move || remote::push(&root, token)).await
 }

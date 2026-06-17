@@ -135,6 +135,20 @@ fn commit_excludes_reflect_and_skips_when_clean() {
 }
 
 #[test]
+fn commit_recovers_a_stale_index_lock() {
+    let fixture = fixture();
+    let root = &fixture.graph_a;
+    fs::write(root.join(".git/index.lock"), "stale lock").unwrap();
+    write(root, "notes/a.md", "# A\n");
+
+    let outcome = commit_all(root, "Update notes", MAX_FILE_BYTES).unwrap();
+
+    assert!(outcome.committed);
+    assert!(!root.join(".git/index.lock").exists());
+    assert!(head_tree_paths(root).contains(&"notes/a.md".to_string()));
+}
+
+#[test]
 fn commit_records_deletions() {
     let fixture = fixture();
     let root = &fixture.graph_a;

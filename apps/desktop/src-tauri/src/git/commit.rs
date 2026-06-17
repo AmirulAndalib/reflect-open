@@ -1,14 +1,26 @@
 //! Stage-everything commit with the large-file guardrail.
 
 use std::cell::RefCell;
+use std::fs;
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 
 use git2::{Index, IndexAddOption};
 use serde::Serialize;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 use super::repo::{ensure_clean_state, open_existing, signature};
+
+const LOCK_RETRY_DELAY: Duration = Duration::from_millis(250);
+const LOCK_RETRIES: usize = 3;
+
+#[cfg(not(test))]
+const STALE_INDEX_LOCK_AGE: Duration = Duration::from_secs(30);
+
+#[cfg(test)]
+const STALE_INDEX_LOCK_AGE: Duration = Duration::from_secs(0);
 
 /// A file whose *changes* were withheld from staging because it is at/above
 /// the size guardrail. Oversized-but-unchanged files are not reported — their
@@ -44,6 +56,26 @@ pub(super) fn commit_all(
     message: &str,
     max_file_bytes: u64,
 ) -> AppResult<CommitOutcome> {
+    for attempt in 0..=LOCK_RETRIES {
+        match commit_all_once(root, message, max_file_bytes) {
+            Ok(outcome) => return Ok(outcome),
+            Err(error) if is_index_lock_error(&error) => {
+                if remove_stale_index_lock(root)? {
+                    continue;
+                }
+                if attempt < LOCK_RETRIES {
+                    thread::sleep(LOCK_RETRY_DELAY);
+                    continue;
+                }
+                return Err(index_lock_error(root));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(index_lock_error(root))
+}
+
+fn commit_all_once(root: &Path, message: &str, max_file_bytes: u64) -> AppResult<CommitOutcome> {
     let repo = open_existing(root)?;
     ensure_clean_state(&repo)?;
 
@@ -82,6 +114,50 @@ pub(super) fn commit_all(
         ahead: ahead_of_remote(&repo),
         skipped_large_files: skipped,
     })
+}
+
+fn is_index_lock_error(error: &AppError) -> bool {
+    match error {
+        AppError::Io { message } => {
+            let message = message.to_lowercase();
+            message.contains("index is locked") || message.contains("index.lock")
+        }
+        _ => false,
+    }
+}
+
+fn remove_stale_index_lock(root: &Path) -> AppResult<bool> {
+    let repo = open_existing(root)?;
+    let lock_path = repo.path().join("index.lock");
+    let metadata = match fs::metadata(&lock_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let Ok(modified) = metadata.modified() else {
+        return Ok(false);
+    };
+    let Ok(age) = modified.elapsed() else {
+        return Ok(false);
+    };
+    if age < STALE_INDEX_LOCK_AGE {
+        return Ok(false);
+    }
+    match fs::remove_file(&lock_path) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn index_lock_error(root: &Path) -> AppError {
+    let lock_path = open_existing(root)
+        .map(|repo| repo.path().join("index.lock"))
+        .unwrap_or_else(|_| root.join(".git/index.lock"));
+    AppError::io(format!(
+        "Git is still holding the backup index lock. Close any Git command using this graph and try again. If Reflect crashed earlier, remove {} once no Git command is running.",
+        lock_path.display()
+    ))
 }
 
 /// Stage every change (adds, edits, deletes — `.gitignore` respected) into
