@@ -471,9 +471,12 @@ body {
   cursor: pointer;
 }
 
-/* ---- [[ autocomplete (Plan 07) ---------------------------------------------
-   The popup is a prosekit custom element (positioned by its positioner); all
-   visual treatment is ours. Items carry `data-highlighted` while traversed. */
+/* ---- Editor autocomplete (Plan 07) -----------------------------------------
+   meowdown renders ProseKit custom elements for its floating editor menus.
+   Reflect owns the app-theme surface fallback because WebViews that drop
+   `light-dark()` otherwise render the popup chrome without a painted fill.
+   Items carry `data-highlighted` while traversed. */
+prosekit-autocomplete-popup[class],
 .reflect-autocomplete {
   /* Custom elements default to display:inline; an inline box fragments around
      block children, painting stray border/corner artifacts above and below the
@@ -488,7 +491,11 @@ body {
   border: 1px solid var(--border, rgb(0 0 0 / 10%));
   border-radius: 0.5rem;
   background: var(--surface, var(--background, #fff));
+  color: var(--text);
   box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+}
+prosekit-autocomplete-item[data-highlighted][class] {
+  background: var(--accent-soft, rgb(99 102 241 / 12%));
 }
 .reflect-autocomplete-item {
   display: block;
