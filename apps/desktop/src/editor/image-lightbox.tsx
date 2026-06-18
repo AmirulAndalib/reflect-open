@@ -11,8 +11,10 @@ export interface LightboxImage extends LightboxTransitionItem {
   /** Displayable URL, already resolved from the markdown `src`. */
   src: string
   alt: string
-  /** Local file path to open natively, or null for a remote image. */
+  /** Resolved image path to pass to `openImage`, or null for a remote image. */
   openPath: string | null
+  /** Opener captured from the graph session that produced this preview. */
+  openImage: ((path: string) => Promise<void> | void) | null
 }
 
 interface ImageLightboxProps {
@@ -29,7 +31,8 @@ export function ImageLightbox({
   if (image === null) {
     return null
   }
-  const canOpenImage = image.openPath !== null && onOpenImage !== undefined
+  const canOpenImage =
+    image.openPath !== null && image.openImage !== null && onOpenImage !== undefined
 
   return (
     <LightboxDialog open title="Image preview" onClose={onClose}>

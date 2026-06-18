@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
-import { openPath, openUrl } from '@tauri-apps/plugin-opener'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { errorMessage } from '@reflect/core'
 import { type MarkMode } from '@meowdown/core'
 import {
@@ -66,10 +66,13 @@ interface NoteEditorProps {
   /** Resolve an image `![…](…)` source to a displayable URL; unresolved images are skipped. */
   resolveImageUrl?: (src: string) => string | null
   /**
-   * Resolve an image `![…](…)` source to a native file path, so the lightbox
-   * can offer to open it in the OS image viewer. Returns null for remote images.
+   * Resolve an image `![…](…)` source to the path passed to {@link openImage},
+   * so the lightbox can offer to open it in the OS image viewer. Returns null
+   * for remote images.
    */
   resolveImageOpenPath?: (src: string) => string | null
+  /** Open a resolved image path in the OS default viewer. */
+  openImage?: (path: string) => Promise<void> | void
   /** Persist a pasted/dropped image file and return its markdown `src`. */
   saveImage?: (file: File) => Promise<string | null>
   /** Called when persisting a pasted/dropped image throws. */
@@ -109,6 +112,7 @@ export function NoteEditor({
   bulletAfterHeading = false,
   resolveImageUrl,
   resolveImageOpenPath,
+  openImage,
   saveImage,
   onImageSaveError,
   onWikiLinkClick,
@@ -128,6 +132,7 @@ export function NoteEditor({
   const onWikiLinkClickRef = useRef(onWikiLinkClick)
   const resolveImageUrlRef = useRef(resolveImageUrl)
   const resolveImageOpenPathRef = useRef(resolveImageOpenPath)
+  const openImageRef = useRef(openImage)
   const saveImageRef = useRef(saveImage)
   const onImageSaveErrorRef = useRef(onImageSaveError)
   useEffect(() => {
@@ -135,6 +140,7 @@ export function NoteEditor({
     onWikiLinkClickRef.current = onWikiLinkClick
     resolveImageUrlRef.current = resolveImageUrl
     resolveImageOpenPathRef.current = resolveImageOpenPath
+    openImageRef.current = openImage
     saveImageRef.current = saveImage
     onImageSaveErrorRef.current = onImageSaveError
   })
@@ -198,15 +204,16 @@ export function NoteEditor({
         src: displayUrl,
         alt,
         openPath: resolveImageOpenPathRef.current?.(src) ?? null,
+        openImage: openImageRef.current ?? null,
         transitionName: IMAGE_LIGHTBOX_TRANSITION_NAME,
       })
     },
     [openLightbox],
   )
   const handleOpenLightboxImage = useCallback((image: LightboxImage) => {
-    if (image.openPath !== null) {
-      void openPath(image.openPath, 'Preview').catch((cause) => {
-        console.error('open image in Preview failed:', errorMessage(cause))
+    if (image.openPath !== null && image.openImage !== null) {
+      void Promise.resolve(image.openImage(image.openPath)).catch((cause) => {
+        console.error('open image failed:', errorMessage(cause))
       })
     }
   }, [])

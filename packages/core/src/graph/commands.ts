@@ -66,6 +66,16 @@ export async function readAsset(path: string, generation: number): Promise<strin
 }
 
 /**
+ * Open an asset by graph-relative path in the system default application.
+ * `generation` pins the request to the graph whose markdown produced the
+ * image, so a delayed click after a graph switch cannot open another graph's
+ * same-named file.
+ */
+export async function openAsset(path: string, generation: number): Promise<void> {
+  await call('asset_open', { path, generation }, voidSchema)
+}
+
+/**
  * List every file (any extension) under a graph-relative directory, e.g.
  * `audio-memos`. A missing directory lists as empty. Pinned to `generation`
  * for the same reason as {@link readAsset}.

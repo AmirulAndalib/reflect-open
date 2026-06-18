@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { assetPath, errorMessage, writeAsset } from '@reflect/core'
+import { assetPath, errorMessage, openAsset, writeAsset } from '@reflect/core'
 import { base64Of } from '@/lib/base64'
 
 /** Asset file extension for each image MIME type the editor accepts on paste/drop. */
@@ -34,8 +34,10 @@ function isSafeAssetSource(sourcePath: string): boolean {
 export interface ImagePersistence {
   /** Resolve an image source to a displayable URL (or null to skip). */
   resolveImageUrl: (src: string) => string | null
-  /** Resolve an image source to a native file path for the OS viewer (null for remote). */
+  /** Resolve an image source to a graph-relative asset path for the OS viewer (null for remote). */
   resolveImageOpenPath: (src: string) => string | null
+  /** Open a graph-relative asset path in the OS default viewer. */
+  openImage: (path: string) => Promise<void>
   /** Persist a pasted/dropped image, returning its graph-relative path (or null). */
   saveImage: (file: File) => Promise<string | null>
   /** Report a failed image save. */
@@ -73,12 +75,22 @@ export function useImagePersistence(
 
   const resolveOpenPath = useCallback(
     (src: string): string | null => {
-      if (graphRoot && isSafeAssetSource(src)) {
-        return `${graphRoot}/${src}`
+      if (graphRoot && generation !== null && isSafeAssetSource(src)) {
+        return src
       }
       return null
     },
-    [graphRoot],
+    [graphRoot, generation],
+  )
+
+  const openImage = useCallback(
+    async (path: string): Promise<void> => {
+      if (generation === null) {
+        return
+      }
+      await openAsset(path, generation)
+    },
+    [generation],
   )
 
   const saveImage = useCallback(
@@ -107,10 +119,11 @@ export function useImagePersistence(
     () => ({
       resolveImageUrl: resolveUrl,
       resolveImageOpenPath: resolveOpenPath,
+      openImage,
       saveImage,
       onImageSaveError: onSaveError,
       saveError,
     }),
-    [resolveUrl, resolveOpenPath, saveImage, onSaveError, saveError],
+    [resolveUrl, resolveOpenPath, openImage, saveImage, onSaveError, saveError],
   )
 }

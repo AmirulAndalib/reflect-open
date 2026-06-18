@@ -100,6 +100,7 @@ export function NotePane({
   const {
     resolveImageUrl,
     resolveImageOpenPath,
+    openImage,
     saveImage,
     onImageSaveError,
     saveError: imageSaveError,
@@ -214,6 +215,7 @@ export function NotePane({
         bulletAfterHeading={settings.editorBulletAfterHeading}
         resolveImageUrl={resolveImageUrl}
         resolveImageOpenPath={resolveImageOpenPath}
+        openImage={openImage}
         saveImage={saveImage}
         onImageSaveError={onImageSaveError}
         onWikiLinkClick={onWikiLinkClick}

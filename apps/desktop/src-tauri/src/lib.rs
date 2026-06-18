@@ -155,6 +155,7 @@ pub fn run() {
             fs::note_write,
             fs::asset_write,
             fs::asset_read,
+            fs::asset_open,
             fs::dir_list,
             fs::note_exists,
             fs::note_delete,

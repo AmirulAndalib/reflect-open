@@ -85,6 +85,7 @@ export {
   writeNote,
   writeAsset,
   readAsset,
+  openAsset,
   listDir,
   noteExists,
   deleteNote,

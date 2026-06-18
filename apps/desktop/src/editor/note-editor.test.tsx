@@ -3,7 +3,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { openPath, openUrl } from '@tauri-apps/plugin-opener'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { NoteEditor } from './note-editor'
 
 /** Props the mocked `<MeowdownEditor>` captures so the test can drive its callbacks. */
@@ -18,7 +18,6 @@ interface CapturedEditorProps {
 const captured = vi.hoisted(() => ({ props: null as CapturedEditorProps | null }))
 
 vi.mock('@tauri-apps/plugin-opener', () => ({
-  openPath: vi.fn(async () => {}),
   openUrl: vi.fn(async () => {}),
 }))
 
@@ -42,14 +41,17 @@ vi.mock('@meowdown/react', () => ({
   },
 }))
 
-function renderEditor(): ReturnType<typeof render> {
+function renderEditor(
+  openImage: (path: string) => Promise<void> | void = vi.fn(async () => {}),
+): ReturnType<typeof render> {
   return render(
     <NoteEditor
       initialContent={'A photo\n\n![Cat](assets/cat.png)'}
       resolveImageUrl={(src) => (src === 'assets/cat.png' ? 'asset://cat.png' : null)}
       resolveImageOpenPath={(src) =>
-        src === 'assets/cat.png' ? '/graph/assets/cat.png' : null
+        src === 'assets/cat.png' ? 'assets/cat.png' : null
       }
+      openImage={openImage}
     />,
   )
 }
@@ -136,13 +138,51 @@ describe('NoteEditor image lightbox', () => {
     expect(await screen.findByRole('dialog', { name: 'Image preview' })).toBeInTheDocument()
   })
 
-  it('opens a local image in Preview', async () => {
-    renderEditor()
+  it('opens a local image through the graph asset opener', async () => {
+    const openImage = vi.fn(async () => {})
+    renderEditor(openImage)
 
     act(() => captured.props?.onImageClick?.(imageClick('assets/cat.png', 'Cat')))
 
     await userEvent.click(await screen.findByRole('button', { name: 'Open' }))
-    expect(openPath).toHaveBeenCalledWith('/graph/assets/cat.png', 'Preview')
+    expect(openImage).toHaveBeenCalledWith('assets/cat.png')
+  })
+
+  it('uses the opener captured when the lightbox opens', async () => {
+    const firstOpenImage = vi.fn(async () => {})
+    const secondOpenImage = vi.fn(async () => {})
+    const view = renderEditor(firstOpenImage)
+
+    act(() => captured.props?.onImageClick?.(imageClick('assets/cat.png', 'Cat')))
+    await screen.findByRole('dialog', { name: 'Image preview' })
+
+    view.rerender(
+      <NoteEditor
+        initialContent={'A photo\n\n![Cat](assets/cat.png)'}
+        resolveImageUrl={(src) => (src === 'assets/cat.png' ? 'asset://cat.png' : null)}
+        resolveImageOpenPath={(src) => (src === 'assets/cat.png' ? 'assets/cat.png' : null)}
+        openImage={secondOpenImage}
+      />,
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open' }))
+    expect(firstOpenImage).toHaveBeenCalledWith('assets/cat.png')
+    expect(secondOpenImage).not.toHaveBeenCalled()
+  })
+
+  it('hides the Open button when no opener is provided', async () => {
+    render(
+      <NoteEditor
+        initialContent={'A photo\n\n![Cat](assets/cat.png)'}
+        resolveImageUrl={(src) => (src === 'assets/cat.png' ? 'asset://cat.png' : null)}
+        resolveImageOpenPath={(src) => (src === 'assets/cat.png' ? 'assets/cat.png' : null)}
+      />,
+    )
+
+    act(() => captured.props?.onImageClick?.(imageClick('assets/cat.png', 'Cat')))
+
+    expect(await screen.findByRole('dialog', { name: 'Image preview' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open' })).toBeNull()
   })
 
   it('does not open a lightbox when the source cannot be resolved', () => {
