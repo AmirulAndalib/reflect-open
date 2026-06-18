@@ -54,10 +54,12 @@
   --shadow-pop: var(--ds-shadow-pop);
   --shadow-app-input: var(--ds-shadow-app-input);
 
-  /* 12px chrome text (V1's `text-xs`; the DS `--text-xs` is 13px) and the
-     shortcut-glyph font, via the same --ds-* indirection as the shadows. */
+  /* 12px chrome text (V1's `text-xs`; the DS `--text-xs` is 13px). */
   --text-2xs: var(--ds-text-2xs);
   --text-2xs--line-height: 1.25;
+  /* Shared subject size for regular-note titles and daily-note dates. */
+  --text-note-subject: var(--text-xl);
+  /* Shortcut-glyph font, via the same --ds-* indirection as the shadows. */
   --font-shortcut: var(--ds-font-shortcut);
 
   /* shadcn semantic tokens (added by `shadcn init`, values rewired below in
@@ -307,17 +309,14 @@ body {
   letter-spacing: var(--tracking-snug, -0.01em);
   margin: 1.25em 0 0.4em;
 }
-/* Keep the leading H1 note title at body size so regular note titles and the
-   new-note "Untitled" ghost match daily-note prose. Other headings stay capped
-   at the design-system note-title size rather than towering over the body. */
-.reflect-editor h1 { font-size: var(--text-xl, 1.25rem); }
-.reflect-editor h2 { font-size: var(--text-xl, 1.25rem); }
+/* The leading H1 is the regular-note subject, matching the daily subject.
+   Other headings stay capped at the same semantic size rather than towering
+   over the body. */
+.reflect-editor h1 { @apply text-note-subject; }
+.reflect-editor h2 { @apply text-note-subject; }
 .reflect-editor h3 { font-size: var(--text-lg, 1.125rem); }
-.reflect-editor h1:first-child {
-  margin-top: 0;
-  font-size: var(--text-base, 1rem);
-}
-.reflect-editor .reflect-note-title { font-size: var(--text-base, 1rem); }
+.reflect-editor h1:first-child { margin-top: 0; }
+.reflect-editor .reflect-note-title { @apply text-note-subject; }
 
 /* The new-note flow's name field: ghost "Untitled" over the seeded empty H1
    (`editor/title-placeholder.ts`) without occupying layout, so the caret
@@ -333,8 +332,8 @@ body {
 /* The daily note's date heading (V1 renders the date as the note's subject)
    without living inside the editor DOM. */
 .reflect-daily-subject {
+  @apply text-note-subject;
   font-family: var(--font-reading, var(--font-sans));
-  font-size: var(--text-xl, 1.25rem);
   font-weight: 650;
   letter-spacing: var(--tracking-snug, -0.01em);
 }
