@@ -7,6 +7,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { type MarkMode } from '@meowdown/core'
 import {
   MeowdownEditor,
@@ -152,6 +153,12 @@ export function NoteEditor({
     (error: unknown, file: File) => onImageSaveErrorRef.current?.(error, file),
     [],
   )
+  const handleLinkClick = useCallback(
+    ({ href }: { href: string; event: MouseEvent }) => {
+      void openUrl(href).catch(() => {})
+    },
+    [],
+  )
 
   return (
     <MeowdownEditor
@@ -164,6 +171,7 @@ export function NoteEditor({
       {...(titlePlaceholder !== undefined ? { placeholder: titlePlaceholder } : {})}
       onDocChange={handleDocChange}
       onWikilinkClick={handleWikilinkClick}
+      onLinkClick={handleLinkClick}
       {...(onWikilinkSearch !== undefined ? { onWikilinkSearch } : {})}
       {...(onTagSearch !== undefined ? { onTagSearch } : {})}
       resolveImageUrl={handleResolveImageUrl}
