@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
-import { openUrl } from '@tauri-apps/plugin-opener'
+import { openPath, openUrl } from '@tauri-apps/plugin-opener'
 import { type MarkMode } from '@meowdown/core'
 import {
   MeowdownEditor,
@@ -17,6 +17,12 @@ import {
 } from '@meowdown/react'
 import '@meowdown/core/style.css'
 import '@meowdown/react/style.css'
+import {
+  IMAGE_LIGHTBOX_TRANSITION_NAME,
+  ImageLightbox,
+  type LightboxImage,
+} from '@/editor/image-lightbox'
+import { useLightboxTransition } from '@/editor/use-lightbox-transition'
 import { cn } from '@/lib/utils'
 
 /**
@@ -58,6 +64,11 @@ interface NoteEditorProps {
   bulletAfterHeading?: boolean
   /** Resolve an image `![…](…)` source to a displayable URL; unresolved images are skipped. */
   resolveImageUrl?: (src: string) => string | null
+  /**
+   * Resolve an image `![…](…)` source to a native file path, so the lightbox
+   * can offer to open it in the OS image viewer. Returns null for remote images.
+   */
+  resolveImageOpenPath?: (src: string) => string | null
   /** Persist a pasted/dropped image file and return its markdown `src`. */
   saveImage?: (file: File) => Promise<string | null>
   /** Called when persisting a pasted/dropped image throws. */
@@ -96,6 +107,7 @@ export function NoteEditor({
   spellCheck = true,
   bulletAfterHeading = false,
   resolveImageUrl,
+  resolveImageOpenPath,
   saveImage,
   onImageSaveError,
   onWikiLinkClick,
@@ -114,15 +126,23 @@ export function NoteEditor({
   const onChangeRef = useRef(onChange)
   const onWikiLinkClickRef = useRef(onWikiLinkClick)
   const resolveImageUrlRef = useRef(resolveImageUrl)
+  const resolveImageOpenPathRef = useRef(resolveImageOpenPath)
   const saveImageRef = useRef(saveImage)
   const onImageSaveErrorRef = useRef(onImageSaveError)
   useEffect(() => {
     onChangeRef.current = onChange
     onWikiLinkClickRef.current = onWikiLinkClick
     resolveImageUrlRef.current = resolveImageUrl
+    resolveImageOpenPathRef.current = resolveImageOpenPath
     saveImageRef.current = saveImage
     onImageSaveErrorRef.current = onImageSaveError
   })
+
+  const {
+    item: lightboxImage,
+    open: openLightbox,
+    close: closeLightbox,
+  } = useLightboxTransition<HTMLImageElement, LightboxImage>()
 
   useImperativeHandle(
     handleRef,
@@ -159,26 +179,60 @@ export function NoteEditor({
     },
     [],
   )
+  const handleImageClick = useCallback(
+    ({ src, alt, event }: { src: string; alt: string; event: MouseEvent }) => {
+      const displayUrl = resolveImageUrlRef.current?.(src) ?? null
+      if (displayUrl === null) {
+        return
+      }
+      // The clicked target is the `<img>` or its `.md-image-preview` wrapper;
+      // the source element drives the View Transition zoom.
+      const sourceImage =
+        event.target instanceof HTMLElement
+          ? event.target.closest('.md-image-preview')?.querySelector('img') ?? null
+          : null
+      openLightbox(sourceImage, {
+        src: displayUrl,
+        alt,
+        openPath: resolveImageOpenPathRef.current?.(src) ?? null,
+        transitionName: IMAGE_LIGHTBOX_TRANSITION_NAME,
+      })
+    },
+    [openLightbox],
+  )
+  const handleOpenLightboxImage = useCallback((image: LightboxImage) => {
+    if (image.openPath !== null) {
+      void openPath(image.openPath, 'Preview').catch(() => {})
+    }
+  }, [])
 
   return (
-    <MeowdownEditor
-      handleRef={innerRef}
-      mode={markMode}
-      initialMarkdown={initialContent}
-      spellCheck={spellCheck}
-      bulletAfterHeading={bulletAfterHeading}
-      editorClassName={cn('reflect-editor', className)}
-      {...(titlePlaceholder !== undefined ? { placeholder: titlePlaceholder } : {})}
-      onDocChange={handleDocChange}
-      onWikilinkClick={handleWikilinkClick}
-      onLinkClick={handleLinkClick}
-      {...(onWikilinkSearch !== undefined ? { onWikilinkSearch } : {})}
-      {...(onTagSearch !== undefined ? { onTagSearch } : {})}
-      resolveImageUrl={handleResolveImageUrl}
-      onImagePaste={handleImagePaste}
-      onImageSaveError={handleImageSaveError}
-    >
-      {children}
-    </MeowdownEditor>
+    <>
+      <MeowdownEditor
+        handleRef={innerRef}
+        mode={markMode}
+        initialMarkdown={initialContent}
+        spellCheck={spellCheck}
+        bulletAfterHeading={bulletAfterHeading}
+        editorClassName={cn('reflect-editor', className)}
+        {...(titlePlaceholder !== undefined ? { placeholder: titlePlaceholder } : {})}
+        onDocChange={handleDocChange}
+        onWikilinkClick={handleWikilinkClick}
+        onLinkClick={handleLinkClick}
+        onImageClick={handleImageClick}
+        {...(onWikilinkSearch !== undefined ? { onWikilinkSearch } : {})}
+        {...(onTagSearch !== undefined ? { onTagSearch } : {})}
+        resolveImageUrl={handleResolveImageUrl}
+        onImagePaste={handleImagePaste}
+        onImageSaveError={handleImageSaveError}
+      >
+        {children}
+      </MeowdownEditor>
+      <ImageLightbox
+        image={lightboxImage}
+        onClose={closeLightbox}
+        onOpenImage={handleOpenLightboxImage}
+      />
+    </>
   )
 }
