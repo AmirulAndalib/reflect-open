@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
+import { memo, useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
 import { Command } from 'cmdk'
 import { parseHighlights } from '@reflect/core'
 import { CalendarDays, FileText } from 'lucide-react'
@@ -32,7 +32,7 @@ interface CommandPaletteProps {
   context: CommandContext
 }
 
-function Snippet({ snippet }: { snippet: string }): ReactElement {
+const Snippet = memo(function Snippet({ snippet }: { snippet: string }): ReactElement {
   return (
     <span className="block truncate text-xs text-text-muted">
       {parseHighlights(snippet).map((segment, i) =>
@@ -46,7 +46,7 @@ function Snippet({ snippet }: { snippet: string }): ReactElement {
       )}
     </span>
   )
-}
+})
 
 export function CommandPalette({ context }: CommandPaletteProps): ReactElement | null {
   const { open, query, setQuery, closePalette } = usePalette()
@@ -232,7 +232,11 @@ export function CommandPalette({ context }: CommandPaletteProps): ReactElement |
             {splitLayout ? (
               <div className="min-w-0 flex-1 overflow-y-auto border-l border-border">
                 {selectedNote !== null ? (
-                  <NotePreview key={selectedNote.path} entry={selectedNote} />
+                  // A stable key keeps the preview pane mounted as the highlight
+                  // moves between results (↑/↓): the entry prop updates and the
+                  // query refetches by its own path-scoped key, so an arrow-key
+                  // press no longer unmounts/remounts the whole preview subtree.
+                  <NotePreview key="note-preview" entry={selectedNote} />
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-text-muted">
                     No note selected

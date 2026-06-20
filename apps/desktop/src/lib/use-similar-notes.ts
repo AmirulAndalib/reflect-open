@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { hasBridge, relatedNotes, type RetrievalHit } from '@reflect/core'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
@@ -26,5 +27,11 @@ export function useSimilarNotes(path: string): RetrievalHit[] {
     queryFn: () => relatedNotes(path, SIMILAR_NOTES_LIMIT),
     enabled: hasBridge() && graph !== null && settings.semanticSearchEnabled,
   })
-  return settings.semanticSearchEnabled ? (data ?? []).slice(0, SIMILAR_NOTES_LIMIT) : []
+  // Slice off the query result (reference-stable via structural sharing) only
+  // when it or the gate changes, so consumers get a stable array across the
+  // sidebar's frequent re-renders instead of a fresh one every call.
+  return useMemo(
+    () => (settings.semanticSearchEnabled ? (data ?? []).slice(0, SIMILAR_NOTES_LIMIT) : []),
+    [data, settings.semanticSearchEnabled],
+  )
 }

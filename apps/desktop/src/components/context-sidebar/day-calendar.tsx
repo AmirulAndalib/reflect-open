@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { useMemo, useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { dailyDatesInRange, hasBridge, type WeekStartDay } from '@reflect/core'
 import { CalendarIcon } from '@/components/icons/calendar-icon'
@@ -68,7 +68,10 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
     queryFn: () => dailyDatesInRange(grid.start, grid.end),
     enabled: hasBridge() && graph !== null,
   })
-  const noted = new Set(notedDates ?? [])
+  // The sidebar re-renders as the focused day scrolls through the stream; with
+  // the query result reference-stable (structural sharing), rebuild the lookup
+  // set only when the noted dates actually change.
+  const noted = useMemo(() => new Set(notedDates ?? []), [notedDates])
 
   return (
     <div aria-label="Calendar" className="group min-w-36">

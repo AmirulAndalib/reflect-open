@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { memo, type ReactElement } from 'react'
 import { formatDayLabel } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/providers/settings-provider'
@@ -17,7 +17,11 @@ interface SidebarNoteRowProps {
  * One note row in a sidebar list (the Pinned shelf), in the original app's
  * idiom: a plain truncated title — no icon — with an active-route highlight.
  */
-export function SidebarNoteRow({ path, title, date }: SidebarNoteRowProps): ReactElement {
+export const SidebarNoteRow = memo(function SidebarNoteRow({
+  path,
+  title,
+  date,
+}: SidebarNoteRowProps): ReactElement {
   const { route, navigate } = useRouter()
   const { settings } = useSettings()
   const target = routeForPath(path)
@@ -44,4 +48,4 @@ export function SidebarNoteRow({ path, title, date }: SidebarNoteRowProps): Reac
       </button>
     </li>
   )
-}
+})

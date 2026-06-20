@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactElement } from 'react'
+import { memo, useCallback, useState, type ReactElement } from 'react'
 import { isDaily } from '@reflect/core'
 import { BacklinksPanel } from '@/components/backlinks-panel'
 import { InlineAlert } from '@/components/inline-alert'
@@ -61,7 +61,7 @@ interface NotePaneProps {
  * `useNoteDocument`/`note-session.ts`, link-click behavior in
  * `useWikiLinkNavigation`, and the banners are shared components.
  */
-export function NotePane({
+export const NotePane = memo(function NotePane({
   path,
   lazy = false,
   autoFocus = false,
@@ -233,4 +233,4 @@ export function NotePane({
       </div>
     </div>
   )
-}
+})
