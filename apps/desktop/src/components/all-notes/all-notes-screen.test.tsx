@@ -383,7 +383,9 @@ describe('AllNotesScreen — selection and bulk trash', () => {
     // Clicking the row body (the snippet, not a button) selects without opening.
     fireEvent.click(view.getByText('Shop your health goals.'))
     expect(probedRoute(view)).toEqual({ kind: 'allNotes', tag: null })
-    expect(view.getByRole('button', { name: /Trash \(1\)/ })).toBeDefined()
+    const trashButton = view.getByRole('button', { name: /Trash \(1\)/ })
+    expect(trashButton).toBeDefined()
+    expect(view.getByRole('group', { name: 'Filter by tag' }).previousElementSibling).toBe(trashButton)
 
     // ⌘-click a second row extends the selection.
     fireEvent.click(view.getByText('Dandelion chocolate.'), { metaKey: true })

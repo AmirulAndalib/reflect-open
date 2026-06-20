@@ -116,11 +116,6 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
       <header className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-border py-4 pl-12 pr-7">
         <h1 className="text-[15px] font-semibold text-text">Notes</h1>
         <div className="flex flex-wrap items-center gap-3">
-          <AllNotesFilters
-            tag={tag}
-            facets={facets ?? []}
-            onSelect={handleFilterSelect}
-          />
           {selection.selectedCount > 0 ? (
             <Button
               type="button"
@@ -139,6 +134,11 @@ export function AllNotesScreen({ tag }: AllNotesScreenProps): ReactElement {
               </span>
             </Button>
           ) : null}
+          <AllNotesFilters
+            tag={tag}
+            facets={facets ?? []}
+            onSelect={handleFilterSelect}
+          />
           <NewNoteButton />
         </div>
       </header>
