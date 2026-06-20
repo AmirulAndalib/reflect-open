@@ -1,0 +1,69 @@
+Native toolchain + build/test/lint log — performance-pass-20260620 retry
+Machine: macOS Darwin 25.3.0 (arm64, aarch64-apple-darwin)
+Date: 2026-06-20
+
+============================================================
+1. RUST TOOLCHAIN
+============================================================
+Before:
+  rustc 1.96.0 (ac68faa20 2026-05-25) (Homebrew)   # /opt/homebrew/bin/rustc
+  cargo 1.96.0 (30a34c682 2026-05-25) (Homebrew)   # /opt/homebrew/bin/cargo
+  rustup: command not found
+
+Installed (non-interactive, Homebrew untouched):
+  sh rustup-init.sh -y --profile minimal --default-toolchain stable --no-modify-path
+  rustup component add clippy rustfmt
+
+After:
+  rustup 1.29.0 (28d1352db 2026-03-05)
+  rustup default        -> stable-aarch64-apple-darwin (default)
+  rustup toolchain list -> stable-aarch64-apple-darwin (active, default)
+  which rustc/cargo     -> /Users/cloud/.cargo/bin/{rustc,cargo}  (shims, PATH=$HOME/.cargo/bin first)
+  rustup which rustc    -> ~/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc
+  components installed  -> cargo, clippy, rustc, rust-std, rustfmt
+  rustfmt 1.9.0-stable / clippy 0.1.96
+  @tauri-apps/cli       -> tauri-cli 2.11.2
+
+============================================================
+2. FORMAT / LINT (clean)
+============================================================
+cargo fmt --all -- --check          -> OK (no diff)
+cargo clippy --workspace            -> OK, 0 warnings / 0 errors (Finished in 35.81s)
+
+============================================================
+3. TESTS  (165 native tests, 0 failed)
+============================================================
+cargo test -p reflect-cli           -> 20 passed + 4 parity passed
+cargo test -p reflect-index-schema  ->  2 passed
+cargo test -p reflect-capture-host  -> 22 passed
+cargo test -p reflect-open          -> 117 passed   (real 13.25s)
+
+============================================================
+4. BUILD TIMINGS  (/usr/bin/time -p, warm registry, cold target where noted)
+============================================================
+cargo build -p reflect-cli --release        -> 15.35s   (real 15.37 / user 50.05 / sys 3.45)
+pnpm --filter @reflect/desktop sidecar      -> 13.51s   (stages reflect + reflect-capture-host sidecars)
+cargo build -p reflect-open  (dev)          -> 52.84s   (real 52.84 / user 277.08 / sys 81.09)  EXIT 0
+cargo build -p reflect-open  --release      -> 84.28s   (real 84.28 / user 616.70 / sys 89.46)  EXIT 0
+  (fastembed/ORT, vendored OpenSSL, vendored libgit2, keyring, trash, notify all compile clean)
+
+============================================================
+5. TAURI / GUI
+============================================================
+- tauri.conf beforeBuildCommand: "pnpm sidecar && pnpm build"; bundle.active=true, targets=all.
+- The native backend crate (reflect-open) compiles and its 117 unit tests pass.
+- `pnpm tauri dev` / `pnpm tauri build` launch/bundle a WKWebView window. On macOS,
+  WKWebView exposes no CDP endpoint, so Playwright/Chrome-DevTools cannot attach and
+  drive the running app. Installing Rust does NOT change this — it is a WebKit/macOS
+  property, not a toolchain gap. GUI interaction benchmarking therefore remains
+  infeasible; the automatable native surface is the `reflect` CLI (section below) and
+  the Rust unit/integration tests above.
+
+============================================================
+6. NATIVE READ-PATH BENCHMARK  (see native-read-path.json)
+============================================================
+Real `reflect` release binary against a seeded, NON-STALE index.sqlite built from the
+production migrations (seed.rs reuses the CLI's own hash_content/fold_key). Process-spawn
+floor (`reflect --version`): p50 1.78 ms. Full matrix in native-tauri-benchmark.md.
+NOTE: this is a FRESH native baseline, NOT a before/after of PR #294 — PR #294's diff
+contains zero Rust/SQL (React render memoizations + bench harness + docs only).

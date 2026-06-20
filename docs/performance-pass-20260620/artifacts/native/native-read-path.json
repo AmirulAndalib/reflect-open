@@ -1,0 +1,156 @@
+{
+  "limit": 20,
+  "runs": 40,
+  "warmup": 5,
+  "spawn_baseline": {
+    "p50_ms": 1.78,
+    "p95_ms": 1.9,
+    "mean_ms": 1.78
+  },
+  "results": [
+    {
+      "size": 1000,
+      "query": "kubernetes",
+      "selectivity": "rare ~5%",
+      "hits": 20,
+      "end_to_end": {
+        "p50_ms": 4.75,
+        "p95_ms": 5.09,
+        "mean_ms": 4.78
+      },
+      "query_only_us": {
+        "p50": 140.4,
+        "p95": 145.4,
+        "mean": 139.7
+      }
+    },
+    {
+      "size": 1000,
+      "query": "database",
+      "selectivity": "medium ~20%",
+      "hits": 20,
+      "end_to_end": {
+        "p50_ms": 5.8,
+        "p95_ms": 7.6,
+        "mean_ms": 6.18
+      },
+      "query_only_us": {
+        "p50": 360.3,
+        "p95": 375.6,
+        "mean": 360.9
+      }
+    },
+    {
+      "size": 1000,
+      "query": "project",
+      "selectivity": "common ~50%",
+      "hits": 20,
+      "end_to_end": {
+        "p50_ms": 5.95,
+        "p95_ms": 6.36,
+        "mean_ms": 5.99
+      },
+      "query_only_us": {
+        "p50": 1064.0,
+        "p95": 1097.9,
+        "mean": 1066.3
+      }
+    },
+    {
+      "size": 5000,
+      "query": "kubernetes",
+      "selectivity": "rare ~5%",
+      "hits": 20,
+      "end_to_end": {
+        "p50_ms": 13.87,
+        "p95_ms": 17.21,
+        "mean_ms": 14.66
+      },
+      "query_only_us": {
+        "p50": 866.2,
+        "p95": 899.2,
+        "mean": 868.6
+      }
+    },
+    {
+      "size": 5000,
+      "query": "database",
+      "selectivity": "medium ~20%",
+      "hits": 20,
+      "end_to_end": {
+        "p50_ms": 14.43,
+        "p95_ms": 17.09,
+        "mean_ms": 14.8
+      },
+      "query_only_us": {
+        "p50": 2013.6,
+        "p95": 2107.2,
+        "mean": 2022.3
+      }
+    },
+    {
+      "size": 5000,
+      "query": "project",
+      "selectivity": "common ~50%",
+      "hits": 20,
+      "end_to_end": {
+        "p50_ms": 18.33,
+        "p95_ms": 21.05,
+        "mean_ms": 18.65
+      },
+      "query_only_us": {
+        "p50": 5754.3,
+        "p95": 5966.5,
+        "mean": 5772.9
+      }
+    },
+    {
+      "size": 20000,
+      "query": "kubernetes",
+      "selectivity": "rare ~5%",
+      "hits": 20,
+      "end_to_end": {
+        "p50_ms": 50.07,
+        "p95_ms": 54.16,
+        "mean_ms": 50.75
+      },
+      "query_only_us": {
+        "p50": 3720.9,
+        "p95": 4010.7,
+        "mean": 3754.8
+      }
+    },
+    {
+      "size": 20000,
+      "query": "database",
+      "selectivity": "medium ~20%",
+      "hits": 20,
+      "end_to_end": {
+        "p50_ms": 55.12,
+        "p95_ms": 58.38,
+        "mean_ms": 55.55
+      },
+      "query_only_us": {
+        "p50": 8788.5,
+        "p95": 9838.6,
+        "mean": 8976.2
+      }
+    },
+    {
+      "size": 20000,
+      "query": "project",
+      "selectivity": "common ~50%",
+      "hits": 20,
+      "end_to_end": {
+        "p50_ms": 72.97,
+        "p95_ms": 76.65,
+        "mean_ms": 73.68
+      },
+      "query_only_us": {
+        "p50": 24117.3,
+        "p95": 25731.0,
+        "mean": 24323.6
+      }
+    }
+  ]
+}
