@@ -11,6 +11,7 @@ describe('checkRoundTrip', () => {
       '- item one\n- item two\n',
       '- [ ] buy milk\n- [x] done\n',
       '<div>raw html</div>\n',
+      'Title\n=====\n\nbody\n',
     ]
     for (const markdown of cases) {
       expect(checkRoundTrip(markdown), markdown).toBe('exact')
@@ -19,13 +20,6 @@ describe('checkRoundTrip', () => {
 
   it('classifies tightened loose lists as normalizing (content preserved)', () => {
     expect(checkRoundTrip('- item one\n\n- item two\n')).toBe('normalizing')
-  })
-
-  it('classifies remaining converter gaps as lossy', () => {
-    // Setext heading text is dropped (`Title\n=====` → empty heading). The guard
-    // exists to catch exactly this; when a gap is fixed upstream, its case starts
-    // failing and can move to exact (raw HTML blocks now round-trip exactly).
-    expect(checkRoundTrip('Title\n=====\n\nbody\n')).toBe('lossy')
   })
 
   it('classifies git conflict markers as lossy (sync conflicts open protected)', () => {
