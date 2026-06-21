@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.34.4",
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
@@ -17,11 +17,14 @@
     "release:macos": "pnpm --filter @reflect/desktop release:macos"
   },
   "devDependencies": {
-    "oxlint": "^1.69.0",
-    "turbo": "^2",
+    "oxlint": "^1.70.0",
+    "turbo": "^2.9.18",
     "typescript": "~5.8.3"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
   }
 }
