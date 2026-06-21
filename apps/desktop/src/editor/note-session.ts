@@ -34,13 +34,16 @@ import type { RoundTripFidelity } from './roundtrip'
  * imperatively, and **never clobbers a dirty one** — it parks as `conflict` for
  * the user to resolve.
  *
- * **Frontmatter is the session's, not the editor's** (Plan 07b): meowdown
- * mangles a `---` block (it reads as thematic breaks/setext), so the editor
- * sees only the body — the session splits every disk read, keeps the exact
- * header bytes aside, and rejoins them on every write. This is also what makes
- * frontmatter notes editable at all (a joined round-trip classifies lossy),
- * and gives metadata writes ({@link NoteSession.updateFrontmatter}) a channel
- * that never disturbs the editor view.
+ * **Frontmatter is the session's, not the editor's** (Plan 07b): meowdown can
+ * now round-trip a `---` block, but only by normalizing it (it keeps the body
+ * as an opaque doc attribute, rewrites CRLF to LF, drops fence whitespace, and
+ * forces a blank line after the block), which would lose our exact header bytes
+ * and bloat git diffs. So the editor still sees only the body: the session
+ * splits every disk read, keeps the exact header bytes aside, and rejoins them
+ * on every write. This is also what keeps frontmatter notes editable at all (a
+ * joined round-trip classifies lossy) and gives metadata writes
+ * ({@link NoteSession.updateFrontmatter}) a channel that never disturbs the
+ * editor view.
  */
 
 const DEFAULT_SAVE_DEBOUNCE_MS = 800
