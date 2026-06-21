@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Archive, CalendarClock, List, Search } from 'lucide-react'
 import {
@@ -43,6 +51,19 @@ function visibleGroups(groups: TaskGroup[], filters: TaskFilters): TaskGroup[] {
         return group.tasks[0]?.isPinned ? filters.pinned : filters.other
     }
   })
+}
+
+/** The selected task that owns keyboard focus: the cursor/anchor, else the first row left selected. */
+function focusedSelectedKey(
+  selectedTaskKeys: ReadonlySet<string>,
+  activeTaskKey: () => string | null,
+): string | null {
+  const activeKey = activeTaskKey()
+  if (activeKey !== null && selectedTaskKeys.has(activeKey)) {
+    return activeKey
+  }
+  const first = selectedTaskKeys.values().next()
+  return first.done ? null : first.value
 }
 
 /**
@@ -149,6 +170,14 @@ export function TasksScreen(): ReactElement {
     }
   }, [])
   const editHandlers = useTaskRowHandlers({ selection, actions, orderedTasks, today, scrollToKey })
+  const selectedTaskKeys = selection.selected
+  const activeTaskKey = selection.activeKey
+  // Selection opens the focused task's inline editor, often after an async insert
+  // and optimistic cache render. Scroll after the DOM reflects that selection so
+  // the focused row is always visible.
+  useLayoutEffect(() => {
+    scrollToKey(focusedSelectedKey(selectedTaskKeys, activeTaskKey))
+  }, [activeTaskKey, orderedKeys, scrollToKey, selectedTaskKeys])
   // The group headers' "+ Add" (V1): drop any search filter so the new row is
   // visible, write it, then select it so its editor opens focused.
   const onAdd = useCallback(

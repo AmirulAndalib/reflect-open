@@ -8,8 +8,9 @@ import { resetRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { TasksScreen } from './tasks-screen'
 
-// jsdom doesn't implement scrollIntoView; the keyboard nav scrolls the active row.
-Element.prototype.scrollIntoView ??= () => {}
+// jsdom doesn't implement scrollIntoView; the Tasks view scrolls the focused row.
+const scrollIntoView = vi.fn()
+Element.prototype.scrollIntoView = scrollIntoView
 
 const getOpenTasks = vi.hoisted(() => vi.fn())
 const getCompletedTasks = vi.hoisted(() => vi.fn())
@@ -190,6 +191,7 @@ beforeEach(() => {
   startOperation.mockClear()
   fail.mockReset()
   resetRecentlyCompleted()
+  scrollIntoView.mockClear()
 })
 
 describe('TasksScreen', () => {
@@ -309,6 +311,23 @@ describe('TasksScreen', () => {
     await userEvent.keyboard('{Escape}')
     expect(view.queryByTestId('task-editor')).toBeNull()
     expect(view.getByRole('button', { name: 'first' }).getAttribute('aria-pressed')).toBe('false')
+    view.unmount()
+  })
+
+  it('scrolls the focused task row into view after selection renders', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, text: 'first', noteTitle: 'Project' }),
+      task({ notePath: 'notes/p.md', markerOffset: 3, text: 'second', noteTitle: 'Project' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'second' }))
+    const row = view.container.querySelector('[data-task-key="notes/p.md:3"]')
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+      expect(scrollIntoView.mock.contexts).toContain(row)
+    })
     view.unmount()
   })
 
