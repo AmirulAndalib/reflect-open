@@ -234,17 +234,24 @@ body {
 
 /* ---- Editor (Plan 05) ------------------------------------------------------
    meowdown ships a default editor theme (`@meowdown/core/style.css`, imported
-   by the editor components) driven by `--meowdown-*` variables,
-   including markdown-syntax visibility per the MarkMode `data-mark-mode` /
-   `.show` contract, tag pills, wikilink styling, and selection colors scoped
-   under the `.meowdown` wrapper the NoteEditor renders. We remap its variables
-   to Reflect tokens and keep only the deviations the V1 design calls for.
-   ProseKit mounts the ProseMirror view *on* our `.reflect-editor` div (it is
-   the `.ProseMirror` root, not an ancestor of one), so these rules target the
-   same element as the theme's `.ProseMirror` rules and win equal-specificity
-   ties by load order (this file is bundled after the theme). */
+   by the editor components) driven by `--meowdown-*` variables, including
+   markdown-syntax visibility per the MarkMode `data-mark-mode` / `.show`
+   contract, tag pills, wikilink styling, and selection colors. We remap those
+   variables to Reflect tokens and keep only the deviations the V1 design calls
+   for.
 
-.reflect-editor {
+   The remap lives on `html:root`, not on `.reflect-editor`. meowdown renders
+   the block handle and the slash/tag/wikilink menus as DOM *siblings* of the
+   editable element (and hoists the menus into the top layer via the Popover
+   API), so variables scoped to the editable element never reach those popups
+   by inheritance, so the grip and menu text fall back to meowdown's built-in
+   `light-dark()` defaults and read as unstyled in dark mode. Root-scoped
+   variables do reach them, and `html:root` (0-1-1) outranks meowdown's own
+   `:root` defaults (0-1-0) and loads after them, so our values win wherever the
+   theme is read. (The `--meowdown-autocomplete-*` pair already lived at root for
+   this exact reason; the rest now joins it.) */
+
+html:root {
   --meowdown-text: var(--text);
   --meowdown-heading: var(--text);
   --meowdown-muted: var(--text-secondary);
@@ -256,7 +263,11 @@ body {
   --meowdown-node-outline: var(--accent);
   --meowdown-node-selection: var(--accent-soft, rgb(99 102 241 / 12%));
   --meowdown-selection: var(--accent-soft, rgb(99 102 241 / 12%));
+  --meowdown-autocomplete-bg: var(--surface);
+  --meowdown-autocomplete-highlight-bg: var(--accent-soft);
+}
 
+.reflect-editor {
   /* The panes own all spacing and sizing: cancel the theme's editor padding
      (no floating UI of ours needs the `--meowdown-gutter`) and font size.
      The matching .reflect-editor.ProseMirror block below re-states these with
@@ -465,13 +476,6 @@ body {
   text-decoration-thickness: 1px;
   text-underline-offset: 0.16em;
   cursor: pointer;
-}
-
-/* meowdown hoists autocomplete popups out of the editor tree, so root-scoped
-   variables theme the floating menu without targeting generated DOM. */
-html:root {
-  --meowdown-autocomplete-bg: var(--surface);
-  --meowdown-autocomplete-highlight-bg: var(--accent-soft);
 }
 
 /* ---- shadcn inputs (components/ui/) -------------------------------------
