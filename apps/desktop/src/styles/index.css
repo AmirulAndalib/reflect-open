@@ -396,6 +396,12 @@ html:root {
   line-height: inherit;
   letter-spacing: 0;
 }
+.line-through .reflect-task-preview .md-link,
+.line-through .reflect-task-preview .md-wikilink-label,
+.line-through .reflect-task-preview .md-wikilink-source,
+.line-through .reflect-task-preview .reflect-tag-link {
+  text-decoration-line: line-through;
+}
 
 .reflect-editor blockquote {
   border-left: 2px solid var(--accent-soft, var(--border));
