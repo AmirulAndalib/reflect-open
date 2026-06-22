@@ -86,6 +86,11 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
     estimateSize: () => ESTIMATED_DAY_HEIGHT,
     overscan: 2,
     paddingEnd: 240,
+    // Write each row's transform and the sizer's height straight to the DOM
+    // inside the virtualizer's `onChange`, synchronously, in the same tick as
+    // the scroll compensation a resize triggers.
+    directDomUpdates: true,
+    directDomUpdatesMode: 'transform',
     // The mount-time anchor. The virtualizer applies this to the scroll
     // element inside its own layout effect — before first paint — so the
     // stream never paints the top of the window and then visibly lurches
@@ -158,7 +163,7 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
         focusPending.current = null
       }}
     >
-      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+      <div ref={virtualizer.containerRef} className="relative w-full">
         {virtualizer.getVirtualItems().map((item) => {
           const date = dateAtIndex(dayWindow, item.index)
           const isToday = date === today
@@ -172,8 +177,7 @@ export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
               key={date}
               data-index={item.index}
               ref={virtualizer.measureElement}
-              className="absolute inset-x-0"
-              style={{ transform: `translateY(${item.start}px)` }}
+              className="absolute inset-x-0 top-0"
               // Focus entering this row (clicking its editor, tabbing in) makes
               // it the day the sidebar describes.
               onFocusCapture={() => setFocusedDailyDate(date)}
