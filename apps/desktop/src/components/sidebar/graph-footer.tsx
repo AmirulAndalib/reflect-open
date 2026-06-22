@@ -84,7 +84,7 @@ export function GraphFooter({ graph, context }: GraphFooterProps): ReactElement 
                   color={colorFor(graph.root)}
                   className={cn('h-5 w-5', indexing && 'motion-safe:animate-pulse')}
                 />
-                <span className="min-w-0 truncate text-xs font-medium text-text">
+                <span className="min-w-0 truncate text-xs font-medium text-text-secondary">
                   {graph.name}
                 </span>
                 {dot !== null ? (
