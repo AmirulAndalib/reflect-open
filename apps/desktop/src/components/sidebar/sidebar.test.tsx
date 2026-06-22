@@ -260,7 +260,7 @@ describe('Sidebar', () => {
     const { view } = renderSidebar()
 
     await userEvent.click(view.getByRole('button', { name: /Notes/ }))
-    await userEvent.click(view.getByRole('menuitem', { name: /open graph in finder/i }))
+    await userEvent.click(view.getByRole('menuitem', { name: /reveal graph in finder/i }))
 
     expect(revealItemInDir).toHaveBeenCalledWith('/notes')
   })
