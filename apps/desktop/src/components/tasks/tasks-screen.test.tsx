@@ -335,6 +335,17 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
+  it('opens the inline editor on an empty task selection', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', markerOffset: 2, raw: '[ ]', text: '', noteTitle: 'Project' }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'Empty task' }))
+    expect(view.getByTestId('task-editor')).toBeDefined()
+    view.unmount()
+  })
+
   it('scrolls the focused task row into view after selection renders', async () => {
     getOpenTasks.mockResolvedValue([
       task({ notePath: 'notes/p.md', markerOffset: 2, text: 'first', noteTitle: 'Project' }),

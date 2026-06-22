@@ -18,6 +18,10 @@ export function TaskText({ task }: { task: OpenTask }): ReactElement {
   const { settings } = useSettings()
   const segments = scanInlineSegments(taskContent(task.raw))
 
+  if (segments.length === 0) {
+    return <span className="text-text-muted">Empty task</span>
+  }
+
   return (
     <span>
       {segments.map((segment, index) => {
