@@ -119,10 +119,12 @@ without tagging, for when you want the version commit but aren't ready to releas
 `pnpm release:macos publish` runs the full build above, then creates a GitHub release
 tagged `v<version>` (the `version` in `apps/desktop/src-tauri/tauri.conf.json`) with the
 notarized DMG, the updater artifacts (`Reflect.app.tar.gz` + `.sig`), and the
-`latest.json` manifest attached, plus auto-generated release notes. Installed apps poll
-`releases/latest/download/latest.json` (the committed `plugins.updater.endpoints` URL),
-so publish requires the updater key and always attaches the manifest — a release without
-it would stop existing installs from seeing any future updates. Beyond the signing
+`latest.json` manifest attached, plus auto-generated release notes. Stable installs poll
+`releases/latest/download/latest.json`; beta installs poll
+`releases/download/updater-beta/latest.json`, a moving feed release that points at the
+newest published beta. Publish requires the updater key and always attaches the
+manifest — a release without it would stop existing installs from seeing any future
+updates. Beyond the signing
 requirements, it needs the [GitHub CLI](https://cli.github.com) authenticated with
 `gh auth login`.
 
@@ -144,12 +146,17 @@ from the GitHub UI.
 Development happens on `next` (the repo default branch); `master` only advances when
 `next` is merged into it for a public release. On `next`, `version` in
 `tauri.conf.json` carries a prerelease suffix (e.g. `0.2.0-beta.1`), and `publish`
-turns that suffix into a GitHub **pre-release** automatically. `releases/latest` — the
-committed updater endpoint — ignores pre-releases, so stable installs never see a
-beta.
+turns that suffix into a GitHub **pre-release** automatically. `releases/latest` ignores
+pre-releases, so stable installs never see a beta.
 
-Beta installs poll that same stable endpoint: they get offered the next stable release
-when it ships, but not newer betas. A dedicated beta updater channel is future work.
+Beta builds use the dedicated `updater-beta` feed instead. Every non-draft beta publish
+uploads the beta's `latest.json` to that fixed release with `--clobber`; the manifest
+still points at the immutable versioned release artifacts for the actual download. Draft
+beta releases do not update the feed.
+
+`pnpm release:bump` keeps the channel endpoint in `tauri.conf.json` in sync with the
+version it writes: prerelease versions poll the beta feed, stable versions poll
+`releases/latest`.
 
 Cutting a beta is the normal release flow on `next`: `pnpm release:bump` (see
 [Cutting a release](#cutting-a-release-pnpm-releasebump) above) bumps the prerelease

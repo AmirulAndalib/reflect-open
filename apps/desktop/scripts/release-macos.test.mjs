@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { createReleaseArgs } from './release-macos.mjs'
+import { createBetaFeedReleaseArgs, createReleaseArgs, uploadBetaFeedArgs } from './release-macos.mjs'
 
 const baseInput = {
   assets: ['Reflect.dmg', 'Reflect.app.tar.gz', 'Reflect.app.tar.gz.sig', 'latest.json'],
@@ -58,4 +58,31 @@ test('draft publish keeps the draft flag last', () => {
   })
 
   expect(args.at(-1)).toBe('--draft')
+})
+
+test('beta feed release is a non-latest prerelease pointer', () => {
+  expect(createBetaFeedReleaseArgs({ commit: 'abc123', manifestPath: 'latest.json' })).toEqual([
+    'release',
+    'create',
+    'updater-beta',
+    'latest.json',
+    '--title',
+    'Reflect beta updater feed',
+    '--target',
+    'abc123',
+    '--prerelease',
+    '--latest=false',
+    '--notes',
+    'Moving updater feed for beta builds. Do not install this release directly.',
+  ])
+})
+
+test('beta feed upload replaces the moving manifest', () => {
+  expect(uploadBetaFeedArgs({ manifestPath: 'latest.json' })).toEqual([
+    'release',
+    'upload',
+    'updater-beta',
+    'latest.json',
+    '--clobber',
+  ])
 })

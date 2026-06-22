@@ -28,6 +28,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const KEYCHAIN_SERVICE = 'reflect-notary'
 const UPDATER_KEYCHAIN_SERVICE = 'reflect-updater'
 const APP_SPECIFIC_PASSWORD_URL = 'https://account.apple.com'
+const BETA_UPDATER_FEED_TAG = 'updater-beta'
+const STABLE_UPDATER_ENDPOINT = 'https://github.com/team-reflect/reflect-open/releases/latest/download/latest.json'
+const BETA_UPDATER_ENDPOINT = `https://github.com/team-reflect/reflect-open/releases/download/${BETA_UPDATER_FEED_TAG}/latest.json`
 
 const here = dirname(fileURLToPath(import.meta.url))
 const appDir = join(here, '..')
@@ -217,6 +220,23 @@ function writeUpdaterManifest({ version, tag }) {
   const manifestPath = join(dirname(updaterArchive), 'latest.json')
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
   return manifestPath
+}
+
+function updaterEndpointForVersion(version) {
+  return version.includes('-') ? BETA_UPDATER_ENDPOINT : STABLE_UPDATER_ENDPOINT
+}
+
+function ensureUpdaterEndpointMatchesVersion({ version }) {
+  const endpoint = readTauriConf().plugins?.updater?.endpoints?.[0]
+  const expected = updaterEndpointForVersion(version)
+  if (endpoint !== expected) {
+    fail(
+      `tauri.conf.json updater endpoint does not match version ${version}.\n` +
+        `  expected: ${expected}\n` +
+        `  found:    ${endpoint ?? '(missing)'}\n` +
+        '  Run `pnpm release:bump` for the target channel so installed apps poll the right feed.',
+    )
+  }
 }
 
 /**
@@ -457,6 +477,55 @@ export function createReleaseArgs({ assets, commit, draft, prerelease, productNa
   return releaseArgs
 }
 
+/** Build the `gh release create` arguments for the moving beta updater feed. */
+export function createBetaFeedReleaseArgs({ commit, manifestPath }) {
+  return [
+    'release',
+    'create',
+    BETA_UPDATER_FEED_TAG,
+    manifestPath,
+    '--title',
+    'Reflect beta updater feed',
+    '--target',
+    commit,
+    '--prerelease',
+    '--latest=false',
+    '--notes',
+    'Moving updater feed for beta builds. Do not install this release directly.',
+  ]
+}
+
+/** Build the `gh release upload` arguments that replace the beta feed manifest. */
+export function uploadBetaFeedArgs({ manifestPath }) {
+  return ['release', 'upload', BETA_UPDATER_FEED_TAG, manifestPath, '--clobber']
+}
+
+function updateBetaFeed({ commit, manifestPath }) {
+  const existing = run('gh', ['release', 'view', BETA_UPDATER_FEED_TAG])
+  if (existing.status === 0) {
+    log(`updating ${BETA_UPDATER_FEED_TAG} updater feed…`)
+    const upload = spawnSync('gh', uploadBetaFeedArgs({ manifestPath }), {
+      encoding: 'utf8',
+      stdio: ['inherit', 'pipe', 'inherit'],
+    })
+    if (upload.status !== 0) {
+      fail(`updating the beta updater feed failed${upload.stdout ? `\n${upload.stdout.trim()}` : ''}`)
+    }
+    return
+  }
+  if (!/release not found/i.test(existing.output)) {
+    fail(`could not check GitHub for the ${BETA_UPDATER_FEED_TAG} updater feed:\n${existing.output.trim()}`)
+  }
+  log(`creating ${BETA_UPDATER_FEED_TAG} updater feed…`)
+  const create = spawnSync('gh', createBetaFeedReleaseArgs({ commit, manifestPath }), {
+    encoding: 'utf8',
+    stdio: ['inherit', 'pipe', 'inherit'],
+  })
+  if (create.status !== 0) {
+    fail(`creating the beta updater feed failed${create.stdout ? `\n${create.stdout.trim()}` : ''}`)
+  }
+}
+
 /**
  * Build a signed + notarized DMG and upload it to a new GitHub release tagged
  * v<version> (from tauri.conf.json). A version with a prerelease segment
@@ -469,6 +538,7 @@ function publish({ draft }) {
   const commit = ensurePublishableCommit()
   const { productName, version } = readTauriConf()
   const tag = `v${version}`
+  ensureUpdaterEndpointMatchesVersion({ version })
   ensureReleaseIsNew(tag)
   ensureTagMatchesCommit(tag, commit)
 
@@ -492,6 +562,11 @@ function publish({ draft }) {
   const result = spawnSync('gh', releaseArgs, { encoding: 'utf8', stdio: ['inherit', 'pipe', 'inherit'] })
   if (result.status !== 0) fail(`creating the GitHub release failed${result.stdout ? `\n${result.stdout.trim()}` : ''}`)
   log(`${draft ? 'draft release created' : 'release published'}: ${result.stdout.trim()}`)
+  if (prerelease && !draft) {
+    updateBetaFeed({ commit, manifestPath })
+  } else if (prerelease) {
+    log(`draft pre-release created — ${BETA_UPDATER_FEED_TAG} feed not updated`)
+  }
 }
 
 async function setup() {

@@ -49,6 +49,8 @@ const PREID = 'beta'
 /** Branches a release is normally cut from. */
 const STABLE_BRANCH = 'master'
 const BETA_BRANCH = 'next'
+const STABLE_UPDATER_ENDPOINT = 'https://github.com/team-reflect/reflect-open/releases/latest/download/latest.json'
+const BETA_UPDATER_ENDPOINT = 'https://github.com/team-reflect/reflect-open/releases/download/updater-beta/latest.json'
 
 /** Named bump levels; anything else on the command line is an explicit version. */
 const LEVELS = ['beta', 'stable', 'patch', 'minor', 'major', 'prepatch', 'preminor', 'premajor']
@@ -127,6 +129,11 @@ export function computeNextVersion(current, bump) {
   }
 }
 
+/** The updater feed this version should poll once shipped. */
+export function updaterEndpointForVersion(version) {
+  return parseVersion(version).prerelease ? BETA_UPDATER_ENDPOINT : STABLE_UPDATER_ENDPOINT
+}
+
 // ---------------------------------------------------------------------------
 // Git + filesystem side effects.
 // ---------------------------------------------------------------------------
@@ -188,6 +195,12 @@ function replaceOnce(path, find, replace, label) {
 /** Edit all three version sites to `next` (from `current`). */
 function writeVersion(current, next) {
   replaceOnce(tauriConfPath, `"version": "${current}"`, `"version": "${next}"`, 'tauri.conf.json')
+  replaceOnce(
+    tauriConfPath,
+    `"${updaterEndpointForVersion(current)}"`,
+    `"${updaterEndpointForVersion(next)}"`,
+    'tauri.conf.json updater endpoint',
+  )
   replaceOnce(cargoTomlPath, `version = "${current}"`, `version = "${next}"`, 'Cargo.toml')
   // cargo rewrites the lockfile's reflect-open entry from the new Cargo.toml.
   // --offline keeps it a pure version edit with no registry round-trip.
@@ -423,6 +436,7 @@ async function main() {
   log('plan:')
   if (!direct) console.log(`  - create ${releaseBranch} from ${branch}`)
   console.log('  - update tauri.conf.json, Cargo.toml, Cargo.lock')
+  console.log(`  - set updater feed to ${isPrerelease ? 'beta' : 'stable'}`)
   console.log(`  - commit "Release ${tag}"`)
   if (direct) {
     console.log(`  - push ${branch} to origin`)

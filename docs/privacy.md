@@ -53,8 +53,9 @@ disk at call time), and it is covered by tests.
 - **API key validation:** adding a provider key sends one `GET /v1/models` to that
   provider to test it. No content.
 - **Update check:** the packaged app fetches a release manifest (`latest.json`) from
-  this repository's GitHub Releases on launch and every six hours, and downloads the
-  update archive when you ask it to install. No user data is sent; payloads are
+  this repository's GitHub Releases on launch and every six hours. Stable builds check
+  the latest stable release; beta builds check the beta feed. The app downloads the
+  update archive only when you ask it to install. No user data is sent; payloads are
   verified against a public key compiled into the app before installing. Offline, the
   check fails silently and the app carries on.
 
