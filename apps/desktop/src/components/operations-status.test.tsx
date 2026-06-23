@@ -95,4 +95,29 @@ describe('OperationsStatus', () => {
     options?.action?.onClick()
     expect(run).toHaveBeenCalledTimes(1)
   })
+
+  it('does not remove the operation when a toast is dismissed', async () => {
+    render(<OperationsStatus />)
+
+    let handle!: ReturnType<typeof startOperation>
+    act(() => {
+      handle = startOperation('Saving settings')
+    })
+
+    await waitFor(() =>
+      expect(toast.message).toHaveBeenLastCalledWith(
+        'Saving settings',
+        expect.not.objectContaining({ onDismiss: expect.any(Function) }),
+      ),
+    )
+
+    act(() => handle.fail('disk full'))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenLastCalledWith(
+        'Saving settings',
+        expect.objectContaining({ id: 'operation-1', description: 'disk full' }),
+      ),
+    )
+  })
 })

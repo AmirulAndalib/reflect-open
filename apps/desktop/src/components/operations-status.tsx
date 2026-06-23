@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactElement } from 'react'
 import { toast } from 'sonner'
-import { dismissOperation, type Operation, useOperations } from '@/lib/operations'
+import { type Operation, useOperations } from '@/lib/operations'
 
 /**
  * The global status surface (foundations hardening): a small, unobtrusive
@@ -49,7 +49,6 @@ export function OperationsStatus(): ReactElement | null {
         description: descriptionFor(operation),
         duration: TOAST_DURATION_MS,
         action,
-        onDismiss: () => dismissOperation(operation.id),
       }
 
       switch (operation.status) {

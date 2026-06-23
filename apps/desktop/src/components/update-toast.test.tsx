@@ -51,7 +51,9 @@ describe('UpdateToast', () => {
         'Update available',
         expect.objectContaining({
           id: 'reflect-update',
+          closeButton: false,
           description: 'Reflect 1.2.3 is ready to install.',
+          dismissible: false,
           action: expect.objectContaining({ label: 'Install' }),
         }),
       ),
