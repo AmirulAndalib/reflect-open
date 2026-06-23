@@ -9,6 +9,7 @@ import {
 import { Priority } from '@meowdown/core'
 import { useKeymap } from '@meowdown/react'
 import { type OpenTask } from '@reflect/core'
+import { markModeFromSyntax } from '@/editor/mark-mode'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
 import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
@@ -211,7 +212,7 @@ export function TaskEditor({
       <NoteEditor
         initialContent={initial}
         onChange={onChange}
-        markMode={settings.editorMarkdownSyntax}
+        markMode={markModeFromSyntax(settings.editorMarkdownSyntax)}
         spellCheck={settings.editorSpellCheck}
         // A one-line editor has nothing to reorder, so keep the gutter grip off.
         blockHandle={false}
