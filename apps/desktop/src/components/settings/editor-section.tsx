@@ -22,7 +22,7 @@ const MARKDOWN_SYNTAX_OPTIONS: MarkdownSyntaxOption[] = [
   {
     value: 'hybrid',
     label: 'Hybrid',
-    description: 'Appear only around the cursor',
+    description: 'Only around the cursor',
   },
   {
     value: 'show',
