@@ -275,10 +275,7 @@ fn note_label(path: &str) -> Option<String> {
 
 fn authored_note_title(source: &str) -> Option<String> {
     let split = split_frontmatter(source);
-    if split
-        .raw
-        .is_some_and(|frontmatter| frontmatter_private(frontmatter))
-    {
+    if split.raw.is_some_and(frontmatter_private) {
         return None;
     }
     frontmatter_title(split.raw)
