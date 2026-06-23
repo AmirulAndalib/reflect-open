@@ -1,5 +1,6 @@
-import type { ReactElement } from 'react'
-import { type Operation, useOperations } from '@/lib/operations'
+import { useEffect, useRef, type ReactElement } from 'react'
+import { toast } from 'sonner'
+import { dismissOperation, type Operation, useOperations } from '@/lib/operations'
 
 /**
  * The global status surface (foundations hardening): a small, unobtrusive
@@ -8,37 +9,64 @@ import { type Operation, useOperations } from '@/lib/operations'
  * they're touched. Renders nothing when idle.
  */
 
-function messageClassName(status: Operation['status']): string {
-  if (status === 'failed') {
-    return 'block text-red-600 dark:text-red-400'
+const TOAST_DURATION_MS = Number.POSITIVE_INFINITY
+
+function toastId(operation: Operation): string {
+  return `operation-${operation.id}`
+}
+
+function descriptionFor(operation: Operation): string | undefined {
+  if (operation.status !== 'running' && operation.message !== null) {
+    return operation.message
   }
-  return 'block text-amber-700 dark:text-amber-300'
+  if (operation.progress !== null) {
+    return `${operation.progress.done}/${operation.progress.total}`
+  }
+  return operation.description ?? undefined
 }
 
 export function OperationsStatus(): ReactElement | null {
   const operations = useOperations()
-  if (operations.length === 0) {
-    return null
-  }
-  return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-80 flex-col gap-2">
-      {operations.map((operation) => (
-        <div
-          key={operation.id}
-          role="status"
-          className="rounded-md border border-black/10 bg-surface px-3 py-2 text-xs shadow-lg dark:border-white/10"
-        >
-          <span className="block font-medium">{operation.label}</span>
-          {operation.progress !== null ? (
-            <span className="block text-text-muted">
-              {operation.progress.done}/{operation.progress.total}
-            </span>
-          ) : null}
-          {operation.status !== 'running' ? (
-            <span className={messageClassName(operation.status)}>{operation.message}</span>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  )
+  const shownIds = useRef<Set<number>>(new Set())
+
+  useEffect(() => {
+    const nextIds = new Set(operations.map((operation) => operation.id))
+    for (const id of shownIds.current) {
+      if (!nextIds.has(id)) {
+        toast.dismiss(`operation-${id}`)
+      }
+    }
+
+    for (const operation of operations) {
+      const action = operation.action
+        ? {
+            label: operation.action.label,
+            onClick: () => void operation.action?.run(),
+          }
+        : undefined
+      const options = {
+        id: toastId(operation),
+        description: descriptionFor(operation),
+        duration: TOAST_DURATION_MS,
+        action,
+        onDismiss: () => dismissOperation(operation.id),
+      }
+
+      switch (operation.status) {
+        case 'failed':
+          toast.error(operation.label, options)
+          break
+        case 'warning':
+          toast.warning(operation.label, options)
+          break
+        case 'running':
+          toast.message(operation.label, options)
+          break
+      }
+    }
+
+    shownIds.current = nextIds
+  }, [operations])
+
+  return null
 }
