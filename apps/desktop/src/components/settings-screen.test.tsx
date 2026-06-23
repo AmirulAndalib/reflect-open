@@ -114,12 +114,18 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('button', { name: /check for updates/i })).toBeTruthy()
   })
 
-  it('forgets the open graph from saved graphs', async () => {
+  it('confirms before forgetting the open graph from saved graphs', async () => {
     graph.current = { root: '/graphs/work', name: 'Work', cloudSync: null, generation: 1 }
     renderScreen()
 
-    const section = screen.getByRole('region', { name: 'Destructive' })
+    const section = screen.getByRole('region', { name: 'Danger zone' })
     fireEvent.click(within(section).getByRole('button', { name: /forget graph/i }))
+
+    const dialog = screen.getByRole('dialog', { name: /forget graph/i })
+    expect(within(dialog).getByText('/graphs/work')).toBeTruthy()
+    expect(graph.forget).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /forget graph/i }))
 
     await waitFor(() => expect(graph.forget).toHaveBeenCalledWith('/graphs/work'))
   })
