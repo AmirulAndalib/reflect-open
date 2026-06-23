@@ -23,5 +23,12 @@
       "icons-beta/icon.icns",
       "icons-beta/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/team-reflect/reflect-open/releases/download/updater-beta/latest.json"
+      ]
+    }
   }
 }
