@@ -73,7 +73,9 @@ describe('GraphChooser', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText(/Settings > Graph > Export, export a "Reflect Open folder"/i),
+        screen.getByText(
+          'Moving from Reflect V1? In V1, go to Settings > Graph > Export, export a "Reflect Open folder", then open it here.',
+        ),
       ).toBeInTheDocument(),
     )
   })

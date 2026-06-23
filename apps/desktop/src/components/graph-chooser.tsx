@@ -8,6 +8,9 @@ import { graphColorCss } from '@/lib/graph-colors'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
 
+const V1_EXPORT_HELP =
+  'Moving from Reflect V1? In V1, go to Settings > Graph > Export, export a "Reflect Open folder", then open it here.'
+
 /**
  * First-run / no-graph screen: open a folder as a graph, or reopen a recent one.
  * Shown by `App` whenever no graph is active (Plan 02 loading gate). A recent's
@@ -42,8 +45,7 @@ export function GraphChooser(): ReactElement {
             Open graph…
           </Button>
           <p className="text-center text-xs leading-5 text-text-muted">
-            Moving from Reflect V1? In V1, go to Settings &gt; Graph &gt; Export,
-            export a "Reflect Open folder", then open it here.
+            {V1_EXPORT_HELP}
           </p>
         </div>
 
