@@ -11,6 +11,7 @@ import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
 import { useImagePersistence } from '@/editor/use-image-persistence'
 import { useNoteDocument } from '@/editor/use-note-document'
+import { useTagNavigation } from '@/editor/use-tag-navigation'
 import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
 import { untitledNoteSeed } from '@/lib/create-note'
 import { cn } from '@/lib/utils'
@@ -107,6 +108,7 @@ export function NotePaneComponent({
     saveError: imageSaveError,
   } = useImagePersistence(graphRoot, generation)
   const onWikiLinkClick = useWikiLinkNavigation(generation)
+  const onTagClick = useTagNavigation()
   const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()
 
   const bindEditor = document.bindEditor
@@ -222,6 +224,7 @@ export function NotePaneComponent({
         saveImage={saveImage}
         onImageSaveError={onImageSaveError}
         onWikiLinkClick={onWikiLinkClick}
+        onTagClick={onTagClick}
         onWikilinkSearch={onWikilinkSearch}
         onTagSearch={onTagSearch}
         // Daily notes carry no title semantics (the date is their subject),
