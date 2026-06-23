@@ -32,14 +32,19 @@ export function GraphChooser(): ReactElement {
           </p>
         </div>
 
-        <Button
-          type="button"
-          className="w-full"
-          onClick={() => void pickAndOpen()}
-        >
-          <FolderPlus aria-hidden strokeWidth={1.75} />
-          Open graph…
-        </Button>
+        <div className="space-y-2">
+          <Button
+            type="button"
+            className="w-full"
+            onClick={() => void pickAndOpen()}
+          >
+            <FolderPlus aria-hidden strokeWidth={1.75} />
+            Open graph…
+          </Button>
+          <p className="text-center text-xs leading-5 text-text-muted">
+            Moving from Reflect V1? Export a Reflect Open folder, then open that folder here.
+          </p>
+        </div>
 
         {hasBridge() ? (
           <Button
