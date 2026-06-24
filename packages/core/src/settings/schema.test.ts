@@ -8,6 +8,7 @@ describe('settingsSchema', () => {
       editorSpellCheck: true,
       editorDefaultBullet: true,
       editorBulletAfterHeading: true,
+      editorTextSize: 'medium',
       semanticSearchEnabled: false,
       describeAssets: true,
       mobileOnboarded: false,
@@ -25,6 +26,7 @@ describe('settingsSchema', () => {
     expect(DEFAULT_SETTINGS.editorSpellCheck).toBe(true)
     expect(DEFAULT_SETTINGS.editorDefaultBullet).toBe(true)
     expect(DEFAULT_SETTINGS.editorBulletAfterHeading).toBe(true)
+    expect(DEFAULT_SETTINGS.editorTextSize).toBe('medium')
     expect(DEFAULT_SETTINGS.semanticSearchEnabled).toBe(false)
     expect(DEFAULT_SETTINGS.describeAssets).toBe(true)
     expect(DEFAULT_SETTINGS.mobileOnboarded).toBe(false)
@@ -53,6 +55,9 @@ describe('settingsSchema', () => {
     expect(
       settingsSchema.parse({ editorBulletAfterHeading: true }).editorBulletAfterHeading,
     ).toBe(true)
+    expect(settingsSchema.parse({ editorTextSize: 'small' }).editorTextSize).toBe('small')
+    expect(settingsSchema.parse({ editorTextSize: 'medium' }).editorTextSize).toBe('medium')
+    expect(settingsSchema.parse({ editorTextSize: 'large' }).editorTextSize).toBe('large')
     expect(settingsSchema.parse({ theme: 'dark' }).theme).toBe('dark')
     expect(settingsSchema.parse({ theme: 'light' }).theme).toBe('light')
     expect(settingsSchema.parse({ theme: 'system' }).theme).toBe('system')
@@ -83,6 +88,8 @@ describe('settingsSchema', () => {
       settingsSchema.parse({ editorBulletAfterHeading: 'on' }).editorBulletAfterHeading,
     ).toBe(true)
     expect(settingsSchema.parse({ editorBulletAfterHeading: 0 }).editorBulletAfterHeading).toBe(true)
+    expect(settingsSchema.parse({ editorTextSize: 'huge' }).editorTextSize).toBe('medium')
+    expect(settingsSchema.parse({ editorTextSize: 3 }).editorTextSize).toBe('medium')
     expect(settingsSchema.parse({ theme: 'sepia' }).theme).toBe('system')
     expect(settingsSchema.parse({ theme: 7 }).theme).toBe('system')
     expect(settingsSchema.parse({ timeFormat: '36h' }).timeFormat).toBe('12h')
@@ -116,6 +123,7 @@ describe('settingsSchema', () => {
       editorSpellCheck: true,
       editorDefaultBullet: true,
       editorBulletAfterHeading: true,
+      editorTextSize: 'medium',
       semanticSearchEnabled: false,
       describeAssets: true,
       mobileOnboarded: false,
