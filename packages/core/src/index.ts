@@ -81,6 +81,9 @@ export {
 export {
   openGraph,
   createGraph,
+  importGraphZip,
+  importGraphFiles,
+  type ImportFile,
   readNote,
   writeNote,
   writeAsset,

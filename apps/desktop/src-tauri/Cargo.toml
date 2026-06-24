@@ -32,6 +32,11 @@ tempfile = { workspace = true }
 dirs = "6.0.0"
 tauri-plugin-dialog = "2.7.1"
 base64 = "0.22.1"
+# Reflect V1 export import (drag-and-drop onto the graph chooser): read the
+# dropped `.zip` archive. `deflate` (plus the always-available `store`) covers
+# the standard compression a browser-emitted export uses; zip's heavier codecs
+# stay off.
+zip = { version = "4", default-features = false, features = ["deflate"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 keyring = { version = "3", features = [

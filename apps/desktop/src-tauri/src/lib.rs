@@ -151,6 +151,8 @@ pub fn run() {
             mobile_graph_root,
             fs::graph_open,
             fs::graph_create,
+            fs::graph_import_zip,
+            fs::graph_import_files,
             fs::note_read,
             fs::note_write,
             fs::asset_write,

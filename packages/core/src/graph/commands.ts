@@ -23,6 +23,41 @@ export async function createGraph(path: string): Promise<GraphInfo> {
   return call('graph_create', { path }, graphInfoSchema)
 }
 
+/** One file of an enumerated folder drop (see {@link importGraphFiles}). */
+export interface ImportFile {
+  /** Forward-slashed path relative to the dropped folder. */
+  path: string
+  /** The file's bytes, base64-encoded for the JSON IPC. */
+  contentsBase64: string
+}
+
+/**
+ * Import a dropped Reflect V1 export `.zip` as a new graph under the user's
+ * Documents folder, returning the created graph's absolute path. A V1 export is
+ * already V2's markdown shape, so Rust extracts it verbatim (dropping the
+ * rebuildable `.reflect/` index, VCS metadata, and OS junk) and rejects an
+ * archive that holds no notes. Open the returned path through the normal flow.
+ *
+ * @param name      Suggested graph name (the archive's filename).
+ * @param zipBase64 The `.zip` bytes, base64-encoded for the JSON IPC.
+ */
+export async function importGraphZip(name: string, zipBase64: string): Promise<string> {
+  return call('graph_import_zip', { name, zipBase64 }, z.string())
+}
+
+/**
+ * Import a dropped Reflect V1 export *folder* as a new graph under the user's
+ * Documents folder, returning the created graph's absolute path. The web layer
+ * can't hand Rust the folder's real path, so the frontend enumerates its files
+ * and ships them here. Same validation and cleanup as {@link importGraphZip}.
+ *
+ * @param name  Suggested graph name (the dropped folder's name).
+ * @param files The folder's files (relative path + base64 bytes).
+ */
+export async function importGraphFiles(name: string, files: ImportFile[]): Promise<string> {
+  return call('graph_import_files', { name, files }, z.string())
+}
+
 /**
  * Read a note's markdown by graph-relative path. `generation`, when given,
  * pins the read to the issuing graph session — background passes that can

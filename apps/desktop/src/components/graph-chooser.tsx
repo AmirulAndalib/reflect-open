@@ -1,9 +1,10 @@
 import { useState, type ReactElement } from 'react'
-import { CloudDownload, Folder, FolderPlus } from 'lucide-react'
+import { CloudDownload, Folder, FolderPlus, Import, Loader2 } from 'lucide-react'
 import { hasBridge } from '@reflect/core'
 import { RestoreFromGithubDialog } from '@/components/restore-from-github-dialog'
 import { Button } from '@/components/ui/button'
 import { useGraphColors } from '@/hooks/use-graph-colors'
+import { useGraphImport } from '@/hooks/use-graph-import'
 import { graphColorCss } from '@/lib/graph-colors'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
@@ -20,10 +21,13 @@ const V1_EXPORT_HELP =
 export function GraphChooser(): ReactElement {
   const { recents, error, pickAndOpen, openRecent, forget } = useGraph()
   const { colorFor } = useGraphColors()
+  const { isDragging, importing, importError, handlers } = useGraphImport()
   const [restoring, setRestoring] = useState(false)
 
   return (
-    <div className="flex h-screen w-screen overflow-auto bg-surface-app p-8">
+    <div className="flex h-screen w-screen overflow-auto bg-surface-app p-8" {...handlers}>
+      {isDragging ? <DropOverlay /> : null}
+      {importing ? <ImportingOverlay /> : null}
       {/* Auto margins (not items-center) so the card centers when it fits but
           scrolls from the top when the recents list outgrows the viewport —
           flex centering would clip the overflowing top edge. */}
@@ -63,9 +67,9 @@ export function GraphChooser(): ReactElement {
 
         {restoring ? <RestoreFromGithubDialog onClose={() => setRestoring(false)} /> : null}
 
-        {error ? (
+        {importError ?? error ? (
           <p role="alert" className="text-center text-sm text-destructive">
-            {error}
+            {importError ?? error}
           </p>
         ) : null}
 
@@ -118,6 +122,37 @@ export function GraphChooser(): ReactElement {
             </ul>
           </div>
         ) : null}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Full-screen affordance shown while a Reflect export is dragged over the
+ * chooser. Pointer-events stay off so the drag's enter/leave still resolve
+ * against the underlying drop zone.
+ */
+function DropOverlay(): ReactElement {
+  return (
+    <div className="pointer-events-none fixed inset-4 z-40 flex items-center justify-center rounded-xl border-2 border-dashed border-accent/60 bg-surface-app/80 backdrop-blur-sm">
+      <div className="flex flex-col items-center gap-2 text-accent">
+        <Import aria-hidden strokeWidth={1.75} className="size-8" />
+        <p className="text-sm font-medium">Drop to import your Reflect graph</p>
+      </div>
+    </div>
+  )
+}
+
+/** Blocking overlay shown while a dropped export is read and materialized. */
+function ImportingOverlay(): ReactElement {
+  return (
+    <div
+      role="status"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-surface-app/80 backdrop-blur-sm"
+    >
+      <div className="flex flex-col items-center gap-2 text-text-secondary">
+        <Loader2 aria-hidden className="size-6 animate-spin" />
+        <p className="text-sm font-medium">Importing your graph…</p>
       </div>
     </div>
   )

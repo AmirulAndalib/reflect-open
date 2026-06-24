@@ -6,6 +6,7 @@
 //! (path-traversal guard, [`resolve`]). Writes are atomic (temp file + rename,
 //! [`io`]) and deletes go to the OS trash. Parsing/indexing live in later plans.
 
+mod import;
 mod io;
 mod resolve;
 
@@ -187,6 +188,31 @@ pub fn graph_create(
     let info = activate(&state, &root)?;
     allow_asset_scope(&app, &root);
     Ok(info)
+}
+
+/// Import a dropped Reflect V1 export `.zip` as a new graph under the user's
+/// Documents folder (see [`import`]) and return the created graph's absolute
+/// path. The frontend then opens it through the normal graph-open flow.
+#[tauri::command]
+pub fn graph_import_zip(
+    name: String,
+    zip_base64: String,
+    app: tauri::AppHandle,
+) -> AppResult<String> {
+    import::import_zip(&name, &zip_base64, &app)
+}
+
+/// Import a dropped Reflect V1 export *folder* — its files enumerated by the
+/// frontend, since WebKit hides a dropped directory's real path — as a new graph
+/// and return its absolute path. Same validation and cleanup as
+/// [`graph_import_zip`].
+#[tauri::command]
+pub fn graph_import_files(
+    name: String,
+    files: Vec<import::ImportFile>,
+    app: tauri::AppHandle,
+) -> AppResult<String> {
+    import::import_files(&name, files, &app)
 }
 
 /// Open an existing graph at `path`, ensuring the standard layout exists.
