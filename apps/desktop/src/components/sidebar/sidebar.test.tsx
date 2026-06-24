@@ -164,19 +164,11 @@ describe('Sidebar', () => {
     ).toBeNull()
   })
 
-  it('All notes stays active while editing a slug-named note', () => {
+  it('All notes stays active while editing any non-daily note', () => {
     const { view } = renderSidebar(undefined, { kind: 'note', path: 'notes/meeting.md' })
     expect(
       view.getByRole('button', { name: /all notes/i }).getAttribute('aria-current'),
     ).toBe('page')
-  })
-
-  it('All notes is inactive while the untitled placeholder note is open', () => {
-    // The "New note" row owns the placeholder highlight until the birth rename.
-    const { view } = renderSidebar(undefined, { kind: 'note', path: untitledNotePath() })
-    expect(
-      view.getByRole('button', { name: /all notes/i }).getAttribute('aria-current'),
-    ).toBeNull()
   })
 
   it('the search affordance opens the palette', async () => {

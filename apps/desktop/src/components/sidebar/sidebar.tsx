@@ -85,13 +85,9 @@ export function Sidebar({ graph, context }: SidebarProps): ReactElement {
             icon={<ListIcon className="shrink-0" />}
             label="All notes"
             binding={keybindingFor('nav.allNotes') ?? undefined}
-            // A named note belongs to the All Notes collection, so keep this
-            // row lit while editing one. Untitled placeholders stay owned by
-            // the "New note" row above until their birth rename.
-            active={
-              route.kind === 'allNotes' ||
-              (route.kind === 'note' && !isUntitledNotePath(route.path))
-            }
+            // Every non-daily note lives in the All Notes collection, so keep
+            // this row lit while editing one.
+            active={route.kind === 'allNotes' || route.kind === 'note'}
             onClick={() => void runCommand('nav.allNotes', context)}
           />
           <SidebarItem
