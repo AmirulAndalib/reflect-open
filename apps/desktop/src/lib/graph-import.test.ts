@@ -45,6 +45,11 @@ describe('looksLikeGraphPaths', () => {
     expect(looksLikeGraphPaths(['assets/pic.png'])).toBe(false)
     expect(looksLikeGraphPaths([])).toBe(false)
   })
+
+  it('matches the .md extension case-sensitively, mirroring Rust validation', () => {
+    expect(looksLikeGraphPaths(['notes/A.MD'])).toBe(false)
+    expect(looksLikeGraphPaths(['daily/2026-06-24.Md'])).toBe(false)
+  })
 })
 
 describe('classifyDrop', () => {

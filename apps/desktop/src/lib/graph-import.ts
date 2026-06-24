@@ -50,9 +50,13 @@ export function shouldSkipImportEntry(relPath: string): boolean {
  * A quick "is this a Reflect graph?" check: does any path point at a markdown
  * note under `daily/` or `notes/` (allowing a single wrapping folder)? Lets the
  * UI reject a stray folder before uploading every file; Rust validates for real.
+ *
+ * The `.md` extension is matched case-sensitively to mirror Rust (and the rest
+ * of the indexing pipeline, which only counts exactly `.md`) — otherwise a
+ * `*.MD` export would pass here, upload in full, then be rejected by Rust.
  */
 export function looksLikeGraphPaths(relPaths: readonly string[]): boolean {
-  return relPaths.some((path) => /(?:^|\/)(?:daily|notes)\/.+\.md$/i.test(path))
+  return relPaths.some((path) => /(?:^|\/)(?:daily|notes)\/.+\.md$/.test(path))
 }
 
 /** What a drop on the chooser turned out to be. */
