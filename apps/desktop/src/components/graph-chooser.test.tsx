@@ -68,16 +68,19 @@ afterEach(() => {
 })
 
 describe('GraphChooser', () => {
-  it('explains how to open Reflect V1 folder exports', async () => {
+  it('separates the new-user and Reflect V1 migration paths', async () => {
     render(<GraphChooser />, { wrapper })
 
     await waitFor(() =>
-      expect(
-        screen.getByText(
-          'Moving from Reflect V1? In V1, go to Settings > Graph > Export, export a "Reflect Open folder", then open it here.',
-        ),
-      ).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: 'New to Reflect' })).toBeInTheDocument(),
     )
+    expect(screen.getByRole('button', { name: /Choose a folder/ })).toBeInTheDocument()
+
+    // The V1 path keeps the export → unzip → open guidance, now as numbered steps.
+    expect(screen.getByRole('heading', { name: 'Coming from Reflect v1' })).toBeInTheDocument()
+    expect(screen.getByText(/Settings → Graph → Export/)).toBeInTheDocument()
+    expect(screen.getByText(/Unzip the file and move the folder/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Open exported folder/ })).toBeInTheDocument()
   })
 
   // The provider auto-opens the most recent graph on mount, so the chooser's
