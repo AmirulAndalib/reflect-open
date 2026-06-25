@@ -15,7 +15,7 @@ import {
 } from '../ai/transcribe'
 import { listDir, listFiles, readAsset, readNote, writeAsset, writeNote } from '../graph/commands'
 import { AUDIO_MEMOS_DIR, audioMemoPath, dailyPath, notePath } from '../graph/paths'
-import { appendBlock } from '../markdown/edit'
+import { appendUnderHeading } from '../markdown/edit'
 import { getSecret } from '../secrets/keychain'
 
 /**
@@ -275,13 +275,17 @@ async function memoNoteBody(input: {
   }
 }
 
+/** Where the memo's daily-note backlink lands (`appendUnderHeading` creates
+ * it), mirroring link capture's `## Links` so both append paths read the same. */
+const MEMOS_HEADING = 'Audio memos'
+
 /**
- * Append the memo's wikilink to its day's daily note, once — creating the
- * file when the day has none yet (capture must never depend on the note
- * already existing). The write goes straight to disk: the watcher reindexes
- * it, and an open editor session reconciles it like any external change
- * (clean buffers reload in place; dirty ones park a conflict rather than
- * being clobbered).
+ * Append the memo's wikilink to its day's daily note, once — under an
+ * `## Audio memos` section, creating the heading and the file as needed
+ * (capture must never depend on the note already existing). The write goes
+ * straight to disk: the watcher reindexes it, and an open editor session
+ * reconciles it like any external change (clean buffers reload in place;
+ * dirty ones park a conflict rather than being clobbered).
  */
 async function ensureDailyBacklink(memo: AudioMemoIdentity, generation: number): Promise<void> {
   const source = await dailyNoteSource(memo.date, generation)
@@ -289,7 +293,7 @@ async function ensureDailyBacklink(memo: AudioMemoIdentity, generation: number):
     return
   }
   const link = `[[${memo.base}|${memo.alias}]]`
-  await writeNote(dailyPath(memo.date), appendBlock(source, link), generation)
+  await writeNote(dailyPath(memo.date), appendUnderHeading(source, MEMOS_HEADING, link), generation)
 }
 
 /**

@@ -246,8 +246,8 @@ function nextSectionStart(headings: Heading[], target: Heading, eof: number): nu
 /**
  * Append `block` as its own paragraph at the end of the note, one blank line
  * after the existing content (none for an empty note). The flat variant of
- * {@link appendUnderHeading} — used by audio-memo capture, where the
- * transcript reads as ordinary note content rather than a section entry.
+ * {@link appendUnderHeading}, for content that stands on its own rather than
+ * landing under a section heading.
  */
 export function appendBlock(source: string, block: string): string {
   const base = source.replace(/\s*$/, '')

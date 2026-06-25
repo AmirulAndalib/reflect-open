@@ -341,12 +341,14 @@ html:root {
   letter-spacing: var(--tracking-snug, -0.01em);
   margin: 1.25em 0 0.4em;
 }
-/* The leading H1 is the regular-note subject, matching the daily subject.
-   Other headings stay capped at the same semantic size rather than towering
-   over the body. */
-.reflect-editor.ProseMirror h1 { @apply text-note-subject; }
-.reflect-editor.ProseMirror h2 { @apply text-note-subject; }
-.reflect-editor.ProseMirror h3 { font-size: var(--text-lg, 1.125rem); }
+/* The leading H1 is the document title — the regular-note subject, matching
+   the daily date subject. H2 and H3 step down the type scale so a section
+   heading reads as subordinate to the title, not a second one: auto-appended
+   sections (`## Links`, `## Audio memos`) land at H2, one size below the
+   subject; H3 sits at body size, carried by weight rather than scale. */
+.reflect-editor.ProseMirror h1 { @apply text-note-subject; } /* text-xl, 20px */
+.reflect-editor.ProseMirror h2 { font-size: var(--text-lg, 1.125rem); } /* 18px */
+.reflect-editor.ProseMirror h3 { font-size: var(--text-base, 1rem); } /* 16px */
 .reflect-editor h1:first-child { margin-top: 0; }
 .reflect-editor .reflect-note-title { @apply text-note-subject; }
 
