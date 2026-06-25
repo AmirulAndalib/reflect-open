@@ -99,7 +99,7 @@ interface NoteEditorProps {
   /** Search tags for the `#` autocomplete menu. */
   onTagSearch?: TagSearchHandler
   /** Handler when pressing ArrowUp/ArrowDown at the document edge. */
-  onExitBoundary?: ExitBoundaryHandler
+  onExitBoundary?: ExitBoundaryHandler | undefined
   /**
    * Ghost text over a leading empty H1 (the new-note flow's "Untitled");
    * omitted for documents without title semantics (the daily stream).
