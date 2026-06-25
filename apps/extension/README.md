@@ -101,17 +101,19 @@ into the [Developer Dashboard](https://chrome.google.com/webstore/devconsole).
 >
 > Requires the Reflect desktop app: https://github.com/team-reflect/reflect-open
 
-**Privacy policy URL:** `https://github.com/team-reflect/reflect-open/blob/master/docs/privacy.md`
-(the "Browser capture" section). Must be live on the public branch before submission.
+**Privacy policy URL:** `https://github.com/team-reflect/reflect-open/blob/next/docs/privacy.md`
+(the "Browser capture" section) — `next` is the repo's default branch, so the URL
+resolves as soon as this lands.
 
 ### Store assets to attach
 
-Generated from a build (not in the repo — capture them at release time):
-
 - **Store icon** — 128×128, already shipped at `public/icon/128.png`.
 - **Screenshots** — at least one 1280×800 (or 640×400) PNG of the capture popup over a
-  real page. Recommended: the popup showing the screenshot thumbnail, page title, and
-  the "Save to Reflect" button.
+  real page. A ready-to-upload shot lives at
+  `store-assets/screenshot-1280x800.png` (the popup over an article, showing the page
+  thumbnail, title, note field, and "Save to Reflect"). Refresh it when the popup UI
+  changes — resize a clean window grab with
+  `magick <grab>.png -resize '1280x800!' store-assets/screenshot-1280x800.png`.
 
 ### Permission justifications
 
