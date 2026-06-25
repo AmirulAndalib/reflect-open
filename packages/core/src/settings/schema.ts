@@ -57,6 +57,17 @@ export const editorDefaultBulletSchema = z.boolean().catch(true)
 export const editorBulletAfterHeadingSchema = z.boolean().catch(true)
 
 /**
+ * The editor's reading text size. `small` (the default) is one design-system
+ * size down from the prose size (14px); `medium` is the DS prose size (16px)
+ * and `large` steps one DS size up (18px). Display-only — it scales the editor
+ * body via a CSS variable on the document root (`--editor-font-size`, applied
+ * by `EditorTextSizeEffect`) and never touches the stored markdown.
+ */
+export const editorTextSizeSchema = z.enum(['small', 'medium', 'large']).catch('small')
+
+export type EditorTextSize = z.infer<typeof editorTextSizeSchema>
+
+/**
  * The app color theme. `system` (the default) follows the OS preference;
  * `light`/`dark` pin it. Persisted here so the choice survives relaunch.
  */
@@ -248,6 +259,7 @@ export const settingsSchema = z
     editorSpellCheck: editorSpellCheckSchema,
     editorDefaultBullet: editorDefaultBulletSchema,
     editorBulletAfterHeading: editorBulletAfterHeadingSchema,
+    editorTextSize: editorTextSizeSchema,
     semanticSearchEnabled: semanticSearchEnabledSchema,
     describeAssets: describeAssetsSchema,
     mobileOnboarded: mobileOnboardedSchema,

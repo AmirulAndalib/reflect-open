@@ -186,7 +186,7 @@ describe('reconcileAudioMemos', () => {
       ],
       [
         'daily/2026-06-11.md',
-        'morning thoughts\n\n[[audio-memo-2026-06-11-153022-845|Audio memo 15:30]]\n',
+        'morning thoughts\n\n## Audio memos\n\n[[audio-memo-2026-06-11-153022-845|Audio memo 15:30]]\n',
         3,
       ],
     ])
@@ -244,7 +244,7 @@ describe('reconcileAudioMemos', () => {
 
     expect(writeNoteMock).toHaveBeenCalledWith(
       'daily/2026-06-11.md',
-      '[[audio-memo-2026-06-11-153022-845|Audio memo 15:30]]\n',
+      '## Audio memos\n\n[[audio-memo-2026-06-11-153022-845|Audio memo 15:30]]\n',
       3,
     )
   })

@@ -257,11 +257,34 @@ html:root {
   --meowdown-autocomplete-highlight-bg: var(--accent-soft);
 }
 
+/* Editor reading size (Settings → Editor → "Text size"). The size lives in a
+   variable on the document root so the `.reflect-editor` rules below resolve
+   whatever the user picked; `EditorTextSizeEffect` mirrors the setting onto
+   `[data-editor-text-size]`. Medium is the DS prose default (16px); small and
+   large step one DS size down/up. The `:root` fallback keeps medium before the
+   effect has run (and in tests that never mount it). */
+:root {
+  --editor-font-size: var(--text-base);
+}
+:root[data-editor-text-size='small'] {
+  --editor-font-size: var(--text-sm);
+}
+:root[data-editor-text-size='medium'] {
+  --editor-font-size: var(--text-base);
+}
+:root[data-editor-text-size='large'] {
+  --editor-font-size: var(--text-lg);
+}
+
 .reflect-editor {
-  /* The panes own all spacing and sizing: cancel the theme's editor padding
-     (no floating UI of ours needs the `--meowdown-gutter`) and font size.
-     The matching .reflect-editor.ProseMirror block below re-states these with
-     0-2-0 specificity; see the note on .reflect-stream-gutter for why. */
+  /* The panes own all spacing, so cancel the theme's editor padding (no
+     floating UI of ours needs the `--meowdown-gutter`). Font size is left to
+     inherit so the compact read-only MarkdownView surfaces that also carry
+     `reflect-editor` (backlink snippets, palette previews, task rows) keep
+     their context's smaller size; the primary note editor opts into the
+     reading size via `.reflect-note-surface` below. The matching
+     .reflect-editor.ProseMirror block re-states these with 0-2-0 specificity;
+     see the note on .reflect-stream-gutter for why. */
   padding: 0;
   font-size: inherit;
   font-family: var(--font-reading, var(--font-sans));
@@ -270,6 +293,18 @@ html:root {
 .reflect-editor.ProseMirror {
   padding: 0;
   font-size: inherit;
+}
+
+/* The primary note editor — the note pane and every daily-stream row, both via
+   NotePane — reads at the user's chosen text size (Settings → Editor → "Text
+   size"; default 16px) instead of inheriting <body>'s 14px chrome size. Scoped
+   to this class, never bare `.reflect-editor`, so read-only previews keep their
+   own compact sizes. The `.ProseMirror` compound sits after the inherit rule
+   above so its 0-2-0 selector wins the source-order tie (and beats meowdown's
+   later-injected `.ProseMirror`). */
+.reflect-note-surface,
+.reflect-note-surface.ProseMirror {
+  font-size: var(--editor-font-size, var(--text-base));
 }
 
 /* The daily stream's horizontal gutter (STREAM_GUTTER in daily-stream.tsx),
@@ -306,12 +341,14 @@ html:root {
   letter-spacing: var(--tracking-snug, -0.01em);
   margin: 1.25em 0 0.4em;
 }
-/* The leading H1 is the regular-note subject, matching the daily subject.
-   Other headings stay capped at the same semantic size rather than towering
-   over the body. */
-.reflect-editor.ProseMirror h1 { @apply text-note-subject; }
-.reflect-editor.ProseMirror h2 { @apply text-note-subject; }
-.reflect-editor.ProseMirror h3 { font-size: var(--text-lg, 1.125rem); }
+/* The leading H1 is the document title — the regular-note subject, matching
+   the daily date subject. H2 and H3 step down the type scale so a section
+   heading reads as subordinate to the title, not a second one: auto-appended
+   sections (`## Links`, `## Audio memos`) land at H2, one size below the
+   subject; H3 sits at body size, carried by weight rather than scale. */
+.reflect-editor.ProseMirror h1 { @apply text-note-subject; } /* text-xl, 20px */
+.reflect-editor.ProseMirror h2 { font-size: var(--text-lg, 1.125rem); } /* 18px */
+.reflect-editor.ProseMirror h3 { font-size: var(--text-base, 1rem); } /* 16px */
 .reflect-editor h1:first-child { margin-top: 0; }
 .reflect-editor .reflect-note-title { @apply text-note-subject; }
 
@@ -520,6 +557,33 @@ html:root {
   text-decoration-thickness: 1px;
   text-underline-offset: 0.16em;
   cursor: pointer;
+}
+
+/* ---- List markers (V1-parity) ---------------------------------------------
+   meowdown paints bullets in `currentColor` (the full body-text color, which
+   reads heavy) and gives task checkboxes a 1.5px border. V1 used a quiet gray
+   bullet and a 1px hairline. Restore both. Specificity has to clear meowdown's
+   own rules, which inject after this file (see .reflect-stream-gutter): the
+   bullet selector lands at 0-4-0 vs meowdown's 0-3-0, and the checkbox selector
+   adds the `.ProseMirror` compound to reach 0-6-1 vs meowdown's 0-5-1. */
+.reflect-editor .prosemirror-flat-list[data-list-kind='bullet'] > .list-marker {
+  background-color: var(--text-muted);
+}
+.reflect-editor.ProseMirror
+  .prosemirror-flat-list[data-list-kind='task']
+  > .list-marker
+  input[type='checkbox'] {
+  border-width: 1px;
+  border-color: var(--text-muted); /* crisper than the pale --border at 1px */
+}
+/* Widen the gap between a task checkbox and its label, for both the square
+   (`- [ ]`) and rounded (`+ [ ]`, data-list-marker="+") markers. Both render as
+   data-list-kind="task", so this covers them together. ProseKit/meowdown size
+   the marker box at 1lh and start `.list-content` flush against it (default
+   `margin-inline-start: 1lh`); nudge the content right for more breathing room.
+   At 0-4-0 this clears both base rules (each 0-2-0). */
+.reflect-editor .prosemirror-flat-list[data-list-kind='task'] > .list-content {
+  margin-inline-start: 1.25lh;
 }
 
 /* ---- shadcn inputs (components/ui/) -------------------------------------

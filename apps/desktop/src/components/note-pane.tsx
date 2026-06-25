@@ -230,7 +230,10 @@ export function NotePaneComponent({
         // Daily notes carry no title semantics (the date is their subject),
         // so an empty leading H1 there is just an empty heading.
         {...(dailyNote ? {} : { titlePlaceholder: 'Untitled' })}
-        className={cn(gutterClassName, editorClassName)}
+        // `reflect-note-surface` opts this primary editor into the reading
+        // text size (Settings → Editor); compact MarkdownView previews that
+        // also carry `reflect-editor` keep their own context size.
+        className={cn('reflect-note-surface', gutterClassName, editorClassName)}
         handleRef={handleRef}
       />
 
