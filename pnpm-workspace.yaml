@@ -2,9 +2,15 @@ packages:
   - apps/*
   - packages/*
   - design-system
+
 allowBuilds:
   better-sqlite3: true
   esbuild: true
   spawn-sync: true
+
+dedupePeers: true
+
+ignoreWorkspaceRootCheck: true
+
 minimumReleaseAgeExclude:
   - '@meowdown/*'
