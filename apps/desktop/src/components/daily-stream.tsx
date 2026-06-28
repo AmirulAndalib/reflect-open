@@ -12,8 +12,8 @@ import { useSetFocusedDailyDate } from '@/providers/focused-daily-provider'
 import { useRouter } from '@/routing/router'
 
 interface DailyStreamProps {
-  /** The day to anchor/scroll to (from the `today` or `daily/:date` route). */
-  targetDate: string
+  /** The day to anchor/scroll to, or the live local day for the `today` route. */
+  target: { kind: 'today' } | { kind: 'date'; date: string }
 }
 
 /**
@@ -63,21 +63,20 @@ function adjustScrollForResizeAboveViewport(
  * (virtual rows are free), so there is no bidirectional infinite-scroll
  * bookkeeping; index↔date is pure offset math.
  */
-export function DailyStream({ targetDate }: DailyStreamProps): ReactElement {
+export function DailyStream({ target }: DailyStreamProps): ReactElement {
   const { arrivalSeq, entryId, saveScrollState, savedScroll } = useRouter()
   const scrollRef = useRef<HTMLDivElement | null>(null)
   // The window anchors at today-on-mount and stays stable for the view's life.
   // (`dayWindow`, not `window` — shadowing the DOM global here was a footgun.)
   const [dayWindow] = useState(() => createDayWindow(todayIso()))
   const today = useToday()
+  const targetDate = target.kind === 'today' ? today : target.date
   const { settings } = useSettings()
 
-  // targetDate is read at arrival time, not reacted to: on the `today` route
-  // it drifts when local midnight passes (`todayIso()` per render), and that
-  // drift is not a navigation — re-running the anchor effect then would
-  // misread the entry's continuously-saved offset as a back/forward restore.
-  // The next real arrival (⌘D, a link) reads the fresh value and anchors to
-  // the new today.
+  // targetDate is read at arrival time, not reacted to. On the `today` route
+  // it follows this component's live clock — the same value that paints the
+  // today highlight — but midnight drift alone is not a navigation. The next
+  // real arrival (⌘D, a link) reads the fresh value and anchors to the new day.
   const targetDateRef = useRef(targetDate)
   targetDateRef.current = targetDate
 

@@ -1,6 +1,6 @@
-import { fireEvent, render } from '@testing-library/react'
+import { act, fireEvent, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useLayoutEffect, useState, type ReactElement, type ReactNode } from 'react'
 import { setBridge } from '@reflect/core'
 import {
@@ -80,6 +80,10 @@ beforeEach(() => {
   scrollToSpy.mockClear()
 })
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 function StreamProviders({ children }: { children: ReactNode }): ReactElement {
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
@@ -100,6 +104,18 @@ function SaveScrollProbe({ offset }: { offset: number }): ReactElement | null {
   return null
 }
 
+function NavigateTodayProbe({
+  onReady,
+}: {
+  onReady: (navigateToday: () => void) => void
+}): null {
+  const { navigate } = useRouter()
+  useEffect(() => {
+    onReady(() => navigate({ kind: 'today' }))
+  }, [navigate, onReady])
+  return null
+}
+
 /**
  * Runs `onLayout` in the layout phase of every commit it participates in.
  * Mounted as a sibling *after* the stream, its layout effect runs once all of
@@ -117,11 +133,42 @@ describe('DailyStream', () => {
     const today = todayIso()
     const view = render(
       <StreamProviders>
-        <DailyStream targetDate={today} />
+        <DailyStream target={{ kind: 'today' }} />
       </StreamProviders>,
     )
 
     const expected = indexOfDate(createDayWindow(today), today) * ESTIMATED_DAY_HEIGHT
+    expect(scrollToSpy.mock.calls.length).toBeGreaterThan(0)
+    expect(scrollToSpy.mock.calls[0]![0]).toMatchObject({ top: expected })
+    view.unmount()
+  })
+
+  it('re-anchors a today arrival to the stream-local day after midnight', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 5, 27, 23, 59, 0))
+    let navigateToday: () => void = () => {
+      throw new Error('navigate not ready')
+    }
+    const view = render(
+      <StreamProviders>
+        <DailyStream target={{ kind: 'today' }} />
+        <NavigateTodayProbe
+          onReady={(run) => {
+            navigateToday = run
+          }}
+        />
+      </StreamProviders>,
+    )
+
+    const dayWindow = createDayWindow('2026-06-27')
+    act(() => {
+      vi.advanceTimersByTime(2 * 60 * 1000)
+    })
+    scrollToSpy.mockClear()
+
+    act(() => navigateToday())
+
+    const expected = indexOfDate(dayWindow, '2026-06-28') * ESTIMATED_DAY_HEIGHT
     expect(scrollToSpy.mock.calls.length).toBeGreaterThan(0)
     expect(scrollToSpy.mock.calls[0]![0]).toMatchObject({ top: expected })
     view.unmount()
@@ -138,7 +185,7 @@ describe('DailyStream', () => {
     view.rerender(
       <StreamProviders>
         <SaveScrollProbe offset={4321} />
-        <DailyStream targetDate={todayIso()} />
+        <DailyStream target={{ kind: 'today' }} />
       </StreamProviders>,
     )
 
@@ -161,7 +208,7 @@ describe('DailyStream', () => {
     const today = todayIso()
     const view = render(
       <StreamProviders>
-        <DailyStream targetDate={today} />
+        <DailyStream target={{ kind: 'today' }} />
         <LayoutPhaseProbe
           onLayout={() => {
             if (commandsDuringLayout === -1) {
@@ -189,7 +236,7 @@ describe('DailyStream', () => {
     const view = render(
       <StreamProviders>
         <FocusedDailyProvider>
-          <DailyStream targetDate={today} />
+          <DailyStream target={{ kind: 'date', date: today }} />
           <FocusProbe />
         </FocusedDailyProvider>
       </StreamProviders>,
@@ -208,7 +255,7 @@ describe('DailyStream', () => {
   it('reserves the editor’s space on loading placeholders, with the hint delayed', () => {
     const view = render(
       <StreamProviders>
-        <DailyStream targetDate={todayIso()} />
+        <DailyStream target={{ kind: 'today' }} />
       </StreamProviders>,
     )
 
