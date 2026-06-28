@@ -116,13 +116,15 @@ describe('app shortcuts', () => {
     document.body.append(editor)
     editor.addEventListener('keydown', (event) => event.preventDefault())
 
-    act(() => pressFrom(editor, 'Unidentified', { code: 'BracketLeft' }))
-    expect(result.current.router.route.kind).toBe('note')
+    try {
+      act(() => pressFrom(editor, 'Unidentified', { code: 'BracketLeft' }))
+      expect(result.current.router.route.kind).toBe('note')
 
-    act(() => pressFrom(editor, 'Unidentified', { code: 'BracketRight' }))
-    expect(result.current.router.route).toEqual({ kind: 'today' })
-
-    editor.remove()
+      act(() => pressFrom(editor, 'Unidentified', { code: 'BracketRight' }))
+      expect(result.current.router.route).toEqual({ kind: 'today' })
+    } finally {
+      editor.remove()
+    }
   })
 
   it('⌘K opens the palette', () => {
