@@ -104,6 +104,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup() // `globals: false` disables testing-library's automatic cleanup
+  vi.useRealTimers()
   setBridge(null)
   queryClient.clear()
 })
@@ -400,6 +401,45 @@ describe('SettingsScreen', () => {
           theme: 'system',
           timeFormat: '12h',
           dateFormat: 'dmy',
+          weekStartDay: 'monday',
+          allNotesFilterTags: ['book', 'link', 'person'],
+          graphColors: {},
+          aiProviders: [],
+          defaultAiProviderId: null,
+          chatModelSelection: null,
+        },
+      ]),
+    )
+  })
+
+  it('selecting ISO persists the date format', async () => {
+    const now = new Date(2026, 5, 10, 12, 0, 0)
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(now)
+
+    renderScreen()
+    const trigger = screen.getByRole('combobox', { name: 'Date format' })
+    const isoLabel = formatFullDate(now, 'iso')
+    await waitFor(() => expect(trigger.textContent).toContain(formatFullDate(now, 'mdy')))
+
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: isoLabel }), { key: 'Enter' })
+
+    expect(trigger.textContent).toContain(isoLabel)
+    await waitFor(() =>
+      expect(saved).toEqual([
+        {
+          editorMarkdownSyntax: 'hide',
+          editorSpellCheck: true,
+          editorDefaultBullet: true,
+          editorBulletAfterHeading: true,
+          editorTextSize: 'small',
+          semanticSearchEnabled: false,
+          describeAssets: true,
+          mobileOnboarded: false,
+          theme: 'system',
+          timeFormat: '12h',
+          dateFormat: 'iso',
           weekStartDay: 'monday',
           allNotesFilterTags: ['book', 'link', 'person'],
           graphColors: {},
