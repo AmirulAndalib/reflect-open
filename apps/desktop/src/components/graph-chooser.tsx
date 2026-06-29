@@ -27,6 +27,10 @@ function Emphasis({ children }: { children: ReactNode }): ReactElement {
   return <span className="font-medium text-text">{children}</span>
 }
 
+function shouldShowIcloudDriveTip(): boolean {
+  return import.meta.env.TAURI_ENV_PLATFORM === 'darwin'
+}
+
 /**
  * First-run / no-graph screen. Splits the two audiences the old single button
  * blurred together — people new to Reflect (pick a folder, start fresh) and
@@ -43,6 +47,7 @@ function Emphasis({ children }: { children: ReactNode }): ReactElement {
 export function GraphChooser(): ReactElement {
   const { recents, error, pickAndOpen, openRecent, forget } = useGraph()
   const { colorFor } = useGraphColors()
+  const showIcloudDriveTip = shouldShowIcloudDriveTip()
 
   return (
     <div className="flex h-screen w-screen overflow-auto bg-surface-app p-8">
@@ -106,13 +111,15 @@ export function GraphChooser(): ReactElement {
           </section>
         </div>
 
-        <div className="mx-auto flex max-w-xl gap-2.5 text-sm leading-5 text-text-secondary">
-          <Lightbulb aria-hidden className="mt-0.5 size-4 shrink-0 text-text-muted" />
-          <p>
-            <span className="font-medium text-text">Tip:</span> choose a folder in iCloud Drive if
-            you want your notes backed up automatically.
-          </p>
-        </div>
+        {showIcloudDriveTip ? (
+          <div className="mx-auto flex max-w-xl gap-2.5 text-sm leading-5 text-text-secondary">
+            <Lightbulb aria-hidden className="mt-0.5 size-4 shrink-0 text-text-muted" />
+            <p>
+              <span className="font-medium text-text">Tip:</span> choose a folder in iCloud Drive
+              if you want your notes backed up automatically.
+            </p>
+          </div>
+        ) : null}
 
         {error ? (
           <p role="alert" className="text-center text-sm text-destructive">

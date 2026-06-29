@@ -26,6 +26,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 )
 
 beforeEach(() => {
+  vi.stubEnv('TAURI_ENV_PLATFORM', 'darwin')
   invokeLog = []
   recents = [
     { root: '/graphs/work', name: 'work', openedMs: 2 },
@@ -63,6 +64,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup() // `globals: false` disables testing-library's automatic cleanup
+  vi.unstubAllEnvs()
   setBridge(null)
   queryClient.clear()
 })
@@ -82,6 +84,16 @@ describe('GraphChooser', () => {
     expect(screen.getByText(/Settings → Graph → Export/)).toBeInTheDocument()
     expect(screen.getByText(/Unzip the file and move the folder/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Open exported folder/ })).toBeInTheDocument()
+  })
+
+  it('hides the iCloud Drive tip outside macOS builds', async () => {
+    vi.stubEnv('TAURI_ENV_PLATFORM', 'windows')
+    render(<GraphChooser />, { wrapper })
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'New to Reflect' })).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/choose a folder in iCloud Drive/)).not.toBeInTheDocument()
   })
 
   // The provider auto-opens the most recent graph on mount, so the chooser's
