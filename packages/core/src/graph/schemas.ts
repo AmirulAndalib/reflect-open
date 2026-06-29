@@ -7,11 +7,6 @@ export const graphInfoSchema = z.object({
   /** Display name (the root folder name). */
   name: z.string(),
   /**
-   * File-sync provider this graph appears to live inside (e.g. `"icloud"`,
-   * `"dropbox"`), or `null`. Kept as metadata for provider-specific behavior.
-   */
-  cloudSync: z.string().nullable(),
-  /**
    * Open-session generation, bumped by Rust on every graph open. Mutating file
    * commands echo it back and are rejected when stale, so a write enqueued for
    * one graph can never land in another graph's same-named file.

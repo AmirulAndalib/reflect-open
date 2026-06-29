@@ -15,7 +15,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   getNote,
 }))
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: GENERATION } }),
+  useGraph: () => ({ graph: { root: '/g', name: 'g', generation: GENERATION } }),
 }))
 
 function noteRow(overrides: Partial<NoteRow> = {}): NoteRow {

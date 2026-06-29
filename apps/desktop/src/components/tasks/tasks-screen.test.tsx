@@ -21,7 +21,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   getCompletedTasks,
 }))
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: 1 } }),
+  useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
 }))
 vi.mock('@/lib/use-today', () => ({ useToday: () => '2026-06-14' }))
 vi.mock('@/providers/settings-provider', () => ({

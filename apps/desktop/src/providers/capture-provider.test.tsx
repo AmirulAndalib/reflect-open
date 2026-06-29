@@ -22,7 +22,7 @@ vi.mock('@/providers/settings-provider', () => ({
 
 import { CaptureProvider } from './capture-provider'
 
-const GRAPH: GraphInfo = { root: '/g', name: 'g', cloudSync: null, generation: 7 }
+const GRAPH: GraphInfo = { root: '/g', name: 'g', generation: 7 }
 
 function mount(children: ReactNode = null) {
   return render(<CaptureProvider graph={GRAPH}>{children}</CaptureProvider>)

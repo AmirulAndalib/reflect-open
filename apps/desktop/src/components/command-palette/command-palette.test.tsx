@@ -44,7 +44,7 @@ vi.mock('@/providers/settings-provider', () => ({
   }),
 }))
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 } }),
+  useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
 }))
 // Register after the core mock is installed so commands see the mocked graph.
 const { registerAppCommands } = await import('@/lib/commands/app-commands')

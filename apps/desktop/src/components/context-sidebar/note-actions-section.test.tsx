@@ -28,7 +28,7 @@ vi.mock('@/lib/note-private', () => ({ toggleNotePrivate }))
 vi.mock('@/lib/note-delete', () => ({ deleteOpenNote }))
 vi.mock('@/lib/operations', () => ({ startOperation }))
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: 7 } }),
+  useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 7 } }),
 }))
 
 function renderSection(path: string, showTrash = false) {

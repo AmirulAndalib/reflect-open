@@ -15,7 +15,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   resolveWikiTarget,
 }))
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: 1 } }),
+  useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
 }))
 
 function RouteProbe(): ReactNode {

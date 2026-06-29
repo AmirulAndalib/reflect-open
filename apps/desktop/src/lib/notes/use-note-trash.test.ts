@@ -7,7 +7,7 @@ import { resetOperations } from '@/lib/operations'
 import { useNoteTrash } from './use-note-trash'
 
 interface GraphValue {
-  graph: { root: string; name: string; cloudSync: null; generation: number } | null
+  graph: { root: string; name: string; generation: number } | null
 }
 let graphValue: GraphValue
 vi.mock('@/providers/graph-provider', () => ({ useGraph: () => graphValue }))
@@ -20,7 +20,7 @@ function wrapper({ children }: { children: ReactNode }): ReactNode {
 }
 
 beforeEach(() => {
-  graphValue = { graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 } }
+  graphValue = { graph: { root: '/g', name: 'g', generation: 1 } }
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   setBridge({ invoke: mockInvoke, listen: async () => () => {} })
   mockInvoke.mockReset()

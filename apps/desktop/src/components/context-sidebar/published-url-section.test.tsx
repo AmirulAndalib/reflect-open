@@ -23,7 +23,7 @@ vi.mock('@/hooks/use-note-row', () => ({ useNoteRow }))
 vi.mock('@/lib/note-gist', () => ({ runGistPublish }))
 vi.mock('@/lib/operations', () => ({ startOperation }))
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: 7 } }),
+  useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 7 } }),
 }))
 
 function noteRow(overrides: Partial<NoteRow> = {}): NoteRow {

@@ -11,7 +11,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 }))
 
 const graphState = vi.hoisted(() => ({
-  graph: { root: '/g', name: 'G', cloudSync: null, generation: 3 } as GraphInfo | null,
+  graph: { root: '/g', name: 'G', generation: 3 } as GraphInfo | null,
   indexGeneration: 7 as number | null,
 }))
 vi.mock('@/providers/graph-provider', () => ({ useGraph: () => graphState }))

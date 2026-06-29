@@ -21,7 +21,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 }))
 vi.mock('@/hooks/use-note-row', () => ({ useNoteRow }))
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: false, generation: 1 } }),
+  useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
 }))
 vi.mock('@/providers/settings-provider', () => ({
   useSettings: () => ({

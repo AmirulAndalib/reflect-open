@@ -129,7 +129,7 @@ vi.mock('@/lib/operations', () => ({
 
 const { AudioMemoProvider, useAudioMemo } = await import('./audio-memo-provider')
 
-const GRAPH: GraphInfo = { root: '/notes', name: 'Notes', cloudSync: null, generation: 3 }
+const GRAPH: GraphInfo = { root: '/notes', name: 'Notes', generation: 3 }
 
 function wrapper({ children }: { children: ReactNode }): ReactElement {
   return <AudioMemoProvider graph={GRAPH}>{children}</AudioMemoProvider>

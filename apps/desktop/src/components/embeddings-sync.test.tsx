@@ -24,7 +24,7 @@ vi.mock('@/lib/semantic', () => semantic)
 
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({
-    graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 },
+    graph: { root: '/g', name: 'g', generation: 1 },
     indexGeneration: 7,
   }),
 }))

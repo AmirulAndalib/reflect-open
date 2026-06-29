@@ -1,13 +1,12 @@
-//! Recent-graphs list + cloud-sync detection (Plan 02).
+//! Recent-graphs list (Plan 02).
 //!
 //! The recents list lives in the OS config dir — **never** inside any one
 //! graph's `.reflect/` — so it survives graph deletion and isn't synced as note
-//! content. Cloud-sync detection records provider metadata for graphs placed
-//! inside iCloud/Dropbox/Drive folders.
+//! content.
 
 use std::fs;
 use std::io::Write;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -112,42 +111,6 @@ pub fn forget_recent(root: String) -> AppResult<()> {
     forget(&root)
 }
 
-/// Heuristic: which file-sync provider, if any, is `path` inside? Pure
-/// (unit-tested). A `Some(_)` result is metadata; sync ignores still happen in
-/// the graph's `.reflect/` bootstrap.
-pub fn detect_cloud_sync(path: &Path) -> Option<&'static str> {
-    // Match whole path *components*, not raw substrings, so look-alike folder
-    // names (e.g. "My Driveway", "Dropbox Backups") don't false-positive.
-    let parts: Vec<&str> = path
-        .components()
-        .filter_map(|component| match component {
-            Component::Normal(os) => os.to_str(),
-            _ => None,
-        })
-        .collect();
-    let has = |name: &str| parts.contains(&name);
-
-    if has("Mobile Documents") || has("com~apple~CloudDocs") || has("iCloud Drive") {
-        Some("icloud")
-    } else if has("Dropbox") {
-        Some("dropbox")
-    } else if has("My Drive")
-        || has("Google Drive")
-        || parts.iter().any(|part| part.starts_with("GoogleDrive-"))
-    {
-        // macOS CloudStorage uses a `GoogleDrive-<account>` component.
-        Some("googleDrive")
-    } else if parts
-        .iter()
-        .any(|part| *part == "OneDrive" || part.starts_with("OneDrive -"))
-    {
-        // Business OneDrive uses `OneDrive - <Org>`.
-        Some("oneDrive")
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,40 +163,5 @@ mod tests {
         let path = dir.path().join("recent-graphs.json");
         fs::write(&path, b"{ this is not json").unwrap();
         assert!(load_from(&path).is_err());
-    }
-
-    #[test]
-    fn detects_cloud_providers() {
-        use std::path::Path;
-        assert_eq!(
-            detect_cloud_sync(Path::new(
-                "/Users/x/Library/Mobile Documents/com~apple~CloudDocs/Graph"
-            )),
-            Some("icloud")
-        );
-        assert_eq!(
-            detect_cloud_sync(Path::new("/Users/x/Dropbox/Graph")),
-            Some("dropbox")
-        );
-        assert_eq!(
-            detect_cloud_sync(Path::new(
-                "/Users/x/Library/CloudStorage/GoogleDrive-a/My Drive/Graph"
-            )),
-            Some("googleDrive")
-        );
-        assert_eq!(
-            detect_cloud_sync(Path::new("/Users/x/OneDrive - Acme/Graph")),
-            Some("oneDrive")
-        );
-        assert_eq!(detect_cloud_sync(Path::new("/Users/x/Notes/Graph")), None);
-        // Substring look-alikes must NOT be misclassified.
-        assert_eq!(
-            detect_cloud_sync(Path::new("/Users/x/My Driveway/Graph")),
-            None
-        );
-        assert_eq!(
-            detect_cloud_sync(Path::new("/Users/x/Dropbox Backups/Graph")),
-            None
-        );
     }
 }

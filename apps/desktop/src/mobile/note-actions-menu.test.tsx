@@ -25,7 +25,7 @@ vi.mock('@/components/ui/drawer', () => ({
 }))
 
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 } }),
+  useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
 }))
 // The pinned set comes from the index; an empty list means "not pinned".
 vi.mock('@/hooks/use-pinned-notes', () => ({ usePinnedNotes: () => [] }))

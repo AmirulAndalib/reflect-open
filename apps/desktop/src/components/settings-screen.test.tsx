@@ -116,7 +116,7 @@ describe('SettingsScreen', () => {
   })
 
   it('confirms before forgetting the open graph from saved graphs', async () => {
-    graph.current = { root: '/graphs/work', name: 'Work', cloudSync: null, generation: 1 }
+    graph.current = { root: '/graphs/work', name: 'Work', generation: 1 }
     renderScreen()
 
     const section = screen.getByRole('region', { name: 'Danger zone' })

@@ -106,10 +106,9 @@ private: true      # optional; hard-blocks cloud AI/capture for this note
      **security-scoped bookmarks** (create on pick, resolve + `startAccessing…` on launch)
      — an Apple API **Tauri does not wrap**, so it needs custom Rust (objc2/core-foundation).
      Treat sandboxing as a later decision; first release is notarized non-sandboxed.
-   - **Detect cloud-sync roots** (iCloud/Dropbox/Drive) when a graph is picked. Remote sync
-     is GitHub-only (Plan 12), so keep provider metadata available for local-state
-     protections and future sync UX. The in-graph `.reflect/` bootstrap marks its
-     rebuildable state as local-only where supported instead of showing a persistent warning.
+   - **Keep `.reflect/` local-only where providers support it.** Remote sync is
+     GitHub-only (Plan 12), so the in-graph `.reflect/` bootstrap marks its rebuildable
+     state as local-only instead of exposing graph-level cloud-provider metadata.
 
 7. **Path helpers (TS).** `packages/core` `graph/paths.ts`: `dailyPath(date)`,
    `notePath(slug)`, `assetPath(name)`, `isDaily(path)`, `dateFromDailyPath(path)`.

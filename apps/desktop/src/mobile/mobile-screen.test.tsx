@@ -58,7 +58,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({
-    graph: { root: '/g', name: 'g', cloudSync: null, generation: 1 },
+    graph: { root: '/g', name: 'g', generation: 1 },
     indexing: false,
   }),
 }))
