@@ -4676,6 +4676,7 @@ name = "reflect-open"
 version = "0.4.0-beta.7"
 dependencies = [
  "base64 0.22.1",
+ "core-foundation 0.10.1",
  "dirs",
  "fastembed",
  "git2",
@@ -4703,6 +4704,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "trash",
+ "xattr",
 ]
 
 [[package]]

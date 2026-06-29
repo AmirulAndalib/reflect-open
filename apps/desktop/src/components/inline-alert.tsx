@@ -17,9 +17,8 @@ interface InlineAlertProps {
 
 /**
  * The in-flow alert banner used across the app (save failures, conflicts, the
- * read-only notice, the cloud-sync warning): one place for the tone palette and
- * the `role="alert"` semantics, so every surface announces consistently to
- * assistive tech.
+ * read-only notice): one place for the tone palette and the `role="alert"`
+ * semantics, so every surface announces consistently to assistive tech.
  */
 export function InlineAlert({
   tone = 'warning',

@@ -17,6 +17,16 @@ use super::FileMeta;
 pub(super) const REFLECT_DIR: &str = ".reflect";
 const META_SCHEMA_VERSION: u32 = 1;
 pub(super) const TOP_LEVEL_DIRS: [&str; 4] = ["daily", "notes", "assets", REFLECT_DIR];
+#[cfg(target_os = "macos")]
+const APPLE_EXCLUSION_KEYS: [&str; 2] = [
+    "NSURLUbiquitousItemIsExcludedFromSyncKey",
+    "NSURLIsExcludedFromBackupKey",
+];
+#[cfg(target_os = "macos")]
+const LOCAL_ONLY_XATTRS: [(&str, &[u8]); 2] = [
+    ("com.apple.fileprovider.ignore#P", b"1"),
+    ("com.dropbox.ignored", b"1"),
+];
 /// Directories scanned by `list_files` for markdown notes.
 pub(super) const NOTE_DIRS: [&str; 2] = ["daily", "notes"];
 
@@ -25,6 +35,7 @@ pub(super) fn bootstrap(root: &Path) -> AppResult<()> {
     for dir in TOP_LEVEL_DIRS {
         fs::create_dir_all(root.join(dir))?;
     }
+    mark_reflect_dir_local_only(&root.join(REFLECT_DIR));
     let gitignore = root.join(".gitignore");
     if !gitignore.exists() {
         fs::write(&gitignore, graph_gitignore::default_contents())?;
@@ -35,6 +46,65 @@ pub(super) fn bootstrap(root: &Path) -> AppResult<()> {
             &meta,
             format!("{{\n  \"schemaVersion\": {META_SCHEMA_VERSION}\n}}\n"),
         )?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn mark_reflect_dir_local_only(_reflect_dir: &Path) {}
+
+#[cfg(target_os = "macos")]
+fn mark_reflect_dir_local_only(reflect_dir: &Path) {
+    if let Err(err) = set_apple_sync_exclusion(reflect_dir) {
+        tracing::warn!(
+            path = %reflect_dir.display(),
+            %err,
+            "failed to mark .reflect as excluded from Apple sync"
+        );
+    }
+    if let Err(err) = set_local_only_xattrs(reflect_dir) {
+        tracing::warn!(
+            path = %reflect_dir.display(),
+            %err,
+            "failed to mark .reflect with provider ignore attributes"
+        );
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn set_apple_sync_exclusion(reflect_dir: &Path) -> Result<(), String> {
+    use core_foundation::base::TCFType;
+    use core_foundation::{number, string, url};
+    use std::ptr;
+
+    let reflect_url = url::CFURL::from_path(reflect_dir, true)
+        .ok_or_else(|| format!("invalid path: {}", reflect_dir.display()))?;
+
+    for key_name in APPLE_EXCLUSION_KEYS {
+        let key = key_name
+            .parse::<string::CFString>()
+            .map_err(|_| format!("invalid resource key: {key_name}"))?;
+        let ok = unsafe {
+            url::CFURLSetResourcePropertyForKey(
+                reflect_url.as_concrete_TypeRef(),
+                key.as_concrete_TypeRef(),
+                number::kCFBooleanTrue as *const _,
+                ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            return Err(format!("failed to set {key_name}"));
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn set_local_only_xattrs(reflect_dir: &Path) -> Result<(), String> {
+    for (name, value) in LOCAL_ONLY_XATTRS {
+        xattr::set(reflect_dir, name, value)
+            .map_err(|err| format!("failed to set {name}: {err}"))?;
     }
     Ok(())
 }
@@ -133,6 +203,31 @@ mod tests {
         assert!(gitignore.contains("Thumbs.db"));
         assert!(gitignore.contains("*.swp"));
         assert!(dir.path().join(".reflect/meta.json").exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bootstrap_marks_reflect_dir_with_provider_ignore_xattrs() {
+        let dir = tempdir().unwrap();
+        bootstrap(dir.path()).unwrap();
+        let reflect_dir = dir.path().join(REFLECT_DIR);
+        assert_eq!(
+            xattr::get(&reflect_dir, "com.apple.fileprovider.ignore#P").unwrap(),
+            Some(b"1".to_vec())
+        );
+        assert_eq!(
+            xattr::get(&reflect_dir, "com.dropbox.ignored").unwrap(),
+            Some(b"1".to_vec())
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn apple_sync_exclusion_accepts_reflect_dir() {
+        let dir = tempdir().unwrap();
+        let reflect_dir = dir.path().join(REFLECT_DIR);
+        fs::create_dir_all(&reflect_dir).unwrap();
+        set_apple_sync_exclusion(&reflect_dir).unwrap();
     }
 
     #[test]

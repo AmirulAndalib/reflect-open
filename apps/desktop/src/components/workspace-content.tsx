@@ -2,7 +2,6 @@ import type { ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
 import { PanelLeft } from 'lucide-react'
 import { AppShell } from '@/components/app-shell'
-import { CloudSyncBanner } from '@/components/cloud-sync-banner'
 import { CommandPalette } from '@/components/command-palette/command-palette'
 import { DailyContextSidebar } from '@/components/context-sidebar/daily-context-sidebar'
 import { NoteContextSidebar } from '@/components/context-sidebar/note-context-sidebar'
@@ -84,8 +83,6 @@ export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement
             </TooltipContent>
           </Tooltip>
         ) : null}
-
-        {graph.cloudSync ? <CloudSyncBanner provider={graph.cloudSync} /> : null}
 
         <div className="min-h-0 flex-1">
           <RouteContent />

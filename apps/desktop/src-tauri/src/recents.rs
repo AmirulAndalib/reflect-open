@@ -2,9 +2,8 @@
 //!
 //! The recents list lives in the OS config dir — **never** inside any one
 //! graph's `.reflect/` — so it survives graph deletion and isn't synced as note
-//! content. Cloud-sync detection flags graphs placed inside iCloud/Dropbox/Drive
-//! folders, which are unsupported for sync (Reflect syncs via GitHub only,
-//! Plan 12) and risk corrupting the in-graph index.
+//! content. Cloud-sync detection records provider metadata for graphs placed
+//! inside iCloud/Dropbox/Drive folders.
 
 use std::fs;
 use std::io::Write;
@@ -114,7 +113,8 @@ pub fn forget_recent(root: String) -> AppResult<()> {
 }
 
 /// Heuristic: which file-sync provider, if any, is `path` inside? Pure
-/// (unit-tested). A `Some(_)` result means the UI should warn (Plan 12 / Plan 04).
+/// (unit-tested). A `Some(_)` result is metadata; sync ignores still happen in
+/// the graph's `.reflect/` bootstrap.
 pub fn detect_cloud_sync(path: &Path) -> Option<&'static str> {
     // Match whole path *components*, not raw substrings, so look-alike folder
     // names (e.g. "My Driveway", "Dropbox Backups") don't false-positive.

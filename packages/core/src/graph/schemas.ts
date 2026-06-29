@@ -8,8 +8,7 @@ export const graphInfoSchema = z.object({
   name: z.string(),
   /**
    * File-sync provider this graph appears to live inside (e.g. `"icloud"`,
-   * `"dropbox"`), or `null`. A non-null value means the UI should warn — Reflect
-   * syncs via GitHub only and a cloud-synced graph risks index corruption.
+   * `"dropbox"`), or `null`. Kept as metadata for provider-specific behavior.
    */
   cloudSync: z.string().nullable(),
   /**
