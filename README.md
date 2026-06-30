@@ -106,8 +106,14 @@ Reflect's local `.reflect/` index out of the backup because it can be rebuilt
 from the markdown files.
 
 iCloud Drive encryption depends on the user's iCloud settings. Standard iCloud
-data protection encrypts files in transit and at rest, while end-to-end
-encryption for iCloud Drive requires Advanced Data Protection.
+data protection encrypts files in transit and at rest; end-to-end encryption
+for iCloud Drive requires
+[Advanced Data Protection](https://support.apple.com/en-us/108756), Apple's
+opt-in mode that makes iCloud Drive contents decryptable only by trusted
+devices. Turn it on from iPhone, iPad, or Mac settings by opening your Apple
+Account, choosing iCloud → Advanced Data Protection, setting up account
+recovery if prompted, and enabling it. iCloud Mail, Contacts, Calendars, and
+some metadata remain outside Advanced Data Protection.
 
 ## Privacy model
 
