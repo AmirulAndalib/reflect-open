@@ -71,6 +71,12 @@ export function GraphChooser(): ReactElement {
                 Pick a folder on your computer and Reflect will keep all of your notes
                 there. An empty folder is perfect.
               </p>
+              {showIcloudDriveTip ? (
+                <p className="flex gap-2 text-xs leading-5 text-text-muted">
+                  <Lightbulb aria-hidden className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+                  <span>For sync across Apple devices, choose a folder in iCloud Drive.</span>
+                </p>
+              ) : null}
             </div>
             <Button type="button" className="mt-auto w-full" onClick={() => void pickAndOpen()}>
               <FolderPlus aria-hidden strokeWidth={1.75} />
@@ -110,16 +116,6 @@ export function GraphChooser(): ReactElement {
             </Button>
           </section>
         </div>
-
-        {showIcloudDriveTip ? (
-          <div className="mx-auto flex max-w-xl gap-2.5 text-sm leading-5 text-text-secondary">
-            <Lightbulb aria-hidden className="mt-0.5 size-4 shrink-0 text-text-muted" />
-            <p>
-              <span className="font-medium text-text">Tip:</span> choose a folder in iCloud Drive
-              if you want your notes backed up automatically.
-            </p>
-          </div>
-        ) : null}
 
         {error ? (
           <p role="alert" className="text-center text-sm text-destructive">
