@@ -1009,6 +1009,7 @@ function ensurePublishableRelease({ flavorFlag }) {
   return { commit, flavor, productName, tag, version }
 }
 
+/** Run release publish checks without building artifacts or creating a release. */
 function preflight({ flavorFlag }) {
   const { commit, tag } = ensurePublishableRelease({ flavorFlag })
   log(`${tag} is publishable from ${commit.slice(0, 7)}`)
