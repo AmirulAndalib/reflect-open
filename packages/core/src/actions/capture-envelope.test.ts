@@ -3,6 +3,9 @@ import {
   captureAckSchema,
   captureEnvelopeSchema,
   captureWireMessageSchema,
+  inboxEnvelopeSchema,
+  textCaptureEnvelopeSchema,
+  TEXT_CAPTURE_MAX_LENGTH,
 } from './capture-envelope'
 
 const VALID = {
@@ -83,5 +86,46 @@ describe('captureAckSchema', () => {
       message: 'open Reflect and pick a graph first',
     })
     expect(parsed.success).toBe(true)
+  })
+})
+
+const VALID_TEXT = {
+  version: 1,
+  id: 'a1b2c3d4-0000-4000-8000-000000000001',
+  kind: 'text',
+  text: 'call the bank',
+  capturedAt: '2026-06-12T15:30:22.845Z',
+  source: 'deep-link',
+}
+
+describe('textCaptureEnvelopeSchema', () => {
+  it('accepts both capture kinds', () => {
+    expect(textCaptureEnvelopeSchema.parse(VALID_TEXT)).toEqual(VALID_TEXT)
+    expect(
+      textCaptureEnvelopeSchema.safeParse({ ...VALID_TEXT, kind: 'task' }).success,
+    ).toBe(true)
+  })
+
+  it.each([
+    ['empty text', { ...VALID_TEXT, text: '' }],
+    ['whitespace-only text', { ...VALID_TEXT, text: '  \t ' }],
+    ['multi-line text', { ...VALID_TEXT, text: 'one\ntwo' }],
+    ['over-cap text', { ...VALID_TEXT, text: 'a'.repeat(TEXT_CAPTURE_MAX_LENGTH + 1) }],
+    ['unknown kind', { ...VALID_TEXT, kind: 'note' }],
+    ['extension source', { ...VALID_TEXT, source: 'extension' }],
+    ['non-uuid id', { ...VALID_TEXT, id: 'nope' }],
+  ])('rejects %s', (_label, candidate) => {
+    expect(textCaptureEnvelopeSchema.safeParse(candidate).success).toBe(false)
+  })
+})
+
+describe('inboxEnvelopeSchema', () => {
+  it('routes link envelopes and text envelopes to their shapes', () => {
+    expect(inboxEnvelopeSchema.parse(VALID)).toEqual(VALID)
+    expect(inboxEnvelopeSchema.parse(VALID_TEXT)).toEqual(VALID_TEXT)
+  })
+
+  it('rejects a hybrid that satisfies neither shape fully', () => {
+    expect(inboxEnvelopeSchema.safeParse({ ...VALID_TEXT, kind: undefined }).success).toBe(false)
   })
 })
