@@ -126,7 +126,9 @@ mod platform {
         let handler = RcBlock::new(move |granted: Bool, _error: *mut NSError| {
             let _ = sender.send(granted.as_bool());
         });
-        unsafe { store.requestAccessForEntityType_completionHandler(CNEntityType::Contacts, &handler) };
+        unsafe {
+            store.requestAccessForEntityType_completionHandler(CNEntityType::Contacts, &handler)
+        };
         receiver
             .recv()
             .map_err(|_| AppError::io("Contacts permission prompt did not complete"))
@@ -148,10 +150,9 @@ mod platform {
     fn fetch(predicate: &NSPredicate) -> AppResult<Vec<ContactMatch>> {
         let store = unsafe { CNContactStore::new() };
         let keys = keys_to_fetch();
-        let contacts = unsafe {
-            store.unifiedContactsMatchingPredicate_keysToFetch_error(predicate, &keys)
-        }
-        .map_err(|err| AppError::io(err.localizedDescription().to_string()))?;
+        let contacts =
+            unsafe { store.unifiedContactsMatchingPredicate_keysToFetch_error(predicate, &keys) }
+                .map_err(|err| AppError::io(err.localizedDescription().to_string()))?;
         Ok(contacts.iter().map(|contact| to_match(&contact)).collect())
     }
 
