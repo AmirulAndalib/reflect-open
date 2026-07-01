@@ -86,6 +86,23 @@ describe('addContactToNote', () => {
     )
   })
 
+  it('does not append the bullets twice when a retry follows a failed mark', async () => {
+    // First Add landed the details but the mark write failed — the card is
+    // still up, so a second Add must only write the mark.
+    readNote.mockResolvedValue(
+      '# Ada Lovelace\n\n- Email: ada@example.com\n- Phone: +1 555 0100\n',
+    )
+
+    await addContactToNote('notes/Ada Lovelace.md', ADA, 3)
+
+    expect(writeNote).toHaveBeenCalledTimes(1)
+    expect(writeNote).toHaveBeenCalledWith(
+      'notes/Ada Lovelace.md',
+      expect.stringContaining('contactSuggestion: added'),
+      3,
+    )
+  })
+
   it('writes only the mark for a contact with no details', async () => {
     const bare: ContactMatch = { ...ADA, emails: [], phones: [] }
     readNote.mockResolvedValue('# Ada Lovelace\n')

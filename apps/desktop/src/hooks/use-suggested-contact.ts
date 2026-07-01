@@ -38,6 +38,8 @@ export function useSuggestedContact(path: string): ContactMatch | null {
   const { settings } = useSettings()
   const authorization = useContactsAuthorization()
   const readable = authorization !== null && isContactsReadable(authorization)
+  const enabled =
+    hasBridge() && graph !== null && settings.contactsEnabled && readable && !isDaily(path)
   const { data } = useQuery({
     queryKey: suggestedContactQueryKey(graph?.root, path),
     queryFn: async () => {
@@ -50,8 +52,10 @@ export function useSuggestedContact(path: string): ContactMatch | null {
       // A match with nothing to add (no email, no phone) has no card to offer.
       return match !== null && contactDetailsMarkdown(match) !== '' ? match : null
     },
-    enabled:
-      hasBridge() && graph !== null && settings.contactsEnabled && readable && !isDaily(path),
+    enabled,
   })
-  return data ?? null
+  // A disabled query still serves its last cached answer — but once the gate
+  // is off (integration disabled, permission revoked), the card must drop
+  // immediately, not on the next cache sweep.
+  return enabled ? (data ?? null) : null
 }

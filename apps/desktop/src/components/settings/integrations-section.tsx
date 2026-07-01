@@ -10,7 +10,12 @@ import { useSettings } from '@/providers/settings-provider'
 import { SettingsSection } from './section'
 import { SettingsSwitchField } from './switch-field'
 
-/** macOS System Settings, opened straight to the Contacts privacy pane. */
+/**
+ * macOS System Settings, opened straight to the Contacts privacy pane. This
+ * scheme is macOS-only, which holds today: this section lives in the desktop
+ * settings surface (mobile has its own settings drawer, which doesn't offer
+ * the integration yet). An iOS settings surface would use `app-settings:`.
+ */
 const CONTACTS_PRIVACY_PANE =
   'x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts'
 
@@ -52,7 +57,10 @@ export function IntegrationsSection(): ReactElement | null {
   async function enableContacts(): Promise<void> {
     updateSettings({ contactsEnabled: true })
     if (authorization === 'notDetermined') {
-      await requestContactsAccess()
+      // A failed prompt (e.g. it timed out unanswered) isn't surfaced here —
+      // the refreshed status is the truth, and a denied/restricted answer
+      // shows the System Settings pointer below.
+      await requestContactsAccess().catch(() => {})
       await refreshAuthorization()
     }
   }

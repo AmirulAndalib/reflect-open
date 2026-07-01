@@ -129,8 +129,11 @@ mod platform {
         unsafe {
             store.requestAccessForEntityType_completionHandler(CNEntityType::Contacts, &handler)
         };
+        // Generous bound: the prompt waits on the user, but a handler that
+        // never fires (XPC hiccup) must not park this blocking-pool thread
+        // forever. A late answer after the timeout is dropped harmlessly.
         receiver
-            .recv()
+            .recv_timeout(std::time::Duration::from_secs(300))
             .map_err(|_| AppError::io("Contacts permission prompt did not complete"))
     }
 

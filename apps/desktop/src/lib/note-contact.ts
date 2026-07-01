@@ -5,7 +5,7 @@ import {
   type ContactMatch,
 } from '@reflect/core'
 import { openSession } from '@/editor/open-documents'
-import { commitNoteFrontmatter } from '@/lib/note-frontmatter'
+import { commitNoteFrontmatter, readNoteSource } from '@/lib/note-frontmatter'
 import { readNoteOrEmpty } from '@/lib/note-read'
 
 /**
@@ -30,7 +30,11 @@ export async function addContactToNote(
   generation: number,
 ): Promise<void> {
   const details = contactDetailsMarkdown(contact)
-  if (details !== '') {
+  // Idempotency guard: the append and the mark are two writes, so a retry
+  // after a failed mark (details landed, card still up) must not append the
+  // same bullets again.
+  const alreadyAdded = details === '' || (await readNoteSource(path)).includes(details)
+  if (!alreadyAdded) {
     const owner = openSession(path)
     if (owner !== null) {
       if (!(await owner.commitBodyAppend(details))) {
