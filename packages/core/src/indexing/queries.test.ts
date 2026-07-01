@@ -4,6 +4,7 @@ import {
   dailyDatesInRange,
   getDuplicateNoteIds,
   getNoteIdsByPath,
+  getOpenTasks,
   getPinnedNotes,
   listDailyNotes,
   suggestWikiTargets,
@@ -112,7 +113,9 @@ describe('getPinnedNotes', () => {
     expect(sql).toContain('order by pinned_order IS NULL')
     expect(sql).toContain('"pinned_order"')
     expect(sql).toContain('title_key')
-    expect(args['params']).toEqual([1])
+    // A pinned template must not reach the sidebar's Pinned section.
+    expect(sql).toContain('"kind" != ?')
+    expect(args['params']).toEqual([1, 'template'])
   })
 })
 
@@ -218,5 +221,29 @@ describe('suggestWikiTargets', () => {
     await expect(suggestWikiTargets('2020-01-01')).resolves.toEqual([
       { target: '2020-01-01', path: null, title: '2020-01-01', alias: null, date: '2020-01-01' },
     ])
+  })
+
+  it('excludes templates from both the title and alias candidate queries', async () => {
+    mockInvoke.mockResolvedValue([])
+
+    await suggestWikiTargets('journal')
+
+    expect(mockInvoke).toHaveBeenCalledTimes(2)
+    for (const [, args] of mockInvoke.mock.calls) {
+      expect(String(args['sql'])).toContain('"kind" != ?')
+      expect(args['params']).toContain('template')
+    }
+  })
+})
+
+describe('getOpenTasks', () => {
+  it('never surfaces template checkboxes — boilerplate, not real tasks', async () => {
+    mockInvoke.mockResolvedValue([])
+
+    await getOpenTasks()
+
+    const [, args] = mockInvoke.mock.calls[0]!
+    expect(String(args['sql'])).toContain('"notes"."kind" != ?')
+    expect(args['params']).toContain('template')
   })
 })

@@ -27,8 +27,9 @@ const LOCAL_ONLY_XATTRS: [(&str, &[u8]); 2] = [
     ("com.apple.fileprovider.ignore#P", b"1"),
     ("com.dropbox.ignored", b"1"),
 ];
-/// Directories scanned by `list_files` for markdown notes.
-pub(super) const NOTE_DIRS: [&str; 2] = ["daily", "notes"];
+/// Directories scanned by `list_files` for markdown notes. `templates/` is
+/// not bootstrapped (no-litter) — the first template write creates it.
+pub(super) const NOTE_DIRS: [&str; 3] = ["daily", "notes", "templates"];
 
 /// Create the standard graph layout + ignore/meta files (idempotent).
 pub(super) fn bootstrap(root: &Path) -> AppResult<()> {
@@ -252,6 +253,7 @@ mod tests {
         bootstrap(dir.path()).unwrap();
         atomic_write(&dir.path().join("notes/a.md"), "a").unwrap();
         atomic_write(&dir.path().join("daily/2026-06-09.md"), "b").unwrap();
+        atomic_write(&dir.path().join("templates/journal.md"), "t").unwrap();
         atomic_write(&dir.path().join("notes/skip.txt"), "c").unwrap();
 
         let mut out = Vec::new();
@@ -261,6 +263,7 @@ mod tests {
         let paths: Vec<&str> = out.iter().map(|f| f.path.as_str()).collect();
         assert!(paths.contains(&"notes/a.md"));
         assert!(paths.contains(&"daily/2026-06-09.md"));
+        assert!(paths.contains(&"templates/journal.md"));
         assert!(!paths.iter().any(|p| p.ends_with(".txt")));
     }
 

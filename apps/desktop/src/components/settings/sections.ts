@@ -7,6 +7,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'appearance', title: 'Appearance' },
   { id: 'date-time', title: 'Date & time' },
   { id: 'editor', title: 'Editor' },
+  { id: 'templates', title: 'Note templates' },
   { id: 'all-notes', title: 'All notes' },
   { id: 'search', title: 'Search' },
   { id: 'backup', title: 'Backup' },

@@ -39,7 +39,9 @@ describe('searchWithFilters', () => {
     expect(sql).toContain('"tags"."tag_key"')
     expect(sql).not.toContain('search_fts')
     expect(sql).not.toContain('lower(')
-    expect(args['params']).toEqual(['work', 12])
+    // The template exclusion rides every search path.
+    expect(sql).toContain('"notes"."kind" != ?')
+    expect(args['params']).toEqual(['work', 'template', 12])
   })
 
   it('keeps additional tag filters as indexed existence checks', async () => {
@@ -56,7 +58,7 @@ describe('searchWithFilters', () => {
     expect(sql).toContain('"filter_tags"."note_path" = "notes"."path"')
     expect(sql).toContain('"filter_tags"."tag_key"')
     expect(sql).not.toContain('search_fts')
-    expect(args['params']).toEqual(['work', 'home', 12])
+    expect(args['params']).toEqual(['work', 'template', 'home', 12])
   })
 
   it('applies non-tag filters on the tag-first recall path', async () => {
@@ -82,7 +84,7 @@ describe('searchWithFilters', () => {
     expect(sql).toContain('"notes"."is_pinned" =')
     expect(sql).toContain('"notes"."mtime" >=')
     expect(sql).not.toContain('search_fts')
-    expect(args['params']).toEqual(['work', 1, startOfLocalDay('2026-01-01'), 12])
+    expect(args['params']).toEqual(['work', 'template', 1, startOfLocalDay('2026-01-01'), 12])
   })
 
   it('promotes exact title, then bm25, then pinned and recency on text search', async () => {

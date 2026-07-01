@@ -6,6 +6,8 @@
 
 export const DAILY_DIR = 'daily'
 export const NOTES_DIR = 'notes'
+/** Note templates — indexed as their own kind, excluded from note surfaces. */
+export const TEMPLATES_DIR = 'templates'
 export const ASSETS_DIR = 'assets'
 /** Audio-memo recordings live apart from pasted/dropped `assets/` files. */
 export const AUDIO_MEMOS_DIR = 'audio-memos'
@@ -38,6 +40,11 @@ export function dailyPath(date: string): string {
 /** Graph-relative path to a regular note for a filename slug (without `.md`). */
 export function notePath(slug: string): string {
   return `${NOTES_DIR}/${slug}.md`
+}
+
+/** Graph-relative path to a template for a filename slug (without `.md`). */
+export function templatePath(slug: string): string {
+  return `${TEMPLATES_DIR}/${slug}.md`
 }
 
 /** Graph-relative path to an attachment under `assets/`. */
@@ -78,14 +85,24 @@ export function isDaily(path: string): boolean {
 
 /**
  * Is this graph-relative path an indexable markdown note (`.md` under
- * `daily/` or `notes/`)? The file-change stream carries more than notes —
- * the watcher also reports `audio-memos/` recordings — so consumers that
- * read or index note *content* gate on this.
+ * `daily/`, `notes/`, or `templates/`)? The file-change stream carries more
+ * than notes — the watcher also reports `audio-memos/` recordings — so
+ * consumers that read or index note *content* gate on this. Templates count:
+ * they are indexed and editable like notes, just excluded from note surfaces
+ * (gate on {@link isTemplatePath} where that matters, e.g. embeddings).
  */
 export function isNotePath(path: string): boolean {
   return (
-    (path.startsWith(`${DAILY_DIR}/`) || path.startsWith(`${NOTES_DIR}/`)) && path.endsWith('.md')
+    (path.startsWith(`${DAILY_DIR}/`) ||
+      path.startsWith(`${NOTES_DIR}/`) ||
+      path.startsWith(`${TEMPLATES_DIR}/`)) &&
+    path.endsWith('.md')
   )
+}
+
+/** Is this graph-relative path a note template (`.md` under `templates/`)? */
+export function isTemplatePath(path: string): boolean {
+  return path.startsWith(`${TEMPLATES_DIR}/`) && path.endsWith('.md')
 }
 
 /** Extract the ISO date from a daily-note path, or `null` if it isn't one. */

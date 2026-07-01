@@ -55,9 +55,11 @@ fn as_graph_path(arg: &str, root: &Path) -> Option<String> {
 /// `byTitle ?? byAlias` precedence — each tier ordered by path so collisions
 /// resolve deterministically (same rule as the desktop's `resolveWikiTarget`).
 fn index_lookup(conn: &Connection, key: &str) -> Result<Vec<String>, CliError> {
+    // Templates never resolve by title/alias (the desktop rule) — only an
+    // explicit `templates/...` path argument reaches one.
     let by_title = collect_paths(
         conn,
-        "SELECT path FROM notes WHERE title_key = ?1 ORDER BY path",
+        "SELECT path FROM notes WHERE title_key = ?1 AND kind != 'template' ORDER BY path",
         key,
     )?;
     if !by_title.is_empty() {
@@ -65,7 +67,9 @@ fn index_lookup(conn: &Connection, key: &str) -> Result<Vec<String>, CliError> {
     }
     collect_paths(
         conn,
-        "SELECT note_path FROM aliases WHERE alias_key = ?1 ORDER BY note_path",
+        "SELECT note_path FROM aliases
+         JOIN notes ON notes.path = aliases.note_path AND notes.kind != 'template'
+         WHERE alias_key = ?1 ORDER BY note_path",
         key,
     )
 }
@@ -87,6 +91,9 @@ fn scan_lookup(root: &Path, key: &str) -> Result<Vec<String>, CliError> {
     let mut by_title = Vec::new();
     let mut by_alias = Vec::new();
     for note in walk_notes(root)? {
+        if note.rel_path.starts_with("templates/") {
+            continue; // templates never resolve by title/alias
+        }
         let Ok(content) = std::fs::read_to_string(root.join(&note.rel_path)) else {
             continue;
         };

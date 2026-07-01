@@ -37,6 +37,10 @@ export interface CommandContext {
   openPalette: (query?: string) => void
   /** Open the ⌘/ shortcuts cheat-sheet. */
   openShortcuts: () => void
+  /** Open the "Insert template…" picker (inserts into {@link notePath}'s editor). */
+  openTemplatePicker: () => void
+  /** Open the "New template" name dialog. */
+  openTemplateCreate: () => void
   /**
    * Persist the semantic-search opt-in (`semanticSearchEnabled`).
    * EmbeddingsSync reacts to the setting by loading — first time:

@@ -181,6 +181,27 @@ const APP_COMMANDS: AppCommand[] = [
     },
   },
   {
+    id: 'template.insert',
+    title: 'Insert template…',
+    keywords: ['snippet', 'boilerplate', 'stamp'],
+    // Inserts into the note the current route edits (the focused stream day on
+    // daily views); on screens with no note there is nothing to insert into.
+    // The picker itself carries the empty state — a "New template" row — so
+    // the command stays discoverable before any template exists.
+    run: (context) => {
+      if (context.notePath() === null) {
+        return
+      }
+      context.openTemplatePicker()
+    },
+  },
+  {
+    id: 'template.new',
+    title: 'New template',
+    keywords: ['template', 'snippet', 'boilerplate', 'create'],
+    run: (context) => context.openTemplateCreate(),
+  },
+  {
     id: 'audioMemo.toggle',
     title: 'Record audio memo',
     keywords: ['voice', 'mic', 'dictate', 'transcribe', 'speech', 'capture'],

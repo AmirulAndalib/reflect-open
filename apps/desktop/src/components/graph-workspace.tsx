@@ -7,6 +7,7 @@ import { AudioMemoProvider } from '@/providers/audio-memo-provider'
 import { FocusedDailyProvider } from '@/providers/focused-daily-provider'
 import { CaptureProvider } from '@/providers/capture-provider'
 import { ChatProvider } from '@/providers/chat-provider'
+import { NoteTemplatesProvider } from '@/providers/note-templates-provider'
 import { ShortcutsProvider } from '@/providers/shortcuts-provider'
 import { SidebarProvider } from '@/providers/sidebar-provider'
 import { SyncProvider } from '@/providers/sync-provider'
@@ -29,23 +30,25 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
       <SyncProvider graph={graph}>
         <PaletteProvider>
           <ShortcutsProvider>
-            <SidebarProvider>
-              {/* Above the sidebar: a recording must survive the sidebar (and its
-                  mic button) unmounting on collapse. */}
-              <AudioMemoProvider graph={graph}>
-                <CaptureProvider graph={graph}>
-                  <AssetDescribeProvider graph={graph}>
-                    <ChatProvider graph={graph}>
-                      {/* Tracks the focused day in the daily stream so the right
-                          sidebar describes it, not just the routed day. */}
-                      <FocusedDailyProvider>
-                        <WorkspaceContent graph={graph} />
-                      </FocusedDailyProvider>
-                    </ChatProvider>
-                  </AssetDescribeProvider>
-                </CaptureProvider>
-              </AudioMemoProvider>
-            </SidebarProvider>
+            <NoteTemplatesProvider>
+              <SidebarProvider>
+                {/* Above the sidebar: a recording must survive the sidebar (and its
+                    mic button) unmounting on collapse. */}
+                <AudioMemoProvider graph={graph}>
+                  <CaptureProvider graph={graph}>
+                    <AssetDescribeProvider graph={graph}>
+                      <ChatProvider graph={graph}>
+                        {/* Tracks the focused day in the daily stream so the right
+                            sidebar describes it, not just the routed day. */}
+                        <FocusedDailyProvider>
+                          <WorkspaceContent graph={graph} />
+                        </FocusedDailyProvider>
+                      </ChatProvider>
+                    </AssetDescribeProvider>
+                  </CaptureProvider>
+                </AudioMemoProvider>
+              </SidebarProvider>
+            </NoteTemplatesProvider>
           </ShortcutsProvider>
         </PaletteProvider>
       </SyncProvider>

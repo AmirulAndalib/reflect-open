@@ -40,7 +40,7 @@ export async function loadGraphStats({ tagLimit }: GraphStatsOptions): Promise<G
   const [noteRow, dailyRow, tagRows] = await Promise.all([
     db
       .selectFrom('notes')
-      .where('dailyDate', 'is', null)
+      .where('kind', '=', 'note')
       .where('isPrivate', '=', 0)
       .select(sql<number>`count(*)`.as('count'))
       .executeTakeFirst(),
@@ -60,7 +60,7 @@ export async function loadGraphStats({ tagLimit }: GraphStatsOptions): Promise<G
     db
       .selectFrom('tags')
       .innerJoin('notes', 'notes.path', 'tags.notePath')
-      .where('notes.dailyDate', 'is', null)
+      .where('notes.kind', '=', 'note')
       .where('notes.isPrivate', '=', 0)
       .select([sql<string>`min(tags.tag)`.as('tag'), sql<number>`count(*)`.as('count')])
       .groupBy('tags.tagKey')

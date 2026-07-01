@@ -88,6 +88,7 @@ export interface Notes {
   id: string | null;
   isPinned: Generated<number>;
   isPrivate: Generated<number>;
+  kind: Generated<string>;
   mtime: Generated<number>;
   path: string;
   pinnedOrder: number | null;

@@ -3,10 +3,11 @@ import { foldTag } from '../markdown'
 import { db } from './db'
 
 /**
- * The All Notes list: every non-daily note, newest first, optionally narrowed
+ * The All Notes list: every regular note, newest first, optionally narrowed
  * to one tag. Daily notes are excluded by design — the stream is their home —
- * which mirrors the original app's notes list (`isDaily = 0` there,
- * `daily_date IS NULL` here). Uncapped: the screen virtualizes, the row
+ * and templates are boilerplate, not graph content; `kind = 'note'` expresses
+ * both (mirroring the original app's `isDaily = 0`). Uncapped: the screen
+ * virtualizes, the row
  * snippet is the stored `preview` column (derived once at index time), and
  * neither query carries a per-row parameter, so list size has no SQL ceiling.
  */
@@ -36,7 +37,7 @@ export async function listNotes(options: NoteListOptions = {}): Promise<NoteList
     tag === null
       ? await db
           .selectFrom('notes')
-          .where('notes.dailyDate', 'is', null)
+          .where('notes.kind', '=', 'note')
           .select(['notes.path', 'notes.title', 'notes.mtime', 'notes.preview'])
           .orderBy('notes.mtime', 'desc')
           .orderBy('notes.path')
@@ -45,7 +46,7 @@ export async function listNotes(options: NoteListOptions = {}): Promise<NoteList
           .selectFrom('tags')
           .innerJoin('notes', 'notes.path', 'tags.notePath')
           .where('tags.tagKey', '=', foldTag(tag))
-          .where('notes.dailyDate', 'is', null)
+          .where('notes.kind', '=', 'note')
           .select(['notes.path', 'notes.title', 'notes.mtime', 'notes.preview'])
           .distinct()
           .orderBy('notes.mtime', 'desc')
@@ -64,7 +65,7 @@ export async function listNotes(options: NoteListOptions = {}): Promise<NoteList
       ? await db
           .selectFrom('tags')
           .innerJoin('notes', 'notes.path', 'tags.notePath')
-          .where('notes.dailyDate', 'is', null)
+          .where('notes.kind', '=', 'note')
           .select(['tags.notePath', 'tags.tag'])
           // Order on the folded key so a row's tags read in the same alphabetical
           // order as the facet list, regardless of display casing.
@@ -75,7 +76,7 @@ export async function listNotes(options: NoteListOptions = {}): Promise<NoteList
           .innerJoin('notes', 'notes.path', 'tags.notePath')
           .innerJoin('tags as filterTags', 'filterTags.notePath', 'notes.path')
           .where('filterTags.tagKey', '=', foldTag(tag))
-          .where('notes.dailyDate', 'is', null)
+          .where('notes.kind', '=', 'note')
           .select(['tags.notePath', 'tags.tag'])
           .distinct()
           .orderBy('tags.tagKey')
@@ -131,7 +132,7 @@ export async function listRecentNotes(options: RecentNotesOptions): Promise<Rece
     tag === null
       ? await db
           .selectFrom('notes')
-          .where('notes.dailyDate', 'is', null)
+          .where('notes.kind', '=', 'note')
           .where('notes.isPrivate', '=', 0)
           .select(['notes.path', 'notes.title', 'notes.preview', 'notes.mtime', 'notes.isPrivate'])
           .orderBy('notes.mtime', 'desc')
@@ -142,7 +143,7 @@ export async function listRecentNotes(options: RecentNotesOptions): Promise<Rece
           .selectFrom('tags')
           .innerJoin('notes', 'notes.path', 'tags.notePath')
           .where('tags.tagKey', '=', foldTag(tag))
-          .where('notes.dailyDate', 'is', null)
+          .where('notes.kind', '=', 'note')
           .where('notes.isPrivate', '=', 0)
           .select(['notes.path', 'notes.title', 'notes.preview', 'notes.mtime', 'notes.isPrivate'])
           .distinct()
@@ -169,7 +170,7 @@ export async function listNoteTags(): Promise<NoteTagFacet[]> {
   return db
     .selectFrom('tags')
     .innerJoin('notes', 'notes.path', 'tags.notePath')
-    .where('notes.dailyDate', 'is', null)
+    .where('notes.kind', '=', 'note')
     .select([sql<string>`min(tags.tag)`.as('tag'), sql<number>`count(*)`.as('count')])
     .groupBy('tags.tagKey')
     .orderBy('tags.tagKey')

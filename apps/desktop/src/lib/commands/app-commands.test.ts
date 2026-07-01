@@ -72,6 +72,8 @@ function fakeContext(overrides?: Partial<CommandContext>) {
     generation: () => 7,
     openPalette: vi.fn(),
     openShortcuts: vi.fn(),
+    openTemplatePicker: vi.fn(),
+    openTemplateCreate: vi.fn(),
     enableSemanticSearch: vi.fn(),
     ...overrides,
   }
@@ -141,6 +143,23 @@ describe('app commands', () => {
     await command('shortcuts.show').run(context)
     expect(context.openShortcuts).toHaveBeenCalledTimes(1)
     expect(keybindingFor('shortcuts.show')).toBe('Mod-/')
+  })
+
+  it('template.insert opens the picker only where a note is being edited', async () => {
+    const { context } = fakeContext({ route: () => ({ kind: 'note', path: 'notes/a.md' }) })
+    await command('template.insert').run(context)
+    expect(context.openTemplatePicker).toHaveBeenCalledTimes(1)
+
+    // Settings edits no note — there is nothing to insert into.
+    const { context: noNote } = fakeContext({ route: () => ({ kind: 'settings' }) })
+    await command('template.insert').run(noNote)
+    expect(noNote.openTemplatePicker).not.toHaveBeenCalled()
+  })
+
+  it('template.new opens the name dialog through the context capability', async () => {
+    const { context } = fakeContext()
+    await command('template.new').run(context)
+    expect(context.openTemplateCreate).toHaveBeenCalledTimes(1)
   })
 
   it('chat.new starts a fresh conversation only from the chat route', async () => {

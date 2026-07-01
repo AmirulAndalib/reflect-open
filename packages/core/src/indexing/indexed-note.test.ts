@@ -3,8 +3,8 @@ import { gistBodyHash, parseNote } from '../markdown'
 import { buildIndexedNote, indexedNoteSchema, PROJECTION_VERSION } from './indexed-note'
 
 describe('buildIndexedNote', () => {
-  it('carries the projection version that rebuilds task/checklist rows', () => {
-    expect(PROJECTION_VERSION).toBe(11)
+  it('carries the projection version that backfills the note kind', () => {
+    expect(PROJECTION_VERSION).toBe(12)
   })
 
   it('flattens a parsed note into the index payload', () => {
@@ -89,6 +89,18 @@ describe('buildIndexedNote', () => {
     expect(indexed.id).toBeNull()
     expect(indexed.isPrivate).toBe(false)
     expect(indexed.isPinned).toBe(false)
+  })
+
+  it('derives the note kind from the path', () => {
+    const kindOf = (path: string): string =>
+      buildIndexedNote(parseNote({ path, source: 'body' }), {
+        fileHash: 'h',
+        mtime: 0,
+        source: 'body',
+      }).kind
+    expect(kindOf('daily/2026-06-09.md')).toBe('daily')
+    expect(kindOf('notes/n.md')).toBe('note')
+    expect(kindOf('templates/journal.md')).toBe('template')
   })
 
   it('projects an explicit pin order', () => {

@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge, type EmbedStatus, type GraphInfo } from '@reflect/core'
 import { formatFullDate } from '@/lib/dates'
 import { resetOperations } from '@/lib/operations'
+import { NoteTemplatesProvider } from '@/providers/note-templates-provider'
 import { SettingsProvider } from '@/providers/settings-provider'
 import { UpdateProvider } from '@/providers/update-provider'
+import { RouterProvider } from '@/routing/router'
 import { SettingsScreen } from './settings-screen'
 
 // The rebuild-index field reads the open index generation — and the Backup
@@ -60,6 +62,8 @@ function installFakeBridge(): void {
           return embedStatus
         case 'list_files':
           return []
+        case 'db_query':
+          return [] // the Note templates section lists `kind = 'template'` rows
         default:
           return null
       }
@@ -75,7 +79,13 @@ function renderScreen(): void {
     <QueryClientProvider client={queryClient}>
       <SettingsProvider>
         <UpdateProvider autoCheck={false}>
-          <SettingsScreen />
+          {/* The Note templates section opens files (router) and shares the
+              "New template" dialog state (templates provider). */}
+          <RouterProvider>
+            <NoteTemplatesProvider>
+              <SettingsScreen />
+            </NoteTemplatesProvider>
+          </RouterProvider>
         </UpdateProvider>
       </SettingsProvider>
     </QueryClientProvider>,

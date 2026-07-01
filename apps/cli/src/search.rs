@@ -58,7 +58,7 @@ pub fn search_index(
                 snippet(search_fts, 2, '', '', '…', 12), {RANK_EXPR}
          FROM search_fts
          JOIN notes ON notes.path = search_fts.path
-         WHERE search_fts MATCH ?1 AND notes.is_private = 0
+         WHERE search_fts MATCH ?1 AND notes.is_private = 0 AND notes.kind != 'template'
          ORDER BY CASE WHEN notes.title_key = ?2 THEN 0 ELSE 1 END,
                   {RANK_EXPR},
                   notes.is_pinned DESC,

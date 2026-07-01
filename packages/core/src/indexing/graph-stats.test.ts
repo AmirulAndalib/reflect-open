@@ -48,7 +48,8 @@ describe('loadGraphStats', () => {
     }
 
     const [, noteArgs] = mockInvoke.mock.calls[0]!
-    expect(String(noteArgs['sql'])).toContain('"daily_date" is null')
+    // `kind = 'note'` excludes dailies and templates from the note count.
+    expect(String(noteArgs['sql'])).toContain('"kind" = ?')
 
     const [, dailyArgs] = mockInvoke.mock.calls[1]!
     const dailySql = String(dailyArgs['sql'])

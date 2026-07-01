@@ -21,6 +21,8 @@ pub struct IndexedNote {
     pub(super) id: Option<String>,
     pub(super) title: String,
     pub(super) title_key: String,
+    /// 'daily' | 'note' | 'template' — templates are excluded from note surfaces.
+    pub(super) kind: String,
     pub(super) daily_date: Option<String>,
     pub(super) is_private: bool,
     pub(super) is_pinned: bool,
@@ -96,14 +98,15 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
     remove_note(conn, &note.path)?;
 
     conn.prepare_cached(
-        "INSERT INTO notes(path, id, title, title_key, daily_date, is_private, is_pinned, pinned_order, has_conflict, gist_url, gist_stale, file_hash, mtime, updated_at, preview)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?14)",
+        "INSERT INTO notes(path, id, title, title_key, kind, daily_date, is_private, is_pinned, pinned_order, has_conflict, gist_url, gist_stale, file_hash, mtime, updated_at, preview)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14, ?15)",
     )?
     .execute(params![
         note.path,
         note.id,
         note.title,
         note.title_key,
+        note.kind,
         note.daily_date,
         i64::from(note.is_private),
         i64::from(note.is_pinned),

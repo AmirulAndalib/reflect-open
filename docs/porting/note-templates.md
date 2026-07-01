@@ -1,6 +1,9 @@
 # Porting note templates
 
-**Status: planned.** v2 has no template feature; daily notes start blank.
+**Status: shipped**, except the editor slash-menu entry point — that rides
+meowdown's new host-items API
+([prosekit/meowdown#192](https://github.com/prosekit/meowdown/pull/192))
+and lands with the next meowdown release.
 The [product vision](../reflect-v2-product-vision.md) deferred templates
 with "markdown snippets may be enough" — and that is exactly the design:
 templates are markdown files in the graph.
@@ -55,10 +58,15 @@ in as written. Frontmatter in a template file (if any) is not inserted.
 
 ### Managing templates
 
-No dedicated management UI to start. "New template" is creating a file in
-`templates/`; renaming and deleting are file operations, doable in-app
-(templates open in the normal editor) or outside it. A settings section can
-come later if file management proves too raw.
+Templates are files first: creating, renaming, and deleting all work from
+any text editor or file manager, and the watcher picks the changes up. In
+the app, **Settings → Note templates** lists them with open / rename /
+delete rows, and a "New template" dialog (also a palette command) creates
+`templates/<slug>.md` seeded with the name as its H1. Renaming moves the
+file onto the new name's slug, carrying any open editor session; deleting
+sends the file to the trash. Templates open in the normal editor, but title
+edits do **not** rename the file (the rename pipeline's slug targets live
+under `notes/`) — the settings rename is the in-app rename.
 
 ## v1 → v2 mapping
 
@@ -79,13 +87,22 @@ come later if file management proves too raw.
 - Duplicate-name tolerance quirks: filenames make names unique per graph by
   construction.
 
+## How it was built
+
+- **Indexing.** `templates/*.md` is indexed like any note, with a new
+  `notes.kind` column (`daily` / `note` / `template`, migration 0014,
+  projection v12) derived from the path. Every note surface — All Notes,
+  search, backlinks, tasks, pinned, tag facets, wikilink autocomplete and
+  resolution, graph stats, the CLI — excludes `kind = 'template'`; the
+  `note_keys`/`backlinks` views enforce the wikilink rule at the schema
+  level. Templates are never embedded, so AI retrieval can't see them.
+- **Insertion.** The picker reads the file, strips frontmatter, and inserts
+  the body as a parsed fragment at the cursor
+  (`NoteEditorHandle.insertMarkdown`) — one undoable edit with paste
+  semantics.
+
 ## Open questions
 
-- **Indexing.** Templates should not pollute All Notes, search, backlinks,
-  or AI retrieval. Recommended: index `templates/` as a distinct kind
-  (excluded from note surfaces but openable/editable in-app) rather than
-  skipping it entirely — skipping would make templates uneditable inside
-  Reflect. Needs a small decision in the indexer and `notes` projection.
 - **Daily-note templates.** v1 never auto-applied a template to daily notes
   and users asked for it constantly. A designated `templates/daily.md`
   applied to new daily notes is a natural v2 extension, but it interacts

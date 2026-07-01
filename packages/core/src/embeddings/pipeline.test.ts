@@ -53,6 +53,17 @@ function fakePipelineBridge(options: {
 const MODEL = 'all-MiniLM-L6-v2'
 
 describe('embedNote', () => {
+  it('never embeds a template — boilerplate must not reach retrieval', async () => {
+    const { embedded, applied } = fakePipelineBridge({
+      content: '# Journal\n\nMood:\n\nGratitude:\n',
+      storedRows: [],
+    })
+    const count = await embedNote({ path: 'templates/journal.md', generation: 1, modelId: MODEL })
+    expect(count).toBe(0)
+    expect(embedded).toHaveLength(0)
+    expect(applied).toHaveLength(0)
+  })
+
   it('embeds everything for a brand-new note', async () => {
     const { embedded, applied } = fakePipelineBridge({
       content: '# One\n\nAlpha text.\n\n# Two\n\nBeta text.\n',

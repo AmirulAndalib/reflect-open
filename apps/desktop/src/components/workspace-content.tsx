@@ -12,6 +12,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { RouteContent } from '@/components/route-content'
 import { ShortcutsDialog } from '@/components/shortcuts-dialog'
 import { Sidebar } from '@/components/sidebar/sidebar'
+import { TemplateCreateDialog } from '@/components/templates/template-create-dialog'
+import { TemplatePicker } from '@/components/templates/template-picker'
 import { keybindingFor } from '@/lib/commands/app-commands'
 import { cn } from '@/lib/utils'
 import { hasMacosTitleBarOverlay } from '@/lib/window-chrome'
@@ -90,6 +92,8 @@ export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement
 
         <CommandPalette context={commandContext} />
         <ShortcutsDialog />
+        <TemplatePicker context={commandContext} />
+        <TemplateCreateDialog context={commandContext} />
         <EmbeddingsSync />
       </div>
     </AppShell>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { availableNotePath, slugPathForTitle } from './note-paths'
+import { availableNotePath, availableTemplatePath, slugPathForTitle } from './note-paths'
 
 describe('availableNotePath', () => {
   it('returns the bare slug path when free', async () => {
@@ -31,6 +31,15 @@ describe('availableNotePath', () => {
     await expect(availableNotePath('meeting', async () => true)).rejects.toThrow(
       /no available note path/,
     )
+  })
+})
+
+describe('availableTemplatePath', () => {
+  it('probes under templates/ with the same collision suffix', async () => {
+    const occupied = new Set(['templates/journal.md'])
+    await expect(
+      availableTemplatePath('journal', async (path) => occupied.has(path)),
+    ).resolves.toBe('templates/journal-2.md')
   })
 })
 

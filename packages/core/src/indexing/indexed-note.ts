@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { dateFromDailyPath, isDaily } from '../graph/paths'
+import { dateFromDailyPath, isDaily, isTemplatePath } from '../graph/paths'
 import {
   detectConflictMarkers,
   foldKey,
@@ -52,8 +52,10 @@ import { previewSnippet } from './snippet'
  * canonical on-disk path.
  * 11 — `tasks` projection limited to round Meowdown task checkboxes (`+ [ ]` /
  * `+ [x]`), excluding square checklist checkboxes from the aggregate Tasks view.
+ * 12 — `notes.kind` (daily / note / template): templates are indexed but
+ * excluded from note surfaces, so rows must carry the kind.
  */
-export const PROJECTION_VERSION = 11
+export const PROJECTION_VERSION = 12
 
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),
@@ -93,11 +95,17 @@ export const indexedTaskSchema = z.object({
 })
 export type IndexedTask = z.infer<typeof indexedTaskSchema>
 
+/** What a `notes` row is: part of the graph (daily/note) or a template. */
+export const noteKindSchema = z.enum(['daily', 'note', 'template'])
+export type NoteKind = z.infer<typeof noteKindSchema>
+
 export const indexedNoteSchema = z.object({
   path: z.string(),
   id: z.string().nullable(),
   title: z.string(),
   titleKey: z.string(),
+  /** Derived from the path; templates are excluded from note surfaces. */
+  kind: noteKindSchema,
   dailyDate: z.string().nullable(),
   isPrivate: z.boolean(),
   isPinned: z.boolean(),
@@ -160,6 +168,7 @@ export function buildIndexedNote(
     id: parsed.id ?? null,
     title: parsed.title,
     titleKey: foldKey(parsed.title),
+    kind: isDaily(parsed.path) ? 'daily' : isTemplatePath(parsed.path) ? 'template' : 'note',
     dailyDate: isDaily(parsed.path) ? dateFromDailyPath(parsed.path) : null,
     isPrivate: parsed.frontmatter.private,
     isPinned: isPinned(parsed.frontmatter),

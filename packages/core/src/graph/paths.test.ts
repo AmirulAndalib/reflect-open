@@ -6,7 +6,9 @@ import {
   dateFromDailyPath,
   isDaily,
   isNotePath,
+  isTemplatePath,
   notePath,
+  templatePath,
 } from './paths'
 
 describe('graph paths', () => {
@@ -24,8 +26,9 @@ describe('graph paths', () => {
     expect(() => dailyPath('2026-02-31')).toThrow()
   })
 
-  it('builds note, asset, and recording paths', () => {
+  it('builds note, template, asset, and recording paths', () => {
     expect(notePath('charlotte-maccaw')).toBe('notes/charlotte-maccaw.md')
+    expect(templatePath('journal')).toBe('templates/journal.md')
     expect(assetPath('screenshot.png')).toBe('assets/screenshot.png')
     expect(audioMemoPath('memo.m4a')).toBe('audio-memos/memo.m4a')
   })
@@ -34,10 +37,17 @@ describe('graph paths', () => {
     expect(isNotePath('notes/a.md')).toBe(true)
     expect(isNotePath('daily/2026-06-12.md')).toBe(true)
     expect(isNotePath('notes/sub/deep.md')).toBe(true)
+    expect(isNotePath('templates/journal.md')).toBe(true)
     expect(isNotePath('notes/a.txt')).toBe(false)
     expect(isNotePath('audio-memos/audio-memo-2026-06-12-090000-000.m4a')).toBe(false)
     expect(isNotePath('assets/pasted.png')).toBe(false)
     expect(isNotePath('README.md')).toBe(false)
+  })
+
+  it('recognizes template paths', () => {
+    expect(isTemplatePath('templates/journal.md')).toBe(true)
+    expect(isTemplatePath('templates/journal.txt')).toBe(false)
+    expect(isTemplatePath('notes/journal.md')).toBe(false)
   })
 
   it('recognizes daily-note paths', () => {

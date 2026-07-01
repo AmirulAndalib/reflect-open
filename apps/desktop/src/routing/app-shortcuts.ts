@@ -12,6 +12,7 @@ import { useAudioMemo } from '@/providers/audio-memo-provider'
 import { useChatSession } from '@/providers/chat-provider'
 import { useFocusedDailyDate } from '@/providers/focused-daily-provider'
 import { useGraph } from '@/providers/graph-provider'
+import { useNoteTemplates } from '@/providers/note-templates-provider'
 import { useSettings } from '@/providers/settings-provider'
 import { useShortcuts } from '@/providers/shortcuts-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
@@ -71,6 +72,12 @@ export function useAppShortcuts(): CommandContext {
   const { graph } = useGraph()
   const { openPalette, open: paletteOpen } = usePalette()
   const { openShortcuts, closeShortcuts, open: shortcutsOpen } = useShortcuts()
+  const {
+    openTemplatePicker,
+    openTemplateCreate,
+    pickerOpen: templatePickerOpen,
+    createOpen: templateCreateOpen,
+  } = useNoteTemplates()
   const { toggleSidebar } = useSidebar()
   const { toggle: toggleAudioMemo } = useAudioMemo()
   const { newChat } = useChatSession()
@@ -83,6 +90,10 @@ export function useAppShortcuts(): CommandContext {
   // Same for the ⌘/ cheat-sheet, except ⌘/ itself toggles it closed.
   const shortcutsOpenRef = useRef(shortcutsOpen)
 
+  // And for the template dialogs — both are Radix modals; nothing may
+  // navigate behind them.
+  const templatesOpenRef = useRef(templatePickerOpen || templateCreateOpen)
+
   // Read at run time, not captured: a command can fire long after the render
   // that created the context (palette open across an index rebuild, etc.).
   const generationRef = useRef<number | null>(graph?.generation ?? null)
@@ -91,6 +102,7 @@ export function useAppShortcuts(): CommandContext {
   useEffect(() => {
     paletteOpenRef.current = paletteOpen
     shortcutsOpenRef.current = shortcutsOpen
+    templatesOpenRef.current = templatePickerOpen || templateCreateOpen
     generationRef.current = graph?.generation ?? null
     routeRef.current = route
     focusedDailyDateRef.current = focusedDailyDate
@@ -118,6 +130,8 @@ export function useAppShortcuts(): CommandContext {
       generation: () => generationRef.current,
       openPalette,
       openShortcuts,
+      openTemplatePicker,
+      openTemplateCreate,
       enableSemanticSearch: () => {
         updateSettings({ semanticSearchEnabled: true })
         // EmbeddingsSync loads an untouched runtime; a `failed` one only
@@ -133,6 +147,8 @@ export function useAppShortcuts(): CommandContext {
       setTheme,
       openPalette,
       openShortcuts,
+      openTemplatePicker,
+      openTemplateCreate,
       toggleSidebar,
       newChat,
       toggleAudioMemo,
@@ -155,6 +171,9 @@ export function useAppShortcuts(): CommandContext {
           return true
         }
         return false
+      }
+      if (templatesOpenRef.current) {
+        return false // the template picker/create dialogs are modal too
       }
       void runCommand(id, context)
       return true

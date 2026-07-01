@@ -1,12 +1,13 @@
-import { memo, useCallback, useMemo, useState, type ReactElement } from 'react'
+import { memo, useCallback, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { ExitBoundaryHandler } from '@meowdown/core'
-import { isDaily } from '@reflect/core'
+import { isDaily, isTemplatePath } from '@reflect/core'
 import { BacklinksPanel } from '@/components/backlinks-panel'
 import { InlineAlert } from '@/components/inline-alert'
 import { NoteConflictBanner } from '@/components/note-conflict-banner'
 import { ProtectedNoteView } from '@/components/protected-note-view'
 import { SyncConflictNotice } from '@/components/sync-conflict-notice'
 import { editorBodyWithDefaultBullet } from '@/editor/default-bullet'
+import { registerNoteEditor, unregisterNoteEditor } from '@/editor/editor-registry'
 import { markModeFromSyntax } from '@/editor/mark-mode'
 import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
 import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
@@ -99,12 +100,17 @@ export function NotePaneComponent({
   const graphRoot = graph?.root ?? null
   const generation = graph?.generation ?? null
   const dailyNote = isDaily(path)
+  // Templates rename via file operations only (settings, or outside the app):
+  // the rename pipeline's slug targets live under `notes/`, so tracking a
+  // template's title would move it out of `templates/`. The untitled `id:`
+  // seed is skipped for the same reason — it exists to feed that pipeline.
+  const template = isTemplatePath(path)
   // One seed per (pane, path): a fresh seed carries a fresh `id:`, and a mere
   // re-render must not mint a new identity (the session is keyed on the seed).
   // Re-mint during render when the path changes — only the committed render's
   // seed reaches the session, so the transient stale render is harmless, and
   // this avoids writing a ref during render.
-  const needsSeed = lazy && !dailyNote
+  const needsSeed = lazy && !dailyNote && !template
   const [seed, setSeed] = useState(() => ({ path, seed: untitledNoteSeed() }))
   if (needsSeed && seed.path !== path) {
     setSeed({ path, seed: untitledNoteSeed() })
@@ -112,8 +118,9 @@ export function NotePaneComponent({
   const document = useNoteDocument(path, generation, {
     createIfMissing: lazy,
     // Daily notes are excluded from rename tracking: their date labels are
-    // stream chrome, not content (decided 2026-06-09).
-    trackRenames: !dailyNote,
+    // stream chrome, not content (decided 2026-06-09). Templates too — see
+    // the `template` note above.
+    trackRenames: !dailyNote && !template,
     // A missing ordinary note opens as a name-me template (old Reflect's
     // new-note flow): the seed — `id:` frontmatter plus an empty H1 the
     // caret lands in, ghosted "Untitled" by the title placeholder — only
@@ -134,11 +141,26 @@ export function NotePaneComponent({
   const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()
 
   const bindEditor = document.bindEditor
+  // The registry entry this pane currently owns. Kept in a ref (not derived
+  // from the call's arguments) because on a path change React detaches the old
+  // callback with `null` before attaching the new one — the detach must
+  // unregister the *previous* registration, whichever path it was under.
+  const registeredEditor = useRef<{ path: string; handle: NoteEditorHandle } | null>(null)
   const handleRef = useCallback(
     (handle: NoteEditorHandle | null) => {
       bindEditor(handle)
       if (dailyDate !== undefined) {
         registerHandle?.(dailyDate, handle)
+      }
+      // The path-keyed registry commands reach editors through (e.g. "Insert
+      // template…" targeting `CommandContext.notePath()`).
+      if (registeredEditor.current !== null) {
+        unregisterNoteEditor(registeredEditor.current.path, registeredEditor.current.handle)
+        registeredEditor.current = null
+      }
+      if (handle !== null) {
+        registerNoteEditor(path, handle)
+        registeredEditor.current = { path, handle }
       }
       if (handle && autoFocus) {
         // The caret lands at the document start — for a seeded new note
@@ -147,7 +169,7 @@ export function NotePaneComponent({
         onAutoFocused?.()
       }
     },
-    [bindEditor, dailyDate, registerHandle, autoFocus, onAutoFocused],
+    [bindEditor, path, dailyDate, registerHandle, autoFocus, onAutoFocused],
   )
 
 

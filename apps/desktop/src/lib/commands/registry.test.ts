@@ -20,6 +20,8 @@ function fakeContext(overrides?: Partial<CommandContext>): CommandContext {
     generation: () => 1,
     openPalette: vi.fn(),
     openShortcuts: vi.fn(),
+    openTemplatePicker: vi.fn(),
+    openTemplateCreate: vi.fn(),
     enableSemanticSearch: vi.fn(),
     ...overrides,
   }

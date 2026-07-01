@@ -9,7 +9,7 @@ import {
 } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { errorMessage } from '@reflect/core'
-import { type ExitBoundaryHandler, type MarkMode } from '@meowdown/core'
+import { markdownToDoc, type ExitBoundaryHandler, type MarkMode } from '@meowdown/core'
 import {
   MeowdownEditor,
   type EditorHandle,
@@ -44,6 +44,13 @@ export interface NoteEditorHandle {
   getMarkdown(): string
   /** Replace the document (note switch / external reload). */
   setMarkdown(markdown: string): void
+  /**
+   * Insert a parsed markdown fragment at the cursor, replacing any selection,
+   * as one undoable edit — how "Insert template…" pastes a template body.
+   * Unlike {@link setMarkdown}, this **is** an edit: it fires `onChange` and
+   * dirties the document. Empty/whitespace-only markdown is a no-op.
+   */
+  insertMarkdown(markdown: string): void
   focus(): void
   /**
    * Move the caret to a document edge and scroll it into view. Used for
@@ -178,6 +185,20 @@ export function NoteEditor({
     (): NoteEditorHandle => ({
       getMarkdown: () => innerRef.current?.getMarkdown() ?? '',
       setMarkdown: (markdown) => innerRef.current?.setMarkdown(markdown),
+      // Bridged through meowdown's `editor` escape hatch until its handle
+      // grows a first-class insertMarkdown — parse with the editor's own node
+      // builders, then replace the selection with an edge-open slice (depth 1
+      // both ends) so a one-paragraph fragment splices inline and a
+      // multi-block one splits the current block: paste semantics.
+      insertMarkdown: (markdown) => {
+        const editor = innerRef.current?.editor
+        if (editor === undefined || markdown.trim() === '') {
+          return
+        }
+        const doc = markdownToDoc(markdown, { nodes: editor.nodes })
+        const slice = doc.slice(1, doc.content.size - 1)
+        editor.view.dispatch(editor.state.tr.replaceSelection(slice).scrollIntoView())
+      },
       focus: () => innerRef.current?.focus(),
       setSelection: (position) => innerRef.current?.setSelection(position),
     }),

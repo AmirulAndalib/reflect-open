@@ -1,12 +1,15 @@
 //! Graph path conventions — the Rust mirror of `packages/core/src/graph/paths.ts`.
-//! Dailies live at `daily/YYYY-MM-DD.md`; regular notes under `notes/`; only
-//! those two directories hold notes.
+//! Dailies live at `daily/YYYY-MM-DD.md`; regular notes under `notes/`; note
+//! templates under `templates/` (indexed, but excluded from search/resolution).
 
 pub const DAILY_DIR: &str = "daily";
 pub const NOTES_DIR: &str = "notes";
+pub const TEMPLATES_DIR: &str = "templates";
 
 /// Directories scanned for markdown notes (mirrors the desktop's `NOTE_DIRS`).
-pub const NOTE_DIRS: [&str; 2] = [DAILY_DIR, NOTES_DIR];
+/// Includes `templates/` so the staleness diff sees the same file set the
+/// index holds; note *surfaces* exclude templates at the query instead.
+pub const NOTE_DIRS: [&str; 3] = [DAILY_DIR, NOTES_DIR, TEMPLATES_DIR];
 
 /// Graph-relative path to the daily note for an ISO `YYYY-MM-DD` date.
 pub fn daily_path(date: &str) -> String {

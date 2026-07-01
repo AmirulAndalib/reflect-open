@@ -28,6 +28,7 @@ fn note(path: &str, title: &str, links: Vec<IndexedLink>) -> IndexedNote {
         id: None,
         title: title.to_string(),
         title_key: title.to_lowercase(),
+        kind: "note".to_string(),
         daily_date: None,
         is_private: false,
         is_pinned: false,
@@ -77,7 +78,7 @@ fn migrations_are_valid_and_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 13); // applied migrations (0001 through 0013)
+    assert_eq!(version, 14); // applied migrations (0001 through 0014)
     migrate(&mut conn).expect("re-running to_latest is a no-op");
 }
 
@@ -177,6 +178,34 @@ fn backlinks_resolve_by_title_at_query_time() {
     .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["source_path"], Value::from("notes/a.md"));
+}
+
+#[test]
+fn templates_are_invisible_to_backlink_resolution() {
+    let conn = migrated();
+    let mut template = note("templates/journal.md", "Journal", vec![wiki("Target")]);
+    template.kind = "template".to_string();
+    apply_note(&conn, &template).unwrap();
+    apply_note(&conn, &note("notes/target.md", "Target", vec![])).unwrap();
+    apply_note(&conn, &note("notes/a.md", "A", vec![wiki("Journal")])).unwrap();
+
+    // A note linking [[Journal]] must not resolve to the template's title…
+    let to_template = run_query(
+        &conn,
+        "SELECT source_path FROM backlinks WHERE target_path = ?1",
+        &[Value::from("templates/journal.md")],
+    )
+    .unwrap();
+    assert!(to_template.is_empty());
+
+    // …and the template's boilerplate [[Target]] link is not a graph edge.
+    let from_template = run_query(
+        &conn,
+        "SELECT source_path FROM backlinks WHERE target_path = ?1",
+        &[Value::from("notes/target.md")],
+    )
+    .unwrap();
+    assert!(from_template.is_empty());
 }
 
 #[test]
@@ -522,7 +551,7 @@ fn open_index_at_creates_migrates_and_reopens() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 13);
+    assert_eq!(version, 14);
     let journal: String = conn
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();

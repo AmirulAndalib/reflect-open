@@ -121,11 +121,14 @@ export interface OpenTask extends TaskMarker {
   updatedAt: number
 }
 
-/** Task rows joined to their note context — the shared shape both task reads select. */
+/** Task rows joined to their note context — the shared shape both task reads
+ * select. Template checkboxes are boilerplate, not real tasks, so they never
+ * reach the Tasks view. */
 function taskRowsQuery() {
   return db
     .selectFrom('tasks')
     .innerJoin('notes', 'notes.path', 'tasks.notePath')
+    .where('notes.kind', '!=', 'template')
     .select([
       'tasks.notePath',
       'tasks.markerOffset',
@@ -215,6 +218,8 @@ export async function suggestTags(query: string, limit = 8): Promise<TagSuggesti
   const key = foldTag(query.trim())
   let candidates = db
     .selectFrom('tags')
+    .innerJoin('notes', 'notes.path', 'tags.notePath')
+    .where('notes.kind', '!=', 'template')
     .select([sql<string>`min(tags.tag)`.as('tag'), sql<number>`count(*)`.as('count')])
     .groupBy('tags.tagKey')
     .orderBy(sql`count(*)`, 'desc')
@@ -248,8 +253,10 @@ export async function suggestWikiTargets(
   const normalized = normalizeWikiTarget(query)
   const key = normalized.key
 
+  // Templates are not wiki targets — linking to one is never what `[[` means.
   let titleQuery = db
     .selectFrom('notes')
+    .where('kind', '!=', 'template')
     .select(['path', 'title', 'titleKey', 'dailyDate', 'mtime'])
     .orderBy('mtime', 'desc')
     .limit(50)
@@ -265,6 +272,7 @@ export async function suggestWikiTargets(
     aliases = await db
       .selectFrom('aliases')
       .innerJoin('notes', 'notes.path', 'aliases.notePath')
+      .where('notes.kind', '!=', 'template')
       .where(sql<boolean>`alias_key LIKE ${likeContains(key)} ESCAPE '\\'`)
       .select([
         'notes.path',
@@ -321,6 +329,7 @@ export async function getPinnedNotes(): Promise<PinnedNote[]> {
   return db
     .selectFrom('notes')
     .where('isPinned', '=', 1)
+    .where('kind', '!=', 'template')
     .select(['path', 'title', 'dailyDate', 'pinnedOrder'])
     .orderBy(sql`pinned_order IS NULL`)
     .orderBy('pinnedOrder')
@@ -506,7 +515,9 @@ export async function listDailyNotes(range: DailyNotesRange): Promise<DailyNoteR
 export async function getNotesByTag(tag: string): Promise<string[]> {
   const rows = await db
     .selectFrom('tags')
+    .innerJoin('notes', 'notes.path', 'tags.notePath')
     .where('tagKey', '=', foldTag(tag))
+    .where('notes.kind', '!=', 'template')
     .select('notePath')
     .orderBy('notePath')
     .execute()
@@ -544,6 +555,7 @@ export async function searchNotes(query: string, limit = 50): Promise<SearchHit[
   return db
     .selectFrom('searchFts')
     .innerJoin('notes', 'notes.path', 'searchFts.path')
+    .where('notes.kind', '!=', 'template')
     .select(['searchFts.path', 'searchFts.title'])
     .where(sql<boolean>`search_fts MATCH ${match}`)
     .orderBy(sql`case when "notes"."title_key" = ${titleKey} then 0 else 1 end`)
@@ -597,6 +609,8 @@ export async function getNoteIdsByPath(paths: string[]): Promise<Map<string, str
  * undefined).
  */
 export function resolveWikiTarget(target: string): Promise<Resolution> {
+  // Templates are excluded from every lookup, mirroring the `note_keys` view:
+  // a `[[target]]` must never resolve to a template.
   return resolveWikiLinkAsync(target, {
     byDate: async (date) =>
       (
@@ -612,6 +626,7 @@ export function resolveWikiTarget(target: string): Promise<Resolution> {
         await db
           .selectFrom('notes')
           .where('titleKey', '=', key)
+          .where('kind', '!=', 'template')
           .select('path')
           .orderBy('path')
           .executeTakeFirst()
@@ -620,7 +635,9 @@ export function resolveWikiTarget(target: string): Promise<Resolution> {
       (
         await db
           .selectFrom('aliases')
+          .innerJoin('notes', 'notes.path', 'aliases.notePath')
           .where('aliasKey', '=', key)
+          .where('notes.kind', '!=', 'template')
           .select('notePath')
           .orderBy('notePath')
           .executeTakeFirst()

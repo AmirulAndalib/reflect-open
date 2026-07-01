@@ -62,6 +62,7 @@ export async function searchWithFilters(
       .select(['notes.path', 'notes.title', 'notes.dailyDate'])
       // The length guard above guarantees a primary tag.
       .where('tags.tagKey', '=', primaryTag!)
+      .where('notes.kind', '!=', 'template')
       .distinct()
       .limit(limit)
 
@@ -114,9 +115,11 @@ export async function searchWithFilters(
     return rows.map((row) => ({ ...row, snippet: null }))
   }
 
+  // Templates never surface in search — they are boilerplate, not notes.
   let query = db
     .selectFrom('notes')
     .select(['notes.path', 'notes.title', 'notes.dailyDate'])
+    .where('notes.kind', '!=', 'template')
     .limit(limit)
 
   // `filters.tags` are folded keys (filter-query) matched against the stored

@@ -65,7 +65,7 @@ fn is_eligible_asset(rel_str: &str) -> bool {
 }
 
 /// Graph-relative path if `path` is tracked: a markdown note (`.md` under
-/// `daily/` or `notes/`), an audio-memo recording (anything under
+/// `daily/`, `notes/`, or `templates/`), an audio-memo recording (anything under
 /// `audio-memos/`), a spooled capture envelope (`.json` under `.reflect/inbox/`
 /// — the one carve-out from the `.reflect/` blackout; the envelope is the
 /// spool's commit point and triggers the capture drain), or an eligible asset
@@ -74,7 +74,9 @@ fn is_eligible_asset(rel_str: &str) -> bool {
 fn tracked_relpath(path: &Path, root: &Path) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
     let rel_str = rel.to_string_lossy().replace('\\', "/");
-    let note = (rel_str.starts_with("daily/") || rel_str.starts_with("notes/"))
+    let note = (rel_str.starts_with("daily/")
+        || rel_str.starts_with("notes/")
+        || rel_str.starts_with("templates/"))
         && rel_str.ends_with(".md");
     let recording = rel_str.starts_with("audio-memos/");
     let capture = rel_str.starts_with(".reflect/inbox/") && rel_str.ends_with(".json");
@@ -192,6 +194,15 @@ mod tests {
         assert_eq!(
             tracked_relpath(Path::new("/g/daily/2026-06-09.md"), root).as_deref(),
             Some("daily/2026-06-09.md")
+        );
+        // Templates are tracked like notes; only `.md` files count.
+        assert_eq!(
+            tracked_relpath(Path::new("/g/templates/journal.md"), root).as_deref(),
+            Some("templates/journal.md")
+        );
+        assert_eq!(
+            tracked_relpath(Path::new("/g/templates/journal.txt"), root),
+            None
         );
         // Recordings are tracked whole-directory: they feed the sync debounce
         // and the transcription reconciler.
