@@ -72,6 +72,14 @@ describe('parseFrontmatter', () => {
     expect(parseFrontmatter('pinned: .nan').data.pinned).toBe(false)
   })
 
+  it('reads the contact-suggestion resolution; junk degrades to absent', () => {
+    expect(parseFrontmatter('contactSuggestion: added').data.contactSuggestion).toBe('added')
+    expect(parseFrontmatter('contactSuggestion: ignored').data.contactSuggestion).toBe('ignored')
+    expect(parseFrontmatter('contactSuggestion: banana').data.contactSuggestion).toBeUndefined()
+    expect(parseFrontmatter('contactSuggestion: true').data.contactSuggestion).toBeUndefined()
+    expect(parseFrontmatter('id: x').data.contactSuggestion).toBeUndefined()
+  })
+
   it('isPinned/pinnedOrder read the pin value — `pinned: 0` is order 0, pinned', () => {
     expect(isPinned(parseFrontmatter('pinned: 0').data)).toBe(true)
     expect(pinnedOrder(parseFrontmatter('pinned: 0').data)).toBe(0)

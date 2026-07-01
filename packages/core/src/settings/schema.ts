@@ -141,6 +141,14 @@ export const describeAssetsSchema = z.boolean().catch(true)
 export const mobileOnboardedSchema = z.boolean().catch(false)
 
 /**
+ * Whether the Apple Contacts integration is on. Off by default — turning it
+ * on triggers the OS contacts permission prompt. Lookups are live, on-demand
+ * `CNContactStore` queries (attendee resolution, suggested-contact cards);
+ * nothing is mirrored into the index and nothing ever leaves the device.
+ */
+export const contactsEnabledSchema = z.boolean().catch(false)
+
+/**
  * The preset palette for a graph's identity color (the swatch shown next to
  * the graph name). A closed set of named ids — not raw hex — so the UI can
  * map each id to values that read well in both light and dark themes.
@@ -262,6 +270,7 @@ export const settingsSchema = z
     editorTextSize: editorTextSizeSchema,
     semanticSearchEnabled: semanticSearchEnabledSchema,
     describeAssets: describeAssetsSchema,
+    contactsEnabled: contactsEnabledSchema,
     mobileOnboarded: mobileOnboardedSchema,
     theme: themePreferenceSchema,
     timeFormat: timeFormatSchema,

@@ -111,6 +111,7 @@ export {
   editorTextSizeSchema,
   semanticSearchEnabledSchema,
   describeAssetsSchema,
+  contactsEnabledSchema,
   themePreferenceSchema,
   timeFormatSchema,
   dateFormatSchema,
@@ -139,6 +140,22 @@ export {
   type AiProviderConfig,
 } from './settings/schema'
 export { loadSettings, saveSettings } from './settings/commands'
+
+// Apple Contacts (live CNContactStore reads; matching policy lives here)
+export {
+  contactsAuthorizationSchema,
+  contactMatchSchema,
+  contactsAuthorizationStatus,
+  requestContactsAccess,
+  lookupContactsByEmail,
+  lookupContactsByName,
+  isContactsReadable,
+  type ContactsAuthorization,
+  type ContactMatch,
+} from './contacts/commands'
+export { matchContactForTitle, suggestContactForTitle } from './contacts/match'
+export { contactDetailsMarkdown, appendContactDetails } from './contacts/markdown'
+export { pickContactForEmail, resolveAttendeeContact } from './contacts/resolve'
 
 // AI providers & keychain secrets (Plan 10)
 export {

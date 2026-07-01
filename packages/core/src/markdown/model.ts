@@ -106,6 +106,13 @@ export const frontmatterSchema = z
      * publish then creates a fresh gist and rewrites it whole.
      */
     gist: gistFrontmatterSchema.optional().catch(undefined),
+    /**
+     * Whether the suggested-contact card has been resolved for this note:
+     * `added` (the details were merged in) or `ignored` (dismissed). Absent
+     * means the card may appear when the title matches an Apple Contact.
+     * A mangled value degrades to absent — the card reappears, nothing breaks.
+     */
+    contactSuggestion: z.enum(['added', 'ignored']).optional().catch(undefined),
   })
 export type Frontmatter = z.infer<typeof frontmatterSchema>
 

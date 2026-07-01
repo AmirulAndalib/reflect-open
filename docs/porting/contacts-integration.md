@@ -1,9 +1,28 @@
 # Porting contacts integration
 
-**Status: planned.** In v1, contacts turned meeting attendees and name-like
-notes into real person notes without manual data entry. v2 keeps that role
-but reads the **Apple Contacts** store instead of syncing provider address
-books through a server.
+**Status: shipped (contacts standalone).** In v1, contacts turned meeting
+attendees and name-like notes into real person notes without manual data
+entry. v2 keeps that role but reads the **Apple Contacts** store instead of
+syncing provider address books through a server.
+
+Shipped: the Rust `contacts` capability (`CNContactStore` via `objc2`), the
+Settings → Apple integrations switch with the permission flow, and the
+suggested-contact card. The meeting-attendee half waits on the
+[calendar flow](./calendar-meetings-integration.md) — its resolution policy
+(`resolveAttendeeContact` in `@reflect/core`) is already in place for it to
+consume.
+
+Decisions taken at implementation time:
+
+- **Person-note matching is exact.** The card appears only when the note
+  title case-insensitively equals a contact's full name (whitespace-collapsed,
+  unicode-normalized) — no `#person` tag required, and word-prefix hits from
+  the framework's name predicate are discarded (`matchContactForTitle`).
+- **No photos in v1.** Add writes the primary email and phone as plain
+  markdown bullets; photos (binary → `assets/`) can follow without rework.
+- **Resolutions live in frontmatter.** Add and Ignore both write
+  `contactSuggestion: added | ignored`, so a handled note never re-suggests
+  and the state travels with the note through sync and export.
 
 ## What v1 did
 
@@ -84,15 +103,14 @@ macOS.
 - v1's non-features stay non-features: no CSV/vCard bulk import, no AI
   enrichment, no write-back to providers.
 
-## Open questions
+## Resolved questions
 
-- **Person-note matching.** v1 matched "notes whose subject looks like a
-  person's name". v2 needs a concrete rule — likely a `#person` tag and/or
-  a fuzzy title match against contacts, tuned to avoid false positives on
-  two-word note titles.
-- **Photos.** Contact photos are binary; if person notes should show them,
-  they'd be written into `assets/` on explicit add (never automatically).
-- **Privacy-doc wording.** Nothing leaves the device, but reading the
-  address book is exactly the kind of access
-  [docs/privacy.md](../privacy.md) exists to spell out; it needs a section
-  even though the network inventory is unchanged.
+- **Person-note matching.** Exact title ↔ full-name equality (see the
+  decisions above). Fuzzy matching and a `#person` opt-in were considered and
+  dropped: exactness alone kills the two-word-title false positives.
+- **Photos.** Deferred — Add writes text fields only. If person notes grow
+  photos, they'd be written into `assets/` on explicit add (never
+  automatically).
+- **Privacy-doc wording.** [docs/privacy.md](../privacy.md) has an Apple
+  Contacts section: on-device reads, no mirror, details enter a note only on
+  explicit Add.

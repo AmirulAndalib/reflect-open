@@ -8,9 +8,11 @@
 //! [`recents`] (recent-graphs store), [`settings`] (user settings store),
 //! [`secrets`] (OS keychain), [`git`] (backup/sync primitives),
 //! [`capture`] (link-capture inbox + native-messaging host plumbing),
+//! [`contacts`] (live Apple Contacts lookups),
 //! [`error`] (the shared error contract).
 
 mod capture;
+mod contacts;
 mod db;
 mod devtools;
 mod error;
@@ -185,6 +187,10 @@ pub fn run() {
             embed::embed_texts,
             watcher::watch_start,
             watcher::watch_stop,
+            contacts::contacts_authorization_status,
+            contacts::contacts_request_access,
+            contacts::contacts_lookup_by_email,
+            contacts::contacts_lookup_by_name,
             capture::capture_host_register,
             capture::capture_inbox_list,
             capture::capture_inbox_read,

@@ -154,6 +154,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '12h',
@@ -194,6 +195,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'large',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '12h',
@@ -237,6 +239,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '12h',
@@ -278,6 +281,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '12h',
@@ -318,6 +322,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '12h',
@@ -351,6 +356,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'light',
           timeFormat: '12h',
@@ -397,6 +403,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '12h',
@@ -436,6 +443,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '12h',
@@ -481,6 +489,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '12h',
@@ -523,6 +532,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '24h',
@@ -556,6 +566,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '12h',
@@ -621,6 +632,7 @@ describe('SettingsScreen', () => {
           editorTextSize: 'small',
           semanticSearchEnabled: false,
           describeAssets: true,
+          contactsEnabled: false,
           mobileOnboarded: false,
           theme: 'system',
           timeFormat: '12h',
@@ -644,7 +656,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'hide', editorSpellCheck: true, editorDefaultBullet: true, editorBulletAfterHeading: true, editorTextSize: 'small', semanticSearchEnabled: true, describeAssets: true, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
+        { editorMarkdownSyntax: 'hide', editorSpellCheck: true, editorDefaultBullet: true, editorBulletAfterHeading: true, editorTextSize: 'small', semanticSearchEnabled: true, describeAssets: true, contactsEnabled: false, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
       ]),
     )
     // The control flips to the loading state (EmbeddingsSync owns the actual
@@ -673,7 +685,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'hide', editorSpellCheck: true, editorDefaultBullet: true, editorBulletAfterHeading: true, editorTextSize: 'small', semanticSearchEnabled: false, describeAssets: true, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
+        { editorMarkdownSyntax: 'hide', editorSpellCheck: true, editorDefaultBullet: true, editorBulletAfterHeading: true, editorTextSize: 'small', semanticSearchEnabled: false, describeAssets: true, contactsEnabled: false, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
       ]),
     )
     expect(screen.getByRole('button', { name: /enable semantic search/i })).toBeTruthy()
@@ -696,7 +708,7 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(invoked).toContain('embed_ensure'))
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'hide', editorSpellCheck: true, editorDefaultBullet: true, editorBulletAfterHeading: true, editorTextSize: 'small', semanticSearchEnabled: true, describeAssets: true, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
+        { editorMarkdownSyntax: 'hide', editorSpellCheck: true, editorDefaultBullet: true, editorBulletAfterHeading: true, editorTextSize: 'small', semanticSearchEnabled: true, describeAssets: true, contactsEnabled: false, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
       ]),
     )
   })
@@ -715,7 +727,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(saved).toEqual([
-        { editorMarkdownSyntax: 'hide', editorSpellCheck: true, editorDefaultBullet: true, editorBulletAfterHeading: true, editorTextSize: 'small', semanticSearchEnabled: false, describeAssets: true, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
+        { editorMarkdownSyntax: 'hide', editorSpellCheck: true, editorDefaultBullet: true, editorBulletAfterHeading: true, editorTextSize: 'small', semanticSearchEnabled: false, describeAssets: true, contactsEnabled: false, mobileOnboarded: false, theme: 'system', timeFormat: '12h', dateFormat: 'mdy', weekStartDay: 'monday', allNotesFilterTags: ['book', 'link', 'person'], graphColors: {}, aiProviders: [], defaultAiProviderId: null, chatModelSelection: null },
       ]),
     )
     expect(screen.getByRole('button', { name: /enable semantic search/i })).toBeTruthy()
