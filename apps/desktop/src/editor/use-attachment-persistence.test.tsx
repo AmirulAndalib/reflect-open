@@ -110,6 +110,37 @@ describe('useAttachmentPersistence', () => {
     expect(invoke).not.toHaveBeenCalledWith('asset_upload_begin', expect.anything())
   })
 
+  it('queues a second large file behind the open confirm instead of overwriting it', async () => {
+    installUploadBridge()
+    render(<Host generation={3} />)
+
+    const first = fileOfSize('one.mov', LARGE_ATTACHMENT_BYTES + 1)
+    const second = fileOfSize('two.mov', LARGE_ATTACHMENT_BYTES + 1)
+    let firstPromise: Promise<string | null> | null = null
+    let secondPromise: Promise<string | null> | null = null
+    act(() => {
+      firstPromise = persistence!.saveAttachment(first)
+      secondPromise = persistence!.saveAttachment(second)
+    })
+
+    // Only the first file holds the dialog slot.
+    expect(persistence!.pendingLargeAttachment?.file).toBe(first)
+
+    await act(async () => {
+      persistence!.pendingLargeAttachment!.respond(false)
+      await firstPromise
+    })
+    await expect(firstPromise).resolves.toBeNull()
+
+    // The second confirm takes the slot only after the first resolved.
+    expect(persistence!.pendingLargeAttachment?.file).toBe(second)
+    await act(async () => {
+      persistence!.pendingLargeAttachment!.respond(true)
+      await secondPromise
+    })
+    await expect(secondPromise).resolves.toBe('assets/q3-report.pdf')
+  })
+
   it('surfaces reported save errors and clears them on the next success', async () => {
     installUploadBridge()
     render(<Host generation={3} />)

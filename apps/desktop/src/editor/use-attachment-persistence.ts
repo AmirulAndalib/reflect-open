@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { assetFileName, createAsset, errorMessage } from '@reflect/core'
 
 /**
@@ -42,9 +42,15 @@ export function useAttachmentPersistence(generation: number | null): AttachmentP
   const [saveError, setSaveError] = useState<string | null>(null)
   const [pendingLargeAttachment, setPendingLargeAttachment] =
     useState<PendingLargeAttachment | null>(null)
+  // Confirms queue behind one another: there is a single dialog slot, and a
+  // second large file arriving while one is pending (two quick drops) must
+  // wait its turn, not overwrite the slot and strand the first save
+  // awaiting a `respond` that no longer has a dialog. Null when no confirm
+  // is in flight — the next one then takes the slot synchronously.
+  const confirmTail = useRef<Promise<boolean> | null>(null)
 
-  const confirmLargeFile = useCallback(
-    (file: File) =>
+  const confirmLargeFile = useCallback((file: File): Promise<boolean> => {
+    const show = () =>
       new Promise<boolean>((resolve) => {
         setPendingLargeAttachment({
           file,
@@ -53,9 +59,16 @@ export function useAttachmentPersistence(generation: number | null): AttachmentP
             resolve(proceed)
           },
         })
-      }),
-    [],
-  )
+      })
+    const turn = confirmTail.current === null ? show() : confirmTail.current.then(show)
+    confirmTail.current = turn
+    void turn.finally(() => {
+      if (confirmTail.current === turn) {
+        confirmTail.current = null
+      }
+    })
+    return turn
+  }, [])
 
   const saveAttachment = useCallback(
     async (file: File): Promise<string | null> => {

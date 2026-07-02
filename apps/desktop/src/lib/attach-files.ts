@@ -32,8 +32,7 @@ export async function attachFilesToNote(context: CommandContext): Promise<void> 
   if (generation === null || notePath === null) {
     return
   }
-  const handle = noteEditorHandleFor(notePath)
-  if (handle === null) {
+  if (noteEditorHandleFor(notePath) === null) {
     return
   }
   const picked = await open({ multiple: true, title: 'Attach files' })
@@ -54,8 +53,20 @@ export async function attachFilesToNote(context: CommandContext): Promise<void> 
     }
   }
   if (links.length > 0) {
-    handle.insertMarkdown(links.join('\n'))
-    handle.focus()
+    // Re-resolved after the awaits: the picker (and the copies) can outlive
+    // the editor that was mounted when the command fired — a navigation in
+    // between would otherwise send the insertion into a dead handle and the
+    // copied files would sit in assets/ with no links and no explanation.
+    const handle = noteEditorHandleFor(notePath)
+    if (handle === null) {
+      startOperation('Attaching file').fail(
+        `the note closed before its links could be inserted — ${links.join(', ')} ` +
+          'were still copied into assets/',
+      )
+    } else {
+      handle.insertMarkdown(links.join('\n'))
+      handle.focus()
+    }
   }
   if (failure !== null) {
     // Command dispatch has no error channel of its own — surface the failure

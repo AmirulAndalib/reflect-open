@@ -105,6 +105,25 @@ describe('attachFilesToNote', () => {
     unregisterNoteEditorHandle('notes/plan.md', handle)
   })
 
+  it('re-resolves the editor after the picker and drops the insert when it unmounted', async () => {
+    const invoke = vi.fn(async () => 'assets/report.pdf')
+    setBridge({ invoke, listen: async () => () => {} })
+    const handle = editorHandle()
+    registerNoteEditorHandle('notes/plan.md', handle)
+    // The pane unmounts while the (native, unbounded) picker is open.
+    openMock.mockImplementation(async () => {
+      unregisterNoteEditorHandle('notes/plan.md', handle)
+      return '/tmp/report.pdf'
+    })
+
+    await attachFilesToNote(contextFor('notes/plan.md', 4))
+
+    // The copy still happened (the file exists in assets/) but nothing is
+    // dispatched into the dead editor.
+    expect(invoke).toHaveBeenCalledWith('asset_import', expect.anything())
+    expect(handle.insertMarkdown).not.toHaveBeenCalled()
+  })
+
   it('still links the files that landed when a later copy fails', async () => {
     const invoke = vi.fn(async (_command: string, args: Record<string, unknown>) => {
       if (args['sourcePath'] === '/tmp/bad.bin') {
