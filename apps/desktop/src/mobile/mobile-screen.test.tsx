@@ -594,23 +594,33 @@ describe('MobileStack transitions & back-swipe', () => {
     const view = mount({ kind: 'today' }, { kind: 'note', path: 'notes/meeting-notes.md' })
     await pushProbeNote(view)
 
-    const stack = view.container.querySelector('.mobile-stack')!
-    const card = stackLayers(view).at(-1)!
-    firePointer(stack, 'pointerdown', {
-      pointerId: 1,
-      isPrimary: true,
-      pointerType: 'touch',
-      clientX: 10,
-      clientY: 300,
-    })
-    firePointer(stack, 'pointermove', { pointerId: 1, clientX: 40, clientY: 304 })
-    firePointer(stack, 'pointermove', { pointerId: 1, clientX: 120, clientY: 306 })
-    firePointer(stack, 'pointerup', { pointerId: 1, clientX: 120, clientY: 306 })
-    expect(card.style.transform).toBe('translate3d(0, 0, 0)')
+    // A slow machine can stretch the gap between synthetic moves past the
+    // hook's velocity-sampling window, turning this short drag into a
+    // "flick" that pops. Pin the clock so the drag reads as slow and the
+    // release decision is purely distance-based.
+    let clock = 1000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => (clock += 5))
+    try {
+      const stack = view.container.querySelector('.mobile-stack')!
+      const card = stackLayers(view).at(-1)!
+      firePointer(stack, 'pointerdown', {
+        pointerId: 1,
+        isPrimary: true,
+        pointerType: 'touch',
+        clientX: 10,
+        clientY: 300,
+      })
+      firePointer(stack, 'pointermove', { pointerId: 1, clientX: 40, clientY: 304 })
+      firePointer(stack, 'pointermove', { pointerId: 1, clientX: 120, clientY: 306 })
+      firePointer(stack, 'pointerup', { pointerId: 1, clientX: 120, clientY: 306 })
+      expect(card.style.transform).toBe('translate3d(0, 0, 0)')
 
-    fireEvent.transitionEnd(card)
-    expect(view.getByRole('heading').textContent).toContain('meeting-notes')
-    expect(stackLayers(view)).toHaveLength(2)
+      fireEvent.transitionEnd(card)
+      expect(view.getByRole('heading').textContent).toContain('meeting-notes')
+      expect(stackLayers(view)).toHaveLength(2)
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 
   it('ignores mid-screen touches, mouse pointers, and vertical scrolls', async () => {
