@@ -104,6 +104,6 @@ describe('IntegrationsSection', () => {
     authorization = 'unavailable'
     renderSection()
     await waitFor(() => expect(screen.queryByRole('switch')).toBeNull())
-    expect(screen.queryByText('Apple integrations')).toBeNull()
+    expect(screen.queryByText('System integrations')).toBeNull()
   })
 })

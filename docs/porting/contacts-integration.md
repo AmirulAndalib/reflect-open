@@ -6,7 +6,7 @@ entry. v2 keeps that role but reads the **Apple Contacts** store instead of
 syncing provider address books through a server.
 
 Shipped: the Rust `contacts` capability (`CNContactStore` via `objc2`), the
-Settings → Apple integrations switch with the permission flow, and the
+Settings → System integrations switch with the permission flow, and the
 suggested-contact card. The meeting-attendee half waits on the
 [calendar flow](./calendar-meetings-integration.md) — its resolution policy
 (`resolveAttendeeContact` in `@reflect/core`) is already in place for it to
@@ -48,9 +48,9 @@ macOS.
 ### User experience
 
 1. **Enabling.** A **Contacts** switch in Settings (paired with Calendar —
-   likely one "Apple integrations" section). Turning it on triggers the
-   macOS contacts permission prompt; denial shows an inline pointer to
-   System Settings.
+   one "System integrations" section). Turning it on triggers the macOS
+   contacts permission prompt; denial shows an inline pointer to System
+   Settings.
 2. **Meeting attendees become person notes.** When a meeting is added from
    the [calendar flow](./calendar-meetings-integration.md), each attendee
    email is looked up in Apple Contacts. On a match, the created person note

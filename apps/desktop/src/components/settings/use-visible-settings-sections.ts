@@ -5,7 +5,7 @@ import { SETTINGS_SECTIONS } from './sections'
 export type SettingsSectionEntry = (typeof SETTINGS_SECTIONS)[number]
 
 /**
- * The settings sections this platform actually shows. Apple integrations
+ * The settings sections this platform actually shows. System integrations
  * only exists where the OS frameworks do (macOS/iOS — the Rust shell answers
  * `unavailable` elsewhere), and the navigator must agree with the page, so
  * both filter through here rather than reading the registry directly.

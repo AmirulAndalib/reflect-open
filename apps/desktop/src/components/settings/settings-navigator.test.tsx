@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SETTINGS_SECTIONS, settingsSectionDomId } from './sections'
 import { SettingsNavigator } from './settings-navigator'
 
-// No bridge is installed here, so the platform-gated Apple integrations entry
+// No bridge is installed here, so the platform-gated System integrations entry
 // is hidden — the navigator lists the sections every platform shows.
 const VISIBLE_SECTIONS = SETTINGS_SECTIONS.filter((section) => section.id !== 'integrations')
 

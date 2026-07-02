@@ -20,7 +20,7 @@ const CONTACTS_PRIVACY_PANE =
   'x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts'
 
 /**
- * The Apple integrations section (the contacts-integration port): a Contacts
+ * The System integrations section (the contacts-integration port): a Contacts
  * switch backed by live `CNContactStore` reads — permission on/off is the
  * whole state, so there is no sync status to show. Turning it on triggers the
  * OS permission prompt; a denial keeps the switch on and points at System
@@ -86,7 +86,7 @@ export function IntegrationsSection(): ReactElement | null {
       <div>
         <SettingsSwitchField
           legend="Contacts"
-          description="Suggest details from Apple Contacts on notes that match a contact's name. Lookups stay on this device."
+          description="Suggest a contact's email and phone when a note's title matches their name."
           checked={settings.contactsEnabled}
           onCheckedChange={(checked) => {
             if (checked) {
