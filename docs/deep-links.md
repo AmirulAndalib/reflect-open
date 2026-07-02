@@ -70,4 +70,6 @@ drain re-runs cleanly.
 
 The scheme and the [CLI](cli.md) stay complementary: the CLI reads and
 resolves for scripts (`reflect show`, `reflect path`); the scheme navigates
-and captures. Both use the same resolution order.
+and captures. The scheme's resolution is the CLI's order with the
+frontmatter `id` step in front — the CLI does not resolve ids yet; a
+`reflect open <note>` verb is the natural place for it to pick that up.
