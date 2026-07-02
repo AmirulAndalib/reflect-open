@@ -613,8 +613,13 @@ fn kind_invariant_rebuild_preserves_rows_and_schema() {
 
     migrate(&mut conn).expect("migrate to latest");
 
-    for (table, expected) in [("notes", 2), ("note_text", 1), ("links", 1), ("tags", 1), ("tasks", 1)]
-    {
+    for (table, expected) in [
+        ("notes", 2),
+        ("note_text", 1),
+        ("links", 1),
+        ("tags", 1),
+        ("tasks", 1),
+    ] {
         let count: i64 = conn
             .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
                 row.get(0)

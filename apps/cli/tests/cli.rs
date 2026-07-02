@@ -40,7 +40,11 @@ impl Fixture {
             let content = fs::read_to_string(self.root().join(&note.rel_path)).unwrap();
             let meta = parse_note_meta(&note.rel_path, &content);
             let daily_date = reflect_cli::paths::date_from_daily_path(&note.rel_path);
-            let kind = if daily_date.is_some() { "daily" } else { "note" };
+            let kind = if daily_date.is_some() {
+                "daily"
+            } else {
+                "note"
+            };
             conn.execute(
                 "INSERT INTO notes(path, id, title, title_key, kind, daily_date, is_private,
                                    is_pinned, pinned_order, file_hash, mtime, updated_at, preview)
