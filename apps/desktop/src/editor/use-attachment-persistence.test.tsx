@@ -10,8 +10,14 @@ import {
 
 let persistence: AttachmentPersistence | null = null
 
-function Host({ generation }: { generation: number | null }): ReactNode {
-  persistence = useAttachmentPersistence(generation)
+function Host({
+  generation,
+  path = 'notes/a.md',
+}: {
+  generation: number | null
+  path?: string
+}): ReactNode {
+  persistence = useAttachmentPersistence(path, generation)
   return null
 }
 
@@ -139,6 +145,36 @@ describe('useAttachmentPersistence', () => {
       await secondPromise
     })
     await expect(secondPromise).resolves.toBe('assets/q3-report.pdf')
+  })
+
+  it('declines pending and queued confirms and clears the error on a note switch', async () => {
+    const invoke = installUploadBridge()
+    const view = render(<Host generation={3} path="notes/a.md" />)
+
+    let firstPromise: Promise<string | null> | null = null
+    let secondPromise: Promise<string | null> | null = null
+    act(() => {
+      persistence!.onAttachmentSaveError({ kind: 'io', message: 'old note error' })
+      firstPromise = persistence!.saveAttachment(
+        fileOfSize('one.mov', LARGE_ATTACHMENT_BYTES + 1),
+      )
+      secondPromise = persistence!.saveAttachment(
+        fileOfSize('two.mov', LARGE_ATTACHMENT_BYTES + 1),
+      )
+    })
+    expect(persistence!.pendingLargeAttachment).not.toBeNull()
+
+    await act(async () => {
+      view.rerender(<Host generation={3} path="notes/b.md" />)
+    })
+
+    // The old note's confirms resolve declined — nothing written, no dialog
+    // or error surviving into the new note.
+    await expect(firstPromise).resolves.toBeNull()
+    await expect(secondPromise).resolves.toBeNull()
+    expect(persistence!.pendingLargeAttachment).toBeNull()
+    expect(persistence!.saveError).toBeNull()
+    expect(invoke).not.toHaveBeenCalledWith('asset_upload_begin', expect.anything())
   })
 
   it('surfaces reported save errors and clears them on the next success', async () => {

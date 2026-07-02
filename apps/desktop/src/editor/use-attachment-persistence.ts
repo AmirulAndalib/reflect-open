@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { assetFileName, createAsset, errorMessage } from '@reflect/core'
 
 /**
@@ -36,9 +36,15 @@ export interface AttachmentPersistence {
  * {@link LARGE_ATTACHMENT_BYTES} first surface on
  * {@link AttachmentPersistence.pendingLargeAttachment} for an explicit
  * go-ahead. `generation` pins every save to the issuing graph session,
- * mirroring `useImagePersistence`.
+ * mirroring `useImagePersistence`; `path` scopes the transient state — the
+ * pane instance is reused across note switches, so a confirm or error that
+ * belongs to the previous note is declined/cleared when `path` changes
+ * rather than carried into the next note.
  */
-export function useAttachmentPersistence(generation: number | null): AttachmentPersistence {
+export function useAttachmentPersistence(
+  path: string,
+  generation: number | null,
+): AttachmentPersistence {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [pendingLargeAttachment, setPendingLargeAttachment] =
     useState<PendingLargeAttachment | null>(null)
@@ -48,17 +54,43 @@ export function useAttachmentPersistence(generation: number | null): AttachmentP
   // awaiting a `respond` that no longer has a dialog. Null when no confirm
   // is in flight — the next one then takes the slot synchronously.
   const confirmTail = useRef<Promise<boolean> | null>(null)
+  // Mirror of the pending state for the path-change cleanup, plus an epoch
+  // stamp so confirms queued for the previous note resolve declined instead
+  // of surfacing a dialog for a note that is no longer on screen.
+  const pendingRef = useRef<PendingLargeAttachment | null>(null)
+  const noteEpoch = useRef(0)
+
+  useEffect(() => {
+    return () => {
+      // The pane outlives the note it shows: a note switch reuses this hook
+      // while the editor remounts. Whatever the previous note had in flight
+      // — a visible confirm, confirms queued behind it, an error banner —
+      // must not leak into the next note: decline and clear it all.
+      noteEpoch.current += 1
+      pendingRef.current?.respond(false)
+      setSaveError(null)
+    }
+  }, [path])
 
   const confirmLargeFile = useCallback((file: File): Promise<boolean> => {
+    const epoch = noteEpoch.current
     const show = () =>
       new Promise<boolean>((resolve) => {
-        setPendingLargeAttachment({
+        if (noteEpoch.current !== epoch) {
+          // The note switched while this confirm waited in the queue.
+          resolve(false)
+          return
+        }
+        const pending: PendingLargeAttachment = {
           file,
           respond: (proceed) => {
+            pendingRef.current = null
             setPendingLargeAttachment(null)
             resolve(proceed)
           },
-        })
+        }
+        pendingRef.current = pending
+        setPendingLargeAttachment(pending)
       })
     const turn = confirmTail.current === null ? show() : confirmTail.current.then(show)
     confirmTail.current = turn

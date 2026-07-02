@@ -140,7 +140,7 @@ export function NotePaneComponent({
     onAttachmentSaveError,
     saveError: attachmentSaveError,
     pendingLargeAttachment,
-  } = useAttachmentPersistence(generation)
+  } = useAttachmentPersistence(path, generation)
   const onWikiLinkClick = useWikiLinkNavigation(generation)
   const onTagClick = useTagNavigation()
   const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()
