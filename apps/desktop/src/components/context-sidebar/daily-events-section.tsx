@@ -41,11 +41,11 @@ export function DailyEventsSection({ date }: DailyEventsSectionProps): ReactElem
               title="Add to daily note"
               className="group flex w-full items-center gap-2 rounded-md px-3 py-1 leading-5 text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text"
             >
+              <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
+                {event.title}
+              </span>
               <span className="flex-none text-xs tabular-nums text-text-muted">
                 {formatTimeOfDay(new Date(event.startsAt), settings.timeFormat)}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
-                {event.title !== '' ? event.title : 'Untitled event'}
               </span>
               <span
                 aria-hidden

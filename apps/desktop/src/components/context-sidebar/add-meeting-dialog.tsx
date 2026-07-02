@@ -91,7 +91,8 @@ export function AddMeetingDialog({ date, event, onClose }: AddMeetingDialogProps
         date,
         title: name,
         attendees,
-        createMeetingNote: createNote,
+        backlinkMeeting: createNote,
+        startTime: formatTimeOfDay(new Date(event.startsAt), settings.timeFormat),
         generation: graph.generation,
       })
       onClose()
@@ -112,7 +113,7 @@ export function AddMeetingDialog({ date, event, onClose }: AddMeetingDialogProps
     >
       <DialogContent showCloseButton={false} className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Add to daily note</DialogTitle>
+          <DialogTitle>Add event</DialogTitle>
           <DialogDescription>
             {formatTimeOfDay(new Date(event.startsAt), settings.timeFormat)}
           </DialogDescription>

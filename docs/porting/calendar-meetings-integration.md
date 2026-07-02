@@ -118,7 +118,12 @@ is added to [docs/privacy.md](../privacy.md)'s inventory.
   `recurring`), off otherwise. Meeting notes are reused per title: a
   recurring "Standup" links one `[[Standup]]` note from every day.
 - The daily-note markdown lands under a `## Meetings` heading
-  (`appendUnderHeading`), one bullet per meeting:
-  `- [[Meeting]] with [[Person A]], [[Person B]]`.
+  (`appendUnderHeading`), one bullet per meeting in v1's exact line shape:
+  `- 9:00am met with [[Person A]], [[Person B]] for [[Meeting]]`. As in v1,
+  an unchecked "create backlinked note" writes the meeting name as plain
+  text, and untitled / "block" / "busy" events never reach the panel. Two
+  deliberate v1 deviations: no nested empty bullet under the line (the v2
+  serializer drops empty list items), and re-adding a backlinked meeting is
+  idempotent instead of appending a duplicate.
 - No Google-OAuth-shaped hint; the Settings copy points at
   System Settings → Internet Accounts when no calendars are found.

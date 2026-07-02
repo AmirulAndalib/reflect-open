@@ -12,13 +12,38 @@ export function isDeclinedByUser(event: CalendarEvent): boolean {
   return event.attendees.some((attendee) => attendee.isCurrentUser && attendee.status === 'declined')
 }
 
+/** Calendar-blocking placeholders v1 filtered by name, case-insensitively. */
+const PLACEHOLDER_NAMES = new Set(['block', 'busy'])
+
+/** Is this a real meeting, not a placeholder? (v1's `isValidMeeting`.) */
+function isDisplayableEvent(event: CalendarEvent): boolean {
+  const name = event.title.trim().toLowerCase()
+  if (name === '' || PLACEHOLDER_NAMES.has(name)) {
+    return false
+  }
+  return !event.allDay && !event.canceled && !isDeclinedByUser(event)
+}
+
 /**
- * The events worth showing for a day, in start order: drops all-day events,
- * canceled events, and events the user declined.
+ * The events worth showing for a day, in start order — v1's display rules:
+ * drops all-day events, canceled events, events the user declined, untitled
+ * events, and busy-block placeholders; an event on two enabled calendars
+ * shows once.
  */
 export function displayEvents(events: CalendarEvent[]): CalendarEvent[] {
+  const seen = new Set<string>()
   return events
-    .filter((event) => !event.allDay && !event.canceled && !isDeclinedByUser(event))
+    .filter((event) => {
+      if (!isDisplayableEvent(event)) {
+        return false
+      }
+      const key = `${event.id}:${event.startsAt}`
+      if (seen.has(key)) {
+        return false
+      }
+      seen.add(key)
+      return true
+    })
     .sort((first, second) => first.startsAt - second.startsAt || first.title.localeCompare(second.title))
 }
 

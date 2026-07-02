@@ -57,6 +57,26 @@ describe('displayEvents', () => {
     expect(displayEvents(events).map((entry) => entry.id)).toEqual(['keep'])
   })
 
+  it('drops untitled events and busy-block placeholders (v1 rules)', () => {
+    const events = [
+      event({ id: 'keep' }),
+      event({ id: 'untitled', title: '  ' }),
+      event({ id: 'block', title: 'Block' }),
+      event({ id: 'busy', title: 'BUSY' }),
+    ]
+    expect(displayEvents(events).map((entry) => entry.id)).toEqual(['keep'])
+  })
+
+  it('shows an event once when two enabled calendars carry it', () => {
+    const events = [
+      event({ id: 'evt-1', calendarId: 'cal-a' }),
+      event({ id: 'evt-1', calendarId: 'cal-b' }),
+      event({ id: 'evt-1', calendarId: 'cal-a', startsAt: 5_000, endsAt: 6_000 }),
+    ]
+    // Same id at a different start is a different occurrence, not a dup.
+    expect(displayEvents(events)).toHaveLength(2)
+  })
+
   it('sorts by start time, then title', () => {
     const events = [
       event({ id: 'late', title: 'Retro', startsAt: 3_000 }),

@@ -183,7 +183,8 @@ describe('DailyEventsSection', () => {
         date: DATE,
         title: 'Standup',
         attendees: ['Grace Hopper'],
-        createMeetingNote: false,
+        backlinkMeeting: false,
+        startTime: '9:00am',
         generation: 3,
       }),
     )

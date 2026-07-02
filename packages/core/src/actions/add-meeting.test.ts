@@ -33,7 +33,7 @@ function input(overrides: Partial<AddMeetingInput> = {}): AddMeetingInput {
     date: '2026-07-01',
     title: 'Standup',
     attendees: [],
-    createMeetingNote: false,
+    backlinkMeeting: true,
     generation: GENERATION,
     ...overrides,
   }
@@ -48,21 +48,47 @@ beforeEach(() => {
 })
 
 describe('meetingLine', () => {
-  it('links the meeting alone or with attendees', () => {
-    expect(meetingLine('Standup', [])).toBe('- [[Standup]]')
-    expect(meetingLine('Standup', ['Ada Lovelace', 'Grace Hopper'])).toBe(
-      '- [[Standup]] with [[Ada Lovelace]], [[Grace Hopper]]',
-    )
+  it('renders the v1 shape: time, met with, for', () => {
+    expect(
+      meetingLine({
+        title: 'Standup',
+        attendees: ['Ada Lovelace', 'Grace Hopper'],
+        backlinkMeeting: true,
+        startTime: '9:00am',
+      }),
+    ).toBe('- 9:00am met with [[Ada Lovelace]], [[Grace Hopper]] for [[Standup]]')
+  })
+
+  it('shortens for attendee-less events and capitalizes without a time', () => {
+    expect(
+      meetingLine({ title: 'Standup', attendees: [], backlinkMeeting: true, startTime: '9:00am' }),
+    ).toBe('- 9:00am [[Standup]]')
+    expect(
+      meetingLine({ title: 'Standup', attendees: ['Ada Lovelace'], backlinkMeeting: true }),
+    ).toBe('- Met with [[Ada Lovelace]] for [[Standup]]')
+  })
+
+  it('writes the meeting name as plain text when not backlinked', () => {
+    expect(
+      meetingLine({
+        title: 'Standup',
+        attendees: ['Ada Lovelace'],
+        backlinkMeeting: false,
+        startTime: '9:00am',
+      }),
+    ).toBe('- 9:00am met with [[Ada Lovelace]] for Standup')
   })
 })
 
 describe('addMeetingToDaily', () => {
   it('appends the meeting under ## Meetings, creating the section on a fresh daily', async () => {
-    const outcome = await addMeetingToDaily(input({ attendees: ['Ada Lovelace'] }))
+    const outcome = await addMeetingToDaily(
+      input({ attendees: ['Ada Lovelace'], startTime: '9:00am' }),
+    )
     expect(outcome.appended).toBe(true)
     expect(writeNoteMock).toHaveBeenCalledWith(
       DAILY,
-      '## Meetings\n\n- [[Standup]] with [[Ada Lovelace]]\n',
+      '## Meetings\n\n- 9:00am met with [[Ada Lovelace]] for [[Standup]]\n',
       GENERATION,
     )
   })
@@ -76,7 +102,7 @@ describe('addMeetingToDaily', () => {
   })
 
   it('is idempotent: a day that already links the meeting is not rewritten', async () => {
-    readNoteMock.mockResolvedValue('## Meetings\n\n- [[Standup]] with [[Ada Lovelace]]\n')
+    readNoteMock.mockResolvedValue('## Meetings\n\n- 9:00am met with [[Ada Lovelace]] for [[Standup]]\n')
     const outcome = await addMeetingToDaily(input())
     expect(outcome.appended).toBe(false)
     expect(writeNoteMock).not.toHaveBeenCalled()
@@ -104,22 +130,32 @@ describe('addMeetingToDaily', () => {
     expect(written).toContain('## Meetings\n\n- [[Standup]]')
   })
 
-  it('creates the meeting note (typed #meeting) only when asked and missing', async () => {
-    await addMeetingToDaily(input())
+  it('an un-backlinked meeting always appends, like v1 (plain text has no link to match)', async () => {
+    readNoteMock.mockResolvedValue('## Meetings\n\n- [[Standup]]\n')
+    const outcome = await addMeetingToDaily(input({ backlinkMeeting: false }))
+    expect(outcome.appended).toBe(true)
+    const written = writeNoteMock.mock.calls[0]?.[1]
+    expect(written).toContain('- [[Standup]]\n\n- Standup')
+  })
+
+  it('creates the meeting note (typed #meeting) only when backlinked and missing', async () => {
+    await addMeetingToDaily(input({ backlinkMeeting: false }))
     expect(createNoteMock).not.toHaveBeenCalled()
 
-    await addMeetingToDaily(input({ createMeetingNote: true }))
+    await addMeetingToDaily(input())
     expect(createNoteMock).toHaveBeenCalledWith('Standup', GENERATION, '- Type: #meeting')
 
     createNoteMock.mockClear()
     resolveMock.mockResolvedValue(resolved('notes/standup.md'))
-    await addMeetingToDaily(input({ createMeetingNote: true }))
+    await addMeetingToDaily(input())
     expect(createNoteMock).not.toHaveBeenCalled()
   })
 
   it('creates person notes for missing attendees, typed #person', async () => {
     resolveMock.mockImplementation(async (target) =>
-      target === 'Grace Hopper' ? resolved('notes/grace-hopper.md') : unresolved(target),
+      target === 'Grace Hopper' || target === 'Standup'
+        ? resolved(`notes/${target.toLowerCase()}.md`)
+        : unresolved(target),
     )
     const outcome = await addMeetingToDaily(
       input({ attendees: ['Ada Lovelace', 'Grace Hopper'] }),
@@ -131,7 +167,7 @@ describe('addMeetingToDaily', () => {
 
   it('skips creation when the slug path already exists (index lag backstop)', async () => {
     noteExistsMock.mockImplementation(async (path) => path === 'notes/ada-lovelace.md')
-    await addMeetingToDaily(input({ attendees: ['Ada Lovelace'] }))
+    await addMeetingToDaily(input({ attendees: ['Ada Lovelace'], backlinkMeeting: false }))
     expect(createNoteMock).not.toHaveBeenCalled()
   })
 
@@ -146,12 +182,15 @@ describe('addMeetingToDaily', () => {
     // attendee links rather than duplicating the meeting link.
     expect(writeNoteMock).toHaveBeenCalledWith(
       DAILY,
-      '## Meetings\n\n- [[Stand up v2]] with [[Ada Lovelace]]\n',
+      '## Meetings\n\n- Met with [[Ada Lovelace]] for [[Stand up v2]]\n',
       GENERATION,
     )
   })
 
   it('does not create a person note for an attendee named like the meeting', async () => {
+    resolveMock.mockImplementation(async (target) =>
+      target === 'Standup' ? resolved('notes/standup.md') : unresolved(target),
+    )
     await addMeetingToDaily(input({ attendees: ['Standup'] }))
     expect(createNoteMock).not.toHaveBeenCalled()
   })

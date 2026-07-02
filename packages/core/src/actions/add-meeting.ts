@@ -11,15 +11,24 @@ import { slugForTitle } from '../markdown/slug'
 /**
  * "Add to daily note" for a calendar event — the write half of the calendar
  * integration (docs/porting/calendar-meetings-integration.md). Submitting the
- * add-meeting dialog appends one bullet under the daily note's `## Meetings`
- * heading — a `[[Meeting]]` link plus a `[[Person]]` link per attendee — and
- * creates the notes those links resolve to when they don't exist yet. After
+ * add-meeting dialog appends v1's exact line shape under the daily note's
+ * `## Meetings` heading:
+ *
+ *     - 9:00am met with [[Ada Lovelace]], [[Bob]] for [[Standup]]
+ *
+ * and creates the notes those links resolve to when they don't exist yet.
+ * With "Create backlinked note" off, the meeting name is plain text (as in
+ * v1), not a link — only attendees get `[[Person]]` links and notes. After
  * that, they are ordinary notes; nothing stays tied to the calendar, and no
  * event metadata is persisted beyond this markdown.
  *
  * Wiki links resolve by title, so "one note per meeting title" holds by
  * construction: a recurring "Standup" links the same `[[Standup]]` note from
  * every day it's added.
+ *
+ * One deliberate v1 deviation: v1 nested an empty bullet under the line as a
+ * note-taking caret target. The v2 serializer drops empty list items (the
+ * lazy-daily contract), so writing one would just be normalized away.
  */
 
 /** Where the daily-note entry lands (`appendUnderHeading` creates it). */
@@ -38,10 +47,17 @@ export interface AddMeetingInput {
   /** Attendee names — each becomes a `[[Person]]` link and (maybe) a note. */
   attendees: string[]
   /**
-   * Whether to create the meeting note now. Off still writes the `[[link]]` —
-   * unresolved links create their note on first click, so nothing breaks.
+   * The dialog's "Create backlinked note?" choice (v1's `backlinkMeeting`):
+   * on links the meeting name and creates its note when missing; off writes
+   * the name as plain text and creates nothing for it.
    */
-  createMeetingNote: boolean
+  backlinkMeeting: boolean
+  /**
+   * The event's start time, already formatted for display (the caller owns
+   * the time-format preference, as v1 did). Omitted, the line starts at
+   * "Met with …".
+   */
+  startTime?: string
   /** `GraphInfo.generation` — pins every read and write to the issuing graph. */
   generation: number
 }
@@ -132,14 +148,29 @@ function normalizeAttendees(attendees: string[]): string[] {
   return names
 }
 
-/** The daily-note bullet: `- [[Meeting]] with [[Alice]], [[Bob]]`. */
-export function meetingLine(title: string, attendees: string[]): string {
-  const link = `[[${title}]]`
-  if (attendees.length === 0) {
-    return `- ${link}`
+/**
+ * The daily-note bullet, in v1's `generateMeetingListItem` shape:
+ * `- 9:00am met with [[Ada]], [[Bob]] for [[Standup]]`. Attendee-less events
+ * shorten to `- 9:00am [[Standup]]`; without a start time the phrasing
+ * capitalizes to `Met with`; an un-backlinked meeting name is plain text.
+ */
+export function meetingLine(input: {
+  title: string
+  attendees: string[]
+  backlinkMeeting: boolean
+  startTime?: string | undefined
+}): string {
+  const parts: string[] = []
+  if (input.startTime) {
+    parts.push(`${input.startTime} `)
   }
-  const links = attendees.map((name) => `[[${name}]]`).join(', ')
-  return `- ${link} with ${links}`
+  if (input.attendees.length > 0) {
+    parts.push(input.startTime ? 'met with ' : 'Met with ')
+    parts.push(input.attendees.map((name) => `[[${name}]]`).join(', '))
+    parts.push(' for ')
+  }
+  parts.push(input.backlinkMeeting ? `[[${input.title}]]` : input.title)
+  return `- ${parts.join('')}`
 }
 
 /**
@@ -161,17 +192,21 @@ export async function addMeetingToDaily(input: AddMeetingInput): Promise<AddMeet
 
   const daily = dailyPath(input.date)
   const source = await noteSource(daily, input.generation)
-  const alreadyLinked = meetingAlreadyLinked(source, title)
+  // A plain-text line (backlink off) carries no link to match against, so —
+  // like v1, which never deduplicated — it always appends.
+  const alreadyLinked = input.backlinkMeeting && meetingAlreadyLinked(source, title)
   if (!alreadyLinked) {
-    await writeNote(
-      daily,
-      appendUnderHeading(source, MEETINGS_HEADING, meetingLine(title, attendees)),
-      input.generation,
-    )
+    const line = meetingLine({
+      title,
+      attendees,
+      backlinkMeeting: input.backlinkMeeting,
+      startTime: input.startTime,
+    })
+    await writeNote(daily, appendUnderHeading(source, MEETINGS_HEADING, line), input.generation)
   }
 
   const createdNotes: string[] = []
-  if (input.createMeetingNote && !(await titleHasNote(title))) {
+  if (input.backlinkMeeting && !(await titleHasNote(title))) {
     await createNoteWithTitle(title, input.generation, MEETING_NOTE_BODY)
     createdNotes.push(title)
   }
