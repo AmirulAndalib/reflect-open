@@ -56,6 +56,16 @@ describe('deepLinkForNote', () => {
     expect(indexNote).not.toHaveBeenCalled()
   })
 
+  it('treats a blank frontmatter id as absent and mints a real one', async () => {
+    readNote.mockResolvedValue('---\nid: ""\n---\n# A\n')
+
+    const url = await deepLinkForNote('notes/a.md', 3)
+
+    const id = decodeURIComponent(url.replace('reflect://note/', ''))
+    expect(id).toMatch(ULID_RE)
+    expect(writeNote).toHaveBeenCalled()
+  })
+
   it('mints a ULID id on first copy, lands it on disk, and indexes it immediately', async () => {
     readNote.mockResolvedValue('# A\n')
 

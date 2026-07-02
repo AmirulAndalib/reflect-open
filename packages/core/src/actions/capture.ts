@@ -555,8 +555,13 @@ async function drainTextCapture(envelope: TextCaptureEnvelope, generation: numbe
   const line = envelope.kind === 'task' ? `- [ ] ${envelope.text}` : `- ${envelope.text}`
   // Whole-line equality, not `includes`: "- buy milk" is a substring of an
   // unrelated "- buy milk and eggs", and a false match here would remove the
-  // spool file without ever writing the capture.
-  if (dailySource.split('\n').some((existing) => existing === line)) {
+  // spool file without ever writing the capture. Trailing `\r` is stripped so
+  // a CRLF daily (external editors; the parity corpus's crlf.md case) dedupes
+  // like an LF one.
+  const present = dailySource
+    .split('\n')
+    .some((existing) => existing.replace(/\r$/, '') === line)
+  if (present) {
     return true
   }
   await writeNote(daily, appendBlock(dailySource, line), generation)

@@ -24,8 +24,10 @@ export async function deepLinkForNote(path: string, generation: number): Promise
     }
   }
   const source = await readNoteSource(path)
+  // A blank `id:` counts as no id (same rule as the CLI's `reflect open`):
+  // linking it would emit `reflect://note/`, which the parser rejects.
   const existing = parseNote({ path, source }).frontmatter.id
-  if (existing !== undefined) {
+  if (existing !== undefined && existing.trim() !== '') {
     return noteDeepLink(existing)
   }
   const id = newNoteId()

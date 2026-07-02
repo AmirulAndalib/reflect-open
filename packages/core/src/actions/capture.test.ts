@@ -516,6 +516,16 @@ describe('drainCaptureInbox (text captures)', () => {
     expect(files.get(DAILY)).toBe('- call the bank tomorrow morning\n\n- call the bank\n')
   })
 
+  it('dedupes against a CRLF daily — a carriage return must not defeat the line match', async () => {
+    files.set(DAILY, '- morning standup\r\n- call the bank\r\n')
+    addTextSpool(textEnvelope())
+
+    const outcome = await drain()
+
+    expect(outcome).toEqual({ pending: 1, drained: 1, deduped: 1, invalid: 0, stopped: null })
+    expect(files.get(DAILY)).toBe('- morning standup\r\n- call the bank\r\n')
+  })
+
   it('re-draining after a crash between append and removal cannot double-append', async () => {
     files.set(DAILY, '- call the bank\n')
     addTextSpool(textEnvelope())
