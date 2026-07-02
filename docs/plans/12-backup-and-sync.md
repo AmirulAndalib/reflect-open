@@ -133,8 +133,13 @@ present) · `Backup failed` (action needed). Git mechanics never surface.
      watch start). A pull rewriting an **open** note goes through Plan 05's
      external-change reconciliation (clean buffer reloads; dirty buffer prompts).
    - **Daily notes are the common collision** (two devices, same day). Markers +
-     keep-both cover it first wave; future: a custom merge driver (libgit2 registers
-     them in code) for append-friendly merging of `daily/*.md`.
+     keep-both covered it first wave; since 2026-07 the **append/append driver**
+     (`git/daily_merge.rs`) auto-resolves the trivially-safe shape — the merge base
+     is an untouched, line-bounded prefix of *both* sides of a `daily/YYYY-MM-DD.md`
+     conflict — to base + this device's suffix + the other's (exact-duplicate suffix
+     lines kept once, matching the capture drain's presence guard). Body-only:
+     frontmatter changes, base edits, non-daily notes, and deletions all still park
+     with markers.
 
 5. **Guardrails:**
    - Default to **creating a private repo**; choosing a public repo blocks on an explicit
@@ -210,7 +215,10 @@ present) · `Backup failed` (action needed). Git mechanics never surface.
 - meowdown conflict widget (parse marker blocks → keep-mine/keep-theirs UI).
 - AI-assisted resolution via the Plan 10 copilot (markers parse to base/ours/theirs;
   `private: true` notes never go to cloud AI).
-- Custom merge driver for daily notes; Git LFS / asset offload; background sync on
+- ~~Custom merge driver for daily notes~~ → shipped 2026-07 as the narrow
+  append/append auto-resolve (step 4); widening it (e.g. append + unrelated base
+  edit) stays deferred.
+- Git LFS / asset offload; background sync on
   mobile; "purge history" escape hatch; stale-`index.lock` recovery on startup.
 - ~~Generic-remote UX toggle~~ → became [Plan 16](16-generic-git-remotes.md): any git
   host via a hand-wired `origin`, no UI (V1 ships SSH-agent auth + path remotes).

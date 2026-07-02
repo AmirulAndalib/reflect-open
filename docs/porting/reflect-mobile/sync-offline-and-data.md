@@ -91,8 +91,8 @@ section is the mapping, not a proposal:
   protected note view and offers the same raw-marker mine/theirs/both
   resolution actions as desktop. Conflicts never block sync of other notes.
   The canonical case is phone + Mac both appending to today's daily note; the
-  daily-note append/append merge driver (Plan 12 future work) is the lever if
-  it hurts in practice.
+  daily-note append/append merge driver (Plan 12 step 4, shipped 2026-07)
+  auto-resolves that shape, so only genuinely overlapping edits park.
 - **Contract 5 maps to first clone**: cloning a years-old graph over
   cellular, foregrounded, with progress UI; shallow/partial clone is the
   noted follow-up.

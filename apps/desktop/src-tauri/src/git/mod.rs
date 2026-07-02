@@ -17,6 +17,7 @@
 
 mod commit;
 mod commit_message;
+mod daily_merge;
 mod merge;
 mod remote;
 mod repo;

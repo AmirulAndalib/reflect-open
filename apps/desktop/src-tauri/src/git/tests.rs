@@ -572,6 +572,255 @@ fn conflicting_edits_are_committed_with_labeled_markers() {
     assert_eq!(read(&root_b, "notes/shared.md"), content);
 }
 
+// ---- the daily append/append driver ------------------------------------------
+// The canonical mobile collision: phone and Mac both append to today's daily
+// note while the phone is offline. These run the engine's real cycle shape
+// (commit → fetch → merge → push) and pin that the trivially-safe case
+// auto-resolves — merged file, no markers, nothing for the indexer to park —
+// while everything adjacent still takes the marker path.
+
+#[test]
+fn daily_append_append_auto_merges_without_markers() {
+    let fixture = fixture();
+    let root_a = &fixture.graph_a;
+    write(root_a, "daily/2026-07-02.md", "# Daily\n\n- morning note\n");
+    commit_all(root_a, "base", MAX_FILE_BYTES).unwrap();
+    push(root_a, None).unwrap();
+
+    let root_b = second_device(&fixture);
+    write(
+        &root_b,
+        "daily/2026-07-02.md",
+        "# Daily\n\n- morning note\n- from the phone\n",
+    );
+    commit_all(&root_b, "b append", MAX_FILE_BYTES).unwrap();
+    push(&root_b, None).unwrap();
+
+    write(
+        root_a,
+        "daily/2026-07-02.md",
+        "# Daily\n\n- morning note\n- from the mac\n",
+    );
+    commit_all(root_a, "a append", MAX_FILE_BYTES).unwrap();
+    fetch(root_a, None).unwrap();
+    let merged = merge_remote(root_a).unwrap();
+
+    // A clean merge: not a conflict, nothing to review, nothing parked.
+    assert!(matches!(merged.kind, MergeKind::Merged), "{merged:?}");
+    assert!(merged.conflicted_paths.is_empty(), "{merged:?}");
+    let content = read(root_a, "daily/2026-07-02.md");
+    assert_eq!(
+        content,
+        "# Daily\n\n- morning note\n- from the mac\n- from the phone\n"
+    );
+    assert!(!content.contains("<<<<<<<"), "{content}");
+
+    // The merged file reaches the reindex path like any pull-applied write.
+    let change = merged
+        .changed_files
+        .iter()
+        .find(|change| change.path == "daily/2026-07-02.md")
+        .expect("the merged daily note is reported for reindexing");
+    assert!(change.modified_ms.is_some(), "{merged:?}");
+
+    // The resolution is a clean commit: repo not wedged, nothing dirty (the
+    // no-loop invariant — the next cycle finds nothing to commit), and the
+    // push converges the other device onto the same content.
+    let repo = Repository::open(root_a).unwrap();
+    assert_eq!(repo.state(), git2::RepositoryState::Clean);
+    drop(repo);
+    let noop = commit_all(root_a, "noop", MAX_FILE_BYTES).unwrap();
+    assert!(!noop.committed, "auto-merge left the working tree dirty");
+    assert!(push(root_a, None).unwrap().pushed);
+
+    fetch(&root_b, None).unwrap();
+    let converged = merge_remote(&root_b).unwrap();
+    assert!(
+        matches!(converged.kind, MergeKind::FastForward),
+        "{converged:?}"
+    );
+    assert_eq!(read(&root_b, "daily/2026-07-02.md"), content);
+}
+
+#[test]
+fn daily_append_of_the_same_capture_is_not_doubled() {
+    let fixture = fixture();
+    let root_a = &fixture.graph_a;
+    write(root_a, "daily/2026-07-02.md", "- existing\n");
+    commit_all(root_a, "base", MAX_FILE_BYTES).unwrap();
+    push(root_a, None).unwrap();
+
+    // The same capture drains on both devices (plus one device-local line
+    // each), e.g. the extension spooled it to both while they were online.
+    let root_b = second_device(&fixture);
+    write(
+        &root_b,
+        "daily/2026-07-02.md",
+        "- existing\n- shared capture\n- only on phone\n",
+    );
+    commit_all(&root_b, "b append", MAX_FILE_BYTES).unwrap();
+    push(&root_b, None).unwrap();
+
+    write(
+        root_a,
+        "daily/2026-07-02.md",
+        "- existing\n- shared capture\n- only on mac\n",
+    );
+    commit_all(root_a, "a append", MAX_FILE_BYTES).unwrap();
+    fetch(root_a, None).unwrap();
+    let merged = merge_remote(root_a).unwrap();
+
+    assert!(matches!(merged.kind, MergeKind::Merged), "{merged:?}");
+    assert_eq!(
+        read(root_a, "daily/2026-07-02.md"),
+        "- existing\n- shared capture\n- only on mac\n- only on phone\n"
+    );
+}
+
+#[test]
+fn daily_created_on_both_devices_concatenates() {
+    let fixture = fixture();
+    let root_a = &fixture.graph_a;
+    write(root_a, "notes/seed.md", "# Seed\n");
+    commit_all(root_a, "base", MAX_FILE_BYTES).unwrap();
+    push(root_a, None).unwrap();
+
+    // No merge base at all: today's note did not exist yet and both devices
+    // created it — the commonest real shape of the collision.
+    let root_b = second_device(&fixture);
+    write(&root_b, "daily/2026-07-02.md", "- from the phone\n");
+    commit_all(&root_b, "b creates", MAX_FILE_BYTES).unwrap();
+    push(&root_b, None).unwrap();
+
+    write(root_a, "daily/2026-07-02.md", "- from the mac\n");
+    commit_all(root_a, "a creates", MAX_FILE_BYTES).unwrap();
+    fetch(root_a, None).unwrap();
+    let merged = merge_remote(root_a).unwrap();
+
+    assert!(matches!(merged.kind, MergeKind::Merged), "{merged:?}");
+    assert!(merged.conflicted_paths.is_empty(), "{merged:?}");
+    assert_eq!(
+        read(root_a, "daily/2026-07-02.md"),
+        "- from the mac\n- from the phone\n"
+    );
+    assert!(push(root_a, None).unwrap().pushed);
+}
+
+#[test]
+fn daily_edit_inside_the_base_still_parks_with_markers() {
+    let fixture = fixture();
+    let root_a = &fixture.graph_a;
+    write(root_a, "daily/2026-07-02.md", "# Daily\n\n- original\n");
+    commit_all(root_a, "base", MAX_FILE_BYTES).unwrap();
+    push(root_a, None).unwrap();
+
+    let root_b = second_device(&fixture);
+    write(
+        &root_b,
+        "daily/2026-07-02.md",
+        "# Daily\n\n- original\n- from the phone\n",
+    );
+    commit_all(&root_b, "b append", MAX_FILE_BYTES).unwrap();
+    push(&root_b, None).unwrap();
+
+    // The mac rewrote an existing line — not a pure append; review it.
+    write(
+        root_a,
+        "daily/2026-07-02.md",
+        "# Daily\n\n- original, edited\n- from the mac\n",
+    );
+    commit_all(root_a, "a edit", MAX_FILE_BYTES).unwrap();
+    fetch(root_a, None).unwrap();
+    let merged = merge_remote(root_a).unwrap();
+
+    assert!(
+        matches!(merged.kind, MergeKind::MergedWithConflicts),
+        "{merged:?}"
+    );
+    assert_eq!(
+        merged.conflicted_paths,
+        vec!["daily/2026-07-02.md".to_string()]
+    );
+    let content = read(root_a, "daily/2026-07-02.md");
+    assert!(content.contains("<<<<<<< this device"), "{content}");
+}
+
+#[test]
+fn daily_frontmatter_change_still_parks_with_markers() {
+    let fixture = fixture();
+    let root_a = &fixture.graph_a;
+    write(
+        root_a,
+        "daily/2026-07-02.md",
+        "---\npinned: false\n---\n\n- original\n",
+    );
+    commit_all(root_a, "base", MAX_FILE_BYTES).unwrap();
+    push(root_a, None).unwrap();
+
+    let root_b = second_device(&fixture);
+    write(
+        &root_b,
+        "daily/2026-07-02.md",
+        "---\npinned: false\n---\n\n- original\n- from the phone\n",
+    );
+    commit_all(&root_b, "b append", MAX_FILE_BYTES).unwrap();
+    push(&root_b, None).unwrap();
+
+    // The mac flipped a frontmatter flag *and* appended: the driver is
+    // body-only, so this is a review conflict even though the body change is
+    // an append.
+    write(
+        root_a,
+        "daily/2026-07-02.md",
+        "---\npinned: true\n---\n\n- original\n- from the mac\n",
+    );
+    commit_all(root_a, "a frontmatter + append", MAX_FILE_BYTES).unwrap();
+    fetch(root_a, None).unwrap();
+    let merged = merge_remote(root_a).unwrap();
+
+    assert!(
+        matches!(merged.kind, MergeKind::MergedWithConflicts),
+        "{merged:?}"
+    );
+    let content = read(root_a, "daily/2026-07-02.md");
+    assert!(content.contains("<<<<<<< this device"), "{content}");
+}
+
+#[test]
+fn append_append_on_a_non_daily_note_still_parks_with_markers() {
+    let fixture = fixture();
+    let root_a = &fixture.graph_a;
+    write(root_a, "notes/shared.md", "# Shared\n\n- original\n");
+    commit_all(root_a, "base", MAX_FILE_BYTES).unwrap();
+    push(root_a, None).unwrap();
+
+    let root_b = second_device(&fixture);
+    write(
+        &root_b,
+        "notes/shared.md",
+        "# Shared\n\n- original\n- from the phone\n",
+    );
+    commit_all(&root_b, "b append", MAX_FILE_BYTES).unwrap();
+    push(&root_b, None).unwrap();
+
+    write(
+        root_a,
+        "notes/shared.md",
+        "# Shared\n\n- original\n- from the mac\n",
+    );
+    commit_all(root_a, "a append", MAX_FILE_BYTES).unwrap();
+    fetch(root_a, None).unwrap();
+    let merged = merge_remote(root_a).unwrap();
+
+    // Deliberately narrow: append/append is only auto-safe where appends are
+    // the editing model (daily notes). Ordinary notes keep the review flow.
+    assert!(
+        matches!(merged.kind, MergeKind::MergedWithConflicts),
+        "{merged:?}"
+    );
+    assert_eq!(merged.conflicted_paths, vec!["notes/shared.md".to_string()]);
+}
+
 #[test]
 fn edit_vs_delete_keeps_the_edit() {
     let fixture = fixture();

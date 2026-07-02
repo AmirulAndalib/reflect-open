@@ -3,6 +3,10 @@
 //! Git markers with readable labels), commit the merge anyway, and let the
 //! user resolve by editing the file.
 //!
+//! One narrow exception skips the markers entirely: a **daily note both sides
+//! purely appended to** (the canonical two-device collision) auto-resolves to
+//! base + both suffixes — see [`daily_merge`].
+//!
 //! The repository is never left mid-merge: committing the conflict keeps sync
 //! flowing for every other note, both devices converge on the same marked-up
 //! file, and the raw versions stay recoverable from history (the merge commit
@@ -28,6 +32,7 @@ use serde::Serialize;
 
 use crate::error::AppResult;
 
+use super::daily_merge;
 use super::repo::{current_branch, ensure_clean_state, open_existing, signature};
 
 /// Conflict-marker labels. "this device" is the local side, "other device"
@@ -260,6 +265,8 @@ fn stamp_modified_times(root: &Path, changes: &mut [ChangedFile]) {
 
 /// Turn every index conflict into committed working-tree content:
 ///
+/// - **daily note, both sides pure appends** — auto-resolve to base plus both
+///   suffixes ([`daily_merge::merge_appends`]); the note is *not* conflicted;
 /// - **text vs text** — the merge checkout already wrote labeled markers into
 ///   the file; stage it as-is (the user resolves by editing the note);
 /// - **edit vs delete** — keep the edited version, never silently delete;
@@ -290,7 +297,14 @@ fn resolve_conflicts(repo: &Repository, root: &Path, index: &mut Index) -> AppRe
     for conflict in conflicts {
         match (conflict.our, conflict.their) {
             (Some(our), Some(their)) => {
-                conflicted_paths.extend(resolve_both_edited(repo, root, index, our, their)?);
+                conflicted_paths.extend(resolve_both_edited(
+                    repo,
+                    root,
+                    index,
+                    our,
+                    their,
+                    conflict.ancestor,
+                )?);
             }
             (Some(edited), None) | (None, Some(edited)) => {
                 conflicted_paths.push(resolve_edit_vs_delete(repo, root, index, edited)?);
@@ -305,19 +319,28 @@ fn resolve_conflicts(repo: &Repository, root: &Path, index: &mut Index) -> AppRe
     Ok(conflicted_paths)
 }
 
-/// Both sides changed the file. Text: the merge checkout already wrote the
-/// labeled marker file, so staging the working copy clears the conflict
-/// entries. Binary: markers would corrupt the bytes — keep ours in place and
-/// write the other device's version alongside (`name (conflict).ext`).
+/// Both sides changed the file. Text: try the daily append/append
+/// auto-resolve first; otherwise the merge checkout already wrote the labeled
+/// marker file, so staging the working copy clears the conflict entries.
+/// Binary: markers would corrupt the bytes — keep ours in place and write the
+/// other device's version alongside (`name (conflict).ext`).
 fn resolve_both_edited(
     repo: &Repository,
     root: &Path,
     index: &mut Index,
     our: ConflictSide,
     their: ConflictSide,
+    ancestor: Option<ConflictSide>,
 ) -> AppResult<Vec<String>> {
     let binary = repo.find_blob(our.id)?.is_binary() || repo.find_blob(their.id)?.is_binary();
     if !binary {
+        if let Some(merged) = daily_auto_merge(repo, &our, &their, ancestor.as_ref())? {
+            // Overwrite the marker file the merge checkout wrote and stage
+            // the resolution — a clean merge, nothing left to review.
+            fs::write(root.join(&our.path), merged)?;
+            index.add_path(Path::new(&our.path))?;
+            return Ok(Vec::new());
+        }
         index.add_path(Path::new(&our.path))?;
         return Ok(vec![our.path]);
     }
@@ -327,6 +350,47 @@ fn resolve_both_edited(
     index.add_path(Path::new(&our.path))?;
     index.add_path(Path::new(&copy))?;
     Ok(vec![our.path, copy])
+}
+
+/// The daily-note append/append auto-resolve, gated as narrowly as the shape
+/// allows: same daily path on every side, text that decodes as UTF-8, and a
+/// merge base (empty when both devices created the file) that both sides kept
+/// as an untouched prefix. Everything else returns `None` and takes the
+/// marker path — parking a note is recoverable, a wrong auto-merge is not.
+fn daily_auto_merge(
+    repo: &Repository,
+    our: &ConflictSide,
+    their: &ConflictSide,
+    ancestor: Option<&ConflictSide>,
+) -> AppResult<Option<String>> {
+    if our.path != their.path || !daily_merge::is_daily_note_path(&our.path) {
+        return Ok(None);
+    }
+    if ancestor.is_some_and(|side| side.path != our.path) {
+        return Ok(None);
+    }
+    let base = match ancestor {
+        Some(side) => match utf8_blob(repo, side.id)? {
+            Some(text) => text,
+            None => return Ok(None),
+        },
+        None => String::new(),
+    };
+    let Some(ours) = utf8_blob(repo, our.id)? else {
+        return Ok(None);
+    };
+    let Some(theirs) = utf8_blob(repo, their.id)? else {
+        return Ok(None);
+    };
+    Ok(daily_merge::merge_appends(&base, &ours, &theirs))
+}
+
+/// A blob's content as text, or `None` when it does not decode as UTF-8.
+fn utf8_blob(repo: &Repository, id: git2::Oid) -> AppResult<Option<String>> {
+    let blob = repo.find_blob(id)?;
+    Ok(std::str::from_utf8(blob.content())
+        .ok()
+        .map(str::to_string))
 }
 
 /// One side edited what the other deleted (either direction): restore and
