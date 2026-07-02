@@ -1,4 +1,4 @@
-import { useMemo, type ReactElement } from 'react'
+import { useDeferredValue, useMemo, type ReactElement } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ChevronLeft, FileText, SearchX } from 'lucide-react'
 import {
@@ -12,7 +12,6 @@ import {
 } from '@reflect/core'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { FilterBar } from '@/mobile/search-filters/filter-bar'
 import {
@@ -26,7 +25,6 @@ import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
 
 const SEARCH_LIMIT = 50
-const SEARCH_DEBOUNCE_MS = 300
 
 /** A search hit resolved into the shared row shape. */
 export function rowForHit(hit: FilteredSearchHit): NoteRowModel {
@@ -83,11 +81,14 @@ export function MobileAllNotes({
   const { navigate, back } = useRouter()
   const enabled = hasBridge() && graph !== null
 
-  const debounced = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
+  // Defer the query the index sees (desktop's search debounce): fast typing
+  // coalesces while the input stays live, and a seeded query (a `search`
+  // history entry) catches up within a frame instead of a fixed delay.
+  const deferredQuery = useDeferredValue(query)
   const pending = pendingTagToken(query)
   const parsed = useMemo(
-    () => buildAllNotesSearch(debounced, filters, tag),
-    [debounced, filters, tag],
+    () => buildAllNotesSearch(deferredQuery, filters, tag),
+    [deferredQuery, filters, tag],
   )
   const hasText = parsed.text !== ''
 
@@ -104,8 +105,8 @@ export function MobileAllNotes({
         notesOnly: !hasText,
       }),
     enabled,
-    // Typing re-keys the query every debounce tick; holding the previous
-    // rows avoids a blank flash between keystrokes.
+    // Typing re-keys the query as the deferred value settles; holding the
+    // previous rows avoids a blank flash between keystrokes.
     placeholderData: keepPreviousData,
   })
 

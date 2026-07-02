@@ -1,10 +1,9 @@
-import { useState, type ReactElement } from 'react'
+import { useDeferredValue, useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { hasBridge, parseSearchQuery, searchWithFilters } from '@reflect/core'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
-import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { useGraph } from '@/providers/graph-provider'
 import type { NoteFilterRef } from './filter-state'
@@ -35,11 +34,11 @@ export function NotePickerDrawer({
 }: NotePickerDrawerProps): ReactElement {
   const { graph } = useGraph()
   const [query, setQuery] = useState('')
-  const debounced = useDebouncedValue(query, 300)
+  const deferredQuery = useDeferredValue(query)
 
   const { data: hits } = useQuery({
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-note-picker', debounced],
-    queryFn: () => searchWithFilters(parseSearchQuery(debounced), PICKER_LIMIT),
+    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-note-picker', deferredQuery],
+    queryFn: () => searchWithFilters(parseSearchQuery(deferredQuery), PICKER_LIMIT),
     enabled: open && hasBridge() && graph !== null,
   })
 
