@@ -104,7 +104,12 @@ export function IntegrationsSection(): ReactElement | null {
                 type="button"
                 className="font-medium underline underline-offset-2"
                 onClick={() => {
-                  void openUrl(CONTACTS_PRIVACY_PANE)
+                  // A rejection here is a capability-scope bug (the ACL must
+                  // allow x-apple.systempreferences:*) — surface it, don't
+                  // swallow it into a dead link.
+                  openUrl(CONTACTS_PRIVACY_PANE).catch((cause: unknown) => {
+                    console.error('failed to open System Settings', cause)
+                  })
                 }}
               >
                 Open System Settings
