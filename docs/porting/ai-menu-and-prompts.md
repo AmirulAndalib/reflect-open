@@ -27,13 +27,16 @@ one-shot model switch).
 1. Select text in a note and invoke the AI menu — via a keyboard shortcut
    registered in the editor keymap, and via a small affordance on the
    selection.
-2. A picker lists prompts: a curated built-in set (the most-used v1
-   transformations — fix grammar, summarize, rephrase, simplify, continue
-   writing, list action items) followed by the user's saved prompts, with
-   fuzzy filtering.
+2. A picker lists prompts: the user's saved prompts first (v1's order), then
+   a curated built-in set carrying v1's battle-tested bodies (fix grammar,
+   rephrase, simplify, summarize, action items, next paragraph, decorate
+   with backlinks), with label filtering. Typed text that matches nothing is
+   itself runnable as a one-off prompt (v1's "Ask anything to AI").
 3. The result streams into view with explicit **Accept / Discard / Retry**
-   controls. Nothing is written to the markdown file until the user accepts;
-   a discarded run leaves the note byte-identical.
+   controls, plus the alternate placement (v1's Replace-vs-Insert choice:
+   "Insert below" on a replace prompt, "Replace selection" on an append
+   one). Nothing is written to the markdown file until the user accepts; a
+   discarded run leaves the note byte-identical.
 4. Saved prompts are managed in **Settings → AI**, next to the provider
    configuration that already exists. A prompt has a label and a body with a
    `{{selectedText}}` placeholder (same syntax as v1, so saved v1 prompts

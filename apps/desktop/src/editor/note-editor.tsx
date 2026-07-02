@@ -10,6 +10,7 @@ import {
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { errorMessage } from '@reflect/core'
 import {
+  type AcceptPendingReplacementOptions,
   type ExitBoundaryHandler,
   type MarkMode,
   type StartPendingReplacementOptions,
@@ -65,8 +66,8 @@ export interface NoteEditorHandle {
   startPendingReplacement(options: StartPendingReplacementOptions): boolean
   /** Append streamed text to the staged replacement's preview. */
   appendPendingReplacementText(text: string): void
-  /** Apply the staged replacement to the document as one edit. */
-  acceptPendingReplacement(): void
+  /** Apply the staged replacement as one edit; `mode` overrides its placement. */
+  acceptPendingReplacement(options?: AcceptPendingReplacementOptions): void
   /** Clear the staged replacement without touching the document. */
   discardPendingReplacement(): void
 }
@@ -216,7 +217,7 @@ export function NoteEditor({
         innerRef.current?.startPendingReplacement(options) ?? false,
       appendPendingReplacementText: (text) =>
         innerRef.current?.appendPendingReplacementText(text),
-      acceptPendingReplacement: () => innerRef.current?.acceptPendingReplacement(),
+      acceptPendingReplacement: (options) => innerRef.current?.acceptPendingReplacement(options),
       discardPendingReplacement: () => innerRef.current?.discardPendingReplacement(),
     }),
     [],

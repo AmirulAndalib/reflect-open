@@ -1,10 +1,10 @@
 import type { AiPrompt } from '../settings/schema'
 
 /**
- * The editor AI menu's prompt library: a small curated built-in set (the
- * most-used transformations from old Reflect) followed by the user's saved
- * prompts (`settings.aiPrompts`). A prompt body references the selection with
- * the `{{selectedText}}` placeholder — old Reflect's syntax, so saved v1
+ * The editor AI menu's prompt library: the user's saved prompts followed by a
+ * curated built-in set (the most-used transformations from old Reflect, with
+ * their battle-tested prompt bodies). A prompt body references the selection
+ * with the `{{selectedText}}` placeholder — old Reflect's syntax, so saved v1
  * prompts port over verbatim.
  */
 
@@ -12,72 +12,140 @@ import type { AiPrompt } from '../settings/schema'
 const SELECTED_TEXT_PLACEHOLDER = /\{\{\s*selectedText\s*\}\}/g
 
 /**
- * The curated built-in prompts, shown before the user's saved prompts.
- * Transformations of the selection use `replace`; prompts that produce new
- * text (a summary, action items, a continuation) use `append` so accepting
- * never destroys the source.
+ * Shared guardrails appended to the built-in bodies (old Reflect's "filler"):
+ * the result is inserted into the note verbatim, so anything beyond the
+ * requested text corrupts it.
+ */
+const FILLER =
+  'Do not wrap the response in quotes. Do not translate the text. Preserve the original Markdown formatting, including [[wikilinks]] and #tags.'
+
+/**
+ * The curated built-in prompts, shown after the user's saved prompts (old
+ * Reflect listed custom templates first). Transformations of the selection
+ * use `replace`; prompts that produce new text (a summary, action items, a
+ * continuation) use `append` so accepting never destroys the source — and
+ * either way the preview offers the alternate placement at accept time.
  */
 export const BUILT_IN_AI_PROMPTS: readonly AiPrompt[] = [
   {
     id: 'built-in:fix-grammar',
     label: 'Fix spelling and grammar',
-    body: 'Fix the spelling and grammar of the following text. Keep the original meaning, tone, and Markdown formatting; change nothing that is already correct.\n\n{{selectedText}}',
+    body: `Correct the text in triple quotes below into standard English and fix the grammar. Make your best effort; change nothing that is already correct.
+
+"""
+{{selectedText}}
+"""
+
+Do not return anything other than the corrected text. ${FILLER}`,
     mode: 'replace',
   },
   {
     id: 'built-in:rephrase',
-    label: 'Rephrase',
-    body: 'Rephrase the following text. Keep the meaning and Markdown formatting, but improve the flow and word choice.\n\n{{selectedText}}',
+    label: 'Rephrase my writing',
+    body: `Rewrite the text in triple quotes below in your own words. Rephrase the text, keeping the meaning.
+
+"""
+{{selectedText}}
+"""
+
+Do not return anything other than the rephrased text. ${FILLER}`,
     mode: 'replace',
   },
   {
     id: 'built-in:simplify',
-    label: 'Simplify',
-    body: 'Rewrite the following text so it is simpler and easier to read. Prefer short sentences and plain words; keep the Markdown formatting.\n\n{{selectedText}}',
+    label: 'Simplify and condense my writing',
+    body: `The following text in triple quotes below has already been written:
+
+"""
+{{selectedText}}
+"""
+
+Simplify and condense the writing. Do not return anything other than the simplified writing. ${FILLER}`,
     mode: 'replace',
   },
   {
-    id: 'built-in:summarize',
+    id: 'built-in:short-summary',
     label: 'Write a short summary',
-    body: 'Write a short summary of the following text — a few sentences at most.\n\n{{selectedText}}',
+    body: `Summarize the text in triple quotes below but keep it concise. Summarize using plain and simple language and keep the same tense.
+
+"""
+{{selectedText}}
+"""
+
+Do not return anything other than the summary. ${FILLER}`,
     mode: 'append',
   },
   {
     id: 'built-in:action-items',
     label: 'List action items',
-    body: 'List the action items from the following text as a Markdown task list (`- [ ]` items). Only include actions actually implied by the text.\n\n{{selectedText}}',
+    body: `My note is below in triple quotes:
+
+"""
+{{selectedText}}
+"""
+
+Write a todo list of action items from my note using the following format:
+
+- [ ] <first action item>
+- [ ] <second action item>
+
+Only include actions actually implied by the note. Do not return anything other than the todo list. ${FILLER}`,
     mode: 'append',
   },
   {
-    id: 'built-in:continue',
-    label: 'Continue writing',
-    body: 'Continue writing from where the following text leaves off, matching its tone, style, and Markdown formatting. Return only the continuation.\n\n{{selectedText}}',
+    id: 'built-in:continuation',
+    label: 'Write the next paragraph',
+    body: `The following text in triple quotes below has already been written:
+
+"""
+{{selectedText}}
+"""
+
+Write the next paragraph, keeping the same voice and style. Stay on the same topic. Write at least 3 sentences. Do not repeat the existing text. ${FILLER}`,
     mode: 'append',
+  },
+  {
+    id: 'built-in:backlinks',
+    label: 'Decorate my writing with backlinks',
+    body: `Decorate the text in triple quotes below with backlinks. Keep the original text, but surround each person name, company name, place, and project with double square brackets — so a person named Jerry becomes [[Jerry]]. If it starts with a capital letter, backlink it. Do not include actions or verbs.
+
+"""
+{{selectedText}}
+"""
+
+Do not return anything other than the decorated text. ${FILLER}`,
+    mode: 'replace',
   },
 ]
 
 /**
  * Render a prompt body against the selection: every `{{selectedText}}`
  * occurrence is substituted, and a body without the placeholder gets the
- * selection appended after a blank line (so a bare instruction like
- * "Translate to French" still works).
+ * selection appended as fenced context (old Reflect's compile rule), so a
+ * bare instruction like "Translate to French" still works.
  */
 export function renderSelectionPrompt(body: string, selectedText: string): string {
   if (SELECTED_TEXT_PLACEHOLDER.test(body)) {
     SELECTED_TEXT_PLACEHOLDER.lastIndex = 0
     return body.replaceAll(SELECTED_TEXT_PLACEHOLDER, selectedText)
   }
-  return `${body}\n\n${selectedText}`
+  return `${body}
+
+Use the following text in triple quotes as context for your response:
+"""
+${selectedText}
+"""`
 }
 
 /**
- * The prompts the AI menu lists for a filter query: built-ins first, then the
- * user's saved prompts, case-insensitively filtered on the label. An empty
+ * The prompts the AI menu lists for a filter query: the user's saved prompts
+ * first (old Reflect's order — the user's own workflow beats the stock set),
+ * then the built-ins, case-insensitively filtered on the label. An empty
  * query returns everything. The menu does not re-rank — order here is display
  * order.
  */
 export function filterAiPrompts(prompts: readonly AiPrompt[], query: string): AiPrompt[] {
-  const all = [...BUILT_IN_AI_PROMPTS, ...prompts]
+  const all = [...prompts, ...BUILT_IN_AI_PROMPTS]
   const needle = query.trim().toLowerCase()
   if (!needle) return all
   return all.filter((prompt) => prompt.label.toLowerCase().includes(needle))

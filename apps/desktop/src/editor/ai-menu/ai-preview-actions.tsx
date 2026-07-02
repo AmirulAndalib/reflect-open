@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import { ChevronDownIcon, RotateCcwIcon } from 'lucide-react'
-import type { ChatModelOption } from '@reflect/core'
+import type { AiPromptMode, ChatModelOption } from '@reflect/core'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -9,20 +9,30 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-interface AiRetryActionsProps {
+interface AiPreviewActionsProps {
+  /** The staged placement of the current run, or null while nothing runs. */
+  mode: AiPromptMode | null
   /** Every configured provider/model the one-shot switch can retry with. */
   modelOptions: ChatModelOption[]
   /** Re-run the transform; `null` keeps the model of the previous run. */
   onRetry: (option: ChatModelOption | null) => void
+  /** Accept with the placement opposite to the staged one (old Reflect's Replace/Insert choice). */
+  onAcceptAs: (mode: AiPromptMode) => void
 }
 
 /**
- * The AI preview's retry control (rendered in meowdown's pending-replacement
- * actions slot): plain retry re-runs on the same model, and the chevron offers
- * a one-shot model switch from the configured providers — the pick applies to
- * this retry only, never persisted.
+ * The AI preview's extra controls (rendered in meowdown's pending-replacement
+ * actions slot): retry on the same model, a one-shot model switch, and the
+ * alternate placement — old Reflect let the user pick Replace vs Insert at
+ * accept time, so next to the mode-default Accept the other placement stays
+ * one click away.
  */
-export function AiRetryActions({ modelOptions, onRetry }: AiRetryActionsProps): ReactElement {
+export function AiPreviewActions({
+  mode,
+  modelOptions,
+  onRetry,
+  onAcceptAs,
+}: AiPreviewActionsProps): ReactElement {
   return (
     <div className="flex items-center">
       <Button variant="ghost" size="sm" onClick={() => onRetry(null)}>
@@ -47,6 +57,15 @@ export function AiRetryActions({ modelOptions, onRetry }: AiRetryActionsProps): 
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+      ) : null}
+      {mode !== null ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onAcceptAs(mode === 'replace' ? 'append' : 'replace')}
+        >
+          {mode === 'replace' ? 'Insert below' : 'Replace selection'}
+        </Button>
       ) : null}
     </div>
   )

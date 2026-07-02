@@ -13,9 +13,9 @@ describe('renderSelectionPrompt', () => {
     expect(renderSelectionPrompt('{{selectedText}} and {{ selectedText }}', 'x')).toBe('x and x')
   })
 
-  it('appends the selection when the body has no placeholder', () => {
+  it('appends the selection as fenced context when the body has no placeholder', () => {
     expect(renderSelectionPrompt('Translate to French', 'hello')).toBe(
-      'Translate to French\n\nhello',
+      'Translate to French\n\nUse the following text in triple quotes as context for your response:\n"""\nhello\n"""',
     )
   })
 
@@ -31,10 +31,10 @@ describe('filterAiPrompts', () => {
     { id: 'saved-1', label: 'Translate to French', body: '{{selectedText}}', mode: 'replace' },
   ]
 
-  it('lists built-ins first, then saved prompts, for an empty query', () => {
+  it('lists saved prompts first, then built-ins, for an empty query (v1 order)', () => {
     const prompts = filterAiPrompts(saved, '')
-    expect(prompts.slice(0, BUILT_IN_AI_PROMPTS.length)).toEqual(BUILT_IN_AI_PROMPTS)
-    expect(prompts.at(-1)?.id).toBe('saved-1')
+    expect(prompts[0]?.id).toBe('saved-1')
+    expect(prompts.slice(1)).toEqual(BUILT_IN_AI_PROMPTS)
   })
 
   it('filters case-insensitively on the label', () => {

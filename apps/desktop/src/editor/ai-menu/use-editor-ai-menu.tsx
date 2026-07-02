@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, type ReactNode, type RefObject } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { toast } from 'sonner'
 import type {
   PendingReplacementResolveHandler,
@@ -15,10 +15,11 @@ import {
   isPrivateNoteError,
   transformSelection,
   type AiPrompt,
+  type AiPromptMode,
   type ChatModelOption,
   type CloudSafe,
 } from '@reflect/core'
-import { AiRetryActions } from '@/editor/ai-menu/ai-retry-actions'
+import { AiPreviewActions } from '@/editor/ai-menu/ai-preview-actions'
 import type { NoteEditorHandle } from '@/editor/note-editor'
 import { useAiPrompts } from '@/hooks/use-ai-prompts'
 import { useAiProviders } from '@/hooks/use-ai-providers'
@@ -29,8 +30,8 @@ import { useRouter } from '@/routing/router'
 /**
  * The editor AI menu (the "run a prompt on the selection" flow): meowdown owns
  * the selection menu and the pending-replacement preview; this hook owns
- * Reflect's policy — the prompt list (built-ins + saved), the privacy gate, the
- * provider call, and the retry control. Nothing is written to the note until
+ * Reflect's policy — the prompt list (saved + built-ins), the privacy gate, the
+ * provider call, and the preview controls. Nothing is written to the note until
  * the user accepts the preview; a discarded run leaves the file byte-identical.
  */
 
@@ -71,6 +72,9 @@ export function useEditorAiMenu({ path, editorRef }: EditorAiMenuOptions): Edito
   const { navigate } = useRouter()
 
   const runRef = useRef<ActiveRun | null>(null)
+  // The staged placement of the current run — state (not just the ref) so the
+  // preview's alternate-placement button can label itself.
+  const [runMode, setRunMode] = useState<AiPromptMode | null>(null)
 
   const streamRun = useCallback(
     async (
@@ -149,6 +153,7 @@ export function useEditorAiMenu({ path, editorRef }: EditorAiMenuOptions): Edito
         mode: prompt.mode,
       })
       if (!started) return
+      setRunMode(prompt.mode)
       void streamRun(prompt, context, null)
     },
     [editorRef, streamRun],
@@ -166,11 +171,24 @@ export function useEditorAiMenu({ path, editorRef }: EditorAiMenuOptions): Edito
           },
         ]
       }
-      return filterAiPrompts(prompts, query).map((prompt) => ({
+      const items: SelectionMenuItem[] = filterAiPrompts(prompts, query).map((prompt) => ({
         id: prompt.id,
         label: prompt.label,
         onSelect: (context) => runPrompt(prompt, context),
       }))
+      // Old Reflect's "Ask anything to AI": the typed text itself runs as a
+      // one-off prompt, with the selection appended as fenced context.
+      const adHoc = query.trim()
+      if (adHoc) {
+        items.push({
+          id: 'ad-hoc-query',
+          label: adHoc,
+          detail: 'Run as a prompt',
+          onSelect: (context) =>
+            runPrompt({ id: 'ad-hoc-query', label: adHoc, body: adHoc, mode: 'replace' }, context),
+        })
+      }
+      return items
     }
   }, [isPrivate, providers.length, prompts, navigate, runPrompt])
 
@@ -190,14 +208,30 @@ export function useEditorAiMenu({ path, editorRef }: EditorAiMenuOptions): Edito
     [editorRef, streamRun],
   )
 
+  const acceptAs = useCallback(
+    (mode: AiPromptMode): void => {
+      editorRef.current?.acceptPendingReplacement({ mode })
+      editorRef.current?.focus()
+    },
+    [editorRef],
+  )
+
   const pendingReplacementActions = useMemo<ReactNode>(
-    () => <AiRetryActions modelOptions={chatModelOptions(providers)} onRetry={retry} />,
-    [providers, retry],
+    () => (
+      <AiPreviewActions
+        mode={runMode}
+        modelOptions={chatModelOptions(providers)}
+        onRetry={retry}
+        onAcceptAs={acceptAs}
+      />
+    ),
+    [runMode, providers, retry, acceptAs],
   )
 
   const onPendingReplacementResolve = useCallback<PendingReplacementResolveHandler>(() => {
     runRef.current?.controller.abort()
     runRef.current = null
+    setRunMode(null)
   }, [])
 
   const openMenu = useCallback((): boolean => {
