@@ -1,36 +1,29 @@
 import { useState, type ReactElement } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Settings } from 'lucide-react'
-import {
-  clearGithubAuth,
-  errorMessage,
-  gitDisconnect,
-  gitStatus,
-  hasBridge,
-  listNotes,
-  parseGithubRemote,
-} from '@reflect/core'
+import { errorMessage, getConflictedNotes, hasBridge, listNotes } from '@reflect/core'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { useAppVersion } from '@/hooks/use-app-version'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
+import { mobileSyncStatus } from '@/mobile/sync-status'
 import { useGraph } from '@/providers/graph-provider'
+import { useSyncContext } from '@/providers/sync-provider'
 
 /**
  * The mobile settings sheet (Plan 19, V1 parity) — the trigger lives in V1's
  * avatar spot (top-left of the Daily header). A deliberately small surface:
  * the graph's name, its note count, and the app version, plus the GitHub
- * connection when one exists (its repo and a Disconnect). Initial connecting
- * happens in onboarding; the live sync status pill arrives with the sync slice.
+ * connection when one exists — its repo, the live plain-language backup
+ * status (the same engine state the pill shows), and a Disconnect. Initial
+ * connecting happens in onboarding.
  */
 export function SettingsSheet(): ReactElement {
   const { graph } = useGraph()
   const version = useAppVersion()
-  const queryClient = useQueryClient()
+  const sync = useSyncContext()
   const [open, setOpen] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
-
-  const generation = graph?.generation ?? null
 
   const { data: notes } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-note-count'],
@@ -38,31 +31,32 @@ export function SettingsSheet(): ReactElement {
     enabled: open && hasBridge() && graph !== null,
   })
 
-  const gitStatusKey = [INDEX_QUERY_SCOPE, graph?.root, 'mobile-git-status']
-  const { data: git } = useQuery({
-    queryKey: gitStatusKey,
-    queryFn: () => {
-      if (generation === null) {
-        throw new Error('git status query ran without a graph generation')
-      }
-      return gitStatus(generation)
-    },
-    enabled: open && hasBridge() && generation !== null,
+  const backup = sync?.backup ?? null
+  const connected = backup !== null && backup.phase === 'connected'
+
+  // Same key as the status pill's query — the cache is shared, and keeping it
+  // live while the sheet is closed means the status never flashes on open.
+  const { data: conflicted } = useQuery({
+    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'conflicted-notes'],
+    queryFn: getConflictedNotes,
+    enabled: hasBridge() && graph !== null && connected,
   })
 
-  const repo = git?.remoteUrl != null ? parseGithubRemote(git.remoteUrl) : null
+  const status = backup === null ? null : mobileSyncStatus(backup, conflicted?.length ?? 0)
+  const repo = connected ? backup.repo : null
 
-  // Drop the remote and forget the GitHub token. The local clone (notes,
-  // history) stays — the graph is simply unlinked; re-connecting re-onboards.
+  // Stop backing this graph up and forget the GitHub credential (one graph
+  // per device — unlinking is signing out). The local clone stays; the
+  // controller restarts into its disconnected state, and re-connecting
+  // re-onboards.
   async function disconnect(): Promise<void> {
-    if (generation === null) {
+    if (sync === null) {
       return
     }
     setDisconnecting(true)
     try {
-      await gitDisconnect(generation)
-      await clearGithubAuth()
-      await queryClient.invalidateQueries({ queryKey: gitStatusKey })
+      await sync.disconnectGraph()
+      await sync.signOut()
     } catch (err) {
       console.error('GitHub disconnect failed:', errorMessage(err))
     } finally {
@@ -98,6 +92,17 @@ export function SettingsSheet(): ReactElement {
               >
                 {disconnecting ? 'Disconnecting…' : 'Disconnect'}
               </Button>
+            </div>
+          ) : null}
+          {status !== null ? (
+            <div className="py-2.5">
+              <div className="flex items-center justify-between">
+                <dt className="text-text-muted">Backup</dt>
+                <dd className="font-medium">{status.label}</dd>
+              </div>
+              {status.detail !== null ? (
+                <p className="mt-1 text-xs text-text-muted">{status.detail}</p>
+              ) : null}
             </div>
           ) : null}
           <Row label="Version" value={version ?? '…'} />

@@ -2,6 +2,7 @@ import { type ReactElement } from 'react'
 import { setLocalWriteEcho, type AppPlatform } from '@reflect/core'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { setTouchEditorSurface } from '@/editor/touch-surface'
+import { setMobileSurface } from '@/lib/mobile-surface'
 import { MobileApp } from '@/mobile/mobile-app'
 import { GraphProvider } from '@/providers/graph-provider'
 
@@ -15,6 +16,10 @@ setLocalWriteEcho(true)
 // traits — Plan 19 decision 7 gate). Module scope for the same reason: it
 // must precede the first editor mount.
 setTouchEditorSurface(true)
+
+// Shared components render their mobile variants (conflict resolution stays
+// desktop-side — Plan 19). Module scope, same pattern as above.
+setMobileSurface(true)
 
 /**
  * The mobile surface tree (Plan 19): the shared graph provider in its

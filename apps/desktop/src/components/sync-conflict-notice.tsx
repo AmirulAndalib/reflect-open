@@ -4,6 +4,7 @@ import { getNote, hasBridge } from '@reflect/core'
 import { InlineAlert } from '@/components/inline-alert'
 import { Button } from '@/components/ui/button'
 import { useConflictResolution } from '@/hooks/use-conflict-resolution'
+import { isMobileSurface } from '@/lib/mobile-surface'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { useGraph } from '@/providers/graph-provider'
 
@@ -27,6 +28,10 @@ interface SyncConflictNoticeProps {
  * is lost — every version remains in the backup history. The flag is a
  * projection of the file content, so the banner clears itself once the
  * resolved file reindexes.
+ *
+ * On mobile, conflicts are contained, not resolved (Plan 19): the same
+ * protected session contract, but the resolution actions stay desktop-side —
+ * the banner says the note needs review on desktop and offers nothing else.
  */
 export function SyncConflictNotice({ path, className }: SyncConflictNoticeProps): ReactElement | null {
   const { graph } = useGraph()
@@ -39,6 +44,16 @@ export function SyncConflictNotice({ path, className }: SyncConflictNoticeProps)
 
   if (data == null || !data.hasConflict || graph === null) {
     return null
+  }
+
+  if (isMobileSurface()) {
+    return (
+      <InlineAlert tone="warning" className={className}>
+        This note was edited on two devices at once and needs review on desktop. Open it in
+        Reflect on your computer to choose what to keep — every version stays recoverable in
+        the backup history, and your other notes keep syncing.
+      </InlineAlert>
+    )
   }
 
   return (

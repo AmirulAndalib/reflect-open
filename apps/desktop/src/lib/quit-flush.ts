@@ -18,6 +18,9 @@ import { flushSettings } from '@/lib/settings-flush'
  *   already surfaced per-note, and refusing to quit would trap the user).
  * - **Webview unload** (dev reloads): `beforeunload` can't await, but writes
  *   dispatched before teardown still reach the Rust process — a belt.
+ *
+ * Mobile's exit is backgrounding, not quitting — its leg of the same flush
+ * sequence lives in `background-flush.ts` (Plan 19, decision 6).
  */
 export function installQuitFlush(): () => void {
   // No bridge → no native shell (plain-browser dev): nothing can quit-flush.

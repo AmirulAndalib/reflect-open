@@ -100,3 +100,13 @@ export function useSync(): SyncContextValue {
   }
   return value
 }
+
+/**
+ * Like {@link useSync}, but `null` outside a provider. For surfaces that also
+ * render where no backup lifecycle is mounted — the mobile settings sheet in
+ * the plain-browser dev harness and in screen tests — and degrade by hiding
+ * their sync rows instead of crashing.
+ */
+export function useSyncContext(): SyncContextValue | null {
+  return useContext(SyncContext)
+}
