@@ -145,6 +145,7 @@ describe('NoteEditor markdown syntax mode', () => {
 describe('NoteEditor touch-surface input hygiene', () => {
   afterEach(() => {
     setTouchEditorSurface(false)
+    editorStub.mounted = true
     editorStub.view.dom = document.createElement('div')
   })
 
@@ -164,6 +165,18 @@ describe('NoteEditor touch-surface input hygiene', () => {
     render(<NoteEditor initialContent="" />)
     expect(editorStub.view.dom.getAttribute('autocapitalize')).toBe('sentences')
     expect(editorStub.view.dom.getAttribute('autocorrect')).toBe('on')
+  })
+
+  it('retries until the editor view mounts (traits are never silently skipped)', async () => {
+    setTouchEditorSurface(true)
+    editorStub.mounted = false
+    render(<NoteEditor initialContent="" />)
+    expect(editorStub.view.dom.hasAttribute('autocapitalize')).toBe(false)
+
+    editorStub.mounted = true
+    await waitFor(() => {
+      expect(editorStub.view.dom.getAttribute('autocapitalize')).toBe('sentences')
+    })
   })
 
   it('leaves the contenteditable untouched on desktop', () => {

@@ -24,12 +24,29 @@ export function EditorInputTraits(): null {
   const editor = useEditor()
 
   useEffect(() => {
-    if (!isTouchEditorSurface() || !editor.mounted) {
+    if (!isTouchEditorSurface()) {
       return
     }
-    const dom = editor.view.dom
-    dom.setAttribute('autocapitalize', 'sentences')
-    dom.setAttribute('autocorrect', 'on')
+    // ProseKit attaches the view via ref before effects run, so this applies
+    // immediately in practice — but the mount timing is ProseKit's, not ours,
+    // so a not-yet-mounted editor is retried per frame instead of skipped.
+    let frame: number | null = null
+    const apply = (): void => {
+      if (!editor.mounted) {
+        frame = requestAnimationFrame(apply)
+        return
+      }
+      frame = null
+      const dom = editor.view.dom
+      dom.setAttribute('autocapitalize', 'sentences')
+      dom.setAttribute('autocorrect', 'on')
+    }
+    apply()
+    return () => {
+      if (frame !== null) {
+        cancelAnimationFrame(frame)
+      }
+    }
   }, [editor])
 
   return null
