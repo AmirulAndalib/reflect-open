@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { noteExists, readNote, writeNote } from '../graph/commands'
+import { createNoteWithTitle } from '../graph/create-note'
 import { resolveWikiTarget } from '../indexing/queries'
 import { resolved, unresolved } from '../markdown/resolve'
 import { addMeetingToDaily, meetingLine, type AddMeetingInput } from './add-meeting'
@@ -9,6 +10,9 @@ vi.mock('../graph/commands', () => ({
   readNote: vi.fn(),
   writeNote: vi.fn(),
 }))
+vi.mock('../graph/create-note', () => ({
+  createNoteWithTitle: vi.fn(),
+}))
 vi.mock('../indexing/queries', () => ({
   resolveWikiTarget: vi.fn(),
 }))
@@ -16,6 +20,7 @@ vi.mock('../indexing/queries', () => ({
 const noteExistsMock = vi.mocked(noteExists)
 const readNoteMock = vi.mocked(readNote)
 const writeNoteMock = vi.mocked(writeNote)
+const createNoteMock = vi.mocked(createNoteWithTitle)
 const resolveMock = vi.mocked(resolveWikiTarget)
 
 const DAILY = 'daily/2026-07-01.md'
@@ -30,7 +35,6 @@ function input(overrides: Partial<AddMeetingInput> = {}): AddMeetingInput {
     attendees: [],
     createMeetingNote: false,
     generation: GENERATION,
-    createNote: vi.fn(async (title: string) => `notes/${title.toLowerCase()}.md`),
     ...overrides,
   }
 }
@@ -39,6 +43,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   readNoteMock.mockRejectedValue(notFound())
   noteExistsMock.mockResolvedValue(false)
+  createNoteMock.mockImplementation(async (title: string) => `notes/${title.toLowerCase()}.md`)
   resolveMock.mockImplementation(async (target) => unresolved(target))
 })
 
@@ -92,38 +97,35 @@ describe('addMeetingToDaily', () => {
     expect(written).toContain('## Meetings\n\n- [[Standup]]')
   })
 
-  it('creates the meeting note only when asked and missing', async () => {
-    const createNote = vi.fn(async () => 'notes/standup.md')
-    await addMeetingToDaily(input({ createNote }))
-    expect(createNote).not.toHaveBeenCalled()
+  it('creates the meeting note (typed #meeting) only when asked and missing', async () => {
+    await addMeetingToDaily(input())
+    expect(createNoteMock).not.toHaveBeenCalled()
 
-    await addMeetingToDaily(input({ createMeetingNote: true, createNote }))
-    expect(createNote).toHaveBeenCalledWith('Standup', GENERATION)
+    await addMeetingToDaily(input({ createMeetingNote: true }))
+    expect(createNoteMock).toHaveBeenCalledWith('Standup', GENERATION, '- Type: #meeting')
 
-    createNote.mockClear()
+    createNoteMock.mockClear()
     resolveMock.mockResolvedValue(resolved('notes/standup.md'))
-    await addMeetingToDaily(input({ createMeetingNote: true, createNote }))
-    expect(createNote).not.toHaveBeenCalled()
+    await addMeetingToDaily(input({ createMeetingNote: true }))
+    expect(createNoteMock).not.toHaveBeenCalled()
   })
 
   it('creates person notes for missing attendees, typed #person', async () => {
-    const createNote = vi.fn(async () => 'notes/ada.md')
     resolveMock.mockImplementation(async (target) =>
       target === 'Grace Hopper' ? resolved('notes/grace-hopper.md') : unresolved(target),
     )
     const outcome = await addMeetingToDaily(
-      input({ attendees: ['Ada Lovelace', 'Grace Hopper'], createNote }),
+      input({ attendees: ['Ada Lovelace', 'Grace Hopper'] }),
     )
-    expect(createNote).toHaveBeenCalledTimes(1)
-    expect(createNote).toHaveBeenCalledWith('Ada Lovelace', GENERATION, '- Type: #person')
+    expect(createNoteMock).toHaveBeenCalledTimes(1)
+    expect(createNoteMock).toHaveBeenCalledWith('Ada Lovelace', GENERATION, '- Type: #person')
     expect(outcome.createdNotes).toEqual(['Ada Lovelace'])
   })
 
   it('skips creation when the slug path already exists (index lag backstop)', async () => {
-    const createNote = vi.fn(async () => 'notes/ada-lovelace.md')
     noteExistsMock.mockImplementation(async (path) => path === 'notes/ada-lovelace.md')
-    await addMeetingToDaily(input({ attendees: ['Ada Lovelace'], createNote }))
-    expect(createNote).not.toHaveBeenCalled()
+    await addMeetingToDaily(input({ attendees: ['Ada Lovelace'] }))
+    expect(createNoteMock).not.toHaveBeenCalled()
   })
 
   it('sanitizes link-corrupting characters and deduplicates attendees', async () => {
@@ -143,9 +145,8 @@ describe('addMeetingToDaily', () => {
   })
 
   it('does not create a person note for an attendee named like the meeting', async () => {
-    const createNote = vi.fn(async () => 'notes/x.md')
-    await addMeetingToDaily(input({ attendees: ['Standup'], createNote }))
-    expect(createNote).not.toHaveBeenCalled()
+    await addMeetingToDaily(input({ attendees: ['Standup'] }))
+    expect(createNoteMock).not.toHaveBeenCalled()
   })
 
   it('rejects an empty meeting name', async () => {

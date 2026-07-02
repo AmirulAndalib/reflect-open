@@ -1,5 +1,6 @@
 import { isAppError } from '../errors'
 import { noteExists, readNote, writeNote } from '../graph/commands'
+import { createNoteWithTitle } from '../graph/create-note'
 import { dailyPath, notePath } from '../graph/paths'
 import { resolveWikiTarget } from '../indexing/queries'
 import { appendUnderHeading, wikiLinkSafe } from '../markdown/edit'
@@ -24,7 +25,9 @@ import { slugForTitle } from '../markdown/slug'
 /** Where the daily-note entry lands (`appendUnderHeading` creates it). */
 export const MEETINGS_HEADING = 'Meetings'
 
-/** Person notes are typed like v1 tagged them — the All Notes "person" filter. */
+/** Created notes are typed like v1 tagged them (`- Type: #link` in capture is
+ * the same convention); `#person` feeds the All Notes person filter. */
+const MEETING_NOTE_BODY = '- Type: #meeting'
 const PERSON_NOTE_BODY = '- Type: #person'
 
 export interface AddMeetingInput {
@@ -41,13 +44,6 @@ export interface AddMeetingInput {
   createMeetingNote: boolean
   /** `GraphInfo.generation` — pins every read and write to the issuing graph. */
   generation: number
-  /**
-   * Creates a note titled `title` (optional extra body under the H1) and
-   * returns its graph-relative path. Injected because note identity (the
-   * frontmatter `id` ULID) is minted by the host app — the desktop passes
-   * `createNoteWithTitle`.
-   */
-  createNote: (title: string, generation: number, body?: string) => Promise<string>
 }
 
 export interface AddMeetingOutcome {
@@ -168,14 +164,14 @@ export async function addMeetingToDaily(input: AddMeetingInput): Promise<AddMeet
 
   const createdNotes: string[] = []
   if (input.createMeetingNote && !(await titleHasNote(title))) {
-    await input.createNote(title, input.generation)
+    await createNoteWithTitle(title, input.generation, MEETING_NOTE_BODY)
     createdNotes.push(title)
   }
   for (const name of attendees) {
     if (await titleHasNote(name)) {
       continue
     }
-    await input.createNote(name, input.generation, PERSON_NOTE_BODY)
+    await createNoteWithTitle(name, input.generation, PERSON_NOTE_BODY)
     createdNotes.push(name)
   }
 

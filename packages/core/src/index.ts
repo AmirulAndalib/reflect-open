@@ -100,6 +100,14 @@ export {
   captureMetaFetch,
   promoteCaptureScreenshot,
 } from './graph/commands'
+export {
+  newNoteId,
+  newNoteSource,
+  untitledNoteSeed,
+  untitledNotePath,
+  isUntitledNotePath,
+  createNoteWithTitle,
+} from './graph/create-note'
 
 // User settings (config-dir JSON document; Rust persists, this layer validates)
 export {

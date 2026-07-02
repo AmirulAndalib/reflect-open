@@ -1,11 +1,9 @@
 import { ulid } from 'ulidx'
-import {
-  availableNotePath,
-  notePath,
-  slugForTitle,
-  upsertFrontmatter,
-  writeNote,
-} from '@reflect/core'
+import { availableNotePath } from '../indexing/note-paths'
+import { upsertFrontmatter } from '../markdown/frontmatter'
+import { slugForTitle } from '../markdown/slug'
+import { writeNote } from './commands'
+import { notePath } from './paths'
 
 /**
  * Note identity at creation (`docs/readable-filenames.md`): regular notes get
@@ -66,9 +64,10 @@ export function isUntitledNotePath(path: string): boolean {
 
 /**
  * Create a new note titled `title` (Plan 07's create-from-unresolved) at a
- * collision-free slug path. Returns the new graph-relative path. The write
- * carries `generation`, so a create racing a graph switch is rejected loudly
- * instead of landing in the wrong graph.
+ * collision-free slug path, optionally with a body block under the H1.
+ * Returns the new graph-relative path. The write carries `generation`, so a
+ * create racing a graph switch is rejected loudly instead of landing in the
+ * wrong graph.
  */
 export async function createNoteWithTitle(
   title: string,

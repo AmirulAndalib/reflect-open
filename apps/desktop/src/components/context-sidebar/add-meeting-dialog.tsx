@@ -18,7 +18,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { createNoteWithTitle } from '@/lib/create-note'
 import { formatTimeOfDay } from '@/lib/dates'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
@@ -94,7 +93,6 @@ export function AddMeetingDialog({ date, event, onClose }: AddMeetingDialogProps
         attendees,
         createMeetingNote: createNote,
         generation: graph.generation,
-        createNote: createNoteWithTitle,
       })
       onClose()
     } catch (cause) {
