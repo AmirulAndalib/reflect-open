@@ -22,15 +22,15 @@ describe('mobileSyncStatus', () => {
     expect(mobileSyncStatus({ phase: 'disconnected' }, 0)).toBeNull()
   })
 
-  it('rests on a quiet Backed up', () => {
+  it('rests on Backed up — the quiet tone the pill hides on', () => {
     const status = mobileSyncStatus(connected({ state: 'idle' }), 0)
-    expect(status).toEqual({ label: 'Backed up', tone: 'ok', quiet: true, detail: null })
+    expect(status).toEqual({ label: 'Backed up', tone: 'ok', detail: null })
   })
 
   it('shows Syncing while a cycle runs — even with conflicts pending', () => {
     const status = mobileSyncStatus(connected({ state: 'syncing' }), 2)
     expect(status?.label).toBe('Syncing')
-    expect(status?.quiet).toBe(false)
+    expect(status?.tone).toBe('active')
   })
 
   it('headlines Needs review while any note carries conflict markers', () => {
@@ -66,7 +66,7 @@ describe('mobileSyncStatus', () => {
       0,
     )
     expect(status?.label).toBe('Offline')
-    expect(status?.quiet).toBe(false)
+    expect(status?.tone).toBe('attention')
     expect(status?.detail).toMatch(/saved locally/)
   })
 })

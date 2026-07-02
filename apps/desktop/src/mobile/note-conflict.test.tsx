@@ -2,7 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '@reflect/core'
-import { setMobileSurface } from '@/lib/mobile-surface'
+import { setPlatformSurface } from '@/lib/platform-surface'
 import { MobileNote } from '@/mobile/screens/note'
 import { RouterProvider } from '@/routing/router'
 
@@ -83,14 +83,14 @@ setBridge({
 let queryClient: QueryClient
 
 beforeEach(() => {
-  setMobileSurface(true)
+  setPlatformSurface({ mobileApp: true })
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 })
 
 afterEach(() => {
   cleanup()
   queryClient.clear()
-  setMobileSurface(false)
+  setPlatformSurface({ mobileApp: false })
   vi.clearAllMocks()
 })
 
@@ -104,7 +104,7 @@ describe('MobileNote with a conflicted note', () => {
       </QueryClientProvider>,
     )
 
-    expect(await screen.findByText(/needs review on desktop/i)).toBeTruthy()
+    expect(await screen.findByText(/review on desktop/i)).toBeTruthy()
     // Protected: raw file shown verbatim, no live editor mounted.
     expect(screen.getByText(/desktop line/)).toBeTruthy()
     expect(screen.queryByTestId('fake-editor')).toBeNull()

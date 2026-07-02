@@ -30,7 +30,7 @@ import {
   ImageLightbox,
   type LightboxImage,
 } from '@/editor/image-lightbox'
-import { isTouchEditorSurface } from '@/editor/touch-surface'
+import { isTouchEditorSurface } from '@/lib/platform-surface'
 import { useLightboxTransition } from '@/editor/use-lightbox-transition'
 import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { isDeepLinkUrl } from '@/lib/deep-links/parse'

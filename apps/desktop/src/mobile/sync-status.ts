@@ -9,13 +9,12 @@ import type { BackupState } from '@/lib/backup-controller'
 export interface MobileSyncStatus {
   /** What the user reads: `Backed up`, `Syncing`, `Needs review`, … */
   label: string
-  /** Drives the indicator color: calm, working, or wants a look. */
-  tone: 'ok' | 'active' | 'attention'
   /**
-   * The all-good resting state: the settings sheet still shows the label,
-   * but the floating pill hides (quiet UI — no chrome when nothing's wrong).
+   * Drives the indicator color: calm, working, or wants a look. `ok` is the
+   * all-good resting state — the settings sheet still shows its label, but
+   * the floating pill hides (quiet UI — no chrome when nothing's wrong).
    */
-  quiet: boolean
+  tone: 'ok' | 'active' | 'attention'
   /** A plain-language line with more detail (offline/error states), if any. */
   detail: string | null
 }
@@ -39,13 +38,12 @@ export function mobileSyncStatus(
   }
   const status = backup.status
   if (status.state === 'syncing') {
-    return { label: 'Syncing', tone: 'active', quiet: false, detail: null }
+    return { label: 'Syncing', tone: 'active', detail: null }
   }
   if (conflictCount > 0) {
     return {
       label: 'Needs review',
       tone: 'attention',
-      quiet: false,
       detail:
         conflictCount === 1
           ? 'A note was edited on two devices at once — open it on desktop to resolve.'
@@ -53,10 +51,10 @@ export function mobileSyncStatus(
     }
   }
   if (status.state === 'error') {
-    return { label: 'Needs attention', tone: 'attention', quiet: false, detail: status.message }
+    return { label: 'Needs attention', tone: 'attention', detail: status.message }
   }
   if (status.state === 'offline') {
-    return { label: 'Offline', tone: 'attention', quiet: false, detail: status.message }
+    return { label: 'Offline', tone: 'attention', detail: status.message }
   }
-  return { label: 'Backed up', tone: 'ok', quiet: true, detail: null }
+  return { label: 'Backed up', tone: 'ok', detail: null }
 }

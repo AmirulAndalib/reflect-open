@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useEditor } from '@meowdown/react'
-import { isTouchEditorSurface } from '@/editor/touch-surface'
+import { isTouchEditorSurface } from '@/lib/platform-surface'
 
 /**
  * iOS text-input hygiene on the editing surface (Plan 19, decision 7 — a gate

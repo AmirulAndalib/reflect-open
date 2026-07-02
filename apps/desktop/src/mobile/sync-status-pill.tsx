@@ -28,17 +28,20 @@ export function SyncStatusPill(): ReactElement | null {
   })
 
   const status = mobileSyncStatus(backup, conflicted?.length ?? 0)
-  if (status === null || status.quiet || keyboardVisible) {
+  if (status === null || status.tone === 'ok' || keyboardVisible) {
     return null
   }
 
   return (
-    // `position: fixed` elements are viewport-anchored, so this one clears
-    // the home indicator itself (the shell root's keyboard yield doesn't
-    // apply — hence the keyboard check above).
+    // `position: fixed` elements are viewport-anchored, so this one places
+    // itself above the tab bar via the height the bar publishes (the shell
+    // root's keyboard yield doesn't apply — hence the keyboard check above;
+    // the safe-area fallback covers surfaces without a tab bar).
     <div
       className="pointer-events-none fixed inset-x-0 z-50 flex justify-center"
-      style={{ bottom: 'calc(env(safe-area-inset-bottom) + 3.5rem)' }}
+      style={{
+        bottom: 'calc(var(--mobile-tab-bar-height, env(safe-area-inset-bottom, 0px)) + 0.75rem)',
+      }}
     >
       <div
         role="status"
@@ -48,9 +51,9 @@ export function SyncStatusPill(): ReactElement | null {
           aria-hidden
           className={cn(
             'size-1.5 rounded-full',
+            // `ok` never reaches here — the pill hides on it above.
             status.tone === 'active' && 'bg-accent motion-safe:animate-pulse',
             status.tone === 'attention' && 'bg-amber-500',
-            status.tone === 'ok' && 'bg-emerald-500',
           )}
         />
         {status.label}

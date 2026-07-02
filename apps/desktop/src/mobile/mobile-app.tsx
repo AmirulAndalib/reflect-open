@@ -3,7 +3,6 @@ import { installBackgroundFlush } from '@/lib/background-flush'
 import { MobileErrorBoundary } from '@/mobile/mobile-error-boundary'
 import { MobileOnboardingScreen } from '@/mobile/onboarding-screen'
 import { MobileShell } from '@/mobile/mobile-shell'
-import { ResumeSyncEffect } from '@/mobile/resume-sync-effect'
 import { SyncStatusPill } from '@/mobile/sync-status-pill'
 import { useKeyboardHeightVar } from '@/mobile/use-keyboard'
 import { useTaskCheckboxHaptics } from '@/mobile/use-task-haptics'
@@ -41,10 +40,10 @@ export function MobileApp(): ReactElement {
     return (
       <MobileErrorBoundary>
         <RouterProvider key={graph.root}>
-          {/* Same engine and contracts as desktop (Plan 12); mobile adds the
-              resume trigger and the plain-language status pill (step 10). */}
+          {/* Same engine, contracts, and triggers as desktop (Plan 12) — the
+              controller owns resume/edit/online; mobile adds only the
+              plain-language status pill (step 10). */}
           <SyncProvider graph={graph}>
-            <ResumeSyncEffect />
             <MobileShell />
             <SyncStatusPill />
           </SyncProvider>

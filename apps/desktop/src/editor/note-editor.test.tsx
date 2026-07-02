@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { NoteEditor } from './note-editor'
-import { setTouchEditorSurface } from './touch-surface'
+import { setPlatformSurface } from '@/lib/platform-surface'
 
 /** Props the mocked `<MeowdownEditor>` captures so the test can drive its callbacks. */
 interface CapturedEditorProps {
@@ -144,7 +144,7 @@ describe('NoteEditor markdown syntax mode', () => {
 
 describe('NoteEditor touch-surface input hygiene', () => {
   afterEach(() => {
-    setTouchEditorSurface(false)
+    setPlatformSurface({ touchEditor: false })
     editorStub.mounted = true
     editorStub.view.dom = document.createElement('div')
   })
@@ -155,20 +155,20 @@ describe('NoteEditor touch-surface input hygiene', () => {
   })
 
   it('pins spellcheck off on the touch surface (iOS smart-punctuation gate)', () => {
-    setTouchEditorSurface(true)
+    setPlatformSurface({ touchEditor: true })
     render(<NoteEditor initialContent="" spellCheck={true} />)
     expect(captured.props?.spellCheck).toBe(false)
   })
 
   it('sets explicit input traits on the contenteditable on the touch surface', () => {
-    setTouchEditorSurface(true)
+    setPlatformSurface({ touchEditor: true })
     render(<NoteEditor initialContent="" />)
     expect(editorStub.view.dom.getAttribute('autocapitalize')).toBe('sentences')
     expect(editorStub.view.dom.getAttribute('autocorrect')).toBe('on')
   })
 
   it('retries until the editor view mounts (traits are never silently skipped)', async () => {
-    setTouchEditorSurface(true)
+    setPlatformSurface({ touchEditor: true })
     editorStub.mounted = false
     render(<NoteEditor initialContent="" />)
     expect(editorStub.view.dom.hasAttribute('autocapitalize')).toBe(false)

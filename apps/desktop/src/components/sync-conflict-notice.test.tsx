@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getNote, type GraphInfo } from '@reflect/core'
-import { setMobileSurface } from '@/lib/mobile-surface'
+import { setPlatformSurface } from '@/lib/platform-surface'
 import { SyncConflictNotice } from './sync-conflict-notice'
 
 vi.mock('@reflect/core', async (importOriginal) => ({
@@ -48,7 +48,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   queryClient.clear()
-  setMobileSurface(false)
+  setPlatformSurface({ mobileApp: false })
   vi.clearAllMocks()
 })
 
@@ -88,11 +88,11 @@ describe('SyncConflictNotice', () => {
   it('contains, not resolves, on mobile: needs-review copy and no actions', async () => {
     // Plan 19: the resolution UI stays desktop-side — the mobile banner
     // points at desktop and offers nothing else.
-    setMobileSurface(true)
+    setPlatformSurface({ mobileApp: true })
     vi.mocked(getNote).mockResolvedValue(NOTE)
     renderNotice()
 
-    expect(await screen.findByText(/needs review on desktop/i)).toBeTruthy()
+    expect(await screen.findByText(/review on desktop/i)).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
   })
 })

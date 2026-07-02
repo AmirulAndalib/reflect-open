@@ -4,7 +4,7 @@ import { getNote, hasBridge } from '@reflect/core'
 import { InlineAlert } from '@/components/inline-alert'
 import { Button } from '@/components/ui/button'
 import { useConflictResolution } from '@/hooks/use-conflict-resolution'
-import { isMobileSurface } from '@/lib/mobile-surface'
+import { isMobileSurface } from '@/lib/platform-surface'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { useGraph } from '@/providers/graph-provider'
 
@@ -49,9 +49,8 @@ export function SyncConflictNotice({ path, className }: SyncConflictNoticeProps)
   if (isMobileSurface()) {
     return (
       <InlineAlert tone="warning" className={className}>
-        This note was edited on two devices at once and needs review on desktop. Open it in
-        Reflect on your computer to choose what to keep — every version stays recoverable in
-        the backup history, and your other notes keep syncing.
+        Edited on two devices at once — review on desktop. Every version stays in the backup
+        history.
       </InlineAlert>
     )
   }

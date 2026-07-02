@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react'
+import { useLayoutEffect, useRef, type ReactElement } from 'react'
 import { Files, SquarePen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { hapticImpactLight } from '@/mobile/haptics'
@@ -16,10 +16,37 @@ interface MobileTabBarProps {
  * software keyboard simply covered it; the shell root now ends at the
  * keyboard's top, so the shell hides the bar while the keyboard is up to
  * keep that behavior.
+ *
+ * The bar publishes its measured height as `--mobile-tab-bar-height` on the
+ * document root, so viewport-anchored elements (the sync status pill) can
+ * sit above it without hardcoding its size. The variable clears on unmount
+ * (the keyboard-up state), leaving consumers their own fallback.
  */
 export function MobileTabBar({ tab, onSelect }: MobileTabBarProps): ReactElement {
+  const navRef = useRef<HTMLElement | null>(null)
+
+  useLayoutEffect(() => {
+    const nav = navRef.current
+    const root = document.documentElement
+    if (nav === null) {
+      return
+    }
+    const publish = (): void => {
+      root.style.setProperty('--mobile-tab-bar-height', `${nav.offsetHeight}px`)
+    }
+    publish()
+    // Content-sized: the height moves with rotation (safe-area padding).
+    const observer = new ResizeObserver(publish)
+    observer.observe(nav)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--mobile-tab-bar-height')
+    }
+  }, [])
+
   return (
     <nav
+      ref={navRef}
       aria-label="Sections"
       className="flex shrink-0 border-t border-border"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}

@@ -1,8 +1,7 @@
 import { type ReactElement } from 'react'
 import { setLocalWriteEcho, type AppPlatform } from '@reflect/core'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { setTouchEditorSurface } from '@/editor/touch-surface'
-import { setMobileSurface } from '@/lib/mobile-surface'
+import { setPlatformSurface } from '@/lib/platform-surface'
 import { MobileApp } from '@/mobile/mobile-app'
 import { GraphProvider } from '@/providers/graph-provider'
 
@@ -12,14 +11,10 @@ import { GraphProvider } from '@/providers/graph-provider'
 // chunk only loads on mobile, and it must precede the first write.
 setLocalWriteEcho(true)
 
-// Editors apply iOS text-input hygiene (pinned spellcheck, explicit input
-// traits — Plan 19 decision 7 gate). Module scope for the same reason: it
-// must precede the first editor mount.
-setTouchEditorSurface(true)
-
-// Shared components render their mobile variants (conflict resolution stays
-// desktop-side — Plan 19). Module scope, same pattern as above.
-setMobileSurface(true)
+// Editors apply iOS text-input hygiene and shared components render their
+// mobile variants — see `platform-surface.ts`. Module scope for the same
+// reason: it must precede the first editor mount and the first write.
+setPlatformSurface({ touchEditor: true, mobileApp: true })
 
 /**
  * The mobile surface tree (Plan 19): the shared graph provider in its

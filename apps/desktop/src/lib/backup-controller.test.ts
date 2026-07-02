@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setBridge, subscribeFileChanges, type FileChange, type GraphInfo } from '@reflect/core'
+import {
+  emitFileChanges,
+  setBridge,
+  subscribeFileChanges,
+  type FileChange,
+  type GraphInfo,
+} from '@reflect/core'
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import { setPlatformSurface } from '@/lib/platform-surface'
 import { createBackupController, type BackupState } from './backup-controller'
 
 // providerFetch routes GitHub API calls through the Tauri HTTP plugin
@@ -336,6 +343,79 @@ describe('createBackupController', () => {
     window.dispatchEvent(new Event('focus'))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(calls.filter((command) => command === 'git_commit_all')).toHaveLength(3)
+  })
+
+  it('a resume firing both visibility and focus runs one deduped cycle', async () => {
+    // WKWebView emits `visibilitychange` AND `focus` on one app foreground
+    // (desktop unminimize can too). Without the dedupe the second event
+    // queues a follow-up cycle — double network work on every resume.
+    const { calls } = fakeBridge()
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+    await vi.waitFor(() => {
+      expect(calls.filter((command) => command === 'git_commit_all')).toHaveLength(1)
+    })
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => {
+      expect(calls.filter((command) => command === 'git_commit_all')).toHaveLength(2)
+    })
+    // Let any wrongly-queued follow-up cycle surface before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(calls.filter((command) => command === 'git_commit_all')).toHaveLength(2)
+    controller.dispose()
+  })
+
+  it('going hidden does not trigger a cycle (backgrounding is the flush path)', async () => {
+    const { calls } = fakeBridge()
+    const visibility = vi
+      .spyOn(document, 'visibilityState', 'get')
+      .mockReturnValue('hidden')
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+    await vi.waitFor(() => {
+      expect(calls.filter((command) => command === 'git_commit_all')).toHaveLength(1)
+    })
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(calls.filter((command) => command === 'git_commit_all')).toHaveLength(1)
+
+    visibility.mockRestore()
+    controller.dispose()
+  })
+
+  it('an edit backs up after 30s idle on desktop, 10s on mobile', async () => {
+    const commitCount = (calls: string[]): number =>
+      calls.filter((command) => command === 'git_commit_all').length
+
+    async function debouncedCommitDelay(mobile: boolean): Promise<number> {
+      setPlatformSurface({ mobileApp: mobile })
+      const { calls } = fakeBridge()
+      const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+      try {
+        await controller.start()
+        await vi.waitFor(() => {
+          expect(commitCount(calls)).toBe(1) // the launch pull's commit
+        })
+        vi.useFakeTimers()
+        emitFileChanges([{ path: 'notes/edited.md', kind: 'upsert', modifiedMs: 1 }])
+        await vi.advanceTimersByTimeAsync(10_000)
+        if (commitCount(calls) > 1) {
+          return 10_000
+        }
+        await vi.advanceTimersByTimeAsync(20_000)
+        return commitCount(calls) > 1 ? 30_000 : Number.POSITIVE_INFINITY
+      } finally {
+        vi.useRealTimers()
+        setPlatformSurface({ mobileApp: false })
+        controller.dispose()
+      }
+    }
+
+    expect(await debouncedCommitDelay(false)).toBe(30_000)
+    expect(await debouncedCommitDelay(true)).toBe(10_000)
   })
 
   it('fans a pull’s writes whole to the local file-changes channel — consumers filter by path', async () => {

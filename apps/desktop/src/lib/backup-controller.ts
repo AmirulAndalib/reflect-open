@@ -28,6 +28,7 @@ import {
 import { setBackupFlusher } from '@/lib/backup-flush'
 import { invalidateGithubAuth } from '@/lib/github-auth-state'
 import { startOperation } from '@/lib/operations'
+import { isMobileSurface } from '@/lib/platform-surface'
 import { providerFetch } from '@/lib/provider-fetch'
 import { invalidateIndexQueries } from '@/lib/query-client'
 
@@ -46,6 +47,26 @@ export type BackupState =
 /** Outcome of connecting to an existing repo (the public case needs consent). */
 export type ConnectExistingResult = 'connected' | 'needsPublicConfirm' | 'notFound'
 
+/**
+ * A single foreground/resume transition fires several DOM events at once —
+ * WKWebView emits both `visibilitychange` and `focus` on app resume, desktop
+ * unminimize can too. Each would queue its own full engine cycle (single
+ * flight queues a *follow-up*, it doesn't drop the second call), doubling
+ * the network work of every resume; triggers inside this window collapse
+ * into one cycle.
+ */
+const RESUME_SYNC_DEDUPE_MS = 1500
+
+/**
+ * Quiet period after the last edit before a backup commit, on mobile.
+ * Desktop keeps the engine's 30s default, but mobile foreground sessions are
+ * often shorter than that — with the desktop window most edit-triggered
+ * cycles would never fire before backgrounding, deferring every push to the
+ * *next* app open. (Capture is still never lost either way: the background
+ * flush commits locally.)
+ */
+const MOBILE_IDLE_MS = 10_000
+
 export interface BackupControllerOptions {
   graph: GraphInfo
   /** The open index session's generation — index writes are pinned to it. */
@@ -61,9 +82,9 @@ export interface BackupControllerOptions {
  * the provider shrinks to a `useSyncExternalStore` shim.
  *
  * Owns: the connection probe, the sync engine, the watcher subscription that
- * feeds its debounce, window focus/online listeners (launch, focus, and
- * back-online pulls), the quit-commit hook, and the connect / disconnect /
- * sign-out / back-up-now actions.
+ * feeds its debounce, the resume triggers (launch, window focus, visibility →
+ * visible for mobile app resume, and back-online pulls), the quit-commit
+ * hook, and the connect / disconnect / sign-out / back-up-now actions.
  */
 export interface BackupController {
   /** Probe the graph and start the engine if fully connected. Idempotent. */
@@ -197,6 +218,7 @@ export function createBackupController(options: BackupControllerOptions): Backup
       }
       const next = createSyncEngine({
         generation,
+        ...(isMobileSurface() ? { idleMs: MOBILE_IDLE_MS } : {}),
         // The managed token is for github.com only — a generic host must
         // never receive it. Rust resolves generic credentials locally.
         getToken: repo === null ? async () => null : () => getGithubToken(providerFetch),
@@ -229,16 +251,32 @@ export function createBackupController(options: BackupControllerOptions): Backup
       }
       unlisten = subscription
 
-      const onFocus = (): void => {
+      // Resume triggers: window focus (desktop refocus) and visibility →
+      // visible (mobile app resume; desktop unminimize, which doesn't
+      // reliably fire `focus`). Deduped — see RESUME_SYNC_DEDUPE_MS.
+      let lastResumeSyncAt = 0
+      const onResume = (): void => {
+        const now = Date.now()
+        if (now - lastResumeSyncAt < RESUME_SYNC_DEDUPE_MS) {
+          return
+        }
+        lastResumeSyncAt = now
         void next.syncNow()
+      }
+      const onVisibilityChange = (): void => {
+        if (document.visibilityState === 'visible') {
+          onResume()
+        }
       }
       const onOnline = (): void => {
         void next.syncNow() // the `offline` state's recovery trigger
       }
-      window.addEventListener('focus', onFocus)
+      window.addEventListener('focus', onResume)
+      document.addEventListener('visibilitychange', onVisibilityChange)
       window.addEventListener('online', onOnline)
       domDisposers.push(
-        () => window.removeEventListener('focus', onFocus),
+        () => window.removeEventListener('focus', onResume),
+        () => document.removeEventListener('visibilitychange', onVisibilityChange),
         () => window.removeEventListener('online', onOnline),
       )
       // Quit-time commit (local only — never a network push on the way out).
