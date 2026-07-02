@@ -4,9 +4,15 @@ import { MobileAllNotes } from '@/mobile/screens/all-notes'
 import { MobileDaily } from '@/mobile/screens/daily'
 import { MobileNote } from '@/mobile/screens/note'
 import type { AllNotesFilters } from '@/mobile/search-filters/filter-state'
-import { useRouter } from '@/routing/router'
+import type { Route } from '@/routing/route'
 
 interface MobileScreenProps {
+  /**
+   * The route this screen renders. A prop rather than `useRouter()` because
+   * the stack ({@link MobileStack}) keeps more than one screen mounted at a
+   * time — the current route plus the screen a back-swipe would reveal.
+   */
+  route: Route
   /** The All tab's search text (owned by the shell — survives navigation). */
   allQuery: string
   onAllQueryChange: (query: string) => void
@@ -17,19 +23,19 @@ interface MobileScreenProps {
 
 /**
  * The mobile route switch (Plan 19): the same typed `Route` history desktop
- * uses, rendered one screen at a time — the daily spine, notes, and the All
+ * uses, one screen per route — the daily spine, notes, and the All
  * tab (which also hosts `search` entries). Kinds without a mobile surface
  * yet (chat, settings) fall back to today. Today is `useToday()`'s **live** date, so an app left open
  * overnight rolls to the new day's note at midnight instead of editing
  * yesterday's.
  */
 export function MobileScreen({
+  route,
   allQuery,
   onAllQueryChange,
   allFilters,
   onAllFiltersChange,
 }: MobileScreenProps): ReactElement {
-  const { route } = useRouter()
   const today = useToday()
 
   switch (route.kind) {

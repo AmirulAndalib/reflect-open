@@ -53,6 +53,12 @@ interface RouterValue {
   forward: () => void
   canBack: boolean
   canForward: boolean
+  /**
+   * The route `back()` would land on — the entry just below the current one —
+   * or `null` at the bottom of the stack. The mobile stack renders it beneath
+   * a pushed note so the back-swipe gesture reveals a live screen.
+   */
+  backRoute: Route | null
   /** Record the active view's scroll offset on the current history entry. */
   saveScrollState: (offset: number) => void
   /**
@@ -261,6 +267,7 @@ export function RouterProvider({
       forward,
       canBack: history.index > 0,
       canForward: history.index < history.stack.length - 1,
+      backRoute: history.index > 0 ? history.stack[history.index - 1]!.route : null,
       saveScrollState,
       clearScrollState,
       savedScroll,

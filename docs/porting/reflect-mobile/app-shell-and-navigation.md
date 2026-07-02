@@ -91,7 +91,12 @@ not already present:
   plugin's `impact_light` command (`UIImpactFeedbackGenerator`), fired from
   `src/mobile/haptics.ts` in the tab bar and the calendar strip.
 - Wake-to-today on foreground date change.
-- Back-swipe and stack transitions on the note detail screen.
+- ~~Back-swipe and stack transitions on the note detail screen~~ — done:
+  `src/mobile/mobile-stack.tsx` renders note screens as cards over their tab
+  root (slide-in push, slide-out pop, tab switches stay instant) and
+  `src/mobile/use-back-swipe.ts` is the edge back-swipe. Transform-based on
+  purpose: the View Transitions API commits the DOM swap before animating,
+  which would remount the editor on every canceled swipe.
 - Status-bar-tap scroll-to-top, if reachable from the Tauri shell.
 
 ## V1 → v2 mapping

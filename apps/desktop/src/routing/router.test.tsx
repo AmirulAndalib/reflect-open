@@ -192,6 +192,19 @@ describe('router', () => {
     expect(result.current.entryId).toBe(noteId)
   })
 
+  it('exposes the route back() would land on (the mobile stack peeks it)', () => {
+    const { result } = routerHook()
+    expect(result.current.backRoute).toBeNull()
+    act(() => result.current.navigate({ kind: 'note', path: 'notes/a.md' }))
+    expect(result.current.backRoute).toEqual({ kind: 'today' })
+    act(() => result.current.navigate({ kind: 'note', path: 'notes/b.md' }))
+    expect(result.current.backRoute).toEqual({ kind: 'note', path: 'notes/a.md' })
+    act(() => result.current.back())
+    expect(result.current.backRoute).toEqual({ kind: 'today' })
+    act(() => result.current.back())
+    expect(result.current.backRoute).toBeNull()
+  })
+
   it('normalizes a malformed daily date to the today route on navigate', () => {
     const { result } = routerHook()
     // 2026-02-31 is well-formed but impossible — dailyPath would throw on it.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { MobileScreen } from '@/mobile/mobile-screen'
+import { MobileStack } from '@/mobile/mobile-stack'
 import { MobileTabBar, type MobileTab } from '@/mobile/mobile-tab-bar'
 import {
   EMPTY_ALL_NOTES_FILTERS,
@@ -59,7 +59,7 @@ export function MobileShell(): ReactElement {
       style={{ height: 'calc(100dvh - var(--keyboard-height, 0px))' }}
     >
       <div className="min-h-0 flex-1">
-        <MobileScreen
+        <MobileStack
           allQuery={allQuery}
           onAllQueryChange={setAllQuery}
           allFilters={allFilters}

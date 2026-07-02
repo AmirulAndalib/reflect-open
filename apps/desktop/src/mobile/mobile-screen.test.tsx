@@ -1,9 +1,9 @@
-import { act, cleanup, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { format } from 'date-fns'
-import type { ReactElement } from 'react'
+import { StrictMode, type ReactElement } from 'react'
 import { setBridge } from '@reflect/core'
 import { RouterProvider, useRouter } from '@/routing/router'
 import type { Route } from '@/routing/route'
@@ -161,16 +161,23 @@ beforeEach(() => {
   })
 })
 
-function mount(initialRoute: Route, probeRoute?: Route): ReturnType<typeof render> {
+function mount(
+  initialRoute: Route,
+  probeRoute?: Route,
+  options?: { strict?: boolean },
+): ReturnType<typeof render> {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const tree = (
     <QueryClientProvider client={queryClient}>
       <RouterProvider initialRoute={initialRoute}>
         <MobileShell />
         {probeRoute ? <NavProbe to={probeRoute} /> : null}
       </RouterProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  // The app runs under StrictMode (main.tsx); opt in where a test guards
+  // against impure updaters (dev double-invocation caught a double-pop once).
+  return render(options?.strict ? <StrictMode>{tree}</StrictMode> : tree)
 }
 
 /** Stands in for a wiki-link tap: navigation arriving from inside a screen. */
@@ -181,6 +188,33 @@ function NavProbe({ to }: { to: Route }): ReactElement {
       probe-navigate
     </button>
   )
+}
+
+/** Every mounted stack layer, in DOM order (below → current → exiting). */
+function stackLayers(view: ReturnType<typeof render>): HTMLElement[] {
+  return Array.from(view.container.querySelectorAll<HTMLElement>('.mobile-stack-layer'))
+}
+
+/** The screen the user sees — the one stack layer not hidden as a11y-inert. */
+function visibleLayer(view: ReturnType<typeof render>): HTMLElement {
+  const visible = stackLayers(view).find((layer) => layer.getAttribute('aria-hidden') !== 'true')
+  if (!visible) {
+    throw new Error('no visible mobile-stack layer')
+  }
+  return visible
+}
+
+/**
+ * Dispatch a pointer event the gesture hook can read. jsdom's PointerEvent
+ * support is spotty, but React reads `pointerType`/`clientX`/… straight off
+ * the native event object, so a plain Event with the fields assigned works.
+ */
+function firePointer(element: Element, type: string, init: Record<string, unknown>): void {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.assign(event, init)
+  act(() => {
+    element.dispatchEvent(event)
+  })
 }
 
 /** The calendar strip's per-day aria-label (CalendarStrip uses this form). */
@@ -298,9 +332,12 @@ describe('MobileShell', () => {
     const view = mount({ kind: 'note', path: 'notes/source.md' })
 
     // A plain arrival (cold entry, All list, back-nav) must not focus — on
-    // touch that would raise the keyboard while browsing.
+    // touch that would raise the keyboard while browsing. (The stack keeps
+    // today's spine mounted beneath the note, so scope to the visible layer.)
     await waitFor(() => {
-      expect(view.getByTestId('fake-editor').textContent).toContain('see [[Target Note]]')
+      expect(within(visibleLayer(view)).getByTestId('fake-editor').textContent).toContain(
+        'see [[Target Note]]',
+      )
     })
     expect(editorProbe.focusCalls).toBe(0)
 
@@ -357,10 +394,267 @@ describe('MobileShell', () => {
 
     expect(view.getByRole('heading').textContent).toContain('meeting-notes')
     await waitFor(() => {
-      expect(view.getByTestId('fake-editor').textContent).toContain('agenda')
+      expect(within(visibleLayer(view)).getByTestId('fake-editor').textContent).toContain('agenda')
     })
 
     await user.click(view.getByRole('button', { name: 'Back' }))
     expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(todayIso()))
+  })
+})
+
+/**
+ * The navigation stack (V1 parity): a pushed note slides in as a card over
+ * its origin (which stays mounted, hidden, and inert beneath it), popping
+ * slides it out, tab switches stay instant, and an edge back-swipe drags the
+ * card with the finger — popping past the threshold, snapping back short of
+ * it. jsdom runs no animations, so tests drive the `animationend` /
+ * `transitionend` completions by hand.
+ */
+describe('MobileStack transitions & back-swipe', () => {
+  /** Navigate to the probe note and complete the push animation. */
+  async function pushProbeNote(view: ReturnType<typeof render>): Promise<void> {
+    const user = userEvent.setup()
+    await user.click(view.getByRole('button', { name: 'probe-navigate' }))
+    fireEvent.animationEnd(stackLayers(view).at(-1)!)
+  }
+
+  it('pushes a note as a sliding card over its origin, which stays mounted but inert', async () => {
+    const user = userEvent.setup()
+    files['notes/meeting-notes.md'] = 'agenda'
+    const view = mount({ kind: 'today' }, { kind: 'note', path: 'notes/meeting-notes.md' })
+
+    await user.click(view.getByRole('button', { name: 'probe-navigate' }))
+    const layers = stackLayers(view)
+    expect(layers).toHaveLength(2)
+    const [origin, entering] = layers
+    expect(entering!.className).toContain('mobile-stack-slide-in')
+    expect(origin!.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      within(origin!).getByRole('heading', { level: 1, hidden: true }).textContent,
+    ).toBe(monthLabel(todayIso()))
+    expect(view.container.querySelector('.mobile-stack-scrim')).toBeTruthy()
+
+    fireEvent.animationEnd(entering!)
+    // The animation class clears; the origin stays mounted for the back-swipe.
+    expect(entering!.className).not.toContain('mobile-stack-slide-in')
+    expect(stackLayers(view)).toHaveLength(2)
+  })
+
+  it('pops the note with a slide-out and unmounts it when the animation ends', async () => {
+    const user = userEvent.setup()
+    files['notes/meeting-notes.md'] = 'agenda'
+    const view = mount({ kind: 'today' }, { kind: 'note', path: 'notes/meeting-notes.md' })
+    await pushProbeNote(view)
+
+    await user.click(view.getByRole('button', { name: 'Back' }))
+    // Daily is current again immediately; the note lingers only to animate out.
+    expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(todayIso()))
+    const exiting = stackLayers(view).at(-1)!
+    expect(exiting.className).toContain('mobile-stack-slide-out')
+    expect(exiting.getAttribute('aria-hidden')).toBe('true')
+
+    fireEvent.animationEnd(exiting)
+    expect(stackLayers(view)).toHaveLength(1)
+  })
+
+  it('keeps tab switches instant: one layer, no slide (V1 cross-fade at most)', async () => {
+    const user = userEvent.setup()
+    const view = mount({ kind: 'today' })
+    expect(stackLayers(view)).toHaveLength(1)
+
+    await user.click(view.getByRole('button', { name: 'All' }))
+    const layers = stackLayers(view)
+    expect(layers).toHaveLength(1)
+    expect(layers[0]!.className).not.toContain('mobile-stack-slide-in')
+    expect(view.container.querySelector('.mobile-stack-scrim')).toBeNull()
+  })
+
+  it('follows history direction within a note chain: wiki-link pushes, back pops', async () => {
+    const user = userEvent.setup()
+    files['notes/source.md'] = 'see [[Target Note]]'
+    const view = mount({ kind: 'note', path: 'notes/source.md' })
+    await waitFor(() => {
+      expect(within(visibleLayer(view)).getByTestId('fake-editor').textContent).toContain(
+        'Target Note',
+      )
+    })
+
+    await user.click(view.getByRole('button', { name: 'fake-wikilink' }))
+    // Deeper into the chain: the destination slides in over the source.
+    await waitFor(() => {
+      expect(stackLayers(view).at(-1)!.className).toContain('mobile-stack-slide-in')
+    })
+    fireEvent.animationEnd(stackLayers(view).at(-1)!)
+
+    await user.click(view.getByRole('button', { name: 'Back' }))
+    // Popping reveals the still-mounted source, re-seats today beneath it,
+    // and slides the destination out — three layers, briefly.
+    const layers = stackLayers(view)
+    expect(layers).toHaveLength(3)
+    expect(layers.at(-1)!.className).toContain('mobile-stack-slide-out')
+    expect(within(visibleLayer(view)).getByRole('heading').textContent).toContain('source')
+    fireEvent.animationEnd(layers.at(-1)!)
+    expect(stackLayers(view)).toHaveLength(2)
+  })
+
+  it('cuts instantly under prefers-reduced-motion', async () => {
+    const originalMatchMedia = globalThis.matchMedia
+    globalThis.matchMedia = ((query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof matchMedia
+    try {
+      const user = userEvent.setup()
+      files['notes/meeting-notes.md'] = 'agenda'
+      const view = mount({ kind: 'today' }, { kind: 'note', path: 'notes/meeting-notes.md' })
+
+      await user.click(view.getByRole('button', { name: 'probe-navigate' }))
+      expect(stackLayers(view).at(-1)!.className).not.toContain('mobile-stack-slide-in')
+
+      await user.click(view.getByRole('button', { name: 'Back' }))
+      // No exit animation: the note is gone the moment the route changes.
+      expect(stackLayers(view)).toHaveLength(1)
+    } finally {
+      globalThis.matchMedia = originalMatchMedia
+    }
+  })
+
+  it('pops the note when an edge swipe crosses the release threshold', async () => {
+    files['notes/meeting-notes.md'] = 'agenda'
+    const view = mount({ kind: 'today' }, { kind: 'note', path: 'notes/meeting-notes.md' })
+    await pushProbeNote(view)
+
+    const stack = view.container.querySelector('.mobile-stack')!
+    const card = stackLayers(view).at(-1)!
+    firePointer(stack, 'pointerdown', {
+      pointerId: 1,
+      isPrimary: true,
+      pointerType: 'touch',
+      clientX: 10,
+      clientY: 300,
+    })
+    firePointer(stack, 'pointermove', { pointerId: 1, clientX: 40, clientY: 304 })
+    // The card tracks the finger. (jsdom has no layout, so the gesture falls
+    // back to window.innerWidth = 1024px — the pop threshold is ~410px.)
+    expect(card.style.transform).toBe('translate3d(30px, 0, 0)')
+
+    firePointer(stack, 'pointermove', { pointerId: 1, clientX: 600, clientY: 310 })
+    firePointer(stack, 'pointerup', { pointerId: 1, clientX: 600, clientY: 310 })
+    // Released past the threshold: the card settles offscreen...
+    expect(card.style.transform).toBe('translate3d(100%, 0, 0)')
+
+    // ...and only then commits the pop.
+    fireEvent.transitionEnd(card)
+    expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(todayIso()))
+    expect(stackLayers(view)).toHaveLength(1)
+  })
+
+  it('commits a gesture pop exactly once (StrictMode + same-frame double transitionend)', async () => {
+    // Three-deep history (today → All → note): a double-committed pop would
+    // sail past All and land on today. Two real-world double-fire vectors:
+    // StrictMode's dev double-invocation (which caught an impure updater
+    // once), and the card's transform + the scrim's opacity settling in the
+    // same frame, so `transitionend` arrives twice before React re-renders.
+    const user = userEvent.setup()
+    files['notes/meeting-notes.md'] = 'agenda'
+    const view = mount({ kind: 'today' }, { kind: 'note', path: 'notes/meeting-notes.md' }, {
+      strict: true,
+    })
+    await user.click(view.getByRole('button', { name: 'All' }))
+    await pushProbeNote(view)
+
+    const stack = view.container.querySelector('.mobile-stack')!
+    const card = stackLayers(view).at(-1)!
+    firePointer(stack, 'pointerdown', {
+      pointerId: 1,
+      isPrimary: true,
+      pointerType: 'touch',
+      clientX: 10,
+      clientY: 300,
+    })
+    firePointer(stack, 'pointermove', { pointerId: 1, clientX: 40, clientY: 304 })
+    firePointer(stack, 'pointermove', { pointerId: 1, clientX: 600, clientY: 310 })
+    firePointer(stack, 'pointerup', { pointerId: 1, clientX: 600, clientY: 310 })
+
+    act(() => {
+      card.dispatchEvent(new Event('transitionend', { bubbles: true }))
+      card.dispatchEvent(new Event('transitionend', { bubbles: true }))
+    })
+    expect(view.getByRole('searchbox', { name: 'Search notes' })).toBeTruthy()
+  })
+
+  it('snaps back when the swipe releases short of the threshold', async () => {
+    files['notes/meeting-notes.md'] = 'agenda'
+    const view = mount({ kind: 'today' }, { kind: 'note', path: 'notes/meeting-notes.md' })
+    await pushProbeNote(view)
+
+    const stack = view.container.querySelector('.mobile-stack')!
+    const card = stackLayers(view).at(-1)!
+    firePointer(stack, 'pointerdown', {
+      pointerId: 1,
+      isPrimary: true,
+      pointerType: 'touch',
+      clientX: 10,
+      clientY: 300,
+    })
+    firePointer(stack, 'pointermove', { pointerId: 1, clientX: 40, clientY: 304 })
+    firePointer(stack, 'pointermove', { pointerId: 1, clientX: 120, clientY: 306 })
+    firePointer(stack, 'pointerup', { pointerId: 1, clientX: 120, clientY: 306 })
+    expect(card.style.transform).toBe('translate3d(0, 0, 0)')
+
+    fireEvent.transitionEnd(card)
+    expect(view.getByRole('heading').textContent).toContain('meeting-notes')
+    expect(stackLayers(view)).toHaveLength(2)
+  })
+
+  it('ignores mid-screen touches, mouse pointers, and vertical scrolls', async () => {
+    files['notes/meeting-notes.md'] = 'agenda'
+    const view = mount({ kind: 'today' }, { kind: 'note', path: 'notes/meeting-notes.md' })
+    await pushProbeNote(view)
+
+    const stack = view.container.querySelector('.mobile-stack')!
+    const card = stackLayers(view).at(-1)!
+
+    // Not from the edge.
+    firePointer(stack, 'pointerdown', {
+      pointerId: 1,
+      isPrimary: true,
+      pointerType: 'touch',
+      clientX: 200,
+      clientY: 300,
+    })
+    firePointer(stack, 'pointermove', { pointerId: 1, clientX: 260, clientY: 300 })
+    expect(card.style.transform).toBe('')
+    firePointer(stack, 'pointerup', { pointerId: 1, clientX: 260, clientY: 300 })
+
+    // Not a touch.
+    firePointer(stack, 'pointerdown', {
+      pointerId: 2,
+      isPrimary: true,
+      pointerType: 'mouse',
+      clientX: 10,
+      clientY: 300,
+    })
+    firePointer(stack, 'pointermove', { pointerId: 2, clientX: 80, clientY: 300 })
+    expect(card.style.transform).toBe('')
+    firePointer(stack, 'pointerup', { pointerId: 2, clientX: 80, clientY: 300 })
+
+    // Vertical intent from the edge: the scroll wins and the gesture disarms.
+    firePointer(stack, 'pointerdown', {
+      pointerId: 3,
+      isPrimary: true,
+      pointerType: 'touch',
+      clientX: 10,
+      clientY: 300,
+    })
+    firePointer(stack, 'pointermove', { pointerId: 3, clientX: 14, clientY: 360 })
+    firePointer(stack, 'pointermove', { pointerId: 3, clientX: 80, clientY: 360 })
+    expect(card.style.transform).toBe('')
   })
 })
