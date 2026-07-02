@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import { clearNoteFocus, peekNoteFocus } from '@/editor/note-focus-request'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { BacklinksPanel } from './backlinks-panel'
 
@@ -20,8 +19,12 @@ vi.mock('@/providers/graph-provider', () => ({
 }))
 
 function RouteProbe(): ReactNode {
-  const { route } = useRouter()
-  return <output data-testid="route">{JSON.stringify(route)}</output>
+  const { route, arrivalFocusEditor } = useRouter()
+  return (
+    <output data-testid="route" data-focus={String(arrivalFocusEditor)}>
+      {JSON.stringify(route)}
+    </output>
+  )
 }
 
 function renderPanel(path: string) {
@@ -132,9 +135,8 @@ describe('BacklinksPanel', () => {
     await userEvent.click(view.getByText('Meeting Notes'))
     expect(view.getByTestId('route').textContent).toContain('notes/meeting.md')
     // A backlink tap restores focus on the destination (the mobile focus
-    // contract) — the request is recorded for the note screen to consume.
-    expect(peekNoteFocus('notes/meeting.md')).toBe(true)
-    clearNoteFocus('notes/meeting.md')
+    // contract) — the arrival carries the router's focusEditor intent.
+    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('true')
     view.unmount()
   })
 

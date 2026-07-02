@@ -1,9 +1,7 @@
 import { render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import type { Route } from '@/routing/route'
 import { RouterProvider, useRouter } from '@/routing/router'
-import { clearNoteFocus, peekNoteFocus } from './note-focus-request'
 import { useWikiLinkNavigation } from './use-wiki-link-navigation'
 
 const resolveWikiTarget = vi.hoisted(() => vi.fn())
@@ -22,13 +20,17 @@ function Host({ generation }: { generation: number | null }): ReactNode {
 }
 
 function RouteProbe(): ReactNode {
-  const { route } = useRouter()
-  return <output data-testid="route">{JSON.stringify(route)}</output>
+  const { route, arrivalFocusEditor } = useRouter()
+  return (
+    <output data-testid="route" data-focus={String(arrivalFocusEditor)}>
+      {JSON.stringify(route)}
+    </output>
+  )
 }
 
-function renderHost(generation: number | null = 1, initialRoute?: Route) {
+function renderHost(generation: number | null = 1) {
   return render(
-    <RouterProvider {...(initialRoute ? { initialRoute } : {})}>
+    <RouterProvider>
       <Host generation={generation} />
       <RouteProbe />
     </RouterProvider>,
@@ -43,8 +45,6 @@ beforeEach(() => {
   resolveWikiTarget.mockReset()
   createNoteWithTitle.mockReset()
   lastHandler = null
-  clearNoteFocus('notes/target.md')
-  clearNoteFocus('notes/created.md')
 })
 
 describe('useWikiLinkNavigation', () => {
@@ -57,46 +57,34 @@ describe('useWikiLinkNavigation', () => {
     view.unmount()
   })
 
-  it('requests destination focus for a resolved note (the mobile focus contract)', async () => {
+  it('arrives at a resolved note with the focus intent (the mobile focus contract)', async () => {
     resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/target.md' })
     const view = renderHost()
     lastHandler?.('Target')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/target.md'))
-    expect(peekNoteFocus('notes/target.md')).toBe(true)
+    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('true')
     view.unmount()
   })
 
-  it('does not record a focus request for a link to the already-open note', async () => {
-    // A same-route navigate never remounts the note screen, so nothing would
-    // consume the request — it must not be recorded (it would go stale and
-    // wrongly focus a plain reopen moments later).
-    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/target.md' })
-    const view = renderHost(1, { kind: 'note', path: 'notes/target.md' })
-    lastHandler?.('Target')
-    await waitFor(() => expect(resolveWikiTarget).toHaveBeenCalled())
-    await new Promise((tick) => setTimeout(tick, 0))
-    expect(peekNoteFocus('notes/target.md')).toBe(false)
-    view.unmount()
-  })
-
-  it('treats an unresolved ISO date as a daily target', async () => {
+  it('treats an unresolved ISO date as a daily target, without a focus intent', async () => {
     resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: '2026-06-09' })
     const view = renderHost()
     lastHandler?.('2026-06-09')
     await waitFor(() => expect(currentRoute(view)).toContain('"daily"'))
     expect(currentRoute(view)).toContain('2026-06-09')
+    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('false')
     expect(createNoteWithTitle).not.toHaveBeenCalled()
     view.unmount()
   })
 
-  it('creates and opens an unresolved title', async () => {
+  it('creates and opens an unresolved title, arriving with the focus intent', async () => {
     resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: 'Brand New' })
     createNoteWithTitle.mockResolvedValue('notes/created.md')
     const view = renderHost(7)
     lastHandler?.('Brand New')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/created.md'))
     expect(createNoteWithTitle).toHaveBeenCalledWith('Brand New', 7)
-    expect(peekNoteFocus('notes/created.md')).toBe(true)
+    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('true')
     view.unmount()
   })
 

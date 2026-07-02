@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import type { WikilinkClickHandler } from '@meowdown/core'
 import { getBacklinksWithContext, hasBridge } from '@reflect/core'
 import { BacklinkSourceGroup } from '@/components/backlink-source-group'
-import { useNoteFocusRequester } from '@/editor/note-focus-request'
 import { useAssetPersistence } from '@/editor/use-asset-persistence'
 import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
 import { groupBacklinksBySource } from '@/lib/group-backlinks'
@@ -50,16 +49,14 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
   // and the header toggle must move them together, not just this instance.
   const [expanded, setExpanded] = useSessionFlag(EXPANDED_STORAGE_KEY, true)
   const groups = useMemo(() => (data ? groupBacklinksBySource(data) : []), [data])
-  const requestFocus = useNoteFocusRequester()
   const handleOpen = useCallback(
     (target: string) => {
       const route = routeForPath(target)
       // A backlink tap restores focus on the destination (the mobile focus
       // contract); desktop autofocuses note arrivals anyway.
-      requestFocus(route)
-      navigate(route)
+      navigate(route, { focusEditor: route.kind === 'note' })
     },
-    [navigate, requestFocus],
+    [navigate],
   )
 
   // A wiki link clicked *inside* a snippet resolves its target the same way the

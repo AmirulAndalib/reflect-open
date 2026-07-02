@@ -2,7 +2,6 @@ import { type ReactElement } from 'react'
 import { MobileErrorBoundary } from '@/mobile/mobile-error-boundary'
 import { MobileOnboardingScreen } from '@/mobile/onboarding-screen'
 import { MobileShell } from '@/mobile/mobile-shell'
-import { useAutocompleteKeyboardFit } from '@/mobile/use-autocomplete-keyboard-fit'
 import { useKeyboardHeightVar } from '@/mobile/use-keyboard'
 import { useTaskCheckboxHaptics } from '@/mobile/use-task-haptics'
 import { useGraph } from '@/providers/graph-provider'
@@ -17,14 +16,12 @@ import { RouterProvider } from '@/routing/router'
  * The router mounts per graph exactly as on desktop; `MobileScreen` renders
  * the current route (daily spine, note pages), so wiki-link and date-link
  * taps navigate for real. The keyboard-height bridge lives here so every
- * screen inherits `--keyboard-height` — and the editor's touch affordances
- * that ride on it (autocomplete menus fitted above the keyboard, checkbox
- * haptics) mount here for the same reason.
+ * screen inherits `--keyboard-height` — and the checkbox-haptic listener
+ * mounts here so it covers every screen's editors.
  */
 export function MobileApp(): ReactElement {
   const { status, graph, error, needsOnboarding } = useGraph()
   useKeyboardHeightVar()
-  useAutocompleteKeyboardFit()
   useTaskCheckboxHaptics()
 
   if (status === 'ready' && graph) {

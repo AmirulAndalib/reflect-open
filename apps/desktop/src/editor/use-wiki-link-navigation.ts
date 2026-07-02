@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { createNoteWithTitle, resolveWikiTarget } from '@reflect/core'
-import { useNoteFocusRequester } from '@/editor/note-focus-request'
 import { isIsoDate } from '@/lib/dates'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
@@ -25,7 +24,6 @@ import { useRouter } from '@/routing/router'
  */
 export function useWikiLinkNavigation(generation: number | null): (target: string) => void {
   const { navigate } = useRouter()
-  const requestFocus = useNoteFocusRequester()
 
   const unmountedRef = useRef(false)
   useEffect(() => {
@@ -45,19 +43,16 @@ export function useWikiLinkNavigation(generation: number | null): (target: strin
           }
           if (resolution.kind === 'resolved') {
             const route = routeForPath(resolution.ref)
-            // A link tap is an intent to keep writing there: the mobile note
-            // screen consumes this and restores focus on arrival (Plan 19
+            // A link tap is an intent to keep writing there: the arrival
+            // carries a focus request the mobile note screen consumes (Plan 19
             // focus contract). Desktop autofocuses note arrivals anyway.
-            requestFocus(route)
-            navigate(route)
+            navigate(route, { focusEditor: route.kind === 'note' })
           } else if (isIsoDate(resolution.text)) {
             navigate({ kind: 'daily', date: resolution.text })
           } else if (generation !== null && resolution.text.trim() !== '') {
             const created = await createNoteWithTitle(resolution.text, generation)
             if (!unmountedRef.current) {
-              const route = { kind: 'note', path: created } as const
-              requestFocus(route)
-              navigate(route)
+              navigate({ kind: 'note', path: created }, { focusEditor: true })
             }
           }
         } catch (err) {
@@ -65,6 +60,6 @@ export function useWikiLinkNavigation(generation: number | null): (target: strin
         }
       })()
     },
-    [navigate, generation, requestFocus],
+    [navigate, generation],
   )
 }

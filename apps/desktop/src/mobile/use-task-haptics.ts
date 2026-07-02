@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { impactFeedback } from '@tauri-apps/plugin-haptics'
+import { hapticImpactLight } from '@/mobile/haptics'
 
 /**
  * A light haptic tick when a task checkbox is toggled in the editor (V1 mobile
@@ -8,9 +8,6 @@ import { impactFeedback } from '@tauri-apps/plugin-haptics'
  * every mounted editor: the note screen, the day carousel, and anything later.
  * Only markers of `task`-kind lists inside a live (contenteditable) surface
  * count — toggle-fold chevrons and read-only protected views stay silent.
- *
- * Fire-and-forget: haptics are garnish, and a bridge failure (or the
- * simulator, which has no Taptic engine) must never surface to the user.
  */
 export function useTaskCheckboxHaptics(): void {
   useEffect(() => {
@@ -25,9 +22,7 @@ export function useTaskCheckboxHaptics(): void {
       if (marker === null || marker.closest('[contenteditable="true"]') === null) {
         return
       }
-      impactFeedback('light').catch(() => {
-        // No haptics available (desktop-class device, simulator) — fine.
-      })
+      hapticImpactLight()
     }
     document.addEventListener('mousedown', onMouseDown, true)
     return () => document.removeEventListener('mousedown', onMouseDown, true)
