@@ -40,6 +40,18 @@ Do not return anything other than the corrected text. ${FILLER}`,
     mode: 'replace',
   },
   {
+    id: 'built-in:copy-editor',
+    label: 'Act as a copy editor',
+    body: `Act as a copy editor. Go through the text in triple quotes below. Edit it for spelling mistakes, grammar issues, punctuation, and generally for readability and flow. Format the text into appropriately sized paragraphs. Make your best effort.
+
+"""
+{{selectedText}}
+"""
+
+Return only the edited text. If in doubt, or you can't make edits, just return the original text. ${FILLER}`,
+    mode: 'replace',
+  },
+  {
     id: 'built-in:rephrase',
     label: 'Rephrase my writing',
     body: `Rewrite the text in triple quotes below in your own words. Rephrase the text, keeping the meaning.
@@ -64,6 +76,18 @@ Simplify and condense the writing. Do not return anything other than the simplif
     mode: 'replace',
   },
   {
+    id: 'built-in:format-paragraphs',
+    label: 'Format paragraphs',
+    body: `Format the text in triple quotes below into paragraphs.
+
+"""
+{{selectedText}}
+"""
+
+Do not return anything other than the formatted text. ${FILLER}`,
+    mode: 'replace',
+  },
+  {
     id: 'built-in:short-summary',
     label: 'Write a short summary',
     body: `Summarize the text in triple quotes below but keep it concise. Summarize using plain and simple language and keep the same tense.
@@ -73,6 +97,18 @@ Simplify and condense the writing. Do not return anything other than the simplif
 """
 
 Do not return anything other than the summary. ${FILLER}`,
+    mode: 'append',
+  },
+  {
+    id: 'built-in:takeaways',
+    label: 'List key takeaways',
+    body: `My notes are below in triple quotes:
+
+"""
+{{selectedText}}
+"""
+
+Write a Markdown list (using dashes) of key takeaways from my notes. Write at least 3 items. Do not return anything other than the list. ${FILLER}`,
     mode: 'append',
   },
   {
@@ -91,6 +127,18 @@ Write a todo list of action items from my note using the following format:
 
 Only include actions actually implied by the note. Do not return anything other than the todo list. ${FILLER}`,
     mode: 'append',
+  },
+  {
+    id: 'built-in:points-to-document',
+    label: 'Points to document',
+    body: `Turn the points in triple quotes below into a quick document on the subject. Try to be as pithy and straightforward as possible. Bold key arguments. Use Markdown to cleanly format the output.
+
+"""
+{{selectedText}}
+"""
+
+Do not return anything other than the document. ${FILLER}`,
+    mode: 'replace',
   },
   {
     id: 'built-in:continuation',

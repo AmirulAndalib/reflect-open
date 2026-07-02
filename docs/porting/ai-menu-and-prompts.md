@@ -29,9 +29,12 @@ one-shot model switch).
    selection.
 2. A picker lists prompts: the user's saved prompts first (v1's order), then
    a curated built-in set carrying v1's battle-tested bodies (fix grammar,
-   rephrase, simplify, summarize, action items, next paragraph, decorate
+   copy editor, rephrase, simplify, format paragraphs, short summary, key
+   takeaways, action items, points to document, next paragraph, decorate
    with backlinks), with label filtering. Typed text that matches nothing is
-   itself runnable as a one-off prompt (v1's "Ask anything to AI").
+   itself runnable as a one-off prompt (v1's "Ask anything to AI"). The rest
+   of v1's 23 (tweets, blog posts, emails, outlines…) stay unported — any of
+   them can be recreated verbatim as a saved prompt.
 3. The result streams into view with explicit **Accept / Discard / Retry**
    controls, plus the alternate placement (v1's Replace-vs-Insert choice:
    "Insert below" on a replace prompt, "Replace selection" on an append
