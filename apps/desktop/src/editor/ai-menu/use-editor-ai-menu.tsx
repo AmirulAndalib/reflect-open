@@ -1,4 +1,12 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import { toast } from 'sonner'
 import type {
   PendingReplacementResolveHandler,
@@ -79,6 +87,17 @@ export function useEditorAiMenu({ path, editorRef }: EditorAiMenuOptions): Edito
   // The staged placement of the current run — state (not just the ref) so the
   // preview's alternate-placement button can label itself.
   const [runMode, setRunMode] = useState<AiPromptMode | null>(null)
+
+  // A run belongs to one note: switching notes (or unmounting) mid-stream
+  // aborts the provider call and drops the run, so a stale stream can never
+  // append into — or Retry restage ranges against — a different document.
+  useEffect(() => {
+    return () => {
+      runRef.current?.controller.abort()
+      runRef.current = null
+      setRunMode(null)
+    }
+  }, [path])
 
   const streamRun = useCallback(
     async (
