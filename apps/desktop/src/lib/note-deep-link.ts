@@ -1,5 +1,11 @@
-import { dateFromDailyPath, errorMessage, indexNote, isDaily, parseNote } from '@reflect/core'
-import { newNoteId } from '@/lib/create-note'
+import {
+  dateFromDailyPath,
+  errorMessage,
+  indexNote,
+  isDaily,
+  newNoteId,
+  parseNote,
+} from '@reflect/core'
 import { isIsoDate } from '@/lib/dates'
 import { dailyDeepLink, noteDeepLink } from '@/lib/deep-links/format'
 import { commitNoteFrontmatter, readNoteSource } from '@/lib/note-frontmatter'

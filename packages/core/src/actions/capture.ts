@@ -16,7 +16,7 @@ import {
 } from '../graph/commands'
 import { assetPath, dailyPath, notePath } from '../graph/paths'
 import { hashContent } from '../indexing/hash'
-import { appendBlock, appendUnderHeading } from '../markdown/edit'
+import { appendBlock, appendUnderHeading, wikiLinkSafe } from '../markdown/edit'
 import { parseNote } from '../markdown/extract'
 import { parseFrontmatter, splitFrontmatter, upsertFrontmatter } from '../markdown/frontmatter'
 import type { Frontmatter } from '../markdown/model'
@@ -190,11 +190,6 @@ export type CaptureNoteMeta = z.infer<typeof captureNoteMetaSchema>
 export function captureNoteMeta(frontmatter: Frontmatter): CaptureNoteMeta | null {
   const parsed = captureNoteMetaSchema.safeParse(frontmatter)
   return parsed.success ? parsed.data : null
-}
-
-/** `[[…]]` has no escaping — strip the characters that would corrupt a link. */
-function wikiLinkSafe(text: string): string {
-  return text.replace(/[[\]|\r\n]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 function urlHost(url: string): string {

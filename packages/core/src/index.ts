@@ -101,6 +101,14 @@ export {
   captureMetaFetch,
   promoteCaptureScreenshot,
 } from './graph/commands'
+export {
+  newNoteId,
+  newNoteSource,
+  untitledNoteSeed,
+  untitledNotePath,
+  isUntitledNotePath,
+  createNoteWithTitle,
+} from './graph/create-note'
 
 // User settings (config-dir JSON document; Rust persists, this layer validates)
 export {
@@ -117,6 +125,8 @@ export {
   dateFormatSchema,
   weekStartDaySchema,
   allNotesFilterTagsSchema,
+  calendarEnabledSchema,
+  calendarIdsSchema,
   graphColorSchema,
   graphColorsSchema,
   GRAPH_COLOR_IDS,
@@ -134,6 +144,7 @@ export {
   type DateFormat,
   type WeekStartDay,
   type AllNotesFilterTags,
+  type CalendarIds,
   type GraphColor,
   type GraphColors,
   type AiProviderId,
@@ -300,6 +311,37 @@ export {
   type ReconcileCaptureEnrichmentOutcome,
 } from './actions/capture'
 export { parsePageMeta, scrapePageMeta, type PageMeta } from './actions/meta-scrape'
+
+// Calendar / meetings integration (docs/porting/calendar-meetings-integration.md)
+export {
+  calendarAuthorizationStatus,
+  canReadCalendars,
+  requestCalendarAccess,
+  listCalendars,
+  listCalendarEvents,
+  subscribeCalendarChanged,
+  calendarAuthorizationStatusSchema,
+  calendarInfoSchema,
+  calendarAttendeeSchema,
+  calendarEventSchema,
+  type CalendarAuthorizationStatus,
+  type CalendarInfo,
+  type CalendarAttendee,
+  type CalendarEvent,
+} from './calendar/commands'
+export {
+  displayEvents,
+  isDeclinedByUser,
+  defaultAttendeeNames,
+  dayRange,
+} from './calendar/events'
+export {
+  addMeetingToDaily,
+  meetingLine,
+  MEETINGS_HEADING,
+  type AddMeetingInput,
+  type AddMeetingOutcome,
+} from './actions/add-meeting'
 export {
   describePage,
   isDescriptionRejected,
@@ -390,6 +432,7 @@ export {
   appendBlock,
   appendUnderHeading,
   appendTaskLine,
+  wikiLinkSafe,
   editTaskLine,
   removeTaskLine,
   parseTaskMarker,

@@ -5,9 +5,8 @@ import {
   type WikilinkItem,
   type WikilinkSearchHandler,
 } from '@meowdown/react'
-import { hasBridge, suggestTags, suggestWikiTargets } from '@reflect/core'
+import { createNoteWithTitle, hasBridge, suggestTags, suggestWikiTargets } from '@reflect/core'
 import { buildAutocompleteEntries } from '@/editor/wiki-autocomplete-entries'
-import { createNoteWithTitle } from '@/lib/create-note'
 import { formatDayLabel, todayIso } from '@/lib/dates'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'

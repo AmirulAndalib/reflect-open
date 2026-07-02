@@ -5,8 +5,8 @@ import {
   hasBridge,
   randomNotePath,
   toggleDevtools,
+  untitledNotePath,
 } from '@reflect/core'
-import { untitledNotePath } from '@/lib/create-note'
 import { runCopyDeepLink } from '@/lib/note-deep-link'
 import { runGistPublish } from '@/lib/note-gist'
 import { toggleNotePinned } from '@/lib/note-pin'
