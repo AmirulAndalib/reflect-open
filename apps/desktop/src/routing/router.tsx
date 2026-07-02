@@ -130,8 +130,18 @@ export function RouterProvider({
 
   const navigate = useCallback((route: Route, options?: NavigateOptions) => {
     const target = normalizeRoute(route)
-    const surface = options?.restoreSurfaceScroll === true ? scrollSurfaceForRoute(target) : null
-    const restored = surface !== null ? scrollBySurface.current.get(surface) : undefined
+    const surface = scrollSurfaceForRoute(target)
+    const restored =
+      options?.restoreSurfaceScroll === true && surface !== null
+        ? scrollBySurface.current.get(surface)
+        : undefined
+    if (surface !== null && restored === undefined) {
+      // An explicit arrival re-anchors the surface, making its saved offset
+      // stale — drop it so a later nav-tab return re-anchors too instead of
+      // resurrecting the pre-arrival position. Scrolling after the arrival
+      // repopulates it.
+      scrollBySurface.current.delete(surface)
+    }
     setHistory((current) => {
       const currentEntry = current.stack[current.index]!
       if (routesEqual(currentEntry.route, target)) {

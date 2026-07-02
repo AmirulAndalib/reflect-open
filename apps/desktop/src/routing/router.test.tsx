@@ -120,6 +120,16 @@ describe('router', () => {
     expect(result.current.savedScroll()).toBeNull()
   })
 
+  it('an explicit re-anchor arrival drops the daily surface offset too', () => {
+    const { result } = routerHook()
+    act(() => result.current.saveScrollState(500)) // user scrolled away on today
+    act(() => result.current.navigate({ kind: 'today' })) // ⌘D re-anchors the stream
+    act(() => result.current.navigate({ kind: 'note', path: 'notes/a.md' }))
+    act(() => result.current.navigate({ kind: 'today' }, { restoreSurfaceScroll: true }))
+
+    expect(result.current.savedScroll()).toBeNull() // the tab can't resurrect pre-⌘D scroll
+  })
+
   it('clearScrollState drops the daily surface offset too (new-note interaction)', () => {
     const { result } = routerHook()
     act(() => result.current.saveScrollState(500)) // scrolled the stream before ⌘N
