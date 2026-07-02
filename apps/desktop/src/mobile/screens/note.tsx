@@ -1,8 +1,9 @@
-import { type ReactElement } from 'react'
+import { useEffect, useMemo, type ReactElement } from 'react'
 import { isUntitledNotePath } from '@reflect/core'
 import { ChevronLeft } from 'lucide-react'
 import { NotePane } from '@/components/note-pane'
 import { Button } from '@/components/ui/button'
+import { clearNoteFocus, peekNoteFocus } from '@/editor/note-focus-request'
 import { NoteActionsMenu } from '@/mobile/note-actions-menu'
 import { useRouter } from '@/routing/router'
 
@@ -11,12 +12,22 @@ import { useRouter } from '@/routing/router'
  * (Plan 19). Lazy like the desktop note route, so a link to a not-yet-created
  * note opens an empty editor and the file is born on the first keystroke; a
  * fresh untitled note (`+`, V1 parity) autofocuses so the keyboard is up and
- * typing names it via the ghost-title flow. Back pops the history stack; a
- * cold entry (nothing to pop) lands on today instead.
+ * typing names it via the ghost-title flow. A wiki-link tap records a
+ * one-shot focus request, so the destination restores focus too (the mobile
+ * focus contract) — but a plain arrival (All list, back) never raises the
+ * keyboard. Back pops the history stack; a cold entry (nothing to pop) lands
+ * on today instead.
  */
 export function MobileNote({ path }: { path: string }): ReactElement {
   const { back, canBack, navigate } = useRouter()
   const untitled = isUntitledNotePath(path)
+  // Peek during render (the pane needs `autoFocus` before its editor mounts —
+  // the mount is what focuses); clear after, so a later revisit stays calm.
+  // The screen is keyed by path, so this runs once per arrival.
+  const focusRequested = useMemo(() => peekNoteFocus(path), [path])
+  useEffect(() => {
+    clearNoteFocus(path)
+  }, [path])
 
   return (
     <div className="flex h-full w-screen flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -45,7 +56,7 @@ export function MobileNote({ path }: { path: string }): ReactElement {
         <NotePane
           path={path}
           lazy
-          autoFocus={untitled}
+          autoFocus={untitled || focusRequested}
           gutterClassName="px-4"
           editorClassName="min-h-[60dvh]"
         />

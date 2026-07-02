@@ -157,10 +157,13 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build());
 
     // The keyboard bridge (Plan 19, decision 8) is mobile-only: desktop has
-    // no software keyboard to track. (Sharing uses the webview's Web Share
-    // API, so it needs no native plugin.)
+    // no software keyboard to track. Haptics back the editor's checkbox-toggle
+    // tick (V1 mobile parity). (Sharing uses the webview's Web Share API, so
+    // it needs no native plugin.)
     #[cfg(mobile)]
-    let builder = builder.plugin(tauri_plugin_keyboard::init());
+    let builder = builder
+        .plugin(tauri_plugin_keyboard::init())
+        .plugin(tauri_plugin_haptics::init());
 
     // The main window starts hidden (`visible: false`); on desktop the
     // window-state plugin reveals it after restoring geometry, but mobile has

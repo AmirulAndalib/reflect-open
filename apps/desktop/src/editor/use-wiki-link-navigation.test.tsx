@@ -2,6 +2,7 @@ import { render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { RouterProvider, useRouter } from '@/routing/router'
+import { clearNoteFocus, peekNoteFocus } from './note-focus-request'
 import { useWikiLinkNavigation } from './use-wiki-link-navigation'
 
 const resolveWikiTarget = vi.hoisted(() => vi.fn())
@@ -41,6 +42,8 @@ beforeEach(() => {
   resolveWikiTarget.mockReset()
   createNoteWithTitle.mockReset()
   lastHandler = null
+  clearNoteFocus('notes/target.md')
+  clearNoteFocus('notes/created.md')
 })
 
 describe('useWikiLinkNavigation', () => {
@@ -50,6 +53,15 @@ describe('useWikiLinkNavigation', () => {
     lastHandler?.('Target')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/target.md'))
     expect(createNoteWithTitle).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
+  it('requests destination focus for a resolved note (the mobile focus contract)', async () => {
+    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/target.md' })
+    const view = renderHost()
+    lastHandler?.('Target')
+    await waitFor(() => expect(currentRoute(view)).toContain('notes/target.md'))
+    expect(peekNoteFocus('notes/target.md')).toBe(true)
     view.unmount()
   })
 
@@ -70,6 +82,7 @@ describe('useWikiLinkNavigation', () => {
     lastHandler?.('Brand New')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/created.md'))
     expect(createNoteWithTitle).toHaveBeenCalledWith('Brand New', 7)
+    expect(peekNoteFocus('notes/created.md')).toBe(true)
     view.unmount()
   })
 

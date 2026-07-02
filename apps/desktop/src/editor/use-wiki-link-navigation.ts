@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { createNoteWithTitle, resolveWikiTarget } from '@reflect/core'
+import { requestNoteFocus } from '@/editor/note-focus-request'
 import { isIsoDate } from '@/lib/dates'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
@@ -42,12 +43,20 @@ export function useWikiLinkNavigation(generation: number | null): (target: strin
             return
           }
           if (resolution.kind === 'resolved') {
-            navigate(routeForPath(resolution.ref))
+            const route = routeForPath(resolution.ref)
+            // A link tap is an intent to keep writing there: the mobile note
+            // screen consumes this and restores focus on arrival (Plan 19
+            // focus contract). Desktop autofocuses note arrivals anyway.
+            if (route.kind === 'note') {
+              requestNoteFocus(route.path)
+            }
+            navigate(route)
           } else if (isIsoDate(resolution.text)) {
             navigate({ kind: 'daily', date: resolution.text })
           } else if (generation !== null && resolution.text.trim() !== '') {
             const created = await createNoteWithTitle(resolution.text, generation)
             if (!unmountedRef.current) {
+              requestNoteFocus(created)
               navigate({ kind: 'note', path: created })
             }
           }
