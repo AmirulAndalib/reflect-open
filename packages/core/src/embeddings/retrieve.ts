@@ -117,7 +117,7 @@ async function lexicalHits(query: string, limit: number): Promise<RetrievalHit[]
     },
     filtered: false,
   }
-  const hits = await searchWithFilters(plain, limit)
+  const hits = await searchWithFilters(plain, { limit })
   if (hits.length === 0) {
     return []
   }

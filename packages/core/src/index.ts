@@ -625,6 +625,7 @@ export {
   type ParsedSearchQuery,
   type SearchFilters,
   type FilteredSearchHit,
+  type FilteredSearchOptions,
   type RenameIo,
   type TitleRenameRewriteOptions,
   type TitleRenameRewriteResult,

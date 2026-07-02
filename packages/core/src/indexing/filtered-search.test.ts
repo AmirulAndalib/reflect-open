@@ -32,7 +32,7 @@ describe('searchWithFilters', () => {
       },
     ])
 
-    const hits = await searchWithFilters(parseSearchQuery('#Work'), 12)
+    const hits = await searchWithFilters(parseSearchQuery('#Work'))
 
     expect(hits).toEqual([
       {
@@ -71,7 +71,7 @@ describe('searchWithFilters', () => {
       },
     ])
 
-    await searchWithFilters(parseSearchQuery('#Work #Home'), 12)
+    await searchWithFilters(parseSearchQuery('#Work #Home'))
 
     const [, args] = mockInvoke.mock.calls[0]!
     const sql = String(args['sql'])
@@ -96,7 +96,7 @@ describe('searchWithFilters', () => {
     ])
 
     const parsed = parseSearchQuery('#Work is:daily is:pinned updated:>2026-01-01')
-    const hits = await searchWithFilters(parsed, 12)
+    const hits = await searchWithFilters(parsed)
 
     expect(hits).toEqual([
       {
@@ -132,7 +132,7 @@ describe('searchWithFilters', () => {
       },
     ])
 
-    const hits = await searchWithFilters(parseSearchQuery('quokka'), 12)
+    const hits = await searchWithFilters(parseSearchQuery('quokka'))
 
     expect(hits).toEqual([
       {
@@ -167,7 +167,7 @@ describe('searchWithFilters', () => {
   it('folds the exact-title key the way titles were indexed', async () => {
     mockInvoke.mockResolvedValueOnce([])
 
-    await searchWithFilters(parseSearchQuery('Quokka Habitat'), 12)
+    await searchWithFilters(parseSearchQuery('Quokka Habitat'))
 
     const [, args] = mockInvoke.mock.calls[0]!
     const params = args['params'] as unknown[]
@@ -179,7 +179,7 @@ describe('searchWithFilters', () => {
   it('leaves the recall feed uncapped when limit is null', async () => {
     mockInvoke.mockResolvedValueOnce([])
 
-    await searchWithFilters(parseSearchQuery('is:pinned'), null)
+    await searchWithFilters(parseSearchQuery('is:pinned'), { limit: null })
 
     const [, args] = mockInvoke.mock.calls[0]!
     const sql = String(args['sql'])
@@ -190,7 +190,7 @@ describe('searchWithFilters', () => {
   it('orders the recall feed pinned-first when asked (the All list order)', async () => {
     mockInvoke.mockResolvedValueOnce([])
 
-    await searchWithFilters(parseSearchQuery('is:daily'), null, { pinnedFirst: true })
+    await searchWithFilters(parseSearchQuery('is:daily'), { limit: null, pinnedFirst: true })
 
     const [, args] = mockInvoke.mock.calls[0]!
     const sql = String(args['sql'])
@@ -205,7 +205,7 @@ describe('searchWithFilters', () => {
   it('orders the tag-first recall path pinned-first when asked', async () => {
     mockInvoke.mockResolvedValueOnce([])
 
-    await searchWithFilters(parseSearchQuery('#Work'), null, { pinnedFirst: true })
+    await searchWithFilters(parseSearchQuery('#Work'), { limit: null, pinnedFirst: true })
 
     const [, args] = mockInvoke.mock.calls[0]!
     const sql = String(args['sql'])
@@ -219,7 +219,7 @@ describe('searchWithFilters', () => {
   it('restricts the population to regular notes with notesOnly', async () => {
     mockInvoke.mockResolvedValueOnce([])
 
-    await searchWithFilters(parseSearchQuery('is:pinned'), null, { notesOnly: true })
+    await searchWithFilters(parseSearchQuery('is:pinned'), { limit: null, notesOnly: true })
 
     const [, args] = mockInvoke.mock.calls[0]!
     const sql = String(args['sql'])
@@ -230,7 +230,7 @@ describe('searchWithFilters', () => {
   it('lets an explicit daily filter win over notesOnly', async () => {
     mockInvoke.mockResolvedValueOnce([])
 
-    await searchWithFilters(parseSearchQuery('is:daily'), null, { notesOnly: true })
+    await searchWithFilters(parseSearchQuery('is:daily'), { limit: null, notesOnly: true })
 
     const [, args] = mockInvoke.mock.calls[0]!
     const sql = String(args['sql'])

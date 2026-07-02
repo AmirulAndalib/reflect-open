@@ -34,6 +34,12 @@ export interface FilteredSearchHit {
 
 export interface FilteredSearchOptions {
   /**
+   * Result cap (default 12, the palette's row budget). `null` removes the cap
+   * — only sensible for the no-text recall feed behind a virtualized list;
+   * free-text callers should keep one.
+   */
+  limit?: number | null
+  /**
    * Order the no-text recall feed pinned-first (explicit pin order, then
    * unordered pins), then by recency — the All list's V1 order. Free-text
    * results keep relevance ranking regardless.
@@ -67,17 +73,13 @@ function recallOrder(pinnedFirst: boolean): RawBuilder<unknown>[] {
   return [...(pinnedFirst ? pinned : []), sql`"notes"."mtime" desc`, sql`"notes"."path"`]
 }
 
-/**
- * Search the graph with parsed filters. `limit` may be `null` for an uncapped
- * result set — only sensible for the no-text recall feed behind a virtualized
- * list (free-text callers should keep a cap).
- */
+/** Search the graph with parsed filters (see {@link FilteredSearchOptions}). */
 export async function searchWithFilters(
   parsed: ParsedSearchQuery,
-  limit: number | null = 12,
   options: FilteredSearchOptions = {},
 ): Promise<FilteredSearchHit[]> {
   const { filters } = parsed
+  const limit = options.limit === undefined ? 12 : options.limit
 
   // Link filters name a note by title/alias/date; resolve it once up front.
   // An unresolvable target matches nothing (the filter is explicit — silently

@@ -12,19 +12,19 @@ import {
 } from '@reflect/core'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Spinner } from '@/components/ui/spinner'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { FilterBar } from '@/mobile/search-filters/filter-bar'
 import {
   buildAllNotesSearch,
   pendingTagToken,
+  searchPlanFor,
   type AllNotesFilters,
 } from '@/mobile/search-filters/filter-state'
 import { NoteRowList, type NoteRowModel } from '@/mobile/note-row-list'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
-
-const SEARCH_LIMIT = 50
 
 /** A search hit resolved into the shared row shape. */
 export function rowForHit(hit: FilteredSearchHit): NoteRowModel {
@@ -62,10 +62,10 @@ interface MobileAllNotesProps {
 /**
  * The All tab (Plan 19, V1 parity): a virtualized fixed-row note list with an
  * embedded search bar and AND-composed filter badges. Everything is one
- * search path ({@link buildAllNotesSearch} → `searchWithFilters`): the plain
- * list is the empty query's recall feed (notes only, pinned first, uncapped),
- * badges and typed tokens narrow it, and free text switches to ranked FTS
- * capped at {@link SEARCH_LIMIT}. A trailing `#…` token switches the bar into
+ * search path ({@link buildAllNotesSearch} → `searchWithFilters`, run per
+ * {@link searchPlanFor}): the plain list is the empty query's recall feed
+ * (notes only, pinned first, uncapped), badges and typed tokens narrow it,
+ * and free text switches to ranked FTS. A trailing `#…` token switches the bar into
  * tag matching (V1): suggestions replace the badge row until the tag is
  * picked or the token completed. The route's tag (a tag tap landed here)
  * rides along as a badge with a back affordance.
@@ -90,7 +90,6 @@ export function MobileAllNotes({
     () => buildAllNotesSearch(deferredQuery, filters, tag),
     [deferredQuery, filters, tag],
   )
-  const hasText = parsed.text !== ''
 
   const { data: facets } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'all-notes-tags'],
@@ -99,11 +98,7 @@ export function MobileAllNotes({
   })
   const { data: hits } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-all-notes', parsed],
-    queryFn: () =>
-      searchWithFilters(parsed, hasText ? SEARCH_LIMIT : null, {
-        pinnedFirst: !hasText,
-        notesOnly: !hasText,
-      }),
+    queryFn: () => searchWithFilters(parsed, searchPlanFor(parsed)),
     enabled,
     // Typing re-keys the query as the deferred value settles; holding the
     // previous rows avoids a blank flash between keystrokes.
@@ -111,7 +106,7 @@ export function MobileAllNotes({
   })
 
   const rows = useMemo(() => (hits ?? []).map(rowForHit), [hits])
-  const pristine = !hasText && !parsed.filtered
+  const pristine = parsed.text === '' && !parsed.filtered
 
   const addPendingTag = (facet: NoteTagFacet): void => {
     const key = foldTag(facet.tag)
@@ -164,7 +159,11 @@ export function MobileAllNotes({
           />
         )}
       </header>
-      {hits !== undefined && hits.length === 0 ? (
+      {hits === undefined ? (
+        <div className="flex flex-1 items-center justify-center" aria-label="Loading notes">
+          <Spinner className="size-5 text-text-muted" />
+        </div>
+      ) : hits.length === 0 ? (
         pristine ? (
           <Empty icon={<FileText className="size-6" />} message="No notes yet" />
         ) : (

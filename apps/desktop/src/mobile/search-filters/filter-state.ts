@@ -1,5 +1,10 @@
 import { format } from 'date-fns'
-import { foldTag, parseSearchQuery, type ParsedSearchQuery } from '@reflect/core'
+import {
+  foldTag,
+  parseSearchQuery,
+  type FilteredSearchOptions,
+  type ParsedSearchQuery,
+} from '@reflect/core'
 
 /**
  * The All tab's badge-filter model (Plan 19, V1 parity): AND-composed filters
@@ -147,6 +152,21 @@ export function buildAllNotesSearch(
     },
   }
   return merged
+}
+
+/** Free-text searches cap at the same row budget V1's list search used. */
+const SEARCH_LIMIT = 50
+
+/**
+ * How the All tab runs a composed query: free text is a ranked, capped
+ * search; without text the query is the list itself — uncapped (the screen
+ * virtualizes), notes-only (dailies live in the stream unless the Daily
+ * filter asks for them), pinned first (V1's list order).
+ */
+export function searchPlanFor(parsed: ParsedSearchQuery): FilteredSearchOptions {
+  return parsed.text !== ''
+    ? { limit: SEARCH_LIMIT }
+    : { limit: null, pinnedFirst: true, notesOnly: true }
 }
 
 /** The updated-at badge's relative presets. */

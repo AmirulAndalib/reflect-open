@@ -38,7 +38,7 @@ export function NotePickerDrawer({
 
   const { data: hits } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-note-picker', deferredQuery],
-    queryFn: () => searchWithFilters(parseSearchQuery(deferredQuery), PICKER_LIMIT),
+    queryFn: () => searchWithFilters(parseSearchQuery(deferredQuery), { limit: PICKER_LIMIT }),
     enabled: open && hasBridge() && graph !== null,
   })
 
