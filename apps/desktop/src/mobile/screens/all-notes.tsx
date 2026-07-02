@@ -159,11 +159,13 @@ export function MobileAllNotes({
           />
         )}
       </header>
-      {hits === undefined ? (
+      {/* Undefined hits mean "still fetching" only while the query can run —
+          with no bridge/graph it never will, and the empty state is honest. */}
+      {enabled && hits === undefined ? (
         <div className="flex flex-1 items-center justify-center" aria-label="Loading notes">
           <Spinner className="size-5 text-text-muted" />
         </div>
-      ) : hits.length === 0 ? (
+      ) : (hits ?? []).length === 0 ? (
         pristine ? (
           <Empty icon={<FileText className="size-6" />} message="No notes yet" />
         ) : (
