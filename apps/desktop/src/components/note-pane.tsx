@@ -130,7 +130,6 @@ export function NotePaneComponent({
     resolveAssetOpenPath,
     openAsset,
     saveFile,
-    onFileSaveError,
     saveError,
   } = useAssetPersistence(graphRoot, generation, path)
   const onWikiLinkClick = useWikiLinkNavigation(generation)
@@ -277,7 +276,6 @@ export function NotePaneComponent({
         resolveAssetOpenPath={resolveAssetOpenPath}
         openAsset={openAsset}
         saveFile={saveFile}
-        onFileSaveError={onFileSaveError}
         onWikiLinkClick={onWikiLinkClick}
         onTagClick={onTagClick}
         onWikilinkSearch={onWikilinkSearch}

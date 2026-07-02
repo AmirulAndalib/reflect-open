@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { assetFileName, createAsset, errorMessage, openAsset as openAssetCommand } from '@reflect/core'
 import { confirmLargeFile, LARGE_FILE_BYTES } from '@/lib/large-file-confirm'
@@ -48,13 +48,13 @@ export interface AssetPersistence {
   openAsset: (path: string) => Promise<void>
   /**
    * Persist a pasted/dropped file into `assets/`, returning its graph-relative
-   * path (or null when declined or no graph is open). Images get `pasted-…`
-   * names (screenshots have no meaningful name); everything else keeps its
-   * original filename, sanitized, since the name is the visible link text.
+   * path — or null when declined, failed (the failure lands on
+   * {@link AssetPersistence.saveError}, never a throw), or no graph is open.
+   * Images get `pasted-…` names (screenshots have no meaningful name);
+   * everything else keeps its original filename, sanitized, since the name
+   * is the visible link text.
    */
   saveFile: (file: File) => Promise<string | null>
-  /** Report a failed save (meowdown's error callback). */
-  onFileSaveError: (error: unknown, file: File) => void
   /** The most recent failed save; cleared by the next success. */
   saveError: AssetSaveError | null
 }
@@ -76,11 +76,15 @@ export function useAssetPersistence(
   path?: string,
 ): AssetPersistence {
   const [saveError, setSaveError] = useState<AssetSaveError | null>(null)
+  // Stamps the note session a save was started for. The pane outlives the
+  // note (and graph session) it shows, so a save that finishes — or a
+  // confirm answered — after a switch must neither write, insert, nor put
+  // its outcome on the *next* note's banner.
+  const sessionEpoch = useRef(0)
 
   useEffect(() => {
     return () => {
-      // The pane outlives the note (and graph session) it shows; the previous
-      // note's error banner must not leak into the next one.
+      sessionEpoch.current += 1
       setSaveError(null)
     }
   }, [path, generation])
@@ -123,7 +127,14 @@ export function useAssetPersistence(
       if (generation === null) {
         return null
       }
-      if (file.size > LARGE_FILE_BYTES && !(await confirmLargeFile(file))) {
+      const epoch = sessionEpoch.current
+      const isStale = (): boolean => sessionEpoch.current !== epoch
+      if (file.size > LARGE_FILE_BYTES && !(await confirmLargeFile(file, isStale))) {
+        return null
+      }
+      if (isStale()) {
+        // Approved after the note (or graph) changed: the initiating editor
+        // is gone, so a write now would only mint an unlinked orphan.
         return null
       }
       const imageExtension = EXTENSION_BY_MIME[file.type]
@@ -132,29 +143,32 @@ export function useAssetPersistence(
       const desiredName = imageExtension
         ? `pasted-${Date.now()}.${imageExtension}`
         : assetFileName(file.name)
-      const saved = await createAsset(desiredName, file, generation)
-      setSaveError(null)
-      return saved
+      try {
+        const saved = await createAsset(desiredName, file, generation)
+        if (!isStale()) {
+          setSaveError(null)
+        }
+        return saved
+      } catch (cause) {
+        // Owned here (not thrown to meowdown's error callback) so a save
+        // finishing late can be dropped instead of blaming the next note.
+        // The kind mirrors the naming decision above: an image MIME without
+        // a known extension was saved as a named attachment, so its failure
+        // reads as a file, not a "pasted image".
+        if (!isStale()) {
+          setSaveError({
+            kind: imageExtension ? 'image' : 'file',
+            message: errorMessage(cause),
+          })
+        }
+        return null
+      }
     },
     [generation],
   )
 
-  const onFileSaveError = useCallback((error: unknown, file: File) => {
-    setSaveError({
-      kind: file.type.startsWith('image/') ? 'image' : 'file',
-      message: errorMessage(error),
-    })
-  }, [])
-
   return useMemo<AssetPersistence>(
-    () => ({
-      resolveImageUrl,
-      resolveAssetOpenPath,
-      openAsset,
-      saveFile,
-      onFileSaveError,
-      saveError,
-    }),
-    [resolveImageUrl, resolveAssetOpenPath, openAsset, saveFile, onFileSaveError, saveError],
+    () => ({ resolveImageUrl, resolveAssetOpenPath, openAsset, saveFile, saveError }),
+    [resolveImageUrl, resolveAssetOpenPath, openAsset, saveFile, saveError],
   )
 }

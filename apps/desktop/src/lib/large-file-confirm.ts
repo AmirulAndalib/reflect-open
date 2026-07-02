@@ -37,11 +37,19 @@ function emit(): void {
 /**
  * Ask the user to approve saving a large file. Resolves `true` to proceed,
  * `false` when declined (dismissing the dialog declines). Concurrent asks
- * queue behind the single dialog slot in arrival order.
+ * queue behind the single dialog slot in arrival order. `isStale`, when
+ * given, is checked as the confirm's turn comes up: a stale ask resolves
+ * declined without showing — a dialog for a note the user already left
+ * would be a question with no good answer.
  */
-export function confirmLargeFile(file: File): Promise<boolean> {
+export function confirmLargeFile(file: File, isStale?: () => boolean): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const show = (): void => {
+      if (isStale?.()) {
+        resolve(false)
+        waiting.shift()?.()
+        return
+      }
       pending = {
         file,
         respond: (proceed) => {

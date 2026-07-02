@@ -58,6 +58,24 @@ describe('confirmLargeFile', () => {
     expect(pending).toBeNull()
   })
 
+  it('resolves declined without showing when stale as its turn arrives', async () => {
+    render(<Probe />)
+    let stale = false
+    let first: Promise<boolean> | null = null
+    let second: Promise<boolean> | null = null
+    act(() => {
+      first = confirmLargeFile(fileNamed('one.mov'))
+      second = confirmLargeFile(fileNamed('two.mov'), () => stale)
+    })
+    // The note the second ask belongs to goes away while it waits.
+    stale = true
+
+    act(() => pending?.respond(true))
+    await expect(first).resolves.toBe(true)
+    await expect(second).resolves.toBe(false)
+    expect(pending).toBeNull()
+  })
+
   it('reset declines everything pending and queued', async () => {
     render(<Probe />)
     let first: Promise<boolean> | null = null

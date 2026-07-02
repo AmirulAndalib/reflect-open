@@ -96,8 +96,6 @@ interface NoteEditorProps {
    * and `[name](dest)` for everything else.
    */
   saveFile?: (file: File) => Promise<string | null>
-  /** Called when persisting a pasted/dropped file throws. */
-  onFileSaveError?: (error: unknown, file: File) => void
   /** Click on a `[[wiki link]]`. */
   onWikiLinkClick?: (target: string) => void
   /** Click on an inline `#tag`. The tag name arrives without the leading `#`. */
@@ -140,7 +138,6 @@ export function NoteEditor({
   resolveAssetOpenPath,
   openAsset,
   saveFile,
-  onFileSaveError,
   onWikiLinkClick,
   onTagClick,
   onWikilinkSearch,
@@ -163,7 +160,6 @@ export function NoteEditor({
   const resolveAssetOpenPathRef = useRef(resolveAssetOpenPath)
   const openAssetRef = useRef(openAsset)
   const saveFileRef = useRef(saveFile)
-  const onFileSaveErrorRef = useRef(onFileSaveError)
   const onExitBoundaryRef = useRef(onExitBoundary)
   useLayoutEffect(() => {
     onChangeRef.current = onChange
@@ -173,7 +169,6 @@ export function NoteEditor({
     resolveAssetOpenPathRef.current = resolveAssetOpenPath
     openAssetRef.current = openAsset
     saveFileRef.current = saveFile
-    onFileSaveErrorRef.current = onFileSaveError
     onExitBoundaryRef.current = onExitBoundary
   })
 
@@ -218,10 +213,6 @@ export function NoteEditor({
   )
   const handleFilePaste = useCallback(
     async (file: File) => (await saveFileRef.current?.(file)) ?? undefined,
-    [],
-  )
-  const handleFileSaveError = useCallback(
-    (error: unknown, file: File) => onFileSaveErrorRef.current?.(error, file),
     [],
   )
   const handleLinkClick = useCallback(
@@ -292,7 +283,6 @@ export function NoteEditor({
         {...(onTagSearch !== undefined ? { onTagSearch } : {})}
         resolveImageUrl={handleResolveImageUrl}
         onFilePaste={handleFilePaste}
-        onFileSaveError={handleFileSaveError}
         onExitBoundary={handleExitBoundary}
       >
         {children}

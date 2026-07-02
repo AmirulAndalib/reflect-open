@@ -50,7 +50,7 @@ describe('UnusedAssetsDialog', () => {
     act(() => openUnusedAssetsDialog())
     await waitFor(() => expect(screen.queryByText('orphan.mov')).not.toBeNull())
 
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(screen.getByRole('button', { name: 'Delete orphan.mov' }))
 
     expect(invoke).toHaveBeenCalledWith('note_delete', {
       path: 'assets/orphan.mov',

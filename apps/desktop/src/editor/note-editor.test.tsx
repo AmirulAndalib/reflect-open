@@ -16,7 +16,6 @@ interface CapturedEditorProps {
   onLinkClick?: (payload: { href: string; event: MouseEvent }) => void
   onTagClick?: (payload: { tag: string; event: MouseEvent }) => void
   onFilePaste?: (file: File) => Promise<string | undefined>
-  onFileSaveError?: (error: unknown, file: File) => void
 }
 
 const captured = vi.hoisted(() => ({ props: null as CapturedEditorProps | null }))
@@ -46,7 +45,7 @@ vi.mock('@meowdown/react', () => ({
 }))
 
 function renderEditor(
-  openImage: (path: string) => Promise<void> | void = vi.fn(async () => {}),
+  openAsset: (path: string) => Promise<void> | void = vi.fn(async () => {}),
 ): ReturnType<typeof render> {
   return render(
     <NoteEditor
@@ -55,7 +54,7 @@ function renderEditor(
       resolveAssetOpenPath={(src) =>
         src === 'assets/cat.png' ? 'assets/cat.png' : null
       }
-      openAsset={openImage}
+      openAsset={openAsset}
     />,
   )
 }
@@ -246,17 +245,13 @@ describe('NoteEditor link opening', () => {
 })
 
 describe('NoteEditor file paste', () => {
-  it('forwards meowdown paste and save errors to the persistence callbacks', async () => {
+  it('forwards meowdown paste to saveFile and returns its destination', async () => {
     const saveFile = vi.fn(async () => 'assets/report.pdf')
-    const onFileSaveError = vi.fn()
-    render(<NoteEditor initialContent="" saveFile={saveFile} onFileSaveError={onFileSaveError} />)
+    render(<NoteEditor initialContent="" saveFile={saveFile} />)
 
     const pasted = new File([new Uint8Array(4)], 'q3.pdf', { type: 'application/pdf' })
     await expect(captured.props?.onFilePaste?.(pasted)).resolves.toBe('assets/report.pdf')
     expect(saveFile).toHaveBeenCalledExactlyOnceWith(pasted)
-
-    act(() => captured.props?.onFileSaveError?.('boom', pasted))
-    expect(onFileSaveError).toHaveBeenCalledExactlyOnceWith('boom', pasted)
   })
 
   it('declines the paste (undefined) when saveFile returns null', async () => {

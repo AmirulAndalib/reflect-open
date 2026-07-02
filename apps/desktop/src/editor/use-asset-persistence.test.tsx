@@ -1,4 +1,4 @@
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { setBridge } from '@reflect/core'
@@ -127,36 +127,116 @@ describe('useAssetPersistence saveFile', () => {
   })
 })
 
+/** A bridge whose appends fail until `heal()` is called. */
+function installFailingBridge(): { heal: () => void } {
+  const state = { failing: true }
+  const invoke = vi.fn(async (command: string, args: Record<string, unknown>) =>
+    command === 'asset_upload_begin'
+      ? 'upload-1'
+      : command === 'asset_upload_commit'
+        ? `assets/${args['desiredName'] as string}`
+        : null,
+  )
+  setBridge({
+    invoke,
+    invokeBinary: async () => {
+      if (state.failing) {
+        throw { kind: 'io', message: 'disk full' }
+      }
+      return null
+    },
+    listen: async () => () => {},
+  })
+  return {
+    heal: () => {
+      state.failing = false
+    },
+  }
+}
+
 describe('useAssetPersistence errors', () => {
-  it('keys the banner kind by MIME and clears it on the next success', async () => {
-    installUploadBridge()
+  it('owns save failures — never throws — keyed by how the file was named', async () => {
+    const bridge = installFailingBridge()
     render(<Host generation={3} />)
 
-    act(() => {
-      persistence!.onFileSaveError({ kind: 'io', message: 'boom' }, fileOf('a.png', 'image/png'))
+    // A pasted image fails as an image…
+    await act(async () => {
+      await expect(persistence!.saveFile(fileOf('a.png', 'image/png'))).resolves.toBeNull()
     })
-    expect(persistence!.saveError).toEqual({ kind: 'image', message: 'boom' })
+    expect(persistence!.saveError).toEqual({ kind: 'image', message: 'disk full' })
 
-    act(() => {
-      persistence!.onFileSaveError('nope', fileOf('a.pdf', 'application/pdf'))
+    // …an image MIME saved under its own name fails as a file (it was named
+    // like an attachment, so its banner says so too).
+    await act(async () => {
+      await expect(persistence!.saveFile(fileOf('scan.tiff', 'image/tiff'))).resolves.toBeNull()
     })
-    expect(persistence!.saveError).toEqual({ kind: 'file', message: 'nope' })
+    expect(persistence!.saveError).toEqual({ kind: 'file', message: 'disk full' })
 
+    // The next success clears the banner.
+    bridge.heal()
     await act(async () => {
       await persistence!.saveFile(fileOf('b.pdf', 'application/pdf'))
     })
     expect(persistence!.saveError).toBeNull()
   })
 
-  it('drops the previous note’s error on a note switch', () => {
-    installUploadBridge()
-    const view = render(<Host generation={3} path="notes/a.md" />)
-    act(() => {
-      persistence!.onFileSaveError('stale', fileOf('a.pdf', 'application/pdf'))
+  it('drops a failure that lands after the note switched', async () => {
+    let failLateAppend: (() => void) | null = null
+    const invoke = vi.fn(async (command: string) =>
+      command === 'asset_upload_begin' ? 'upload-1' : null,
+    )
+    setBridge({
+      invoke,
+      invokeBinary: () =>
+        new Promise((_resolve, reject) => {
+          failLateAppend = () => reject({ kind: 'io', message: 'late failure' })
+        }),
+      listen: async () => () => {},
     })
-    expect(persistence!.saveError).not.toBeNull()
+    const view = render(<Host generation={3} path="notes/a.md" />)
 
+    let savePromise: Promise<string | null> | null = null
+    act(() => {
+      savePromise = persistence!.saveFile(fileOf('slow.pdf', 'application/pdf'))
+    })
+    await waitFor(() => expect(failLateAppend).not.toBeNull())
+
+    // The user moves on; the stream then fails for the note they left.
     view.rerender(<Host generation={3} path="notes/b.md" />)
+    await act(async () => {
+      failLateAppend!()
+      await savePromise
+    })
+
+    await expect(savePromise).resolves.toBeNull()
     expect(persistence!.saveError).toBeNull()
+  })
+
+  it('declines a large-file confirm answered after the note switched', async () => {
+    const invoke = installUploadBridge()
+    let approve: ((proceed: boolean) => void) | null = null
+    confirmLargeFileMock.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          approve = resolve
+        }),
+    )
+    const view = render(<Host generation={3} path="notes/a.md" />)
+
+    let savePromise: Promise<string | null> | null = null
+    act(() => {
+      savePromise = persistence!.saveFile(
+        fileOf('huge.mov', 'video/quicktime', LARGE_FILE_BYTES + 1),
+      )
+    })
+    view.rerender(<Host generation={3} path="notes/b.md" />)
+    await act(async () => {
+      approve!(true)
+      await savePromise
+    })
+
+    // Approved too late: nothing is written for a note that is gone.
+    await expect(savePromise).resolves.toBeNull()
+    expect(invoke).not.toHaveBeenCalledWith('asset_upload_begin', expect.anything())
   })
 })

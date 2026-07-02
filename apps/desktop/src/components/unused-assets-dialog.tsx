@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactElement } from 'react'
+import { toast } from 'sonner'
 import { deleteAsset, errorMessage, openAsset, unusedAssets, type FileMeta } from '@reflect/core'
 import { InlineAlert } from '@/components/inline-alert'
 import { Button } from '@/components/ui/button'
@@ -86,8 +87,10 @@ export function UnusedAssetsDialog(): ReactElement {
       if (generation === null) {
         return
       }
+      // A per-file failure must not wipe the listing the user is working
+      // through — the scan is still valid; only this action failed.
       void openAsset(path, generation).catch((cause) => {
-        setListing({ status: 'error', message: errorMessage(cause) })
+        toast.error(errorMessage(cause))
       })
     },
     [generation],
@@ -106,7 +109,7 @@ export function UnusedAssetsDialog(): ReactElement {
             : current,
         )
       } catch (cause) {
-        setListing({ status: 'error', message: errorMessage(cause) })
+        toast.error(errorMessage(cause))
       }
     },
     [generation],
@@ -136,24 +139,31 @@ export function UnusedAssetsDialog(): ReactElement {
           <p className="text-sm text-text-muted">No unused assets.</p>
         ) : (
           <ul className="max-h-80 space-y-1 overflow-y-auto">
-            {listing.files.map((file) => (
-              <li key={file.path} className="flex items-center gap-2 text-sm">
-                <span className="min-w-0 flex-1 truncate">
-                  {file.path.replace(/^assets\//, '')}
-                </span>
-                <span className="shrink-0 text-text-muted">{formatBytes(file.size)}</span>
-                <Button variant="ghost" size="sm" onClick={() => handleOpen(file.path)}>
-                  Open
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void handleDelete(file.path)}
-                >
-                  Delete
-                </Button>
-              </li>
-            ))}
+            {listing.files.map((file) => {
+              const name = file.path.replace(/^assets\//, '')
+              return (
+                <li key={file.path} className="flex items-center gap-2 text-sm">
+                  <span className="min-w-0 flex-1 truncate">{name}</span>
+                  <span className="shrink-0 text-text-muted">{formatBytes(file.size)}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Open ${name}`}
+                    onClick={() => handleOpen(file.path)}
+                  >
+                    Open
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Delete ${name}`}
+                    onClick={() => void handleDelete(file.path)}
+                  >
+                    Delete
+                  </Button>
+                </li>
+              )
+            })}
           </ul>
         )}
         <DialogFooter showCloseButton />
