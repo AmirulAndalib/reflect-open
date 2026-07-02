@@ -55,12 +55,21 @@ export function PlatformRoot(): ReactElement {
   useEffect(() => {
     let active = true
     if (import.meta.env.DEV && devPlatformOverride !== null && !hasBridge()) {
-      void import('@/dev/install-dev-bridge').then(async (module) => {
-        await module.installDevBridge(devPlatformOverride)
-        if (active) {
-          setPlatform(devPlatformOverride)
-        }
-      })
+      void import('@/dev/install-dev-bridge')
+        .then(async (module) => {
+          await module.installDevBridge(devPlatformOverride)
+          if (active) {
+            setPlatform(devPlatformOverride)
+          }
+        })
+        .catch((cause: unknown) => {
+          // Dev-only path: fail loud (the screen would otherwise stay blank)
+          // and fall back to the desktop tree rather than hanging.
+          console.error('[dev-bridge] install failed:', cause)
+          if (active) {
+            setPlatform('desktop')
+          }
+        })
       return () => {
         active = false
       }
