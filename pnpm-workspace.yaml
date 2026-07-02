@@ -24,5 +24,5 @@ minimumReleaseAgeExclude:
 # apps/desktop dependency is bumped instead.
 blockExoticSubdeps: false
 overrides:
-  '@meowdown/core': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/core@de92b1f'
-  '@meowdown/react': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/react@de92b1f'
+  '@meowdown/core': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/core@3819bce'
+  '@meowdown/react': 'https://pkg.pr.new/prosekit/meowdown/@meowdown/react@3819bce'
