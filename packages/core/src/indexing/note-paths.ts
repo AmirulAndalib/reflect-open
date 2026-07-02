@@ -85,6 +85,20 @@ export async function availableTemplatePath(
 }
 
 /**
+ * Where `path`'s template file should live for `title` (the settings rename's
+ * target) — {@link slugPathForTitle}'s semantics in the templates directory:
+ * the template's own path always counts as free, so a no-op rename never
+ * "moves" a file onto a `-2` suffix.
+ */
+export async function templateSlugPathForTitle(
+  path: string,
+  title: string,
+  taken: (candidate: string) => Promise<boolean> = pathTaken,
+): Promise<string> {
+  return probeNotePath(slugForTitle(title), taken, path, templatePath)
+}
+
+/**
  * Where `path`'s file should live for `title` (the rename pipeline's target,
  * Plan 17): the slug path with a collision suffix — or `path` unchanged when
  * its name already matches, so a note never moves onto (or collides with)

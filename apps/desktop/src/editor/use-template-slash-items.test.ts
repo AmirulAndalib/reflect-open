@@ -9,13 +9,13 @@ const listTemplates = vi.hoisted(() =>
   ]),
 )
 const hasBridge = vi.hoisted(() => vi.fn(() => true))
-const templateBody = vi.hoisted(() => vi.fn(async () => '# Journal\n\nMood:\n'))
+const insertTemplate = vi.hoisted(() => vi.fn(async () => undefined))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   listTemplates,
   hasBridge,
 }))
-vi.mock('@/lib/note-templates', () => ({ templateBody }))
+vi.mock('@/lib/note-templates', () => ({ insertTemplate }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', generation: 1 } }),
 }))
@@ -37,7 +37,7 @@ function fakeEditor(): NoteEditorHandle & { inserted: string[] } {
 }
 
 describe('useTemplateSlashItems', () => {
-  it('maps templates to slash rows whose select inserts the body', async () => {
+  it('maps templates to slash rows whose select inserts through the shared flow', async () => {
     const editor = fakeEditor()
     const { result } = renderHook(() => useTemplateSlashItems(() => editor))
 
@@ -48,16 +48,20 @@ describe('useTemplateSlashItems', () => {
     ])
 
     items[0]!.onSelect()
-    await waitFor(() => expect(editor.inserted).toEqual(['# Journal\n\nMood:\n']))
-    expect(templateBody).toHaveBeenCalledWith('templates/journal.md')
+    await waitFor(() =>
+      expect(insertTemplate).toHaveBeenCalledWith('templates/journal.md', editor),
+    )
   })
 
-  it('inserts nowhere when the pane already unmounted', async () => {
+  it('resolves the editor at select time, not capture time', async () => {
+    // The pane unmounted between the menu opening and the select — the shared
+    // flow receives null and surfaces the failure, never a stale editor.
     const { result } = renderHook(() => useTemplateSlashItems(() => null))
     const items = await result.current('')
     items[0]!.onSelect()
-    await waitFor(() => expect(templateBody).toHaveBeenCalled())
-    // No editor — the resolved body is dropped, never inserted somewhere stale.
+    await waitFor(() =>
+      expect(insertTemplate).toHaveBeenCalledWith('templates/journal.md', null),
+    )
   })
 
   it('returns nothing without a bridge', async () => {

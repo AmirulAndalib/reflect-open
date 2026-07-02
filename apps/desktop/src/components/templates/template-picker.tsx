@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { errorMessage, listTemplates } from '@reflect/core'
+import { listTemplates } from '@reflect/core'
 import { FilePlus2, LayoutTemplate } from 'lucide-react'
 import {
   CommandDialog,
@@ -12,8 +12,7 @@ import {
 } from '@/components/ui/command'
 import { getNoteEditor } from '@/editor/editor-registry'
 import type { CommandContext } from '@/lib/commands/types'
-import { templateBody } from '@/lib/note-templates'
-import { startOperation } from '@/lib/operations'
+import { insertTemplate } from '@/lib/note-templates'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { useGraph } from '@/providers/graph-provider'
 import { useNoteTemplates } from '@/providers/note-templates-provider'
@@ -48,20 +47,11 @@ export function TemplatePicker({ context }: TemplatePickerProps): ReactElement |
     closeTemplatePicker()
     const target = context.notePath()
     if (target === null) {
-      return
+      return // the command opens the picker only where a note is being edited
     }
-    const editor = getNoteEditor(target)
-    if (editor === null) {
-      return
-    }
-    void templateBody(path)
-      .then((body) => {
-        editor.insertMarkdown(body)
-        editor.focus()
-      })
-      .catch((cause: unknown) => {
-        startOperation('Inserting template').fail(errorMessage(cause))
-      })
+    // `insertTemplate` owns all feedback — a missing editor (protected or
+    // still-loading note) and a failed read both surface as failed operations.
+    void insertTemplate(path, getNoteEditor(target))
   }
 
   return (

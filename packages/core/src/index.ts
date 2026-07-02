@@ -490,6 +490,7 @@ export {
   availableNotePath,
   availableTemplatePath,
   slugPathForTitle,
+  templateSlugPathForTitle,
   listTemplates,
   type TemplateEntry,
   parseHighlights,

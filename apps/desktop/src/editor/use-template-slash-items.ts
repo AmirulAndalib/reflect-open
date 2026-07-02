@@ -1,8 +1,7 @@
 import { useCallback } from 'react'
 import type { SlashMenuItem, SlashMenuSearchHandler } from '@meowdown/react'
-import { errorMessage, hasBridge, listTemplates } from '@reflect/core'
-import { templateBody } from '@/lib/note-templates'
-import { startOperation } from '@/lib/operations'
+import { hasBridge, listTemplates } from '@reflect/core'
+import { insertTemplate } from '@/lib/note-templates'
 import { useGraph } from '@/providers/graph-provider'
 import type { NoteEditorHandle } from './note-editor'
 
@@ -32,13 +31,7 @@ export function useTemplateSlashItems(
         id: template.path,
         label: template.title,
         onSelect: () => {
-          void templateBody(template.path)
-            .then((body) => {
-              getEditor()?.insertMarkdown(body)
-            })
-            .catch((cause: unknown) => {
-              startOperation('Inserting template').fail(errorMessage(cause))
-            })
+          void insertTemplate(template.path, getEditor())
         },
       }))
     },

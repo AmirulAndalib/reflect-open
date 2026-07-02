@@ -1,12 +1,6 @@
 import { useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import {
-  availableTemplatePath,
-  errorMessage,
-  listTemplates,
-  slugForTitle,
-  type TemplateEntry,
-} from '@reflect/core'
+import { errorMessage, listTemplates, type TemplateEntry } from '@reflect/core'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,8 +12,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { moveNoteCarryingSession } from '@/editor/move-note'
 import { deleteOpenNote } from '@/lib/note-delete'
+import { renameTemplate } from '@/lib/note-templates'
 import { startOperation } from '@/lib/operations'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { useGraph } from '@/providers/graph-provider'
@@ -108,7 +102,7 @@ interface TemplateDialogProps {
   onClose: () => void
 }
 
-/** Rename = move the file onto the new name's slug, carrying any open editor. */
+/** Rename = move onto the new name's slug and rewrite the authored title. */
 function TemplateRenameDialog({ template, onClose }: TemplateDialogProps): ReactElement {
   const { graph } = useGraph()
   const [name, setName] = useState(template.title)
@@ -122,8 +116,7 @@ function TemplateRenameDialog({ template, onClose }: TemplateDialogProps): React
     }
     setError(null)
     try {
-      const to = await availableTemplatePath(slugForTitle(trimmed))
-      await moveNoteCarryingSession(template.path, to, generation)
+      await renameTemplate(template.path, trimmed, generation)
       onClose()
     } catch (cause) {
       setError(errorMessage(cause))
@@ -142,7 +135,7 @@ function TemplateRenameDialog({ template, onClose }: TemplateDialogProps): React
       <DialogContent showCloseButton={false} className="max-w-sm">
         <DialogTitle>Rename template</DialogTitle>
         <DialogDescription className="sr-only">
-          Renames the template's file to the new name's slug.
+          Renames the template — its title and its file's slug.
         </DialogDescription>
         <form
           className="flex flex-col gap-3"
