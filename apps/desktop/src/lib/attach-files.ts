@@ -41,17 +41,19 @@ export async function attachFilesToNote(context: CommandContext): Promise<void> 
   }
   const sources = Array.isArray(picked) ? picked : [picked]
   const links: string[] = []
-  let failure: unknown = null
+  const failures: { name: string; cause: unknown }[] = []
   for (const source of sources) {
+    // Each copy is independent — one failure must not drop the files picked
+    // after it.
     const name = basenameOf(source)
     try {
       const assetPath = await importAsset(source, assetFileName(name), generation)
       links.push(`[${escapeLinkLabel(name)}](${assetPath})`)
     } catch (cause) {
-      failure = cause
-      break
+      failures.push({ name, cause })
     }
   }
+  const problems: string[] = []
   if (links.length > 0) {
     // Re-resolved after the awaits: the picker (and the copies) can outlive
     // the editor that was mounted when the command fired — a navigation in
@@ -59,7 +61,7 @@ export async function attachFilesToNote(context: CommandContext): Promise<void> 
     // copied files would sit in assets/ with no links and no explanation.
     const handle = noteEditorHandleFor(notePath)
     if (handle === null) {
-      startOperation('Attaching file').fail(
+      problems.push(
         `the note closed before its links could be inserted — ${links.join(', ')} ` +
           'were still copied into assets/',
       )
@@ -68,9 +70,13 @@ export async function attachFilesToNote(context: CommandContext): Promise<void> 
       handle.focus()
     }
   }
-  if (failure !== null) {
-    // Command dispatch has no error channel of its own — surface the failure
-    // like other background work.
-    startOperation('Attaching file').fail(errorMessage(failure))
+  if (failures.length > 0) {
+    const names = failures.map(({ name }) => name).join(', ')
+    problems.push(`${names} could not be copied: ${errorMessage(failures[0]?.cause)}`)
+  }
+  if (problems.length > 0) {
+    // Command dispatch has no error channel of its own — surface everything
+    // that went wrong as one failed operation, like other background work.
+    startOperation('Attaching file').fail(problems.join('; '))
   }
 }

@@ -36,7 +36,15 @@ export async function call<TOutput>(
   } catch (error) {
     throw toAppError(error)
   }
+  return parseResponse(command, raw, schema)
+}
 
+/** Validate a raw IPC response, shared by {@link call} and {@link callBinary}. */
+function parseResponse<TOutput>(
+  command: string,
+  raw: unknown,
+  schema: ZodType<TOutput, unknown>,
+): TOutput {
   const result = schema.safeParse(raw)
   if (!result.success) {
     const appError: AppError = {
@@ -75,14 +83,5 @@ export async function callBinary<TOutput>(
   } catch (error) {
     throw toAppError(error)
   }
-
-  const result = schema.safeParse(raw)
-  if (!result.success) {
-    const appError: AppError = {
-      kind: 'parse',
-      message: `unexpected response shape from "${command}": ${result.error.message}`,
-    }
-    throw appError
-  }
-  return result.data
+  return parseResponse(command, raw, schema)
 }

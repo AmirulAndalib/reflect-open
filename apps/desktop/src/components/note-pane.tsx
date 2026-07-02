@@ -260,8 +260,7 @@ export function NotePaneComponent({
 
         {attachmentSaveError !== null ? (
           <InlineAlert tone="error" className="mb-4">
-            Couldn’t save the dropped file: {attachmentSaveError}. It was not added to the
-            note.
+            Couldn’t save the file: {attachmentSaveError}. It was not added to the note.
           </InlineAlert>
         ) : null}
 

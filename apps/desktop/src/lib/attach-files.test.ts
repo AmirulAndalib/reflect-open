@@ -124,21 +124,24 @@ describe('attachFilesToNote', () => {
     expect(handle.insertMarkdown).not.toHaveBeenCalled()
   })
 
-  it('still links the files that landed when a later copy fails', async () => {
+  it('continues past a failed copy and still links every file that landed', async () => {
     const invoke = vi.fn(async (_command: string, args: Record<string, unknown>) => {
       if (args['sourcePath'] === '/tmp/bad.bin') {
         throw { kind: 'io', message: 'copy failed' }
       }
-      return 'assets/good.pdf'
+      return `assets/${args['desiredName'] as string}`
     })
     setBridge({ invoke, listen: async () => () => {} })
-    openMock.mockResolvedValue(['/tmp/good.pdf', '/tmp/bad.bin'])
+    // The failure comes FIRST: the files picked after it must still import.
+    openMock.mockResolvedValue(['/tmp/bad.bin', '/tmp/good.pdf', '/tmp/also good.pdf'])
     const handle = editorHandle()
     registerNoteEditorHandle('notes/plan.md', handle)
 
     await attachFilesToNote(contextFor('notes/plan.md', 4))
 
-    expect(handle.insertMarkdown).toHaveBeenCalledWith('[good.pdf](assets/good.pdf)')
+    expect(handle.insertMarkdown).toHaveBeenCalledWith(
+      '[good.pdf](assets/good.pdf)\n[also good.pdf](assets/also-good.pdf)',
+    )
     unregisterNoteEditorHandle('notes/plan.md', handle)
   })
 })

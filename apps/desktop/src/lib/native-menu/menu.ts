@@ -75,7 +75,7 @@ export function appMenuLayout(): AppSubmenuLayout[] {
       text: 'File',
       entries: [
         command('note.new'),
-        command('note.attachFile', 'Attach File…'),
+        command('note.attachFile'),
         separator(),
         predefined('CloseWindow'),
       ],
