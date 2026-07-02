@@ -99,6 +99,20 @@ describe('addContactToNote', () => {
     expect(writeNote).not.toHaveBeenCalled()
   })
 
+  it('skips when the body already has hand-typed details (stale card)', async () => {
+    // The card would have been suppressed had its query refetched; Add must
+    // apply the same content gate rather than stack a second block.
+    const { session, commitBodyAppend } = fakeSession(
+      '# Ada Lovelace\n\nWork mail ada@work.com\n',
+    )
+    openSession.mockReturnValue(session)
+
+    await addContactToNote('notes/Ada Lovelace.md', ADA, 3)
+
+    expect(commitBodyAppend).not.toHaveBeenCalled()
+    expect(writeNote).not.toHaveBeenCalled()
+  })
+
   it('writes nothing for a contact with no details', async () => {
     const bare: ContactMatch = { ...ADA, emails: [], phones: [] }
     readNote.mockResolvedValue('# Ada Lovelace\n')

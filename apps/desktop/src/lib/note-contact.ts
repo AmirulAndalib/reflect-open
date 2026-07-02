@@ -3,7 +3,9 @@ import {
   contactDetailsMarkdown,
   contactNamesEqual,
   matchContactForTitle,
+  noteHasContactDetails,
   parseNote,
+  splitFrontmatter,
   writeNote,
   type ContactMatch,
 } from '@reflect/core'
@@ -56,7 +58,10 @@ export async function addContactToNote(
     throw new Error('The note title no longer matches this contact.')
   }
   const details = contactDetailsMarkdown(contact)
-  if (details === '' || source.includes(details)) {
+  // The same content gate the card renders through: a body that already
+  // carries contact details — a previous Add's block, or an email the user
+  // typed under a still-cached card — must not get a (second) block.
+  if (details === '' || noteHasContactDetails(splitFrontmatter(source).body)) {
     return
   }
   const owner = openSession(path)
