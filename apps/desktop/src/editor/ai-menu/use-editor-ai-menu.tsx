@@ -84,11 +84,29 @@ export function useEditorAiMenu({
   editorRef,
 }: EditorAiMenuOptions): EditorAiMenuValue {
   const noteRow = useNoteRow(path)
-  // Fail closed: an unresolved row counts as private, so the menu (and the
-  // CloudSafe mint below) never treats a not-yet-loaded note as sendable. The
-  // row is overlay-backed, so an in-app "Mark as private" flips this
-  // immediately; only an external edit waits on the watcher's re-index.
-  const isPrivate = noteRow?.isPrivate ?? true
+  // The last privacy flag this session resolved, adjusted during render (the
+  // note-pane seed pattern). A title-driven rename retargets the same note
+  // under a new path (Plan 17), and the new path's row query starts empty —
+  // the previous flag stays authoritative for that beat, so a Retry mid-
+  // rename doesn't misreport a public note as private.
+  const [resolvedPrivacy, setResolvedPrivacy] = useState<{
+    epoch: number
+    isPrivate: boolean
+  } | null>(null)
+  if (
+    noteRow !== null &&
+    (resolvedPrivacy?.epoch !== sessionEpoch || resolvedPrivacy.isPrivate !== noteRow.isPrivate)
+  ) {
+    setResolvedPrivacy({ epoch: sessionEpoch, isPrivate: noteRow.isPrivate })
+  }
+  // Fail closed: with no row resolved in this session yet, the note counts as
+  // private, so the menu (and the CloudSafe mint below) never treats a
+  // not-yet-loaded note as sendable. The row is overlay-backed, so an in-app
+  // "Mark as private" flips this immediately; only an external edit waits on
+  // the watcher's re-index.
+  const isPrivate =
+    noteRow?.isPrivate ??
+    (resolvedPrivacy?.epoch === sessionEpoch ? resolvedPrivacy.isPrivate : true)
   const { providers, defaultProvider } = useAiProviders()
   const { prompts } = useAiPrompts()
   const { navigate } = useRouter()
