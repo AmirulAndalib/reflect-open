@@ -3,12 +3,16 @@ import { useToday } from '@/lib/use-today'
 import { MobileAllNotes } from '@/mobile/screens/all-notes'
 import { MobileDaily } from '@/mobile/screens/daily'
 import { MobileNote } from '@/mobile/screens/note'
+import type { AllNotesFilters } from '@/mobile/search-filters/filter-state'
 import { useRouter } from '@/routing/router'
 
 interface MobileScreenProps {
   /** The All tab's search text (owned by the shell — survives navigation). */
   allQuery: string
   onAllQueryChange: (query: string) => void
+  /** The All tab's badge filters (owned by the shell — survive navigation). */
+  allFilters: AllNotesFilters
+  onAllFiltersChange: (filters: AllNotesFilters) => void
 }
 
 /**
@@ -19,7 +23,12 @@ interface MobileScreenProps {
  * overnight rolls to the new day's note at midnight instead of editing
  * yesterday's.
  */
-export function MobileScreen({ allQuery, onAllQueryChange }: MobileScreenProps): ReactElement {
+export function MobileScreen({
+  allQuery,
+  onAllQueryChange,
+  allFilters,
+  onAllFiltersChange,
+}: MobileScreenProps): ReactElement {
   const { route } = useRouter()
   const today = useToday()
 
@@ -31,12 +40,28 @@ export function MobileScreen({ allQuery, onAllQueryChange }: MobileScreenProps):
     case 'note':
       return <MobileNote key={route.path} path={route.path} />
     case 'allNotes':
-      return <MobileAllNotes query={allQuery} onQueryChange={onAllQueryChange} tag={route.tag} />
+      return (
+        <MobileAllNotes
+          query={allQuery}
+          onQueryChange={onAllQueryChange}
+          tag={route.tag}
+          filters={allFilters}
+          onFiltersChange={onAllFiltersChange}
+        />
+      )
     case 'search':
       // Mobile has no dedicated search surface: a search entry (shared
       // history shapes with desktop) renders as the All tab; the shell seeds
       // the live query from the entry.
-      return <MobileAllNotes query={allQuery} onQueryChange={onAllQueryChange} tag={null} />
+      return (
+        <MobileAllNotes
+          query={allQuery}
+          onQueryChange={onAllQueryChange}
+          tag={null}
+          filters={allFilters}
+          onFiltersChange={onAllFiltersChange}
+        />
+      )
     default:
       return <MobileDaily key="daily" date={today} />
   }

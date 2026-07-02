@@ -1,48 +1,51 @@
-import { type ReactElement } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Virtualizer } from 'virtua'
+import { useDeferredValue, useMemo, type ReactElement } from 'react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { ChevronLeft, FileText, SearchX } from 'lucide-react'
 import {
+  foldTag,
   hasBridge,
-  listNotes,
   listNoteTags,
   parseHighlights,
-  parseSearchQuery,
   searchWithFilters,
-  foldTag,
   type FilteredSearchHit,
-  type NoteListEntry,
-  type ParsedSearchQuery,
+  type NoteTagFacet,
 } from '@reflect/core'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { formatRecencyLabel } from '@/lib/dates'
+import { Spinner } from '@/components/ui/spinner'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
-import { cn } from '@/lib/utils'
+import { FilterBar } from '@/mobile/search-filters/filter-bar'
+import {
+  buildAllNotesSearch,
+  pendingTagToken,
+  searchPlanFor,
+  type AllNotesFilters,
+} from '@/mobile/search-filters/filter-state'
+import { NoteRowList, type NoteRowModel } from '@/mobile/note-row-list'
 import { useGraph } from '@/providers/graph-provider'
-import { useSettings } from '@/providers/settings-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
 
-const SEARCH_LIMIT = 50
-
-/**
- * A typed search constrained by the route's tag badge: the badge stays
- * honest while searching (exported for tests). Tags parsed from `#tokens`
- * in the text dedupe against the route tag by folded key.
- */
-export function searchQueryWithTag(query: string, tag: string | null): ParsedSearchQuery {
-  const parsed = parseSearchQuery(query)
-  if (tag === null) {
-    return parsed
-  }
-  const key = foldTag(tag)
-  if (parsed.filters.tags.includes(key)) {
-    return parsed
-  }
+/** A search hit resolved into the shared row shape. */
+export function rowForHit(hit: FilteredSearchHit): NoteRowModel {
   return {
-    ...parsed,
-    filtered: true,
-    filters: { ...parsed.filters, tags: [...parsed.filters.tags, key] },
+    path: hit.path,
+    title: hit.title,
+    mtime: hit.mtime,
+    isPinned: hit.isPinned,
+    snippet:
+      hit.snippet !== null
+        ? parseHighlights(hit.snippet)
+        : hit.preview === ''
+          ? []
+          : [{ text: hit.preview, highlighted: false }],
   }
+}
+
+/** The tags matching a half-typed `#…` token, by folded-substring match. */
+export function matchingTagFacets(facets: NoteTagFacet[], partial: string): NoteTagFacet[] {
+  const needle = foldTag(partial)
+  return facets.filter((facet) => foldTag(facet.tag).includes(needle))
 }
 
 interface MobileAllNotesProps {
@@ -51,43 +54,67 @@ interface MobileAllNotesProps {
   onQueryChange: (query: string) => void
   /** The active tag filter from the `allNotes` route (`null` = every note). */
   tag: string | null
+  /** The badge filters — lifted to the shell so they survive navigation. */
+  filters: AllNotesFilters
+  onFiltersChange: (filters: AllNotesFilters) => void
 }
 
 /**
- * The All tab (Plan 19, V1 parity): every non-daily note, newest first, with
- * an embedded search bar and tag filter badges — V1's All Notes shape. A
- * blank query lists notes (`listNotes`); typing switches to ranked FTS
- * (`searchWithFilters`, the same engine as desktop's palette). Rows are
- * virtualized; the scroll element is **state, not a ref**, so a warm-cache
- * single-render mount still hands the element to the virtualizer.
+ * The All tab (Plan 19, V1 parity): a virtualized fixed-row note list with an
+ * embedded search bar and AND-composed filter badges. Everything is one
+ * search path ({@link buildAllNotesSearch} → `searchWithFilters`, run per
+ * {@link searchPlanFor}): the plain list is the empty query's recall feed
+ * (notes only, pinned first, uncapped), badges and typed tokens narrow it,
+ * and free text switches to ranked FTS. A trailing `#…` token switches the bar into
+ * tag matching (V1): suggestions replace the badge row until the tag is
+ * picked or the token completed. The route's tag (a tag tap landed here)
+ * rides along as a badge with a back affordance.
  */
-export function MobileAllNotes({ query, onQueryChange, tag }: MobileAllNotesProps): ReactElement {
+export function MobileAllNotes({
+  query,
+  onQueryChange,
+  tag,
+  filters,
+  onFiltersChange,
+}: MobileAllNotesProps): ReactElement {
   const { graph } = useGraph()
-  const { navigate } = useRouter()
+  const { navigate, back } = useRouter()
   const enabled = hasBridge() && graph !== null
-  const searching = query.trim() !== ''
 
-  const { data: notes } = useQuery({
-    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-all-notes', tag === null ? null : foldTag(tag)],
-    queryFn: () => listNotes({ tag }),
-    enabled: enabled && !searching,
-  })
+  // Defer the query the index sees (desktop's search debounce): fast typing
+  // coalesces while the input stays live, and a seeded query (a `search`
+  // history entry) catches up within a frame instead of a fixed delay.
+  const deferredQuery = useDeferredValue(query)
+  const pending = pendingTagToken(query)
+  const parsed = useMemo(
+    () => buildAllNotesSearch(deferredQuery, filters, tag),
+    [deferredQuery, filters, tag],
+  )
+
   const { data: facets } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'all-notes-tags'],
     queryFn: () => listNoteTags(),
     enabled,
   })
   const { data: hits } = useQuery({
-    queryKey: [
-      INDEX_QUERY_SCOPE,
-      graph?.root,
-      'mobile-search',
-      query,
-      tag === null ? null : foldTag(tag),
-    ],
-    queryFn: () => searchWithFilters(searchQueryWithTag(query, tag), SEARCH_LIMIT),
-    enabled: enabled && searching,
+    queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-all-notes', parsed],
+    queryFn: () => searchWithFilters(parsed, searchPlanFor(parsed)),
+    enabled,
+    // Typing re-keys the query as the deferred value settles; holding the
+    // previous rows avoids a blank flash between keystrokes.
+    placeholderData: keepPreviousData,
   })
+
+  const rows = useMemo(() => (hits ?? []).map(rowForHit), [hits])
+  const pristine = parsed.text === '' && !parsed.filtered
+
+  const addPendingTag = (facet: NoteTagFacet): void => {
+    const key = foldTag(facet.tag)
+    if (!filters.tags.includes(key)) {
+      onFiltersChange({ ...filters, tags: [...filters.tags, key] })
+    }
+    onQueryChange(pending?.rest ?? '')
+  }
 
   return (
     <div
@@ -95,138 +122,97 @@ export function MobileAllNotes({ query, onQueryChange, tag }: MobileAllNotesProp
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       <header className="shrink-0 space-y-2 border-b border-border px-4 pb-2 pt-1">
-        <Input
-          type="search"
-          inputMode="search"
-          placeholder="Search notes…"
-          aria-label="Search notes"
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          className="text-base"
-        />
-        {facets !== undefined && facets.length > 0 && (
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
-            {facets.map((facet) => {
-              const active = tag !== null && foldTag(tag) === foldTag(facet.tag)
-              return (
-                <button
-                  key={facet.tag}
-                  type="button"
-                  onClick={() => navigate({ kind: 'allNotes', tag: active ? null : facet.tag })}
-                  className={cn(
-                    'shrink-0 rounded-full border border-border px-2.5 py-0.5 text-xs',
-                    active ? 'bg-primary text-primary-foreground' : 'text-text-muted',
-                  )}
-                >
-                  #{facet.tag}
-                </button>
-              )
-            })}
-          </div>
+        <div className="flex items-center gap-1">
+          {tag !== null && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="-ml-2 size-9 shrink-0"
+              aria-label="Back"
+              onClick={back}
+            >
+              <ChevronLeft />
+            </Button>
+          )}
+          <Input
+            type="search"
+            inputMode="search"
+            placeholder="Search anything…"
+            aria-label="Search notes"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            className="text-base"
+          />
+        </div>
+        {pending !== null ? (
+          <TagSuggestions
+            facets={matchingTagFacets(facets ?? [], pending.partial)}
+            onPick={addPendingTag}
+          />
+        ) : (
+          <FilterBar
+            filters={filters}
+            onFiltersChange={onFiltersChange}
+            facets={facets ?? []}
+            routeTag={tag}
+            onClearRouteTag={() => navigate({ kind: 'allNotes', tag: null })}
+          />
         )}
       </header>
-      {searching ? (
-        <SearchResults hits={hits} onOpen={(path) => navigate(routeForPath(path))} />
+      {/* Undefined hits mean "still fetching" only while the query can run —
+          with no bridge/graph it never will, and the empty state is honest. */}
+      {enabled && hits === undefined ? (
+        <div className="flex flex-1 items-center justify-center" aria-label="Loading notes">
+          <Spinner className="size-5 text-text-muted" />
+        </div>
+      ) : (hits ?? []).length === 0 ? (
+        pristine ? (
+          <Empty icon={<FileText className="size-6" />} message="No notes yet" />
+        ) : (
+          <Empty icon={<SearchX className="size-6" />} message="No matches" />
+        )
       ) : (
-        <NoteRows notes={notes} onOpen={(path) => navigate(routeForPath(path))} />
+        <NoteRowList rows={rows} onOpen={(path) => navigate(routeForPath(path))} />
       )}
     </div>
   )
 }
 
-/** The virtualized note list (blank query). */
-function NoteRows({
-  notes,
-  onOpen,
+/** The `#…` tag-matching mode's suggestion row (replaces the badge row). */
+function TagSuggestions({
+  facets,
+  onPick,
 }: {
-  notes: NoteListEntry[] | undefined
-  onOpen: (path: string) => void
+  facets: NoteTagFacet[]
+  onPick: (facet: NoteTagFacet) => void
 }): ReactElement {
-  const { settings } = useSettings()
-  const rows = notes ?? []
-
-  if (notes !== undefined && notes.length === 0) {
-    return <Empty message="No notes yet" />
+  if (facets.length === 0) {
+    return <p className="pb-1 text-xs text-text-muted">No matching tags</p>
   }
-
   return (
-    <div
-      className="min-h-0 flex-1 overflow-y-auto"
-      style={{ paddingBottom: 'max(env(safe-area-inset-bottom), var(--keyboard-height, 0px))' }}
-    >
-      <Virtualizer as="ul" item="li" data={rows} itemSize={64} bufferSize={640}>
-        {(note) => (
-          <button
-            key={note.path}
-            type="button"
-            onClick={() => onOpen(note.path)}
-            className="flex w-full flex-col gap-0.5 border-b border-border px-4 py-2.5 text-left"
-          >
-            <span className="flex items-baseline justify-between gap-2">
-              <span className="min-w-0 truncate text-sm font-medium">{note.title}</span>
-              <span className="shrink-0 text-xs text-text-muted">
-                {formatRecencyLabel(note.mtime, settings)}
-              </span>
-            </span>
-            {note.snippet !== '' && (
-              <span className="line-clamp-2 text-xs text-text-muted">{note.snippet}</span>
-            )}
-          </button>
-        )}
-      </Virtualizer>
+    <div className="flex gap-1.5 overflow-x-auto pb-1" role="listbox" aria-label="Matching tags">
+      {facets.map((facet) => (
+        <button
+          key={facet.tag}
+          type="button"
+          role="option"
+          aria-selected={false}
+          onClick={() => onPick(facet)}
+          className="flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border px-3 text-xs font-medium text-text-muted"
+        >
+          #{facet.tag}
+          <span className="opacity-60">{facet.count}</span>
+        </button>
+      ))}
     </div>
   )
 }
 
-/** Ranked FTS results with highlighted snippets. */
-function SearchResults({
-  hits,
-  onOpen,
-}: {
-  hits: FilteredSearchHit[] | undefined
-  onOpen: (path: string) => void
-}): ReactElement {
-  if (hits !== undefined && hits.length === 0) {
-    return <Empty message="No matches" />
-  }
-
+function Empty({ icon, message }: { icon: ReactElement; message: string }): ReactElement {
   return (
-    <div
-      className="min-h-0 flex-1 overflow-y-auto"
-      style={{ paddingBottom: 'max(env(safe-area-inset-bottom), var(--keyboard-height, 0px))' }}
-    >
-      <ul>
-        {(hits ?? []).map((hit) => (
-          <li key={hit.path}>
-            <button
-              type="button"
-              onClick={() => onOpen(hit.path)}
-              className="flex w-full flex-col gap-0.5 border-b border-border px-4 py-2.5 text-left"
-            >
-              <span className="truncate text-sm font-medium">{hit.title}</span>
-              {hit.snippet !== null && (
-                <span className="line-clamp-2 text-xs text-text-muted">
-                  {parseHighlights(hit.snippet).map((segment, index) =>
-                    segment.highlighted ? (
-                      <mark key={index} className="rounded-sm bg-primary/15 text-text">
-                        {segment.text}
-                      </mark>
-                    ) : (
-                      <span key={index}>{segment.text}</span>
-                    ),
-                  )}
-                </span>
-              )}
-            </button>
-          </li>
-        ))}
-      </ul>
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 text-text-muted">
+      {icon}
+      <p className="text-sm">{message}</p>
     </div>
-  )
-}
-
-function Empty({ message }: { message: string }): ReactElement {
-  return (
-    <div className="flex flex-1 items-center justify-center text-sm text-text-muted">{message}</div>
   )
 }

@@ -22,13 +22,28 @@ afterEach(() => {
 describe('searchWithFilters', () => {
   it('starts tag-only recall searches from the folded tag key', async () => {
     mockInvoke.mockResolvedValueOnce([
-      { path: 'notes/work.md', title: 'Work', daily_date: null },
+      {
+        path: 'notes/work.md',
+        title: 'Work',
+        daily_date: null,
+        preview: 'Weekly agenda.',
+        mtime: 2000,
+        is_pinned: 0,
+      },
     ])
 
-    const hits = await searchWithFilters(parseSearchQuery('#Work'), 12)
+    const hits = await searchWithFilters(parseSearchQuery('#Work'))
 
     expect(hits).toEqual([
-      { path: 'notes/work.md', title: 'Work', dailyDate: null, snippet: null },
+      {
+        path: 'notes/work.md',
+        title: 'Work',
+        dailyDate: null,
+        snippet: null,
+        preview: 'Weekly agenda.',
+        mtime: 2000,
+        isPinned: false,
+      },
     ])
 
     const [command, args] = mockInvoke.mock.calls[0]!
@@ -46,10 +61,17 @@ describe('searchWithFilters', () => {
 
   it('keeps additional tag filters as indexed existence checks', async () => {
     mockInvoke.mockResolvedValueOnce([
-      { path: 'notes/work.md', title: 'Work', daily_date: null },
+      {
+        path: 'notes/work.md',
+        title: 'Work',
+        daily_date: null,
+        preview: '',
+        mtime: 0,
+        is_pinned: 0,
+      },
     ])
 
-    await searchWithFilters(parseSearchQuery('#Work #Home'), 12)
+    await searchWithFilters(parseSearchQuery('#Work #Home'))
 
     const [, args] = mockInvoke.mock.calls[0]!
     const sql = String(args['sql'])
@@ -63,11 +85,18 @@ describe('searchWithFilters', () => {
 
   it('applies non-tag filters on the tag-first recall path', async () => {
     mockInvoke.mockResolvedValueOnce([
-      { path: 'daily/2026-01-02.md', title: '2026-01-02', daily_date: '2026-01-02' },
+      {
+        path: 'daily/2026-01-02.md',
+        title: '2026-01-02',
+        daily_date: '2026-01-02',
+        preview: 'Standup notes.',
+        mtime: 1000,
+        is_pinned: 1,
+      },
     ])
 
     const parsed = parseSearchQuery('#Work is:daily is:pinned updated:>2026-01-01')
-    const hits = await searchWithFilters(parsed, 12)
+    const hits = await searchWithFilters(parsed)
 
     expect(hits).toEqual([
       {
@@ -75,6 +104,9 @@ describe('searchWithFilters', () => {
         title: '2026-01-02',
         dailyDate: '2026-01-02',
         snippet: null,
+        preview: 'Standup notes.',
+        mtime: 1000,
+        isPinned: true,
       },
     ])
     const [, args] = mockInvoke.mock.calls[0]!
@@ -89,13 +121,29 @@ describe('searchWithFilters', () => {
 
   it('promotes exact title, then bm25, then pinned and recency on text search', async () => {
     mockInvoke.mockResolvedValueOnce([
-      { path: 'notes/quokka.md', title: 'Quokka', daily_date: null, snippet: 'a …' },
+      {
+        path: 'notes/quokka.md',
+        title: 'Quokka',
+        daily_date: null,
+        preview: 'Quokka facts.',
+        mtime: 3000,
+        is_pinned: 0,
+        snippet: 'a …',
+      },
     ])
 
-    const hits = await searchWithFilters(parseSearchQuery('quokka'), 12)
+    const hits = await searchWithFilters(parseSearchQuery('quokka'))
 
     expect(hits).toEqual([
-      { path: 'notes/quokka.md', title: 'Quokka', dailyDate: null, snippet: 'a …' },
+      {
+        path: 'notes/quokka.md',
+        title: 'Quokka',
+        dailyDate: null,
+        snippet: 'a …',
+        preview: 'Quokka facts.',
+        mtime: 3000,
+        isPinned: false,
+      },
     ])
 
     const [command, args] = mockInvoke.mock.calls[0]!
@@ -119,12 +167,74 @@ describe('searchWithFilters', () => {
   it('folds the exact-title key the way titles were indexed', async () => {
     mockInvoke.mockResolvedValueOnce([])
 
-    await searchWithFilters(parseSearchQuery('Quokka Habitat'), 12)
+    await searchWithFilters(parseSearchQuery('Quokka Habitat'))
 
     const [, args] = mockInvoke.mock.calls[0]!
     const params = args['params'] as unknown[]
     // foldKey('Quokka Habitat') — trimmed + lowercased — so it matches the
     // stored `notes.title_key`, never the raw casing.
     expect(params).toContain('quokka habitat')
+  })
+
+  it('leaves the recall feed uncapped when limit is null', async () => {
+    mockInvoke.mockResolvedValueOnce([])
+
+    await searchWithFilters(parseSearchQuery('is:pinned'), { limit: null })
+
+    const [, args] = mockInvoke.mock.calls[0]!
+    const sql = String(args['sql'])
+    expect(sql).not.toContain('limit')
+    expect(args['params']).toEqual(['template', 1])
+  })
+
+  it('orders the recall feed pinned-first when asked (the All list order)', async () => {
+    mockInvoke.mockResolvedValueOnce([])
+
+    await searchWithFilters(parseSearchQuery('is:daily'), { limit: null, pinnedFirst: true })
+
+    const [, args] = mockInvoke.mock.calls[0]!
+    const sql = String(args['sql'])
+    const pinned = sql.indexOf('"notes"."is_pinned" desc')
+    const order = sql.indexOf('"notes"."pinned_order" is null')
+    const mtime = sql.indexOf('"notes"."mtime" desc')
+    expect(pinned).toBeGreaterThan(-1)
+    expect(order).toBeGreaterThan(pinned)
+    expect(mtime).toBeGreaterThan(order)
+  })
+
+  it('orders the tag-first recall path pinned-first when asked', async () => {
+    mockInvoke.mockResolvedValueOnce([])
+
+    await searchWithFilters(parseSearchQuery('#Work'), { limit: null, pinnedFirst: true })
+
+    const [, args] = mockInvoke.mock.calls[0]!
+    const sql = String(args['sql'])
+    expect(sql).toContain('from "tags"')
+    expect(sql.indexOf('"notes"."is_pinned" desc')).toBeGreaterThan(-1)
+    expect(sql.indexOf('"notes"."mtime" desc')).toBeGreaterThan(
+      sql.indexOf('"notes"."is_pinned" desc'),
+    )
+  })
+
+  it('restricts the population to regular notes with notesOnly', async () => {
+    mockInvoke.mockResolvedValueOnce([])
+
+    await searchWithFilters(parseSearchQuery('is:pinned'), { limit: null, notesOnly: true })
+
+    const [, args] = mockInvoke.mock.calls[0]!
+    const sql = String(args['sql'])
+    expect(sql).toContain('"notes"."kind" = ?')
+    expect(args['params']).toEqual(['template', 'note', 1])
+  })
+
+  it('lets an explicit daily filter win over notesOnly', async () => {
+    mockInvoke.mockResolvedValueOnce([])
+
+    await searchWithFilters(parseSearchQuery('is:daily'), { limit: null, notesOnly: true })
+
+    const [, args] = mockInvoke.mock.calls[0]!
+    const sql = String(args['sql'])
+    expect(sql).toContain('"notes"."daily_date" is not null')
+    expect(sql).not.toContain('"notes"."kind" = ?')
   })
 })

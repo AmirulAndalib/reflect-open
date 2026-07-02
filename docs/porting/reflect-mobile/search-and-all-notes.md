@@ -1,8 +1,9 @@
 # Porting search and All Notes
 
-**v2 status: v1 for the list + lexical search (the All tab exists,
-`apps/desktop/src/mobile/screens/all-notes.tsx`); filter badges are V1
-parity work; the AI search chat is a later wave (with the copilot).**
+**v2 status: shipped for the list + lexical search + filter badges (the
+All tab, `apps/desktop/src/mobile/screens/all-notes.tsx`, with the badge
+row in `apps/desktop/src/mobile/search-filters/`); the AI search chat is
+a later wave (with the copilot).**
 
 ## What V1 mobile does
 
@@ -68,9 +69,11 @@ View model shared with the notes-list code
 - **Filter badges are V1-parity work** called for by Plan 19 ("embedded
   search and filter badges"). The v2 vocabulary differs where V1 concepts
   died: *Published* has no v2 meaning (publishing is deferred
-  product-wide); *Pinned*, *Tags*, *Daily*, and date filters map onto
-  existing index columns; *Linked to/by* maps onto the backlink
-  projection.
+  product-wide); *Created at* has no v2 substrate — the index projects no
+  creation time, markdown carries none, and file birthtimes don't survive
+  Git/iCloud sync, so a created filter would rank on garbage. *Pinned*,
+  *Tags*, *Daily*, and *Updated at* map onto existing index columns;
+  *Linked to/by* maps onto the backlink projection.
 - **AI chat is deferred to the copilot wave.** When it arrives it should
   be the v2 chat engine (BYOK, CloudSafe/`private: true` enforcement)
   grounded in search results — V1's retrieval-set grounding is the
@@ -86,7 +89,7 @@ View model shared with the notes-list code
 | ---------------------------------------------- | --------------------------------------------------------------- |
 | FTS5 BM25, 3× subject, recency/pinned/exact    | Same-index FTS5 getters as desktop v2                           |
 | Vector search stubbed out                      | Explicitly out (indexing strategy); lexical-first               |
-| Filter badges incl. Published                  | V1-parity badges minus Published; backlink + date filters       |
+| Filter badges incl. Published, Created at      | V1-parity badges minus Published/Created; backlink + updated    |
 | `#` tag search mode                            | Tag filtering per desktop tag parity                            |
 | Virtuoso, fixed 68 px rows                     | Virtualized list (same technique)                               |
 | Search-grounded AI chat page (server AI)       | Later wave: copilot/chat engine, BYOK, `private: true` blocked  |

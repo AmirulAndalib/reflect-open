@@ -119,7 +119,11 @@ export {
 } from './search'
 export { lineAt, lineSnippet, previewSnippet } from './snippet'
 export { parseSearchQuery, type ParsedSearchQuery, type SearchFilters } from './filter-query'
-export { searchWithFilters, type FilteredSearchHit } from './filtered-search'
+export {
+  searchWithFilters,
+  type FilteredSearchHit,
+  type FilteredSearchOptions,
+} from './filtered-search'
 export {
   rewriteLinksForTitleChange,
   nextAliases,

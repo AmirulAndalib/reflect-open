@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppCommand } from '@/lib/commands/types'
-import type { FilteredSearchHit, WikiSuggestion } from '@reflect/core'
-import { buildPaletteSections } from './entries'
+import type { WikiSuggestion } from '@reflect/core'
+import { buildPaletteSections, type PaletteHit } from './entries'
 
 function suggestion(path: string, title: string, date: string | null = null): WikiSuggestion {
   return { target: title, path, title, alias: null, date }
@@ -11,7 +11,7 @@ function hit(
   title: string,
   snippet: string | null = '…body…',
   dailyDate: string | null = null,
-): FilteredSearchHit {
+): PaletteHit {
   return { path, title, snippet, dailyDate }
 }
 const COMMANDS: AppCommand[] = [

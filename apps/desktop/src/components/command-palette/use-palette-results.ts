@@ -95,7 +95,7 @@ export function usePaletteResults(open: boolean, query: string): PaletteResults 
       if (!useHybrid) {
         return searchWithFilters(parsed)
       }
-      // Adapt RetrievalHit → FilteredSearchHit: semantic chunk text rides in
+      // Adapt RetrievalHit → PaletteHit: semantic chunk text rides in
       // the snippet slot (dailies fall back to their ISO-titled row — the
       // retrieval contract doesn't carry dailyDate).
       const hits = await retrieve(trimmed, { mode: 'hybrid' })

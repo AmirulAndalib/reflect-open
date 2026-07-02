@@ -3,6 +3,13 @@ import type { AppCommand } from '@/lib/commands/types'
 import type { FilteredSearchHit, WikiSuggestion } from '@reflect/core'
 
 /**
+ * What the palette actually reads off a search hit — a subset of
+ * {@link FilteredSearchHit}, so the semantic-search adapter doesn't have to
+ * fabricate list-only fields (preview, mtime) it has no values for.
+ */
+export type PaletteHit = Pick<FilteredSearchHit, 'path' | 'title' | 'dailyDate' | 'snippet'>
+
+/**
  * Pure assembly of the palette's sections (Plan 08): merges title suggestions
  * (exact < prefix < substring, from the index), search hits, and matching
  * commands into the sectioned result model. Factored from the component so the
@@ -44,7 +51,7 @@ export function buildPaletteSections(options: {
   dataQuery: string
   suggestions: WikiSuggestion[]
   /** The one search path's results (filters may be empty — Plan 08b). */
-  hits: FilteredSearchHit[]
+  hits: PaletteHit[]
   /** True when the data query carried filter tokens (describes `hits`). */
   filtered: boolean
   commands: AppCommand[]

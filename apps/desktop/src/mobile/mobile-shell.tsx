@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { MobileScreen } from '@/mobile/mobile-screen'
 import { MobileTabBar, type MobileTab } from '@/mobile/mobile-tab-bar'
+import {
+  EMPTY_ALL_NOTES_FILTERS,
+  type AllNotesFilters,
+} from '@/mobile/search-filters/filter-state'
 import { useWakeToToday } from '@/mobile/use-wake-to-today'
 import { useRouter } from '@/routing/router'
 
@@ -8,12 +12,13 @@ import { useRouter } from '@/routing/router'
  * The tabbed mobile shell (Plan 19, V1 parity): screens above, the
  * Daily / All bar below. The active tab derives from the route — a note
  * keeps whichever tab it was opened from, so reading a search result
- * doesn't flip the bar. The All tab's search text lives here, not in the
- * screen, so opening a note and coming back doesn't lose the query.
+ * doesn't flip the bar. The All tab's search text and filter badges live
+ * here, not in the screen, so opening a note and coming back loses neither.
  */
 export function MobileShell(): ReactElement {
   const { route, navigate, entryId } = useRouter()
   const [allQuery, setAllQuery] = useState('')
+  const [allFilters, setAllFilters] = useState<AllNotesFilters>(EMPTY_ALL_NOTES_FILTERS)
   const [lastTab, setLastTab] = useState<MobileTab>('daily')
   // V1's wake-to-today: foregrounding on a new calendar date lands on today.
   useWakeToToday()
@@ -44,7 +49,12 @@ export function MobileShell(): ReactElement {
   return (
     <div className="flex h-dvh w-screen flex-col">
       <div className="min-h-0 flex-1">
-        <MobileScreen allQuery={allQuery} onAllQueryChange={setAllQuery} />
+        <MobileScreen
+          allQuery={allQuery}
+          onAllQueryChange={setAllQuery}
+          allFilters={allFilters}
+          onAllFiltersChange={setAllFilters}
+        />
       </div>
       <MobileTabBar
         tab={tab}
