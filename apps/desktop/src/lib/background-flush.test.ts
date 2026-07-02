@@ -114,11 +114,13 @@ describe('installBackgroundFlush', () => {
     expect(seams.flushBackup).toHaveBeenCalledTimes(1)
   })
 
-  it('coalesces simultaneous triggers into one flush chain', async () => {
+  it('triggers during an in-flight chain never overlap it — and are never dropped', async () => {
     // iOS fires visibilitychange AND pagehide on one backgrounding; two
-    // chains would race the same buffers and git index.
+    // concurrent chains would race the same buffers and git index. But a
+    // trigger arriving mid-chain (quick foreground-edit-background) must
+    // still get a flush afterwards, or that edit dies with the process.
     let landBuffers: () => void = () => {}
-    seams.flushOpenDocuments.mockImplementation(
+    seams.flushOpenDocuments.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           landBuffers = resolve
@@ -128,18 +130,17 @@ describe('installBackgroundFlush', () => {
 
     goHidden()
     window.dispatchEvent(new Event('pagehide'))
-    landBuffers()
-    await settleMicrotasks()
-
-    expect(seams.flushOpenDocuments).toHaveBeenCalledTimes(1)
-    expect(seams.flushBackup).toHaveBeenCalledTimes(1)
-
-    // A later, separate backgrounding flushes again (once the first chain
-    // has fully settled and released the in-flight slot).
-    await settleMicrotasks()
-    seams.flushOpenDocuments.mockImplementation(async () => {})
     window.dispatchEvent(new Event('pagehide'))
     await settleMicrotasks()
+    // Only the first chain is running — nothing concurrent.
+    expect(seams.flushOpenDocuments).toHaveBeenCalledTimes(1)
+    expect(seams.flushBackup).not.toHaveBeenCalled()
+
+    landBuffers()
+    await settleMicrotasks()
+    await settleMicrotasks()
+    // The mid-chain triggers coalesced into exactly one trailing chain.
+    expect(seams.flushOpenDocuments).toHaveBeenCalledTimes(2)
     expect(seams.flushBackup).toHaveBeenCalledTimes(2)
   })
 
