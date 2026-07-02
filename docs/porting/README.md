@@ -50,6 +50,17 @@ designs simply don't survive the move:
 | [Deep links](./deep-links.md)                                       | `reflect://` + web URLs  | **Ported** (route-shaped `reflect://` scheme)    |
 | [Editor keyboard shortcuts](./editor-keyboard-shortcuts.md)         | reflect-editor keymaps   | Planned — gap list for meowdown + app            |
 
+## Mobile
+
+The V1 **mobile** app (the separate Capacitor/Ionic `reflect-mobile`
+repo) has its own porting set under
+[`porting/reflect-mobile/`](./reflect-mobile/README.md), covering the
+Daily carousel, the mobile editor/keyboard experience, audio memos, the
+share extension, native entry points, and the mobile sync/offline
+contracts. Those docs defer to
+[Plan 19](../plans/19-mobile.md) and the
+[mobile grounding brief](../reflect-v2-mobile-grounding-brief.md).
+
 ## Conventions
 
 - "Graph" is a notes folder; "daily note" is `daily/YYYY-MM-DD.md`.

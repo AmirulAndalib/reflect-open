@@ -6,6 +6,8 @@ It is a companion to the [V1 Overview](./reflect-v1-overview.md), which covers t
 
 Source code: the `reflect-mobile` repository (separate from the main V1 `reflect` repo).
 
+Per-feature porting docs — what each V1 mobile feature did in detail and how it maps onto V2 — live in [docs/porting/reflect-mobile/](./porting/reflect-mobile/README.md).
+
 ## Product Summary
 
 Reflect V1 Mobile is a capture-first companion app, not a port of the desktop experience. It is an iOS app (iPhone-first, iPad-capable) built with Capacitor 6 wrapping a Next.js 14 + Ionic React web app, sharing the V1 domain model and sync stack with the web codebase.
