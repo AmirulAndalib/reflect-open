@@ -29,9 +29,11 @@ interface SidebarProps {
 /**
  * The workspace sidebar, in the original app's shape: history arrows top
  * right, search, primary navigation with hover-revealed shortcut keycaps, the
- * Pinned shelf, and the graph switcher footer. Nav rows run registered
- * commands so a binding and its behavior stay one definition. (Sidebar
- * collapse stays on `Mod-\` via the command registry.)
+ * Pinned shelf, and the graph switcher footer. Most nav rows run registered
+ * commands so a binding and its behavior stay one definition; the Daily notes
+ * row restores the stream's surface scroll on click, while its `Mod-D` binding
+ * still runs the command and re-anchors to today. (Sidebar collapse stays on
+ * `Mod-\` via the command registry.)
  */
 export function Sidebar({ graph, context }: SidebarProps): ReactElement {
   const { route } = useRouter()
@@ -72,7 +74,9 @@ export function Sidebar({ graph, context }: SidebarProps): ReactElement {
             label="Daily notes"
             binding={keybindingFor('nav.today') ?? undefined}
             active={(route.kind === 'today' || route.kind === 'daily') && !hasActivePinnedNote}
-            onClick={() => void runCommand('nav.today', context)}
+            onClick={() =>
+              context.navigate({ kind: 'today' }, { restoreSurfaceScroll: true })
+            }
           />
           <SidebarItem
             icon={

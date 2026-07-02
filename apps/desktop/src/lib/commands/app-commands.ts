@@ -14,7 +14,7 @@ import { startOperation } from '@/lib/operations'
 import { rebuildIndexVisibly } from '@/lib/rebuild-index'
 import { type Route } from '@/routing/route'
 import { registerCommands } from './registry'
-import type { AppCommand } from './types'
+import type { AppCommand, CommandContext } from './types'
 
 /**
  * The first-wave commands (Plan 08). Keybindings here replace the hardcoded
@@ -29,6 +29,21 @@ import type { AppCommand } from './types'
  */
 export function newNoteRoute(): Route {
   return { kind: 'note', path: untitledNotePath() }
+}
+
+/**
+ * ⌘N from the daily stream leaves its saved scroll offsets behind as stale
+ * state: the fresh note is where attention moves, so a later return to the
+ * stream — ⌘[ back or the Daily nav tab — should re-anchor to its target, not
+ * restore the pre-note position. Other routes keep their offsets; only the
+ * stream re-anchors around note creation.
+ */
+function openNewNote(context: CommandContext): void {
+  const route = context.route()
+  if (route.kind === 'today' || route.kind === 'daily') {
+    context.clearScrollState()
+  }
+  context.navigate(newNoteRoute())
 }
 
 const APP_COMMANDS: AppCommand[] = [
@@ -58,7 +73,7 @@ const APP_COMMANDS: AppCommand[] = [
     title: 'New note',
     keywords: ['create'],
     keybinding: 'Mod-n',
-    run: (context) => context.navigate(newNoteRoute()),
+    run: openNewNote,
   },
   {
     id: 'chat.open',
