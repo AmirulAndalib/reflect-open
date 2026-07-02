@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
+import { clearNoteFocus, peekNoteFocus } from '@/editor/note-focus-request'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { BacklinksPanel } from './backlinks-panel'
 
@@ -130,6 +131,10 @@ describe('BacklinksPanel', () => {
 
     await userEvent.click(view.getByText('Meeting Notes'))
     expect(view.getByTestId('route').textContent).toContain('notes/meeting.md')
+    // A backlink tap restores focus on the destination (the mobile focus
+    // contract) — the request is recorded for the note screen to consume.
+    expect(peekNoteFocus('notes/meeting.md')).toBe(true)
+    clearNoteFocus('notes/meeting.md')
     view.unmount()
   })
 

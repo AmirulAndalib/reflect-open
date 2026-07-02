@@ -1,6 +1,7 @@
 import { render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
+import type { Route } from '@/routing/route'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { clearNoteFocus, peekNoteFocus } from './note-focus-request'
 import { useWikiLinkNavigation } from './use-wiki-link-navigation'
@@ -25,9 +26,9 @@ function RouteProbe(): ReactNode {
   return <output data-testid="route">{JSON.stringify(route)}</output>
 }
 
-function renderHost(generation: number | null = 1) {
+function renderHost(generation: number | null = 1, initialRoute?: Route) {
   return render(
-    <RouterProvider>
+    <RouterProvider {...(initialRoute ? { initialRoute } : {})}>
       <Host generation={generation} />
       <RouteProbe />
     </RouterProvider>,
@@ -62,6 +63,19 @@ describe('useWikiLinkNavigation', () => {
     lastHandler?.('Target')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/target.md'))
     expect(peekNoteFocus('notes/target.md')).toBe(true)
+    view.unmount()
+  })
+
+  it('does not record a focus request for a link to the already-open note', async () => {
+    // A same-route navigate never remounts the note screen, so nothing would
+    // consume the request — it must not be recorded (it would go stale and
+    // wrongly focus a plain reopen moments later).
+    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/target.md' })
+    const view = renderHost(1, { kind: 'note', path: 'notes/target.md' })
+    lastHandler?.('Target')
+    await waitFor(() => expect(resolveWikiTarget).toHaveBeenCalled())
+    await new Promise((tick) => setTimeout(tick, 0))
+    expect(peekNoteFocus('notes/target.md')).toBe(false)
     view.unmount()
   })
 

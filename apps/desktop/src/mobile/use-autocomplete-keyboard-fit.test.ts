@@ -1,5 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAutocompleteKeyboardFit } from './use-autocomplete-keyboard-fit'
 
 /**
@@ -73,9 +73,37 @@ describe('useAutocompleteKeyboardFit', () => {
     const popup = installPopup({ top: 420, height: 200 })
     setKeyboardHeight(300) // spaceBelow = 40 < 160 → flip
     const view = renderHook(() => useAutocompleteKeyboardFit())
-    // caretTop = 420-8-24 = 388; spaceAbove = 388-8-8 = 372; height stays 200.
+    // Estimated caretTop = 420-8-24 = 388; spaceAbove = 388-16 = 372;
+    // height stays 200; popup bottom lands at 388-8 = 380 → 380-620 = -240.
     expect(popup.style.maxHeight).toBe('372px')
-    expect(popup.style.transform).toBe('translateY(-240px)') // 200 + 24 + 16
+    expect(popup.style.transform).toBe('translateY(-240px)')
+    view.unmount()
+  })
+
+  it('measures the caret from the live selection when it has a rect', () => {
+    const popup = installPopup({ top: 420, height: 200 })
+    setKeyboardHeight(300)
+    const getSelection = vi.spyOn(window, 'getSelection').mockReturnValue({
+      rangeCount: 1,
+      getRangeAt: () => ({
+        getBoundingClientRect: () => ({ top: 400, height: 20 }),
+      }),
+    } as unknown as Selection)
+    const view = renderHook(() => useAutocompleteKeyboardFit())
+    // caretTop = 400 (real); spaceAbove = 384; bottom lands at 392 → 392-620.
+    expect(popup.style.maxHeight).toBe('384px')
+    expect(popup.style.transform).toBe('translateY(-228px)')
+    getSelection.mockRestore()
+    view.unmount()
+  })
+
+  it('stays below (capped) when there is even less room above the caret', () => {
+    // Caret near the screen top with a huge keyboard: above is worse.
+    const popup = installPopup({ top: 100, height: 200 })
+    setKeyboardHeight(600) // limit 168; spaceBelow = 60; spaceAbove = 52
+    const view = renderHook(() => useAutocompleteKeyboardFit())
+    expect(popup.style.maxHeight).toBe('60px')
+    expect(popup.style.transform).toBe('')
     view.unmount()
   })
 

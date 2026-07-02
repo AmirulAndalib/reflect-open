@@ -14,15 +14,17 @@ import { useEffect } from 'react'
  * - enough room below the caret → cap `max-height` so the menu ends above the
  *   keyboard;
  * - cramped below (the common case: typing on the note's last line, caret
- *   just above the keyboard) → flip the menu above the caret line via a
+ *   just above the keyboard) → flip the menu above the caret via a
  *   `translateY`, the flip floating-ui would have done had it known the real
- *   viewport.
+ *   viewport. The caret is measured from the live selection; when no rect is
+ *   available the anchor offset meowdown uses is estimated instead.
  *
  * Everything is driven by one MutationObserver on the document root: menu
  * open/close and item changes are childList mutations, keyboard height
  * changes are a style-attribute mutation on `<html>` (`useKeyboardHeightVar`
- * writes the CSS variable there). Writes are skip-if-unchanged so the
- * observer can watch its own effects without looping.
+ * writes the CSS variable there). Refits coalesce into one pass per animation
+ * frame, and the records our own style writes queue are discarded so the
+ * observer never loops on itself.
  */
 export function useAutocompleteKeyboardFit(): void {
   useEffect(() => {
@@ -32,12 +34,16 @@ export function useAutocompleteKeyboardFit(): void {
         fitPopup(popup, keyboard)
       }
     }
-    // Fitting resets styles to measure the natural geometry, so every pass
-    // mutates the popup even at a fixpoint — discard the records our own
-    // writes queued or the observer would re-fire forever.
+    let frame: number | null = null
     const observer = new MutationObserver(() => {
-      fitAll()
-      observer.takeRecords()
+      if (frame !== null) {
+        return
+      }
+      frame = requestAnimationFrame(() => {
+        frame = null
+        fitAll()
+        observer.takeRecords()
+      })
     })
     observer.observe(document.documentElement, {
       childList: true,
@@ -46,21 +52,26 @@ export function useAutocompleteKeyboardFit(): void {
       attributeFilter: ['style', 'data-state'],
     })
     fitAll()
-    return () => observer.disconnect()
+    return () => {
+      if (frame !== null) {
+        cancelAnimationFrame(frame)
+      }
+      observer.disconnect()
+    }
   }, [])
 }
 
 /** ProseKit renders every autocomplete menu as this custom element. */
 const POPUP_SELECTOR = 'prosekit-autocomplete-popup'
 
-/** Breathing room between the menu and the keyboard / screen edges. */
+/** Breathing room between the menu and the keyboard / caret / screen edges. */
 const GAP_PX = 8
 
 /** The positioner anchors the popup this far below the caret's bottom. */
 const ANCHOR_OFFSET_PX = 8
 
-/** Estimated caret line height — only used to clear the line when flipping. */
-const CARET_LINE_PX = 24
+/** Caret line-height estimate for the no-selection-rect fallback. */
+const CARET_LINE_FALLBACK_PX = 24
 
 /** Below-caret space under this flips the menu above the caret instead. */
 const MIN_BELOW_PX = 160
@@ -69,6 +80,22 @@ function keyboardHeightPx(): number {
   const raw = document.documentElement.style.getPropertyValue('--keyboard-height')
   const parsed = Number.parseFloat(raw)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+/**
+ * The top of the caret line the popup is anchored to — from the live
+ * selection when it has a box (real browsers give collapsed ranges a caret
+ * rect), otherwise estimated back from the popup's anchored top.
+ */
+function caretTopPx(popupRect: DOMRect): number {
+  const selection = window.getSelection()
+  if (selection !== null && selection.rangeCount > 0) {
+    const rect = selection.getRangeAt(0).getBoundingClientRect()
+    if (rect.height > 0) {
+      return rect.top
+    }
+  }
+  return popupRect.top - ANCHOR_OFFSET_PX - CARET_LINE_FALLBACK_PX
 }
 
 function fitPopup(popup: HTMLElement, keyboard: number): void {
@@ -84,29 +111,24 @@ function fitPopup(popup: HTMLElement, keyboard: number): void {
     return // closed (or not yet laid out) — nothing to fit
   }
   const limit = window.innerHeight - keyboard
-  const spaceBelow = limit - GAP_PX - rect.top
   if (rect.bottom <= limit - GAP_PX) {
     return // already fully visible
   }
-  if (spaceBelow >= MIN_BELOW_PX) {
-    setStyle(popup, 'max-height', `${Math.floor(spaceBelow)}px`)
-    return
-  }
-  // Flip above the caret line: the popup's anchored top sits ANCHOR_OFFSET
-  // below the caret's bottom, so the caret's top is one line above that.
-  const caretTop = rect.top - ANCHOR_OFFSET_PX - CARET_LINE_PX
-  const spaceAbove = caretTop - ANCHOR_OFFSET_PX - GAP_PX
-  if (spaceAbove <= spaceBelow) {
-    // No better above (caret near the screen top): keep it below, capped to
-    // whatever room there is rather than hiding entries under the keyboard.
+  const caretTop = caretTopPx(rect)
+  const spaceBelow = limit - GAP_PX - rect.top
+  const spaceAbove = caretTop - 2 * GAP_PX
+  if (spaceBelow >= MIN_BELOW_PX || spaceBelow >= spaceAbove) {
+    // Enough room below (or no better above): keep it anchored, capped so it
+    // ends above the keyboard rather than hiding entries under it.
     setStyle(popup, 'max-height', `${Math.max(Math.floor(spaceBelow), 0)}px`)
     return
   }
+  // Flip above the caret line: cap to the room up there, then translate so
+  // the popup's bottom lands just above the caret.
   setStyle(popup, 'max-height', `${Math.floor(spaceAbove)}px`)
-  // Re-measure after the cap: the flip distance depends on the final height.
   const height = popup.getBoundingClientRect().height
-  const shift = height + CARET_LINE_PX + 2 * ANCHOR_OFFSET_PX
-  setStyle(popup, 'transform', `translateY(${-Math.round(shift)}px)`)
+  const desiredBottom = caretTop - GAP_PX
+  setStyle(popup, 'transform', `translateY(${Math.round(desiredBottom - (rect.top + height))}px)`)
 }
 
 function resetPopup(popup: HTMLElement): void {
@@ -114,7 +136,7 @@ function resetPopup(popup: HTMLElement): void {
   setStyle(popup, 'transform', '')
 }
 
-/** Write-if-changed, so the MutationObserver never loops on its own writes. */
+/** Write-if-changed, so converged refits queue no mutation records at all. */
 function setStyle(popup: HTMLElement, property: string, value: string): void {
   if (popup.style.getPropertyValue(property) !== value) {
     if (value === '') {
