@@ -35,15 +35,20 @@ export function calendarAvailable(): boolean {
 }
 
 /**
- * The macOS calendar permission state (never prompts). Deliberately no
- * `staleTime`: the state changes behind Reflect's back in System Settings,
- * and the default refetch-on-focus picks that up when the user comes back.
+ * The macOS calendar permission state (never prompts). The state changes
+ * behind Reflect's back in System Settings, so this query opts out of the
+ * app-wide defaults (`staleTime: Infinity`, no focus refetch — right for
+ * invalidation-driven index reads, wrong here) and re-checks every time the
+ * window regains focus: exactly the "flip it in System Settings and come
+ * back" path.
  */
 export function useCalendarAuthorization(enabled: boolean): CalendarAuthorizationStatus | undefined {
   const query = useQuery({
     queryKey: CALENDAR_AUTH_QUERY_KEY,
     queryFn: calendarAuthorizationStatus,
     enabled: enabled && calendarAvailable(),
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
   })
   return query.data
 }

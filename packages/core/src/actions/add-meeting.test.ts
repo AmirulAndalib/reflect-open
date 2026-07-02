@@ -89,6 +89,13 @@ describe('addMeetingToDaily', () => {
     expect(writeNoteMock).not.toHaveBeenCalled()
   })
 
+  it('matches a link whose alias (not target) carries the meeting name', async () => {
+    readNoteMock.mockResolvedValue('## Meetings\n\n- [[Standup|Daily sync]]\n')
+    const outcome = await addMeetingToDaily(input({ title: 'Daily sync' }))
+    expect(outcome.appended).toBe(false)
+    expect(writeNoteMock).not.toHaveBeenCalled()
+  })
+
   it('still appends when the title is only linked outside the Meetings section', async () => {
     readNoteMock.mockResolvedValue('Prep notes for [[Standup]] tomorrow.\n')
     const outcome = await addMeetingToDaily(input())

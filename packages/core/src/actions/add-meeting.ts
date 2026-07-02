@@ -102,10 +102,18 @@ function meetingAlreadyLinked(source: string, title: string): boolean {
       (candidate) => candidate.from > heading.from && candidate.level <= heading.level,
     )?.from ?? source.length
   const titleKey = foldKey(title)
-  return wikiLinks.some(
-    (link) =>
-      link.from >= heading.to && link.from < sectionEnd && foldKey(link.target) === titleKey,
-  )
+  return wikiLinks.some((link) => {
+    if (link.from < heading.to || link.from >= sectionEnd) {
+      return false
+    }
+    // The alias counts too: `[[Standup|Daily sync]]` already shows this
+    // meeting under its calendar name, even though the link targets another
+    // note title.
+    return (
+      foldKey(link.target) === titleKey ||
+      (link.alias !== undefined && foldKey(link.alias) === titleKey)
+    )
+  })
 }
 
 /** Sanitized, case-insensitively deduplicated attendee names, order kept. */
