@@ -41,6 +41,7 @@ export async function attachFilesToNote(context: CommandContext): Promise<void> 
   }
   const sources = Array.isArray(picked) ? picked : [picked]
   const links: string[] = []
+  const attachedNames: string[] = []
   const failures: { name: string; cause: unknown }[] = []
   for (const source of sources) {
     // Each copy is independent — one failure must not drop the files picked
@@ -49,6 +50,7 @@ export async function attachFilesToNote(context: CommandContext): Promise<void> 
     try {
       const assetPath = await importAsset(source, assetFileName(name), generation)
       links.push(`[${escapeLinkLabel(name)}](${assetPath})`)
+      attachedNames.push(name)
     } catch (cause) {
       failures.push({ name, cause })
     }
@@ -62,8 +64,8 @@ export async function attachFilesToNote(context: CommandContext): Promise<void> 
     const handle = noteEditorHandleFor(notePath)
     if (handle === null) {
       problems.push(
-        `the note closed before its links could be inserted — ${links.join(', ')} ` +
-          'were still copied into assets/',
+        `the note closed before its links could be inserted — ` +
+          `${attachedNames.join(', ')} were still copied into assets/`,
       )
     } else {
       handle.insertMarkdown(links.join('\n'))
