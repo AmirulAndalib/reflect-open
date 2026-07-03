@@ -14,20 +14,20 @@ const GOOGLE_AUDIO_MEMO_TITLE_MODEL = 'gemini-3.1-flash-lite'
 
 interface AudioMemoTitleCredentials {
   /** The provider entry whose provider selects the fixed small title model. */
-  config: AiProviderConfig
+  readonly config: AiProviderConfig
   /** The BYOK API key, read from the OS keychain by the caller. */
-  apiKey: string
+  readonly apiKey: string
 }
 
 export interface GenerateAudioMemoTitleRequest {
   /** Optional title-generation credentials; omitted means local fallback only. */
-  credentials?: AudioMemoTitleCredentials | undefined
+  readonly credentials?: AudioMemoTitleCredentials | undefined
   /** Host transport (the Tauri HTTP plugin's fetch; tests pass a stub). */
-  fetchFn?: typeof fetch | undefined
+  readonly fetchFn?: typeof fetch | undefined
   /** The memo transcript to name. */
-  transcript: string
+  readonly transcript: string
   /** Timestamp-derived fallback when the transcript cannot produce a title. */
-  fallbackTitle: string
+  readonly fallbackTitle: string
 }
 
 function audioMemoTitleConfig(config: AiProviderConfig): AiProviderConfig | null {
