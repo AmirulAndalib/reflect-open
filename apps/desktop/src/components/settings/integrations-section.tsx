@@ -6,6 +6,7 @@ import {
   useContactsAuthorization,
   useRefreshContactsAuthorization,
 } from '@/hooks/use-contacts-authorization'
+import { isMacosDesktop } from '@/lib/platform'
 import { useSettings } from '@/providers/settings-provider'
 import { CalendarIntegrationField } from './calendar-integration-field'
 import { SettingsSection } from './section'
@@ -50,7 +51,10 @@ export function IntegrationsSection(): ReactElement | null {
     return () => window.removeEventListener('focus', onFocus)
   }, [contactsEnabled, refreshAuthorization])
 
-  if (authorization === null || authorization === 'unavailable') {
+  const contactsAvailable = authorization !== null && authorization !== 'unavailable'
+  const calendarAvailable = isMacosDesktop
+
+  if (!contactsAvailable && !calendarAvailable) {
     return null
   }
 
@@ -85,56 +89,58 @@ export function IntegrationsSection(): ReactElement | null {
 
   return (
     <SettingsSection id="integrations">
-      <div>
-        <SettingsSwitchField
-          legend="Contacts"
-          description="Suggest a contact's email and phone when a note's title matches their name."
-          checked={settings.contactsEnabled}
-          onCheckedChange={(checked) => {
-            if (checked) {
-              void enableContacts()
-            } else {
-              updateSettings({ contactsEnabled: false })
-            }
-          }}
-        />
-        {showDenied ? (
-          <div className="px-4 pb-3.5">
-            <InlineAlert tone="warning">
-              Reflect doesn’t have contacts access.{' '}
-              <button
-                type="button"
-                className="font-medium underline underline-offset-2"
-                onClick={() => {
-                  // A rejection here is a capability-scope bug (the ACL must
-                  // allow x-apple.systempreferences:*) — surface it, don't
-                  // swallow it into a dead link.
-                  openUrl(CONTACTS_PRIVACY_PANE).catch((cause: unknown) => {
-                    console.error('failed to open System Settings', cause)
-                  })
-                }}
-              >
-                Open System Settings
-              </button>{' '}
-              to allow it, then return here.
-            </InlineAlert>
-          </div>
-        ) : null}
-        {showPrompt ? (
-          <div className="px-4 pb-3.5">
-            <InlineAlert tone="warning">
-              Reflect hasn’t asked for contacts access yet.{' '}
-              <button
-                type="button"
-                className="font-medium underline underline-offset-2"
-                onClick={() => void promptForAccess()}
-              >
-                Allow contacts access
-              </button>
-            </InlineAlert>
-          </div>
-        ) : null}
-      </div>
+      {contactsAvailable ? (
+        <div>
+          <SettingsSwitchField
+            legend="Contacts"
+            description="Suggest a contact's email and phone when a note's title matches their name."
+            checked={settings.contactsEnabled}
+            onCheckedChange={(checked) => {
+              if (checked) {
+                void enableContacts()
+              } else {
+                updateSettings({ contactsEnabled: false })
+              }
+            }}
+          />
+          {showDenied ? (
+            <div className="px-4 pb-3.5">
+              <InlineAlert tone="warning">
+                Reflect doesn’t have contacts access.{' '}
+                <button
+                  type="button"
+                  className="font-medium underline underline-offset-2"
+                  onClick={() => {
+                    // A rejection here is a capability-scope bug (the ACL must
+                    // allow x-apple.systempreferences:*) — surface it, don't
+                    // swallow it into a dead link.
+                    openUrl(CONTACTS_PRIVACY_PANE).catch((cause: unknown) => {
+                      console.error('failed to open System Settings', cause)
+                    })
+                  }}
+                >
+                  Open System Settings
+                </button>{' '}
+                to allow it, then return here.
+              </InlineAlert>
+            </div>
+          ) : null}
+          {showPrompt ? (
+            <div className="px-4 pb-3.5">
+              <InlineAlert tone="warning">
+                Reflect hasn’t asked for contacts access yet.{' '}
+                <button
+                  type="button"
+                  className="font-medium underline underline-offset-2"
+                  onClick={() => void promptForAccess()}
+                >
+                  Allow contacts access
+                </button>
+              </InlineAlert>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <CalendarIntegrationField />
     </SettingsSection>
   )

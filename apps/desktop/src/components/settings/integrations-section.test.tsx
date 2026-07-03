@@ -7,6 +7,17 @@ import { IntegrationsSection } from './integrations-section'
 const openUrl = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl }))
 
+const platform = vi.hoisted(() => ({ isMacosDesktop: false }))
+vi.mock('@/lib/platform', () => ({
+  get isMacosDesktop() {
+    return platform.isMacosDesktop
+  },
+}))
+
+vi.mock('./calendar-integration-field', () => ({
+  CalendarIntegrationField: () => <div>Calendar events</div>,
+}))
+
 const settings = vi.hoisted(() => ({
   current: { contactsEnabled: false },
   update: vi.fn((patch: Record<string, unknown>) => {
@@ -51,6 +62,7 @@ function renderSection(): void {
 
 beforeEach(() => {
   authorization = 'notDetermined'
+  platform.isMacosDesktop = false
   settings.current = { contactsEnabled: false }
   settings.update.mockClear()
   openUrl.mockClear()
@@ -105,5 +117,14 @@ describe('IntegrationsSection', () => {
     renderSection()
     await waitFor(() => expect(screen.queryByRole('switch')).toBeNull())
     expect(screen.queryByText('Integrations')).toBeNull()
+  })
+
+  it('keeps calendar visible on macOS when contacts are unavailable', async () => {
+    authorization = 'unavailable'
+    platform.isMacosDesktop = true
+    renderSection()
+
+    expect(await screen.findByText('Calendar events')).toBeTruthy()
+    expect(screen.queryByRole('switch', { name: 'Contacts' })).toBeNull()
   })
 })
