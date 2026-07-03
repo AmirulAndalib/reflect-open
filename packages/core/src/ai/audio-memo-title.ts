@@ -85,15 +85,7 @@ function firstContentLine(text: string): string {
 }
 
 function normalizedTitle(candidate: string): string | null {
-  const line = firstContentLine(candidate)
-    .replace(/^```[a-z0-9_-]*\s*/i, '')
-    .replace(/```$/u, '')
-    .replace(/^(?:[-*#]\s*|\d+[.)]\s*)/u, '')
-    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/gu, '$2')
-    .replace(/\[\[([^\]]+)\]\]/gu, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/gu, '$1')
-    .replace(/^["'`]+|["'`]+$/gu, '')
-  const safe = wikiLinkSafe(line).replace(/[.!?]+$/u, '').trim()
+  const safe = wikiLinkSafe(firstContentLine(candidate)).replace(/[.!?]+$/u, '').trim()
   const clipped = clipTitle(safe)
   return clipped === '' ? null : clipped
 }

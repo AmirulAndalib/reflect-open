@@ -81,7 +81,7 @@ function request(transcript = 'talked about planning the Rome trip'): Promise<st
 
 describe('generateAudioMemoTitle', () => {
   it('returns a sanitized generated title', async () => {
-    modelAnswering('  - [[Rome itinerary|Rome itinerary!]]  ')
+    modelAnswering('  Rome itinerary!  ')
 
     await expect(request()).resolves.toBe('Rome itinerary')
   })
