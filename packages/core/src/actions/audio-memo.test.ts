@@ -37,7 +37,8 @@ vi.mock('../ai/transcribe', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../ai/transcribe')>()),
   transcribeAudio: vi.fn(),
 }))
-vi.mock('../ai/audio-memo-title', () => ({
+vi.mock('../ai/audio-memo-title', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ai/audio-memo-title')>()),
   generateAudioMemoTitle: generateAudioMemoTitleMock,
 }))
 vi.mock('../secrets/keychain', () => ({
@@ -57,6 +58,13 @@ const PROVIDERS: AiProvidersState = {
   providers: [{ id: 'cfg-openai', provider: 'openai', model: 'gpt-5.1', keyHint: 'wxyz1' }],
   defaultProviderId: 'cfg-openai',
 }
+
+const ANTHROPIC_CONFIG = {
+  id: 'cfg-anthropic',
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  keyHint: 'wxyz1',
+} as const
 
 /** 2026-06-11 15:30:22.845 local — every derived name is asserted from it. */
 const RECORDED_AT = new Date(2026, 5, 11, 15, 30, 22, 845)
@@ -200,8 +208,36 @@ describe('reconcileAudioMemos', () => {
       ],
     ])
     expect(generateAudioMemoTitleMock).toHaveBeenCalledWith({
-      config: PROVIDERS.providers[0],
-      apiKey: 'sk-live-key',
+      credentials: {
+        config: { ...PROVIDERS.providers[0], model: 'gpt-5.4-nano' },
+        apiKey: 'sk-live-key',
+      },
+      fetchFn: undefined,
+      transcript: 'memo transcript',
+      fallbackTitle: 'Audio memo 2026-06-11 15:30:22',
+    })
+  })
+
+  it('uses the default Anthropic Haiku entry to name a memo when configured', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    getSecretMock.mockImplementation(async (name) =>
+      name === 'ai-api-key:cfg-anthropic' ? 'sk-ant-live-key' : 'sk-live-key',
+    )
+
+    await reconcile({
+      providers: {
+        providers: [...PROVIDERS.providers, ANTHROPIC_CONFIG],
+        defaultProviderId: ANTHROPIC_CONFIG.id,
+      },
+    })
+
+    expect(getSecretMock).toHaveBeenCalledWith('ai-api-key:cfg-openai')
+    expect(getSecretMock).toHaveBeenCalledWith('ai-api-key:cfg-anthropic')
+    expect(generateAudioMemoTitleMock).toHaveBeenCalledWith({
+      credentials: {
+        config: { ...ANTHROPIC_CONFIG, model: 'claude-haiku-4-5' },
+        apiKey: 'sk-ant-live-key',
+      },
       fetchFn: undefined,
       transcript: 'memo transcript',
       fallbackTitle: 'Audio memo 2026-06-11 15:30:22',

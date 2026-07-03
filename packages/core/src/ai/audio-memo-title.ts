@@ -1,4 +1,5 @@
 import { generateText } from 'ai'
+import type { AiProvidersState } from './provider-config'
 import type { AiProviderConfig } from '../settings/schema'
 import { wikiLinkSafe } from '../markdown/edit'
 import { languageModel } from './language-model'
@@ -7,18 +8,60 @@ const TITLE_TIMEOUT_MS = 30_000
 const MAX_TRANSCRIPT_CHARS = 4_000
 const MAX_TITLE_CHARS = 80
 const MAX_FALLBACK_WORDS = 8
+const OPENAI_AUDIO_MEMO_TITLE_MODEL = 'gpt-5.4-nano'
+const ANTHROPIC_AUDIO_MEMO_TITLE_MODEL = 'claude-haiku-4-5'
+const GOOGLE_AUDIO_MEMO_TITLE_MODEL = 'gemini-3.1-flash-lite'
 
-export interface GenerateAudioMemoTitleRequest {
-  /** The provider entry used for the memo's transcription pass. */
+interface AudioMemoTitleCredentials {
+  /** The provider entry whose provider selects the fixed small title model. */
   config: AiProviderConfig
   /** The BYOK API key, read from the OS keychain by the caller. */
   apiKey: string
+}
+
+export interface GenerateAudioMemoTitleRequest {
+  /** Optional title-generation credentials; omitted means local fallback only. */
+  credentials?: AudioMemoTitleCredentials | undefined
   /** Host transport (the Tauri HTTP plugin's fetch; tests pass a stub). */
   fetchFn?: typeof fetch | undefined
   /** The memo transcript to name. */
   transcript: string
   /** Timestamp-derived fallback when the transcript cannot produce a title. */
   fallbackTitle: string
+}
+
+function audioMemoTitleConfig(config: AiProviderConfig): AiProviderConfig | null {
+  switch (config.provider) {
+    case 'openai':
+      return { ...config, model: OPENAI_AUDIO_MEMO_TITLE_MODEL }
+    case 'anthropic':
+      return { ...config, model: ANTHROPIC_AUDIO_MEMO_TITLE_MODEL }
+    case 'google':
+      return { ...config, model: GOOGLE_AUDIO_MEMO_TITLE_MODEL }
+    case 'openrouter':
+      return null
+  }
+}
+
+/**
+ * Pick the small-model provider for audio memo title generation. The user's
+ * default provider wins when it has a fixed small title model; otherwise the
+ * first supported configured provider is used. OpenRouter is skipped because
+ * `openrouter/auto` is not a small-model guarantee.
+ */
+export function pickAudioMemoTitleConfig(state: AiProvidersState): AiProviderConfig | null {
+  const preferred = state.providers.find((provider) => provider.id === state.defaultProviderId)
+  const ordered =
+    preferred === undefined
+      ? state.providers
+      : [preferred, ...state.providers.filter((provider) => provider.id !== preferred.id)]
+  for (const provider of ordered) {
+    const titleConfig = audioMemoTitleConfig(provider)
+    if (titleConfig !== null) {
+      return titleConfig
+    }
+  }
+  return null
 }
 
 function clipTitle(title: string): string {
@@ -91,9 +134,20 @@ export async function generateAudioMemoTitle(
   if (request.transcript.trim() === '') {
     return request.fallbackTitle
   }
+  if (request.credentials === undefined) {
+    return fallback
+  }
+  const titleConfig = audioMemoTitleConfig(request.credentials.config)
+  if (titleConfig === null) {
+    return fallback
+  }
   try {
     const result = await generateText({
-      model: languageModel(request.config, request.apiKey, request.fetchFn ?? fetch),
+      model: languageModel(
+        titleConfig,
+        request.credentials.apiKey,
+        request.fetchFn ?? fetch,
+      ),
       prompt: titlePrompt(request.transcript),
       abortSignal: AbortSignal.timeout(TITLE_TIMEOUT_MS),
       maxRetries: 0,

@@ -5,7 +5,7 @@ import {
   type TranscriptionConfig,
 } from '../ai/provider-config'
 import { aiKeySecretName } from '../ai/secrets'
-import { generateAudioMemoTitle } from '../ai/audio-memo-title'
+import { generateAudioMemoTitle, pickAudioMemoTitleConfig } from '../ai/audio-memo-title'
 import {
   AUDIO_EXTENSION_BY_MIME,
   base64ToBytes,
@@ -18,6 +18,7 @@ import { listDir, listFiles, readAsset, readNote, writeAsset, writeNote } from '
 import { AUDIO_MEMOS_DIR, audioMemoPath, dailyPath, notePath } from '../graph/paths'
 import { appendUnderHeading, wikiLinkSafe } from '../markdown/edit'
 import { getSecret } from '../secrets/keychain'
+import type { AiProviderConfig } from '../settings/schema'
 
 /**
  * Capture actions for audio memos (the first of the `actions/` capture
@@ -258,6 +259,7 @@ async function memoNoteBody(input: {
   memo: AudioMemoIdentity
   config: TranscriptionConfig
   apiKey: string
+  titleCredentials: { config: AiProviderConfig; apiKey: string } | null
   fetchFn?: typeof fetch | undefined
 }): Promise<{ body: string; title: string; rejected: boolean }> {
   try {
@@ -272,8 +274,14 @@ async function memoNoteBody(input: {
       text === ''
         ? input.memo.title
         : await generateAudioMemoTitle({
-            config: input.config,
-            apiKey: input.apiKey,
+            ...(input.titleCredentials !== null
+              ? {
+                  credentials: {
+                    config: input.titleCredentials.config,
+                    apiKey: input.titleCredentials.apiKey,
+                  },
+                }
+              : {}),
             fetchFn: input.fetchFn,
             transcript: text,
             fallbackTitle: input.memo.title,
@@ -416,6 +424,15 @@ export async function reconcileAudioMemos(
       },
     }
   }
+  const titleConfig = pickAudioMemoTitleConfig(input.providers)
+  const titleApiKey =
+    titleConfig === null
+      ? null
+      : titleConfig.id === config.id
+        ? apiKey
+        : await getSecret(aiKeySecretName(titleConfig.id)).catch(() => null)
+  const titleCredentials =
+    titleConfig !== null && titleApiKey !== null ? { config: titleConfig, apiKey: titleApiKey } : null
 
   let transcribed = 0
   let rejected = 0
@@ -447,6 +464,7 @@ export async function reconcileAudioMemos(
         memo,
         config,
         apiKey,
+        titleCredentials,
         fetchFn: input.fetchFn,
       })
       if (stale()) {
