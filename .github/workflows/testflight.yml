@@ -1,0 +1,92 @@
+name: TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: CFBundleVersion build number. Defaults to the GitHub run number.
+        required: false
+        type: string
+      export_method:
+        description: Xcode export method for the IPA.
+        required: true
+        type: choice
+        default: app-store-connect
+        options:
+          - app-store-connect
+          - release-testing
+      wait_for_processing:
+        description: Wait for App Store Connect processing before finishing.
+        required: true
+        type: boolean
+        default: true
+
+# TestFlight uploads should be serialized so build numbers and App Store
+# Connect processing don't race each other.
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    name: Build and upload iOS
+    runs-on: macos-latest
+    timeout-minutes: 120
+    env:
+      CARGO_HTTP_MULTIPLEXING: false
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Verify TestFlight secrets are configured
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          missing=()
+          for name in APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_CONTENT; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::missing TestFlight secret(s): ${missing[*]} — see docs/ios-testflight.md"
+            exit 1
+          fi
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Install Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and upload to TestFlight
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
+          EXPORT_METHOD: ${{ inputs.export_method }}
+          WAIT_FLAG: ${{ inputs.wait_for_processing && '--wait' || '' }}
+        run: |
+          pnpm release:ios preflight --build-number="$BUILD_NUMBER"
+          pnpm release:ios testflight --build-number="$BUILD_NUMBER" --export-method="$EXPORT_METHOD" $WAIT_FLAG
