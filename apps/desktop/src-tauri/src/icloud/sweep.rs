@@ -175,11 +175,24 @@ fn run_sweep(
     // The keep-set starts from the listing captured at sweep start, plus
     // every path this sweep itself wrote: collision folding can create a
     // canonical file (and record its base) *after* that listing, and pruning
-    // must not eat a base recorded moments earlier in the same pass.
+    // must not eat a base recorded moments earlier in the same pass. Paths
+    // this sweep itself *removed* (folded duplicates) leave the set again —
+    // they made the pre-sweep listing but their files are gone, and keeping
+    // them would strand their bases under `.reflect/sync-base/` for a sweep.
     let mut live: BTreeSet<&str> = files.iter().map(|file| file.path.as_str()).collect();
     for change in &outcome.changed {
         if change.kind == "upsert" {
             live.insert(change.path.as_str());
+        }
+    }
+    for change in &outcome.changed {
+        if change.kind == "remove"
+            && !outcome
+                .changed
+                .iter()
+                .any(|other| other.kind == "upsert" && other.path == change.path)
+        {
+            live.remove(change.path.as_str());
         }
     }
     shadow.prune_orphans(&live);
@@ -722,6 +735,11 @@ mod tests {
             "daily/2026-07-04 2.md",
             "# Day\n\n- from phone\n",
         );
+        // A base recorded for the duplicate (an earlier external ingest of
+        // it) must not outlive the file the fold removes this same pass.
+        ShadowStore::new(root.path())
+            .record("daily/2026-07-04 2.md", "# Day\n\n- from phone\n")
+            .unwrap();
 
         let outcome = run_sweep(root.path(), &[], &[], false).unwrap();
 
@@ -746,11 +764,15 @@ mod tests {
         assert!(kinds.contains(&("daily/2026-07-04 2.md", "remove")));
         assert!(kinds.contains(&("daily/2026-07-04.md", "upsert")));
         // The base the fold just recorded survives the same pass's orphan
-        // pruning (the keep-set includes this sweep's own upserts).
+        // pruning (the keep-set includes this sweep's own upserts) — while
+        // the removed duplicate's base is pruned in the same pass, not left
+        // to linger until the next sweep's listing misses it.
+        let shadow = ShadowStore::new(root.path());
         assert_eq!(
-            ShadowStore::new(root.path()).base("daily/2026-07-04.md"),
+            shadow.base("daily/2026-07-04.md"),
             Some("# Day\n\n- from mac\n- from phone\n".to_string())
         );
+        assert_eq!(shadow.base("daily/2026-07-04 2.md"), None);
     }
 
     #[test]
