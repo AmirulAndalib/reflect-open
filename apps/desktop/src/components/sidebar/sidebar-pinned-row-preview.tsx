@@ -20,7 +20,7 @@ export function SidebarPinnedRowPreview({
       ? 'bg-white text-text-secondary'
     : active
       ? 'bg-surface-hover text-text-secondary dark:bg-transparent'
-    : 'text-text-secondary'
+    : 'text-text-secondary hover:bg-surface-hover hover:text-text'
 
   return (
     <span

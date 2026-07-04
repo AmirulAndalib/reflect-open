@@ -256,6 +256,9 @@ describe('Sidebar', () => {
 
     const roadmap = await view.findByRole('button', { name: 'Roadmap' })
     expect(pinnedSection.contains(roadmap)).toBe(true)
+    const roadmapPreview = roadmap.firstElementChild
+    expect(roadmapPreview?.getAttribute('class')).toContain('hover:bg-surface-hover')
+    expect(roadmapPreview?.getAttribute('class')).toContain('hover:text-text')
     await userEvent.click(roadmap)
     await waitFor(() => expect(roadmap.getAttribute('aria-current')).toBe('page'))
   })
