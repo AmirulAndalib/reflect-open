@@ -52,8 +52,10 @@ export {
 } from './edit'
 export { parseTaskMarker } from './task-marker'
 export {
+  conflictMarkerLabels,
   detectConflictMarkers,
   resolveConflictMarkers,
+  type ConflictMarkerLabels,
   type ConflictResolution,
 } from './conflict-markers'
 export { foldKey, foldTag } from './keys'

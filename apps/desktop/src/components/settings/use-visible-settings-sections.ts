@@ -15,7 +15,13 @@ export function useVisibleSettingsSections(): readonly SettingsSectionEntry[] {
   const authorization = useContactsAuthorization()
   const hasAppleIntegrations =
     isMacosDesktop || (authorization !== null && authorization !== 'unavailable')
-  return SETTINGS_SECTIONS.filter(
-    (section) => section.id !== 'integrations' || hasAppleIntegrations,
-  )
+  return SETTINGS_SECTIONS.filter((section) => {
+    if (section.id === 'integrations') {
+      return hasAppleIntegrations
+    }
+    if (section.id === 'icloud') {
+      return isMacosDesktop
+    }
+    return true
+  })
 }

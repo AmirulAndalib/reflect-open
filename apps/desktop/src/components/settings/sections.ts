@@ -14,6 +14,8 @@ export const SETTINGS_SECTIONS = [
   { id: 'ai-prompts', title: 'AI prompts' },
   // Only shown where the OS frameworks exist — see use-visible-settings-sections.
   { id: 'integrations', title: 'Integrations' },
+  // macOS only (same gate) — Windows/Linux have no iCloud Drive.
+  { id: 'icloud', title: 'iCloud sync' },
   { id: 'backup', title: 'Backup' },
   { id: 'about', title: 'About' },
   { id: 'destructive', title: 'Danger zone' },

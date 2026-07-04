@@ -157,7 +157,7 @@ fn placeholder_target(name: &str) -> Option<&str> {
     name.strip_prefix('.')?.strip_suffix(".icloud")
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "macos"))]
 mod platform {
     use std::path::{Path, PathBuf};
 
@@ -225,13 +225,12 @@ mod platform {
     }
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "macos")))]
 mod platform {
     use std::path::{Path, PathBuf};
 
-    /// No iCloud Drive container off-iOS (Android, and desktop dev builds
-    /// exercising the mobile tree).
-    #[cfg_attr(desktop, allow(dead_code))]
+    /// No iCloud Drive container off Apple platforms (Android, and
+    /// Windows/Linux desktop builds).
     pub fn ubiquity_documents_dir() -> Option<PathBuf> {
         None
     }
@@ -240,6 +239,145 @@ mod platform {
     pub fn download_pending(_root: &Path) -> u32 {
         0
     }
+}
+
+/// iCloud availability as the desktop settings section consumes it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IcloudStatus {
+    /// True when the app can reach its iCloud Drive container (entitled
+    /// build, signed-in account). Dev builds without the provisioning
+    /// profile honestly report `false`.
+    pub available: bool,
+    /// The container's `Documents/` directory when available.
+    pub documents_root: Option<String>,
+}
+
+/// Command: can this build reach the iCloud container? Runs on a blocking
+/// thread — the first `URLForUbiquityContainerIdentifier` call may extend
+/// the sandbox and touch the network, and Apple forbids it on the main
+/// thread.
+#[tauri::command]
+pub async fn icloud_status() -> AppResult<IcloudStatus> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let documents = platform::ubiquity_documents_dir();
+        Ok(IcloudStatus {
+            available: documents.is_some(),
+            documents_root: documents.map(|dir| dir.to_string_lossy().into_owned()),
+        })
+    })
+    .await
+    .map_err(|err| AppError::io(err.to_string()))?
+}
+
+/// Command: copy the open graph into the iCloud container (Plan 21 Phase 1,
+/// the desktop move-in) and return the new root. The copy is verified by
+/// file count + byte totals before anything is reported; the original graph
+/// is left untouched at its old path as the recovery copy — the caller
+/// re-opens at the returned root, which re-bootstraps `.reflect/` and
+/// rebuilds the index there.
+///
+/// `.reflect/` and `.git/` are deliberately not copied: the index is a
+/// rebuildable projection, and a backup repo must never ride a file-sync
+/// provider. The Git remote, if any, is disconnected by the caller first —
+/// iCloud sync and a Git remote are mutually exclusive per graph (Plan 21).
+#[tauri::command]
+pub async fn icloud_adopt_graph(
+    generation: u64,
+    state: tauri::State<'_, crate::fs::GraphState>,
+) -> AppResult<String> {
+    let root = crate::fs::root_for_generation(&state, generation)?;
+    tauri::async_runtime::spawn_blocking(move || adopt_graph(&root))
+        .await
+        .map_err(|err| AppError::io(err.to_string()))?
+}
+
+fn adopt_graph(root: &Path) -> AppResult<String> {
+    let documents = platform::ubiquity_documents_dir().ok_or_else(|| {
+        AppError::io("iCloud Drive is unavailable — sign in to iCloud and try again")
+    })?;
+    let name = root
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| DEFAULT_ICLOUD_GRAPH_DIR.to_string());
+    let target = documents.join(&name);
+    if dir_has_notes(&target) {
+        return Err(AppError::io(format!(
+            "iCloud Drive already contains a graph named \"{name}\" — open that one instead, or rename one of the two"
+        )));
+    }
+    let copied = copy_graph_tree(root, &target)?;
+    let landed = count_graph_tree(&target)?;
+    if copied != landed {
+        return Err(AppError::io(format!(
+            "the iCloud copy did not verify (copied {} files / {} bytes, found {} / {}); the original graph is untouched",
+            copied.0, copied.1, landed.0, landed.1
+        )));
+    }
+    Ok(target.to_string_lossy().into_owned())
+}
+
+/// What stays behind on a move-in: the rebuildable local state, the backup
+/// repo, and OS litter.
+fn adopt_skips(name: &str) -> bool {
+    matches!(name, ".reflect" | ".git" | ".DS_Store")
+}
+
+/// Recursively copy the graph tree, returning `(files, bytes)` copied.
+fn copy_graph_tree(source: &Path, target: &Path) -> AppResult<(u64, u64)> {
+    std::fs::create_dir_all(target)?;
+    let mut files = 0u64;
+    let mut bytes = 0u64;
+    let mut stack = vec![(source.to_path_buf(), target.to_path_buf())];
+    while let Some((from_dir, to_dir)) = stack.pop() {
+        for entry in std::fs::read_dir(&from_dir)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            if adopt_skips(&name.to_string_lossy()) {
+                continue;
+            }
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue; // never follow links out of the graph
+            }
+            let from = entry.path();
+            let to = to_dir.join(&name);
+            if file_type.is_dir() {
+                std::fs::create_dir_all(&to)?;
+                stack.push((from, to));
+            } else {
+                bytes += std::fs::copy(&from, &to)?;
+                files += 1;
+            }
+        }
+    }
+    Ok((files, bytes))
+}
+
+/// Count `(files, bytes)` in a copied tree, with the same skip rules.
+fn count_graph_tree(root: &Path) -> AppResult<(u64, u64)> {
+    let mut files = 0u64;
+    let mut bytes = 0u64;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            if adopt_skips(&entry.file_name().to_string_lossy()) {
+                continue;
+            }
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                stack.push(entry.path());
+            } else {
+                files += 1;
+                bytes += entry.metadata()?.len();
+            }
+        }
+    }
+    Ok((files, bytes))
 }
 
 #[cfg(test)]
@@ -284,6 +422,31 @@ mod tests {
             find_graph_dir(documents.path()),
             Some(documents.path().join("Archive"))
         );
+    }
+
+    #[test]
+    fn adopt_copy_skips_local_state_and_verifies() {
+        let source = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(source.path().join("notes")).expect("mkdir");
+        std::fs::create_dir_all(source.path().join(".reflect")).expect("mkdir");
+        std::fs::create_dir_all(source.path().join(".git")).expect("mkdir");
+        std::fs::write(source.path().join("notes/a.md"), b"# A").expect("write");
+        std::fs::write(source.path().join(".reflect/index.sqlite"), b"db").expect("write");
+        std::fs::write(source.path().join(".git/HEAD"), b"ref").expect("write");
+        std::fs::write(source.path().join(".DS_Store"), b"junk").expect("write");
+
+        let container = tempfile::tempdir().expect("tempdir");
+        let target = container.path().join("Notes");
+        let copied = copy_graph_tree(source.path(), &target).expect("copy");
+        assert_eq!(copied, (1, 3)); // one file, three bytes — the note alone
+        assert_eq!(count_graph_tree(&target).expect("count"), copied);
+        assert_eq!(
+            std::fs::read_to_string(target.join("notes/a.md")).expect("read"),
+            "# A"
+        );
+        assert!(!target.join(".reflect").exists());
+        assert!(!target.join(".git").exists());
+        assert!(!target.join(".DS_Store").exists());
     }
 
     #[test]

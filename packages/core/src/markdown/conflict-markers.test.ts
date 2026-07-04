@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectConflictMarkers, resolveConflictMarkers } from './conflict-markers'
+import { conflictMarkerLabels, detectConflictMarkers, resolveConflictMarkers } from './conflict-markers'
 
 const CONFLICTED = [
   '# Shared',
@@ -95,5 +95,30 @@ describe('resolveConflictMarkers', () => {
 
   it('is the identity on unconflicted text', () => {
     expect(resolveConflictMarkers('plain\ntext\n', 'ours')).toBe('plain\ntext\n')
+  })
+})
+
+describe('conflictMarkerLabels', () => {
+  it('parses device-name labels from the first complete block', () => {
+    const marked =
+      "intro\n<<<<<<< Alex's MacBook Pro\nmac\n=======\nphone\n>>>>>>> Alex's iPhone\noutro\n"
+    expect(conflictMarkerLabels(marked)).toEqual({
+      ours: "Alex's MacBook Pro",
+      theirs: "Alex's iPhone",
+    })
+  })
+
+  it('parses the git path’s generic labels', () => {
+    expect(conflictMarkerLabels(CONFLICTED)).toEqual({
+      ours: 'this device',
+      theirs: 'other device',
+    })
+  })
+
+  it('returns null when there is no complete block', () => {
+    expect(conflictMarkerLabels('plain\ntext\n')).toBeNull()
+    expect(conflictMarkerLabels('<<<<<<< a\nunterminated')).toBeNull()
+    // Out-of-order marker lines are prose, not a conflict.
+    expect(conflictMarkerLabels('=======\n>>>>>>> b\n<<<<<<< a\n')).toBeNull()
   })
 })

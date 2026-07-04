@@ -101,7 +101,7 @@ fn run_sweep(
     let mut outcome = SweepOutcome::default();
 
     for rel in ingested_paths {
-        advance_base_if_clean(root, rel, &shadow);
+        advance_base_if_clean(root, rel, &shadow, false);
     }
 
     let files = crate::fs::note_files(root)?;
@@ -109,7 +109,11 @@ fn run_sweep(
     if record_baseline {
         for file in &files {
             if !file.placeholder {
-                advance_base_if_clean(root, &file.path, &shadow);
+                // Fill-only: adoption snapshots notes that have no base yet.
+                // Overwriting an existing base here would advance it past
+                // unsynced local edits — exactly what the advance rule forbids
+                // — so a baseline pass is safe to repeat on every start.
+                advance_base_if_clean(root, &file.path, &shadow, true);
             }
         }
     }
@@ -146,8 +150,12 @@ fn run_sweep(
 /// A clean external ingest (or adoption snapshot): the note's disk content is
 /// now what both sides derive from — record it as the base. Skips notes that
 /// currently carry unresolved versions (mid-conflict content is nobody's
-/// ancestor) and non-UTF-8/missing files.
-fn advance_base_if_clean(root: &Path, rel: &str, shadow: &ShadowStore) {
+/// ancestor) and non-UTF-8/missing files. `fill_only` restricts the write to
+/// notes without a base (the adoption case).
+fn advance_base_if_clean(root: &Path, rel: &str, shadow: &ShadowStore, fill_only: bool) {
+    if fill_only && shadow.base(rel).is_some() {
+        return;
+    }
     let abs = root.join(rel);
     if !unresolved_versions(&abs).is_empty() {
         return;

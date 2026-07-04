@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getNote, hasBridge } from '@reflect/core'
+import { conflictMarkerLabels, getNote, hasBridge, readNote } from '@reflect/core'
 import { InlineAlert } from '@/components/inline-alert'
 import { Button } from '@/components/ui/button'
 import { useConflictResolution } from '@/hooks/use-conflict-resolution'
@@ -41,10 +41,20 @@ export function SyncConflictNotice({ path, className }: SyncConflictNoticeProps)
     queryFn: async () => (await getNote(path)) ?? null,
     enabled: hasBridge() && graph !== null,
   })
+  const hasConflict = data?.hasConflict === true
+  // The iCloud sweep labels marker sides with real device names (or the two
+  // colliding filenames) — read them so the buttons say what they keep. The
+  // Git path's generic `this device`/`other device` keeps the classic copy.
+  const { data: labels } = useQuery({
+    queryKey: [INDEX_QUERY_SCOPE, 'note-conflict-labels', graph?.root, path],
+    queryFn: async () => conflictMarkerLabels(await readNote(path)),
+    enabled: hasBridge() && graph !== null && hasConflict,
+  })
 
-  if (data == null || !data.hasConflict || graph === null) {
+  if (data == null || !hasConflict || graph === null) {
     return null
   }
+  const named = labels != null && labels.ours !== 'this device'
 
   if (isMobileSurface()) {
     return (
@@ -64,10 +74,10 @@ export function SyncConflictNotice({ path, className }: SyncConflictNoticeProps)
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <Button size="xs" variant="outline" disabled={busy} onClick={() => void resolve('ours')}>
-          Keep this device’s version
+          {named ? `Keep “${labels.ours}”` : 'Keep this device’s version'}
         </Button>
         <Button size="xs" variant="outline" disabled={busy} onClick={() => void resolve('theirs')}>
-          Keep the other device’s
+          {named ? `Keep “${labels.theirs}”` : 'Keep the other device’s'}
         </Button>
         <Button size="xs" variant="outline" disabled={busy} onClick={() => void resolve('both')}>
           Keep both

@@ -54,6 +54,50 @@ export function resolveConflictMarkers(source: string, keep: ConflictResolution)
   return out.join('\n')
 }
 
+/**
+ * The two side labels of the first complete conflict block. Git sync labels
+ * sides `this device` / `other device`; the iCloud sweep (Plan 21) labels
+ * them with real device names (`Alex's MacBook Pro`) or, for creation
+ * collisions, the two filenames the content came from. The resolution notice
+ * uses these so its buttons say what they actually keep.
+ */
+export interface ConflictMarkerLabels {
+  /** The first side — what {@link resolveConflictMarkers} keeps for `ours`. */
+  ours: string
+  /** The second side — kept for `theirs`. */
+  theirs: string
+}
+
+/**
+ * Parse the side labels out of `source`'s first complete conflict block, or
+ * `null` when there is none. Same in-order sequence rule as
+ * {@link detectConflictMarkers}, so a note that "has a conflict" always has
+ * labels.
+ */
+export function conflictMarkerLabels(source: string): ConflictMarkerLabels | null {
+  let ours: string | null = null
+  let sawSeparator = false
+  for (const rawLine of source.split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    if (ours === null) {
+      if (line.startsWith('<<<<<<< ')) {
+        ours = line.slice('<<<<<<< '.length).trim()
+      }
+    } else if (!sawSeparator) {
+      if (line === '=======') {
+        sawSeparator = true
+      }
+    } else if (line.startsWith('>>>>>>> ')) {
+      const theirs = line.slice('>>>>>>> '.length).trim()
+      if (ours.length > 0 && theirs.length > 0) {
+        return { ours, theirs }
+      }
+      return null
+    }
+  }
+  return null
+}
+
 /** True when `source` contains a complete Git conflict-marker block. */
 export function detectConflictMarkers(source: string): boolean {
   let stage: 'start' | 'separator' | 'end' = 'start'

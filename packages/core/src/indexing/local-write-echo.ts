@@ -25,13 +25,33 @@ export function setLocalWriteEcho(enabled: boolean): void {
   echoEnabled = enabled
 }
 
+const ownWriteListeners = new Set<(path: string) => void>()
+
+/**
+ * Observe this device's own note/asset writes, on every platform — unlike
+ * the file-change echo, this fires regardless of {@link setLocalWriteEcho}.
+ * The iCloud sync controller (Plan 21) uses it to tell its own writes apart
+ * from external arrivals: only external content may advance a note's shadow
+ * merge base, and a watcher event alone can't make that distinction.
+ */
+export function subscribeOwnWrites(handler: (path: string) => void): () => void {
+  ownWriteListeners.add(handler)
+  return () => {
+    ownWriteListeners.delete(handler)
+  }
+}
+
 /**
  * Emit `change` to the in-process file-change channel when echoes are
  * enabled; a no-op on desktop. Write commands call this after their write
  * has landed, so a consumer that re-reads the file always sees the new
- * contents.
+ * contents. Own-write observers ({@link subscribeOwnWrites}) are notified
+ * unconditionally.
  */
 export function echoLocalWrite(change: FileChange): void {
+  for (const handler of [...ownWriteListeners]) {
+    handler(change.path)
+  }
   if (echoEnabled) {
     emitFileChanges([change])
   }

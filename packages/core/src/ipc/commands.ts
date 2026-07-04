@@ -68,3 +68,97 @@ export async function mobileStorage(): Promise<MobileStorageInfo> {
 export async function icloudDownloadPending(root: string): Promise<number> {
   return call('icloud_download_pending', { root }, z.number().int().nonnegative())
 }
+
+const icloudStatusSchema = z.object({
+  available: z.boolean(),
+  documentsRoot: z.string().nullable(),
+})
+
+/**
+ * Whether this build can reach its iCloud Drive container (Plan 21). Dev
+ * builds without the iCloud entitlement/provisioning profile honestly report
+ * unavailable.
+ */
+export type IcloudStatus = z.infer<typeof icloudStatusSchema>
+
+/** Resolve iCloud container availability (desktop settings, Plan 21). */
+export async function icloudStatus(): Promise<IcloudStatus> {
+  return call('icloud_status', {}, icloudStatusSchema)
+}
+
+/**
+ * Copy the open graph into the iCloud container and return the new root
+ * (Plan 21 Phase 1 move-in). The copy is count+byte verified; the original
+ * graph stays untouched at its old path as the recovery copy. The caller
+ * re-opens the graph at the returned root and runs a baseline conflict scan.
+ */
+export async function icloudAdoptGraph(generation: number): Promise<string> {
+  return call('icloud_adopt_graph', { generation }, z.string())
+}
+
+const icloudSweepChangeSchema = z.object({
+  path: z.string(),
+  kind: z.enum(['upsert', 'remove']),
+  modifiedMs: z.number().optional(),
+})
+
+const icloudSweepOutcomeSchema = z.object({
+  changed: z.array(icloudSweepChangeSchema),
+  needsReview: z.array(z.string()),
+  deferred: z.array(z.string()),
+  autoResolved: z.number().int().nonnegative(),
+})
+
+/**
+ * What one iCloud conflict sweep did (Plan 21): the files it rewrote or
+ * removed (reindex these directly), the paths now carrying markers, the
+ * paths deferred for dirty sessions, and how many conflicts auto-resolved.
+ */
+export type IcloudSweepOutcome = z.infer<typeof icloudSweepOutcomeSchema>
+
+/** Options for {@link icloudConflictsScan}. */
+export interface IcloudScanOptions {
+  /** The open graph's generation — the scan is pinned to it. */
+  generation: number
+  /** Notes with dirty open sessions; their conflicts defer to the next scan. */
+  skipPaths?: string[]
+  /**
+   * External changes just applied cleanly — their content becomes the new
+   * shadow merge base. Never pass this device's own writes.
+   */
+  ingestedPaths?: string[]
+  /**
+   * Record a fill-only baseline (adoption): notes without a base snapshot
+   * their current content. Safe to repeat — existing bases never move here.
+   */
+  recordBaseline?: boolean
+}
+
+/** Run an iCloud conflict sweep over the open graph (Plan 21 Phase 2). */
+export async function icloudConflictsScan(options: IcloudScanOptions): Promise<IcloudSweepOutcome> {
+  return call(
+    'icloud_conflicts_scan',
+    {
+      generation: options.generation,
+      skipPaths: options.skipPaths ?? [],
+      ingestedPaths: options.ingestedPaths ?? [],
+      recordBaseline: options.recordBaseline ?? false,
+    },
+    icloudSweepOutcomeSchema,
+  )
+}
+
+/**
+ * Start the iCloud metadata-query watch over `root` (Plan 21 Phase 2).
+ * `emitFileChanges` turns its snapshot diffs into `index:changed` events —
+ * pass true on mobile (no file watcher there), false on desktop. Conflict
+ * paths always emit as `icloud:conflicts`.
+ */
+export async function icloudWatchStart(root: string, emitFileChanges: boolean): Promise<void> {
+  await call('icloud_watch_start', { root, emitFileChanges }, z.null())
+}
+
+/** Stop the active iCloud watch (graph switch). Idempotent. */
+export async function icloudWatchStop(): Promise<void> {
+  await call('icloud_watch_stop', {}, z.null())
+}

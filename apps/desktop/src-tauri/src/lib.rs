@@ -169,6 +169,8 @@ pub fn run() {
             app_platform,
             icloud::storage::mobile_storage,
             icloud::storage::icloud_download_pending,
+            icloud::storage::icloud_status,
+            icloud::storage::icloud_adopt_graph,
             icloud::sweep::icloud_conflicts_scan,
             icloud::watch::icloud_watch_start,
             icloud::watch::icloud_watch_stop,
