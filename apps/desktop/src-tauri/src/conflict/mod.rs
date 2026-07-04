@@ -20,11 +20,11 @@
 //! sweep.
 
 pub mod archive;
+mod frontmatter;
 pub mod ladder;
 pub mod markers;
-pub mod shadow;
-mod frontmatter;
 mod merge3;
+pub mod shadow;
 mod union;
 
 /// One side of a two-way note conflict: full markdown plus the provenance

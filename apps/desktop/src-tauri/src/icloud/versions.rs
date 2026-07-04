@@ -36,7 +36,10 @@ mod platform {
         let Some(versions) = NSFileVersion::unresolvedConflictVersionsOfItemAtURL(&url) else {
             return Vec::new();
         };
-        versions.iter().filter_map(|version| describe(&version)).collect()
+        versions
+            .iter()
+            .filter_map(|version| describe(&version))
+            .collect()
     }
 
     /// Mark every conflict version of `abs` resolved and drop the stale

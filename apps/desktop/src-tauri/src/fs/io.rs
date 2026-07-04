@@ -198,6 +198,23 @@ pub(crate) fn icloud_placeholder_target(file_name: &str) -> Option<&str> {
     (!name.is_empty()).then_some(name)
 }
 
+/// The placeholder path iCloud leaves behind when it evicts `logical`
+/// (`notes/a.md` → `notes/.a.md.icloud`).
+pub(crate) fn eviction_placeholder(logical: &Path) -> Option<PathBuf> {
+    let name = logical.file_name()?.to_str()?;
+    Some(logical.with_file_name(format!(".{name}.icloud")))
+}
+
+/// Whether a path is **occupied**: a readable file, or an evicted iCloud note
+/// whose placeholder still holds the name. Existence probes that guard
+/// against overwriting (the collision picker's `note_exists`, the rename
+/// destination check) must use this — an evicted note looks vacant to
+/// `is_file()` but comes back the moment iCloud re-downloads it, and anything
+/// created in its place becomes a conflict.
+pub(crate) fn file_occupied(abs: &Path) -> bool {
+    abs.is_file() || eviction_placeholder(abs).is_some_and(|stub| stub.exists())
+}
+
 /// Collect files under `root/dir` into `out` (recursive). `extension` filters
 /// by file extension when set (`Some("md")` for notes); `None` collects every
 /// regular file (assets). An iCloud eviction placeholder lists as its
@@ -436,14 +453,37 @@ mod tests {
     }
 
     #[test]
+    fn occupied_sees_real_files_and_eviction_stubs() {
+        let dir = tempdir().unwrap();
+        bootstrap(dir.path()).unwrap();
+        let logical = dir.path().join("notes/a.md");
+        assert!(!file_occupied(&logical));
+        // An evicted note holds its name through the placeholder alone…
+        fs::write(dir.path().join("notes/.a.md.icloud"), b"stub").unwrap();
+        assert!(file_occupied(&logical));
+        // …and a downloaded note is occupied the ordinary way.
+        fs::remove_file(dir.path().join("notes/.a.md.icloud")).unwrap();
+        atomic_write(dir.path(), &logical, "# A\n").unwrap();
+        assert!(file_occupied(&logical));
+    }
+
+    #[test]
     fn unfiltered_collect_lists_every_file_in_a_dir() {
         let dir = tempdir().unwrap();
         bootstrap(dir.path()).unwrap();
         // `audio-memos/` is not bootstrapped — the first write creates it.
-        atomic_write_bytes(dir.path(), &dir.path().join("audio-memos/memo.webm"), b"audio")
-            .unwrap();
-        atomic_write_bytes(dir.path(), &dir.path().join("audio-memos/memo.m4a"), b"audio")
-            .unwrap();
+        atomic_write_bytes(
+            dir.path(),
+            &dir.path().join("audio-memos/memo.webm"),
+            b"audio",
+        )
+        .unwrap();
+        atomic_write_bytes(
+            dir.path(),
+            &dir.path().join("audio-memos/memo.m4a"),
+            b"audio",
+        )
+        .unwrap();
         atomic_write(dir.path(), &dir.path().join("notes/a.md"), "a").unwrap();
 
         let mut out = Vec::new();

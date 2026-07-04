@@ -51,18 +51,18 @@ mod platform {
     use std::sync::{LazyLock, Mutex};
 
     use block2::RcBlock;
+    use dispatch2::MainThreadBound;
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
-    use dispatch2::MainThreadBound;
     use objc2::{msg_send, MainThreadMarker};
     use objc2_foundation::{
-        NSArray, NSDate, NSMetadataItem, NSMetadataItemFSContentChangeDateKey,
+        NSArray, NSCopying, NSDate, NSMetadataItem, NSMetadataItemFSContentChangeDateKey,
         NSMetadataItemPathKey, NSMetadataQuery, NSMetadataQueryDidFinishGatheringNotification,
         NSMetadataQueryDidUpdateNotification, NSMetadataQueryUbiquitousDocumentsScope,
         NSMetadataUbiquitousItemDownloadingStatusCurrent,
         NSMetadataUbiquitousItemDownloadingStatusKey,
         NSMetadataUbiquitousItemHasUnresolvedConflictsKey, NSNotification, NSNotificationCenter,
-        NSCopying, NSNumber, NSOperationQueue, NSPredicate, NSString,
+        NSNumber, NSOperationQueue, NSPredicate, NSString,
     };
     use serde::Serialize;
     use tauri::Emitter;
@@ -129,8 +129,7 @@ mod platform {
         let mtm = MainThreadMarker::new().expect("run_on_main_thread is the main thread");
         let query = NSMetadataQuery::new();
 
-        let scope: Retained<NSString> =
-            unsafe { NSMetadataQueryUbiquitousDocumentsScope.copy() };
+        let scope: Retained<NSString> = unsafe { NSMetadataQueryUbiquitousDocumentsScope.copy() };
         let scopes = NSArray::from_retained_slice(&[scope]);
         // setSearchScopes/argumentArray take untyped NSArrays the bindings
         // can't coerce typed arrays into — message directly.
@@ -218,7 +217,9 @@ mod platform {
             let Some(rel) = tracked_note_relpath(&path, root) else {
                 continue;
             };
-            if attr_bool(&item, unsafe { NSMetadataUbiquitousItemHasUnresolvedConflictsKey }) {
+            if attr_bool(&item, unsafe {
+                NSMetadataUbiquitousItemHasUnresolvedConflictsKey
+            }) {
                 conflicts.push(rel.clone());
             }
             let downloaded = attr_string(&item, unsafe {
@@ -228,7 +229,14 @@ mod platform {
                 status == unsafe { NSMetadataUbiquitousItemDownloadingStatusCurrent }.to_string()
             });
             let mtime = attr_date_ms(&item, unsafe { NSMetadataItemFSContentChangeDateKey });
-            current.insert(rel, if downloaded { Some(mtime.unwrap_or(0)) } else { None });
+            current.insert(
+                rel,
+                if downloaded {
+                    Some(mtime.unwrap_or(0))
+                } else {
+                    None
+                },
+            );
         }
         query.enableUpdates();
 
@@ -332,11 +340,7 @@ mod platform {
 
     /// No iCloud metadata queries off Apple platforms — honest no-ops so the
     /// command surface never branches.
-    pub fn start(
-        _app: tauri::AppHandle,
-        _root: String,
-        _emit_file_changes: bool,
-    ) -> AppResult<()> {
+    pub fn start(_app: tauri::AppHandle, _root: String, _emit_file_changes: bool) -> AppResult<()> {
         Ok(())
     }
 

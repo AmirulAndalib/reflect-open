@@ -134,7 +134,10 @@ impl ShadowStore {
         if rel.is_empty() || rel.starts_with('/') || rel.contains('\\') {
             return None;
         }
-        if rel.split('/').any(|part| part.is_empty() || part == "." || part == "..") {
+        if rel
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+        {
             return None;
         }
         Some(self.dir.join(format!("{rel}{suffix}")))
@@ -167,7 +170,10 @@ mod tests {
         store.record("notes/old.md", "content\n").unwrap();
         store.record_move("notes/old.md", "notes/new-title.md");
         assert_eq!(store.base("notes/old.md"), None);
-        assert_eq!(store.base("notes/new-title.md"), Some("content\n".to_string()));
+        assert_eq!(
+            store.base("notes/new-title.md"),
+            Some("content\n".to_string())
+        );
     }
 
     #[test]

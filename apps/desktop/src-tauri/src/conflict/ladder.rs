@@ -90,8 +90,7 @@ pub fn resolve(input: ConflictInput<'_>) -> AppResult<Resolution> {
     }
 
     Ok(Resolution::Marked {
-        content: marked_from_diff3
-            .unwrap_or_else(|| markers::whole_note_markers(&first, &second)),
+        content: marked_from_diff3.unwrap_or_else(|| markers::whole_note_markers(&first, &second)),
     })
 }
 
@@ -271,7 +270,10 @@ mod tests {
         let result = resolve(input(
             "notes/topic.md",
             None,
-            (side("- a\n- mac\n", "Mac", 1), side("- a\n- phone\n", "iPhone", 2)),
+            (
+                side("- a\n- mac\n", "Mac", 1),
+                side("- a\n- phone\n", "iPhone", 2),
+            ),
         ))
         .unwrap();
         assert!(matches!(result, Resolution::Marked { .. }));

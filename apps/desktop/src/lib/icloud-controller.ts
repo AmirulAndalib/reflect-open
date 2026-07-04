@@ -113,6 +113,9 @@ export function createIcloudController(options: IcloudControllerOptions): Icloud
       for (const path of ingested) {
         pendingIngest.add(path) // don't lose the base advances
       }
+      if (recordBaseline) {
+        baselinePending = true // the adoption baseline must survive a failed first sweep
+      }
     } finally {
       scanRunning = false
       if (scanQueued) {

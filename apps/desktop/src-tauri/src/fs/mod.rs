@@ -30,16 +30,18 @@ pub(crate) use self::io::atomic_write_bytes;
 
 // Consumed by the watcher (desktop) and the capture inbox (all platforms),
 // so the re-export is no longer desktop-gated.
-pub(crate) use self::io::modified_ms;
 /// iCloud eviction-placeholder name mapping, shared with the watcher (which
 /// must treat an evicted note as present, not deleted — Plan 21). Desktop-only
 /// like the watcher itself; mobile's change source is the Plan 21 Phase 2
 /// metadata query, which maps placeholders on its own side.
 #[cfg(desktop)]
+pub(crate) use self::io::eviction_placeholder;
+#[cfg(desktop)]
 pub(crate) use self::io::icloud_placeholder_target;
 /// Sync-exclusion marking, shared with `git::repo` (a freshly initialized
 /// backup repo must never ride a file-sync provider — Plan 21).
 pub(crate) use self::io::mark_dir_local_only;
+pub(crate) use self::io::modified_ms;
 /// The traversal guard, shared with sibling modules that address graph files
 /// (capture promotes screenshots into `assets/`).
 pub(crate) use self::resolve::resolve as resolve_in_graph;
@@ -323,7 +325,10 @@ pub fn dir_list(
 #[tauri::command]
 pub fn note_exists(path: String, state: State<GraphState>) -> AppResult<bool> {
     let root = current_root(&state)?;
-    Ok(resolve(&root, &path)?.is_file())
+    // Occupied, not merely readable: an iCloud-evicted note is only a stub on
+    // disk, but creating a new note at its path would collide the moment the
+    // real file re-downloads (Plan 21).
+    Ok(io::file_occupied(&resolve(&root, &path)?))
 }
 
 /// Rename `from` → `to` on disk (both graph-relative, traversal-guarded).
@@ -336,7 +341,9 @@ pub fn note_exists(path: String, state: State<GraphState>) -> AppResult<bool> {
 pub(crate) fn move_note_file(root: &Path, from: &str, to: &str) -> AppResult<()> {
     let from_abs = resolve(root, from)?;
     let to_abs = resolve(root, to)?;
-    if to_abs.is_file() {
+    // Occupied includes an evicted iCloud note (placeholder only on disk):
+    // renaming onto it would collide with the re-download (Plan 21).
+    if io::file_occupied(&to_abs) {
         return Err(AppError::io(format!(
             "cannot move note: {to} already exists on disk"
         )));
@@ -485,6 +492,18 @@ mod move_tests {
             fs::read_to_string(root.path().join("notes/b.md")).unwrap(),
             "# Theirs\n"
         );
+    }
+
+    #[test]
+    fn an_evicted_destination_also_refuses() {
+        // The destination exists only as an iCloud eviction placeholder — it
+        // looks vacant to is_file(), but the real note comes back on
+        // re-download, so the rename must refuse exactly like a present file.
+        let root = graph();
+        fs::write(root.path().join("notes/a.md"), "# Mine\n").unwrap();
+        fs::write(root.path().join("notes/.b.md.icloud"), "stub").unwrap();
+        assert!(move_note_file(root.path(), "notes/a.md", "notes/b.md").is_err());
+        assert!(root.path().join("notes/a.md").exists());
     }
 
     #[test]

@@ -103,13 +103,6 @@ fn evicted_logical_relpath(rel_str: &str) -> Option<String> {
     })
 }
 
-/// The placeholder path iCloud leaves behind when it evicts `logical`
-/// (`notes/a.md` → `notes/.a.md.icloud`).
-fn eviction_placeholder(logical: &Path) -> Option<PathBuf> {
-    let name = logical.file_name()?.to_str()?;
-    Some(logical.with_file_name(format!(".{name}.icloud")))
-}
-
 /// Reduce a debounced batch of paths to unique tracked changes (last kind wins).
 /// Create/modify vs delete is decided by whether the file currently stats; the
 /// same stat supplies the upsert's `modified_ms`. A file that is gone but has
@@ -130,7 +123,7 @@ fn collect_changes(paths: &[PathBuf], root: &Path) -> Vec<FileChange> {
                     modified_ms: crate::fs::modified_ms(&meta),
                 },
                 Err(_) => {
-                    if eviction_placeholder(&logical).is_some_and(|stub| stub.exists()) {
+                    if crate::fs::eviction_placeholder(&logical).is_some_and(|stub| stub.exists()) {
                         continue; // evicted, not deleted
                     }
                     FileChange {
@@ -361,7 +354,10 @@ mod tests {
             Some("audio-memos/memo.m4a")
         );
         // The logical file must still pass the tracking rules.
-        assert_eq!(tracked_relpath(Path::new("/g/notes/.a.txt.icloud"), root), None);
+        assert_eq!(
+            tracked_relpath(Path::new("/g/notes/.a.txt.icloud"), root),
+            None
+        );
     }
 
     #[test]

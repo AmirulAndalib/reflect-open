@@ -93,7 +93,10 @@ fn note_archive_dir(root: &Path, rel: &str) -> Option<PathBuf> {
     if rel.is_empty() || rel.starts_with('/') || rel.contains('\\') {
         return None;
     }
-    if rel.split('/').any(|part| part.is_empty() || part == "." || part == "..") {
+    if rel
+        .split('/')
+        .any(|part| part.is_empty() || part == "." || part == "..")
+    {
         return None;
     }
     Some(root.join(".reflect").join(ARCHIVE_DIR).join(rel))

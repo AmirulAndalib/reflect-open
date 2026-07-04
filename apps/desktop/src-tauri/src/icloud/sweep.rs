@@ -193,9 +193,8 @@ fn resolve_file(
     versions.sort_by_key(|version| version.modified_ms);
     let mut sides: Vec<ConflictSide> = Vec::new();
     for version in &versions {
-        let content = fs::read_to_string(&version.store_path).map_err(|err| {
-            AppError::io(format!("unreadable conflict version for {rel}: {err}"))
-        })?;
+        let content = fs::read_to_string(&version.store_path)
+            .map_err(|err| AppError::io(format!("unreadable conflict version for {rel}: {err}")))?;
         archive::archive_version(
             root,
             rel,
@@ -327,9 +326,7 @@ fn fold_collision_duplicates(
             if fs::rename(&dup_abs, &canonical_abs).is_err() {
                 continue;
             }
-            outcome
-                .changed
-                .push(remove_change(&file.path));
+            outcome.changed.push(remove_change(&file.path));
             outcome.changed.push(SweepChange {
                 path: canonical_rel.clone(),
                 kind: "upsert".to_string(),
@@ -438,7 +435,10 @@ fn remove_change(rel: &str) -> SweepChange {
 }
 
 fn modified_ms_of(abs: &Path) -> Option<u64> {
-    abs.metadata().ok().as_ref().and_then(crate::fs::modified_ms)
+    abs.metadata()
+        .ok()
+        .as_ref()
+        .and_then(crate::fs::modified_ms)
 }
 
 #[cfg(test)]
@@ -482,7 +482,11 @@ mod tests {
     fn daily_collision_duplicates_union_into_the_canonical_file() {
         let root = graph();
         write(root.path(), "daily/2026-07-04.md", "# Day\n\n- from mac\n");
-        write(root.path(), "daily/2026-07-04 2.md", "# Day\n\n- from phone\n");
+        write(
+            root.path(),
+            "daily/2026-07-04 2.md",
+            "# Day\n\n- from phone\n",
+        );
 
         let outcome = run_sweep(root.path(), &[], &[], false).unwrap();
 
@@ -526,7 +530,11 @@ mod tests {
         // The tails overlap ("- common tail" follows both divergent lines) —
         // the union guard refuses, so the canonical file ends up marked, and
         // the labels are the two filenames the content came from.
-        write(root.path(), "notes/topic.md", "- shared\n- mac wording\n- common tail\n");
+        write(
+            root.path(),
+            "notes/topic.md",
+            "- shared\n- mac wording\n- common tail\n",
+        );
         write(
             root.path(),
             "notes/topic 2.md",
@@ -639,7 +647,9 @@ mod tests {
         .unwrap();
 
         assert!(resolution.marked);
-        assert!(markers::contains_conflict_markers(&resolution.final_content));
+        assert!(markers::contains_conflict_markers(
+            &resolution.final_content
+        ));
         assert!(resolution.final_content.contains("Alex's iPhone"));
         assert!(resolution.final_content.contains(LOCAL_LABEL));
     }

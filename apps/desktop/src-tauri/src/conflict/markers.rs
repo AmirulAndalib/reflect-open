@@ -69,9 +69,13 @@ mod tests {
         ));
         // Prose mentioning a marker line is not a conflict.
         assert!(!contains_conflict_markers("<<<<<<< just talking\n"));
-        assert!(!contains_conflict_markers("=======\n>>>>>>> b\n<<<<<<< a\n"));
+        assert!(!contains_conflict_markers(
+            "=======\n>>>>>>> b\n<<<<<<< a\n"
+        ));
         // Bare `<<<<<<<` without the space+label is not the grammar.
-        assert!(!contains_conflict_markers("<<<<<<<\nx\n=======\ny\n>>>>>>> b\n"));
+        assert!(!contains_conflict_markers(
+            "<<<<<<<\nx\n=======\ny\n>>>>>>> b\n"
+        ));
     }
 
     #[test]
