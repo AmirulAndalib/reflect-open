@@ -132,12 +132,12 @@ describe('SettingsSheet', () => {
     expect(screen.queryByText('Backed up')).toBeNull()
   })
 
-  it('shows Needs review with its desktop pointer when notes conflict', async () => {
+  it('shows Needs review with its mobile resolution pointer when notes conflict', async () => {
     vi.mocked(getConflictedNotes).mockResolvedValue([{ path: 'notes/a.md', title: 'A' }])
     mount()
 
     expect(await screen.findByText('Needs review')).toBeTruthy()
-    expect(screen.getByText(/open it on desktop/i)).toBeTruthy()
+    expect(screen.getByText(/open it to choose what to keep/i)).toBeTruthy()
   })
 
   it('routes Disconnect through the backup controller and signs out', async () => {

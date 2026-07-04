@@ -10,9 +10,9 @@ import { RouterProvider } from '@/routing/router'
  * Conflict containment on the mobile note screen (Plan 19, step 10): a note
  * whose file carries sync conflict markers opens **protected** — the same
  * session contract as desktop (markers classify as lossy through the real
- * round-trip check) — with the needs-review-on-desktop banner, the raw file
- * visible, and no editor and no resolution actions anywhere. Only the
- * ProseMirror view is stubbed (jsdom can't host contenteditable).
+ * round-trip check) — with the raw file visible and the same marker-resolution
+ * actions desktop offers. Only the ProseMirror view is stubbed (jsdom can't
+ * host contenteditable).
  */
 
 vi.mock('@/editor/note-editor', () => ({
@@ -25,11 +25,11 @@ vi.mock('@/mobile/note-actions-menu', () => ({
 
 const CONFLICTED = [
   '# Standup',
-  '<<<<<<< HEAD',
+  '<<<<<<< this device',
   '- phone line',
   '=======',
   '- desktop line',
-  '>>>>>>> origin/main',
+  '>>>>>>> other device',
   '',
 ].join('\n')
 
@@ -95,7 +95,7 @@ afterEach(() => {
 })
 
 describe('MobileNote with a conflicted note', () => {
-  it('opens protected with the needs-review-on-desktop banner and no actions', async () => {
+  it('opens protected with raw markers and conflict resolution actions', async () => {
     render(
       <QueryClientProvider client={queryClient}>
         <RouterProvider initialRoute={{ kind: 'note', path: 'notes/standup.md' }}>
@@ -104,11 +104,12 @@ describe('MobileNote with a conflicted note', () => {
       </QueryClientProvider>,
     )
 
-    expect(await screen.findByText(/review on desktop/i)).toBeTruthy()
+    expect(await screen.findByText(/choose what to keep/i)).toBeTruthy()
     // Protected: raw file shown verbatim, no live editor mounted.
     expect(screen.getByText(/desktop line/)).toBeTruthy()
     expect(screen.queryByTestId('fake-editor')).toBeNull()
-    // Resolution stays desktop-side — no keep-mine/theirs/both actions.
-    expect(screen.queryByRole('button', { name: /keep/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /keep this device’s version/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /keep the other device’s/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /keep both/i })).toBeTruthy()
   })
 })

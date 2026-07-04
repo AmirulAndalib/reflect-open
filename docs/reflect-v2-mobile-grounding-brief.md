@@ -54,7 +54,7 @@ Plan 19 defines the binding scope. Summarized, with the product-owner calls of 2
 | GitHub sync (device flow, HTTPS) | **In** | Foreground-only; cycle on resume, after debounced edits, and on network regain. |
 | Onboarding: Start fresh / Connect GitHub | **In** | One graph per device, fixed root in `Documents/`, Files-app visible. |
 | Minimal settings | **In** | GitHub connect/disconnect, version. No graph chooser. |
-| Conflict **resolution** UI | **Out** | Conflicted notes open protected with "Needs review on desktop" — the same session contract as desktop; mine/theirs/both stays desktop-only in v1. |
+| Conflict **resolution** UI | **In** | Conflicted notes open protected with the same raw-marker mine/theirs/both resolution actions as desktop. |
 | Audio memos | **Later wave** | Product owner: first post-release wave, reusing desktop's raw-first + async BYOK transcription pipeline; OS entry points (widget, Siri, Live Activity) come with it. |
 | Share-sheet capture | **Later wave** | Product owner: defer until the mobile share-target plugin can reuse the Plan 11 capture envelope/inbox model. Desktop Chrome capture has shipped; mobile still needs App Group ingestion. |
 | AI copilot (BYOK) | **Later wave** | Architecture holds (keys would live in the iOS keychain via the same secrets module); the surface is deferred. |
@@ -107,8 +107,8 @@ The heart of the mobile product, and where mobile differs most from desktop in d
 - **Same engine, same contracts.** libgit2 commit/fetch/merge, conflict markers, the no-loop invariant — unchanged. Pull-applied changes flow through the existing `onRemoteChanges` reindex path.
 - **Foreground-only.** Sync cycles run on app resume, after debounced edits, and on network regain. Background sync (BGTaskScheduler) is explicitly out of v1. The phone therefore spends much of its life in "not yet pushed" — the plain-language status surface ("Backed up / Syncing / Needs review") is more prominent on mobile than desktop because the user consciously opens the app to sync.
 - **Capture latency is the contract.** "Open app, type a thought, lock phone" must always be safe: local commit never blocks on the network; push is opportunistic; flush-on-background protects the save debounce window. Plan 19's acceptance criteria pin this (kill the app mid-debounce; the edit is on disk).
-- **Conflicts are contained, not resolved, on mobile v1.** A conflicted note opens protected ("Needs review on desktop") and never blocks sync of other notes. This is the same session contract desktop uses; only the resolution UI stays desktop-side.
-- **The canonical conflict** is phone and Mac both appending to **today's daily note** while the phone was offline. It is mostly an append/append merge, and Plan 12 already lists a custom daily-note merge driver as future work — mobile multiplies that future work's value. Treat daily-note append/append as a first-class test scenario from day one even while resolution remains desktop-bound.
+- **Conflicts are contained and resolvable on mobile.** A conflicted note opens protected, never blocks sync of other notes, and offers the same raw-marker mine/theirs/both resolution actions as desktop.
+- **The canonical conflict** is phone and Mac both appending to **today's daily note** while the phone was offline. It is mostly an append/append merge, and Plan 12 already lists a custom daily-note merge driver as future work — mobile multiplies that future work's value. Treat daily-note append/append as a first-class test scenario even with on-device mine/theirs/both resolution.
 - **First sync is onboarding.** Cloning a years-old graph with assets over cellular, foregrounded, is a V1-power-user's first experience. v1 accepts slow clones with progress UI; shallow/partial clone is a noted follow-up that must not casually fork the desktop sync contract.
 
 ---
@@ -183,7 +183,7 @@ Keyboard-native is desktop identity; mobile translates it rather than imports it
 - **Touch-native, capture-first.** Thumb-reachable core actions; search as a visible surface, not a chord; the keyboard never occludes the caret. Full shortcut surfaces (⌘K palette) are explicitly out of v1 — hardware-keyboard iPad users fall back to visible affordances for now.
 - **Minimal UI applies double.** Six screens, a tab/stack shell, a sync-status pill. No settings sprawl: GitHub connect/disconnect and version.
 - **Same visual language.** Design-system tokens, safe-area-aware layout (`viewport-fit=cover`), 16px minimum input font (blocks iOS auto-zoom), dark mode. iPad ships as "a big phone" in v1; a desktop-class iPad layout is an explicit later decision.
-- **Plain-language sync.** "Backed up / Syncing / Needs review" — never commits, branches, or merges. Conflict language on mobile is "Needs review on desktop".
+- **Plain-language sync.** "Backed up / Syncing / Needs review" — never commits, branches, or merges. Conflict language points users to open the note and choose what to keep.
 
 ---
 
@@ -195,7 +195,7 @@ Plan 19's acceptance criteria are the binding list. The product-level summary: a
 2. See today's daily note instantly, offline or online.
 3. Edit any note — including inserting a `[[wiki link]]` via autocomplete — with no markdown corruption, and find the edit in search and backlinks without restarting.
 4. Lock the phone mid-thought and lose nothing, even if iOS kills the app.
-5. See the edit on their Mac after the next sync — and when the rare conflict happens, keep working on everything else while the conflicted note waits for desktop review.
+5. See the edit on their Mac after the next sync — and when the rare conflict happens, choose what to keep on the phone while everything else keeps syncing.
 6. Open the Files app and see their notes as portable markdown.
 
 And the codebase succeeds if audio memos, share-sheet capture, and the AI copilot can be added in later waves **without** re-architecting the workspace, sync, privacy enforcement, or navigation.
@@ -209,7 +209,7 @@ Beyond Plan 19's settled scope, these remain genuinely open:
 1. **App Group + capture-inbox schema** for the audio/share waves: file layout, ingest semantics, `private: true` handling at the inbox boundary, and when to provision the App Group + extension targets in the Xcode template (cheap early, annoying to retrofit — but not needed for v1).
 2. **Daily-note merge driver timing**: when does append/append auto-merge graduate from Plan 12 "future work" to required, given foreground-only mobile sync multiplies conflict frequency?
 3. **Semantic search graduation** (inherited from the indexing strategy): what battery/storage/latency evidence gates local embeddings on iOS, and does sqlite-vec/fastembed ever run there or does mobile stay lexical until a different runtime appears?
-4. **Mobile conflict resolution**: how long is "resolve on desktop" acceptable — and if AI-assisted merge arrives first, how does mobile apply resolutions that require BYOK calls (the sync strategy's open question)?
+4. **AI-assisted conflict resolution**: if AI-assisted merge arrives, how does mobile apply resolutions that require BYOK calls (the sync strategy's open question)?
 5. **iPad posture**: how long does "big phone" hold before a two-pane layout is worth building?
 6. **Deep links and the command registry**: when external automation (shortcuts, widgets) arrives, does `reflect://` map onto the same typed command layer as desktop?
 7. **A formatting toolbar**: does on-device editing (spike B and beyond) demonstrate the need for a webview-drawn accessory bar, and what minimal item set earns its place?

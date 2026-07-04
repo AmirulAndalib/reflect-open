@@ -37,10 +37,11 @@ describe('mobileSyncStatus', () => {
     const one = mobileSyncStatus(connected({ state: 'idle' }), 1)
     expect(one?.label).toBe('Needs review')
     expect(one?.tone).toBe('attention')
-    expect(one?.detail).toMatch(/open it on desktop/i)
+    expect(one?.detail).toMatch(/open it to choose what to keep/i)
 
     const many = mobileSyncStatus(connected({ state: 'idle' }), 3)
     expect(many?.detail).toMatch(/^3 notes/)
+    expect(many?.detail).toMatch(/open them to choose what to keep/i)
   })
 
   it('conflicts outrank a failed cycle (the actionable state leads)', () => {

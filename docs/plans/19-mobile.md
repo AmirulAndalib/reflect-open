@@ -76,9 +76,6 @@ filenames — the title-rename machinery rides along with editing).
 - Audio memos, link capture, share-sheet capture (share *target* needs its own
   native plugin — later).
 - Multiple graphs, graph chooser, folder pickers, iCloud Drive containers.
-- Conflict *resolution*: conflicted notes surface as "Needs review on desktop"
-  and open protected (read-only) — exactly the desktop session contract; only
-  the mine/theirs/both resolution UI stays desktop in v1.
 - Background sync (BGTaskScheduler), push notifications, widgets, auto-update
   (app stores own updates; the updater plugin is already desktop-gated).
 - Full keyboard-shortcut surfaces (⌘K palette), a native formatting accessory
@@ -369,7 +366,7 @@ Steps 1 and 2 are the existential gates; nothing else starts until both pass.
    iOS WKWebView, so no native plugin — and trash).
 10. **Sync wiring.** Resume/edit/online triggers, background-flush + local
     commit on pause, `onRemoteChanges` reindex (unchanged), conflicted notes
-    protected with "Needs review on desktop", status pill live.
+    protected with raw-marker resolution actions, status pill live.
 11. **Harden + ship.** Memory pass on a large graph (webview process limits;
     editing a very large note), resume-after-process-death recovery check,
     a11y labels, TestFlight build (`pnpm release:ios testflight`; see
@@ -400,9 +397,9 @@ Steps 1 and 2 are the existential gates; nothing else starts until both pass.
 - The keyboard never permanently occludes the editor or capture input, and
   the caret stays visible above the keyboard while typing (notched device,
   portrait + landscape).
-- A conflicted note opens protected with its "Needs review" state and never
-  blocks sync of other notes; a lossy-round-trip note opens protected, same
-  as desktop.
+- A conflicted note opens protected with its "Needs review" state, offers
+  mine/theirs/both resolution actions, and never blocks sync of other notes; a
+  lossy-round-trip note opens protected, same as desktop.
 - No `private: true` content leaves the device: mobile v1 makes **no** AI or
   transcription calls at all; network egress is GitHub (sync) only.
 - A TestFlight build installs and survives backgrounding/resume without a

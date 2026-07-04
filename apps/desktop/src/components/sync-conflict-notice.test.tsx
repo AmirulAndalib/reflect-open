@@ -86,15 +86,15 @@ describe('SyncConflictNotice', () => {
     expect(resolution.resolve).toHaveBeenCalledWith('both')
   })
 
-  it('contains, not resolves, on mobile: needs-review copy and no actions', async () => {
-    // Plan 19: the resolution UI stays desktop-side — the mobile banner
-    // points at desktop and offers nothing else.
+  it('offers the same resolution actions on mobile', async () => {
     setPlatformSurface({ mobileApp: true })
     vi.mocked(getNote).mockResolvedValue(NOTE)
     renderNotice()
 
-    expect(await screen.findByText(/review on desktop/i)).toBeTruthy()
-    expect(screen.queryByRole('button')).toBeNull()
+    expect(await screen.findByText(/choose what to keep/i)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /keep this device’s version/i }))
+    expect(resolution.resolve).toHaveBeenCalledWith('ours')
   })
 
   it('pluralizes the buttons for a stacked three-plus-way conflict', async () => {
