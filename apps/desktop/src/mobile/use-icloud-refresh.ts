@@ -10,11 +10,15 @@ import { useGraph } from '@/providers/graph-provider'
 const RESUME_REFRESH_DEDUPE_MS = 1500
 
 /**
- * How long to wait before the one follow-up reconcile when placeholders were
- * still pending: long enough for small note files to finish downloading,
- * short enough that a phone picked up to read a Mac edit sees it appear.
+ * While placeholders are still pending, poll the count at this interval and
+ * reconcile the moment it reaches zero — note files are small, so downloads
+ * usually land within a poll or two and the Mac edit appears in seconds.
  */
-const RETRY_DELAY_MS = 4000
+const PENDING_POLL_MS = 1000
+
+/** Give up polling after this long; the metadata watch and the next resume
+ * still cover stragglers (a large asset on a slow link, say). */
+const PENDING_POLL_LIMIT_MS = 20_000
 
 /**
  * Keeps an iCloud-stored graph fresh while the app is used (Plan 21).
@@ -22,11 +26,12 @@ const RETRY_DELAY_MS = 4000
  * Mobile has no file watcher — local writes notify in-process, and for git
  * graphs remote changes only arrive through pull. iCloud is different: the
  * OS lands files in the container behind the app's back, and on iOS it
- * doesn't even download them until asked. So on every app resume (and once
- * after the graph opens) this hook nudges the pending downloads and re-runs
- * the index reconcile; when placeholders were still outstanding it
- * reconciles once more shortly after, so notes appear as they land instead
- * of on the next resume.
+ * doesn't even download them until asked. The metadata-query watch nudges
+ * downloads live while the app is open; this hook covers the resume seams
+ * the query can miss: on every app resume (and once after the graph opens)
+ * it nudges the pending downloads, re-runs the index reconcile, and while
+ * placeholders remain it polls the pending count, reconciling the moment
+ * downloads land instead of waiting for the next resume.
  *
  * Inert unless an iCloud graph is open (`mobileStorageKind === 'icloud'`).
  */
@@ -42,6 +47,38 @@ export function useICloudRefresh(): void {
     let lastRefreshAt = 0
     let retryTimer: ReturnType<typeof setTimeout> | null = null
 
+    const pollPending = (startedAt: number): void => {
+      if (retryTimer !== null) {
+        return
+      }
+      retryTimer = setTimeout(() => {
+        retryTimer = null
+        if (disposed) {
+          return
+        }
+        void icloudDownloadPending(root).then(
+          (pending) => {
+            if (disposed) {
+              return
+            }
+            if (pending === 0 || Date.now() - startedAt >= PENDING_POLL_LIMIT_MS) {
+              // Everything landed (or we're done waiting) — one reconcile
+              // picks the batch up together.
+              refreshIndex()
+              return
+            }
+            pollPending(startedAt)
+          },
+          (err) => {
+            console.error('iCloud pending poll failed:', errorMessage(err))
+            if (!disposed) {
+              refreshIndex()
+            }
+          },
+        )
+      }, PENDING_POLL_MS)
+    }
+
     const refresh = async (): Promise<void> => {
       let pending = 0
       try {
@@ -54,13 +91,8 @@ export function useICloudRefresh(): void {
         return
       }
       refreshIndex()
-      if (pending > 0 && retryTimer === null) {
-        retryTimer = setTimeout(() => {
-          retryTimer = null
-          if (!disposed) {
-            refreshIndex()
-          }
-        }, RETRY_DELAY_MS)
+      if (pending > 0) {
+        pollPending(Date.now())
       }
     }
 

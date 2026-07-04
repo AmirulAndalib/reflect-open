@@ -80,19 +80,55 @@ describe('useICloudRefresh', () => {
     expect(refreshIndex).toHaveBeenCalledTimes(1)
   })
 
-  it('reconciles a second time when placeholders were still pending', async () => {
+  it('polls while placeholders are pending and reconciles when they land', async () => {
     pendingCount = 3
     renderHook(() => useICloudRefresh())
     await flush()
     expect(refreshIndex).toHaveBeenCalledTimes(1)
 
+    // Still pending after one poll: no reconcile yet, keep waiting.
     await act(async () => {
       vi.runOnlyPendingTimers()
     })
-    // One follow-up pass, so a note that finished downloading right after the
-    // first reconcile appears without waiting for the next resume.
+    await flush()
+    expect(downloadCalls).toHaveLength(2)
+    expect(refreshIndex).toHaveBeenCalledTimes(1)
+
+    // Downloads finished: the next poll reconciles immediately — the Mac
+    // edit appears seconds after it lands, not on the next resume.
+    pendingCount = 0
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+    })
+    await flush()
+    expect(downloadCalls).toHaveLength(3)
     expect(refreshIndex).toHaveBeenCalledTimes(2)
-    expect(downloadCalls).toHaveLength(1) // the retry reconciles only
+
+    // Settled — no further polling.
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+    })
+    await flush()
+    expect(downloadCalls).toHaveLength(3)
+  })
+
+  it('gives up polling at the limit with one final reconcile', async () => {
+    pendingCount = 3
+    renderHook(() => useICloudRefresh())
+    await flush()
+    expect(refreshIndex).toHaveBeenCalledTimes(1)
+
+    // Never finishes downloading (a big asset on a slow link): the poll caps
+    // out with a last reconcile instead of spinning forever.
+    for (let i = 0; i < 25; i += 1) {
+      await act(async () => {
+        vi.runOnlyPendingTimers()
+      })
+      await flush()
+    }
+    expect(refreshIndex).toHaveBeenCalledTimes(2)
+    // Well-bounded call count: one nudge + at most limit/interval polls.
+    expect(downloadCalls.length).toBeLessThanOrEqual(22)
   })
 
   it('collapses the resume event burst into one refresh', async () => {

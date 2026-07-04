@@ -1,7 +1,14 @@
 import { useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Settings } from 'lucide-react'
-import { errorMessage, hasBridge, listNotes } from '@reflect/core'
+import {
+  errorMessage,
+  hasBridge,
+  listNotes,
+  mobileStorage,
+  type MobileStorageKind,
+} from '@reflect/core'
+import { InlineAlert } from '@/components/inline-alert'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { useAppVersion } from '@/hooks/use-app-version'
@@ -10,26 +17,75 @@ import { useMobileSyncStatus } from '@/mobile/use-sync-status'
 import { useGraph } from '@/providers/graph-provider'
 import { useSyncContext } from '@/providers/sync-provider'
 
+/** A graph the sheet can switch to (anything but the one that's open). */
+interface SwitchTarget {
+  kind: MobileStorageKind
+  root: string
+  label: string
+}
+
 /**
  * The mobile settings sheet (Plan 19, V1 parity) — the trigger lives in V1's
  * avatar spot (top-left of the Daily header). A deliberately small surface:
  * the graph's name, its note count, and the app version, plus the GitHub
  * connection when one exists — its repo, the live plain-language backup
  * status (the same engine state the pill shows), and a Disconnect. Initial
- * connecting happens in onboarding.
+ * connecting happens in onboarding. **Switch graph** lists every other graph
+ * this device can open — the container can hold several, plus the on-device
+ * root — and reuses the onboarding open-and-persist flow; storage roots are
+ * re-derived when the sheet opens (container paths must never be cached).
  */
 export function SettingsSheet(): ReactElement {
-  const { graph, mobileStorageKind } = useGraph()
+  const { graph, mobileStorageKind, completeOnboarding } = useGraph()
   const version = useAppVersion()
   const sync = useSyncContext()
   const [open, setOpen] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const [switchError, setSwitchError] = useState<string | null>(null)
 
   const { data: notes } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-note-count'],
     queryFn: () => listNotes(),
     enabled: open && hasBridge() && graph !== null,
   })
+
+  const { data: storage } = useQuery({
+    queryKey: ['mobile-storage'],
+    queryFn: mobileStorage,
+    enabled: open && hasBridge(),
+  })
+
+  const targets: SwitchTarget[] = []
+  if (storage !== undefined && graph !== null) {
+    for (const root of storage.icloudGraphRoots) {
+      if (root !== graph.root) {
+        targets.push({
+          kind: 'icloud',
+          root,
+          label: root.split('/').filter(Boolean).at(-1) ?? root,
+        })
+      }
+    }
+    if (mobileStorageKind === 'icloud') {
+      targets.push({ kind: 'local', root: storage.localRoot, label: 'This device' })
+    }
+  }
+
+  function switchTo(target: SwitchTarget): void {
+    setSwitching(true)
+    setSwitchError(null)
+    void completeOnboarding(target.kind, target.root).then(
+      () => {
+        setSwitching(false)
+        setOpen(false)
+      },
+      (err: unknown) => {
+        setSwitching(false)
+        setSwitchError(errorMessage(err))
+      },
+    )
+  }
 
   const backup = sync?.backup ?? null
   const connected = backup !== null && backup.phase === 'connected'
@@ -74,6 +130,27 @@ export function SettingsSheet(): ReactElement {
               label="Storage"
               value={mobileStorageKind === 'icloud' ? 'iCloud Drive' : 'This device'}
             />
+          ) : null}
+          {targets.length > 0 ? (
+            <div className="py-2.5">
+              <dt className="text-text-muted">Switch graph</dt>
+              <dd className="mt-2 flex flex-col gap-1.5">
+                {targets.map((target) => (
+                  <Button
+                    key={target.root}
+                    variant="outline"
+                    size="sm"
+                    disabled={switching}
+                    onClick={() => switchTo(target)}
+                  >
+                    {switching ? 'Switching…' : target.label}
+                  </Button>
+                ))}
+              </dd>
+              {switchError !== null ? (
+                <InlineAlert tone="error">{switchError}</InlineAlert>
+              ) : null}
+            </div>
           ) : null}
           <Row label="Notes" value={notes === undefined ? '…' : String(notes.length)} />
           {repo !== null ? (

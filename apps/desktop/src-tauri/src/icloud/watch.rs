@@ -289,6 +289,7 @@ mod platform {
         let results = query.results();
         let mut current: HashMap<String, Option<u64>> = HashMap::new();
         let mut conflicts: Vec<String> = Vec::new();
+        let mut undownloaded: Vec<String> = Vec::new();
         for item in results.iter() {
             let Ok(item) = item.downcast::<NSMetadataItem>() else {
                 continue;
@@ -311,6 +312,9 @@ mod platform {
                 status == unsafe { NSMetadataUbiquitousItemDownloadingStatusCurrent }.to_string()
             });
             let mtime = attr_date_ms(&item, unsafe { NSMetadataItemFSContentChangeDateKey });
+            if !downloaded {
+                undownloaded.push(path);
+            }
             current.insert(
                 rel,
                 if downloaded {
@@ -321,6 +325,15 @@ mod platform {
             );
         }
         query.enableUpdates();
+
+        // Nudge every non-current item the moment the query reports it —
+        // iOS never downloads content on its own, and waiting for the next
+        // app resume is exactly the sync lag users notice. Repeat requests
+        // for in-flight downloads are OS no-ops, and completion flips the
+        // item to current, which fires another update that upserts it.
+        for path in &undownloaded {
+            crate::icloud::storage::request_download(std::path::Path::new(path));
+        }
 
         let mut snapshot = SNAPSHOT.lock().expect("snapshot lock");
         if emit_file_changes {

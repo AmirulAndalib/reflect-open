@@ -34,15 +34,17 @@ export function isMobilePlatform(platform: AppPlatform): boolean {
 
 const mobileStorageInfoSchema = z.object({
   localRoot: z.string(),
-  icloudRoot: z.string().nullable(),
-  icloudHasGraph: z.boolean(),
+  /** The container's `Documents/` dir when iCloud is usable — new graphs are created inside it. */
+  icloudDocumentsRoot: z.string().nullable(),
+  /** Every graph already in the container (name-sorted) — onboarding and the switcher list them. */
+  icloudGraphRoots: z.array(z.string()),
 })
 
 /**
  * Where the mobile graph can live (Plan 21): the app-sandbox `Documents/`
  * directory (always present, never synced) and the app's iCloud Drive
- * container when iCloud is usable — plus whether the container already holds
- * notes from another device.
+ * container when iCloud is usable — plus every graph the container already
+ * holds (a user can keep several).
  */
 export type MobileStorageInfo = z.infer<typeof mobileStorageInfoSchema>
 

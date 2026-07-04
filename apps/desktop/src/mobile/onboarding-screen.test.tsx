@@ -24,7 +24,11 @@ let hangClone: boolean
 beforeEach(() => {
   cloned = []
   hangClone = false
-  setStorage({ localRoot: '/Documents', icloudRoot: '/iCloud/Documents', icloudHasGraph: false })
+  setStorage({
+    localRoot: '/Documents',
+    icloudDocumentsRoot: '/iCloud/Documents',
+    icloudGraphRoots: [],
+  })
   setBridge({
     invoke: async (command, args) => {
       if (command === 'secret_get') {
@@ -58,7 +62,7 @@ afterEach(() => {
 })
 
 describe('MobileOnboardingScreen', () => {
-  it('leads with iCloud Drive and opens the container graph', async () => {
+  it('leads with iCloud Drive and creates the container graph', async () => {
     render(<MobileOnboardingScreen />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Store in iCloud Drive' }))
@@ -67,14 +71,23 @@ describe('MobileOnboardingScreen', () => {
     expect(cloned).toEqual([])
   })
 
-  it('offers to open existing iCloud notes when the container already has them', async () => {
-    setStorage({ localRoot: '/Documents', icloudRoot: '/iCloud/Documents', icloudHasGraph: true })
+  it('lists every container graph and opens the tapped one', async () => {
+    setStorage({
+      localRoot: '/Documents',
+      icloudDocumentsRoot: '/iCloud/Documents',
+      icloudGraphRoots: ['/iCloud/Documents/Notes', '/iCloud/Documents/Work'],
+    })
     render(<MobileOnboardingScreen />)
 
-    expect(screen.getByText('We found notes in your iCloud Drive.')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Open your iCloud notes' }))
+    expect(screen.getByText('We found these notes in your iCloud Drive.')).toBeTruthy()
+    // Existing graphs replace the create action — a fresh directory next to
+    // your notes is a desktop decision, not a first-run tap.
+    expect(screen.queryByRole('button', { name: 'Store in iCloud Drive' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Open “Work”' }))
 
-    await waitFor(() => expect(completeOnboarding).toHaveBeenCalledWith('icloud'))
+    await waitFor(() =>
+      expect(completeOnboarding).toHaveBeenCalledWith('icloud', '/iCloud/Documents/Work'),
+    )
   })
 
   it('keeps notes on this device without cloning', async () => {
@@ -87,7 +100,7 @@ describe('MobileOnboardingScreen', () => {
   })
 
   it('hides the iCloud action and explains why when iCloud is unavailable', () => {
-    setStorage({ localRoot: '/Documents', icloudRoot: null, icloudHasGraph: false })
+    setStorage({ localRoot: '/Documents', icloudDocumentsRoot: null, icloudGraphRoots: [] })
     render(<MobileOnboardingScreen />)
 
     expect(screen.queryByRole('button', { name: 'Store in iCloud Drive' })).toBeNull()

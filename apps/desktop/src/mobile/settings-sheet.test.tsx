@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
@@ -11,27 +11,58 @@ import { SettingsSheet } from './settings-sheet'
  * The settings sheet's sync surface (Plan 19, step 10): the live
  * plain-language backup status from the engine (no git terms), the connected
  * repo with Disconnect routed through the backup controller (so the engine
- * actually stops), and graceful degradation where no SyncProvider is mounted.
+ * actually stops), graceful degradation where no SyncProvider is mounted,
+ * and the graph switcher (Plan 21 — the container can hold several graphs).
  */
 
 // vaul needs browser APIs jsdom doesn't provide; passthrough so the sheet
-// content always renders (the drawer itself is verified on-device).
+// content always renders (the drawer itself is verified on-device). The
+// Drawer mock reports itself open so the sheet's open-gated queries run.
 vi.mock('@/components/ui/drawer', () => ({
-  Drawer: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  Drawer: ({
+    children,
+    onOpenChange,
+  }: {
+    children?: ReactNode
+    onOpenChange?: (open: boolean) => void
+  }) => {
+    useEffect(() => {
+      onOpenChange?.(true)
+    }, [onOpenChange])
+    return <>{children}</>
+  },
   DrawerTrigger: ({ children }: { children?: ReactNode }) => <>{children}</>,
   DrawerContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   DrawerTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
 }))
 
+const storageInfo = vi.hoisted(() => ({
+  current: {
+    localRoot: '/Documents',
+    icloudDocumentsRoot: null as string | null,
+    icloudGraphRoots: [] as string[],
+  },
+}))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   listNotes: vi.fn(async () => [{ path: 'notes/a.md' }, { path: 'notes/b.md' }]),
   getConflictedNotes: vi.fn(async () => []),
+  mobileStorage: vi.fn(async () => storageInfo.current),
 }))
 
+const completeOnboarding = vi.hoisted(() =>
+  vi.fn(async (_kind: string, _root?: string) => {}),
+)
+const graphState = vi.hoisted(() => ({
+  mobileStorageKind: null as 'icloud' | 'local' | null,
+}))
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ graph: { root: '/g', name: 'Field Notes', generation: 1 } as GraphInfo }),
+  useGraph: () => ({
+    graph: { root: '/g', name: 'Field Notes', generation: 1 } as GraphInfo,
+    mobileStorageKind: graphState.mobileStorageKind,
+    completeOnboarding,
+  }),
 }))
 vi.mock('@/hooks/use-app-version', () => ({ useAppVersion: () => '1.2.3' }))
 
@@ -64,6 +95,8 @@ beforeEach(() => {
     disconnectGraph: vi.fn(async () => {}),
     signOut: vi.fn(async () => {}),
   }
+  graphState.mobileStorageKind = null
+  storageInfo.current = { localRoot: '/Documents', icloudDocumentsRoot: null, icloudGraphRoots: [] }
   vi.mocked(getConflictedNotes).mockResolvedValue([])
 })
 
@@ -127,5 +160,34 @@ describe('SettingsSheet', () => {
     expect(screen.getByText('1.2.3')).toBeTruthy()
     expect(screen.queryByText('Backed up')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull()
+  })
+
+  it('lists the other graphs and switches through the onboarding flow', async () => {
+    graphState.mobileStorageKind = 'icloud'
+    storageInfo.current = {
+      localRoot: '/Documents',
+      icloudDocumentsRoot: '/iCloud/Documents',
+      icloudGraphRoots: ['/iCloud/Documents/Work'],
+    }
+    const user = userEvent.setup()
+    mount()
+
+    expect(await screen.findByText('Switch graph')).toBeTruthy()
+    // Every other container graph, plus the on-device root for iCloud graphs.
+    expect(screen.getByRole('button', { name: 'This device' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Work' }))
+
+    await waitFor(() =>
+      expect(completeOnboarding).toHaveBeenCalledWith('icloud', '/iCloud/Documents/Work'),
+    )
+  })
+
+  it('offers no switcher when there is nowhere else to go', async () => {
+    // A local graph with an empty container: the open graph is the only one.
+    graphState.mobileStorageKind = 'local'
+    mount()
+
+    expect(await screen.findByText('Field Notes')).toBeTruthy()
+    expect(screen.queryByText('Switch graph')).toBeNull()
   })
 })

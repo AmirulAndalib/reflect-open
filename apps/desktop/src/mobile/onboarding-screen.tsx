@@ -23,17 +23,17 @@ type Step = 'choose' | 'auth' | 'repo'
  * {@link GraphProvider}.
  *
  * iCloud Drive leads (Plan 21): it is the primary way a graph syncs between
- * iPhone and Mac, so the hero action opens the app's iCloud container —
- * labelled "Open your iCloud notes" when the container already holds notes
- * from another device. **Keep notes on this device** opens the app-sandbox
- * root instead (and is promoted to the only storage button when iCloud is
- * unavailable). Git users can still connect from the **Sync with GitHub
- * instead** link: the shared device flow ({@link GithubAuthStep}), then a
- * clone *straight into* the local root — `git_clone` refuses a non-empty
- * directory, so this only works while that root is untouched, which is
- * exactly why the provider defers opening until now. Every path ends in
- * `completeOnboarding(kind)`, which opens the chosen root and records the
- * flag + storage kind.
+ * iPhone and Mac, so the hero block lists every graph already in the app's
+ * iCloud container (one tap opens it — the container can hold several), or a
+ * single "Store in iCloud Drive" when the container is empty. **Keep notes
+ * on this device** opens the app-sandbox root instead (and is promoted to
+ * the only storage button when iCloud is unavailable). Git users can still
+ * connect from the **Sync with GitHub instead** link: the shared device flow
+ * ({@link GithubAuthStep}), then a clone *straight into* the local root —
+ * `git_clone` refuses a non-empty directory, so this only works while that
+ * root is untouched, which is exactly why the provider defers opening until
+ * now. Every path ends in `completeOnboarding(kind, root)`, which opens the
+ * chosen root and records the flag + storage kind + graph name.
  */
 export function MobileOnboardingScreen(): ReactElement {
   const { mobileStorageInfo, completeOnboarding } = useGraph()
@@ -42,8 +42,12 @@ export function MobileOnboardingScreen(): ReactElement {
   const [repoInput, setRepoInput] = useState('')
   const [user, setUser] = useState<GithubUser | null>(null)
 
-  const icloudReady = mobileStorageInfo?.icloudRoot != null
-  const hasIcloudNotes = mobileStorageInfo?.icloudHasGraph === true
+  const icloudReady = mobileStorageInfo?.icloudDocumentsRoot != null
+  const icloudGraphs = mobileStorageInfo?.icloudGraphRoots ?? []
+
+  function openIcloudGraph(root: string): void {
+    void action.run(() => completeOnboarding('icloud', root))
+  }
 
   function storeInIcloud(): void {
     void action.run(() => completeOnboarding('icloud'))
@@ -101,19 +105,29 @@ export function MobileOnboardingScreen(): ReactElement {
 
       {step === 'choose' ? (
         <div className="flex flex-col gap-3">
-          {icloudReady ? (
+          {icloudReady && icloudGraphs.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              {icloudGraphs.map((root) => {
+                const name = root.split('/').filter(Boolean).at(-1) ?? root
+                return (
+                  <Button key={root} onClick={() => openIcloudGraph(root)} disabled={action.pending}>
+                    {action.pending ? 'Setting up…' : `Open “${name}”`}
+                  </Button>
+                )
+              })}
+              <p className="text-center text-xs text-text-muted">
+                {icloudGraphs.length > 1
+                  ? 'We found these notes in your iCloud Drive.'
+                  : 'We found notes in your iCloud Drive.'}
+              </p>
+            </div>
+          ) : icloudReady ? (
             <div className="flex flex-col gap-1.5">
               <Button onClick={storeInIcloud} disabled={action.pending}>
-                {action.pending
-                  ? 'Setting up…'
-                  : hasIcloudNotes
-                    ? 'Open your iCloud notes'
-                    : 'Store in iCloud Drive'}
+                {action.pending ? 'Setting up…' : 'Store in iCloud Drive'}
               </Button>
               <p className="text-center text-xs text-text-muted">
-                {hasIcloudNotes
-                  ? 'We found notes in your iCloud Drive.'
-                  : 'Recommended — syncs with Reflect on your other devices.'}
+                Recommended — syncs with Reflect on your other devices.
               </p>
             </div>
           ) : null}

@@ -54,7 +54,7 @@ export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
         // No iCloud in a plain browser — the dev harness exercises the
         // local-storage path (and, via `mobileOnboarded` above, skips
         // onboarding entirely).
-        return { localRoot: DEV_GRAPH_ROOT, icloudRoot: null, icloudHasGraph: false }
+        return { localRoot: DEV_GRAPH_ROOT, icloudDocumentsRoot: null, icloudGraphRoots: [] }
       case 'icloud_download_pending':
         return 0
       case 'graph_open':
