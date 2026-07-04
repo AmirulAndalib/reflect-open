@@ -145,6 +145,16 @@ export function createIcloudController(options: IcloudControllerOptions): Icloud
    * wait on the watcher to notice its own writes.
    */
   function applySweepChanges(changes: FileChange[]): void {
+    // Sweep rewrites ARE this device's writes, but they don't route through
+    // writeNote, so no own-write echo fires — and `applyingSweepResult`
+    // below can't cover the *debounced* watcher echo that follows. Mark
+    // them so that echo never classifies as an external base ingest. (The
+    // Rust side independently refuses marker-bearing content as a base;
+    // this also keeps clean-merge echoes from scheduling useless rescans.)
+    const now = Date.now()
+    for (const change of changes) {
+      ownWrites.set(change.path, now)
+    }
     applyingSweepResult = true
     try {
       emitFileChanges(changes)

@@ -174,8 +174,12 @@ fn run_sweep(
 /// A clean external ingest (or adoption snapshot): the note's disk content is
 /// now what both sides derive from — record it as the base. Skips notes that
 /// currently carry unresolved versions (mid-conflict content is nobody's
-/// ancestor) and non-UTF-8/missing files. `fill_only` restricts the write to
-/// notes without a base (the adoption case).
+/// ancestor), notes whose content carries conflict markers (a marked file is
+/// an unresolved review state, never a synced ancestor — and the sweep's own
+/// marker writes echo back through the file watcher as ordinary external
+/// upserts, so the guard must live here, not in the caller), and
+/// non-UTF-8/missing files. `fill_only` restricts the write to notes without
+/// a base (the adoption case).
 fn advance_base_if_clean(root: &Path, rel: &str, shadow: &ShadowStore, fill_only: bool) {
     if fill_only && shadow.base(rel).is_some() {
         return;
@@ -187,6 +191,9 @@ fn advance_base_if_clean(root: &Path, rel: &str, shadow: &ShadowStore, fill_only
     let Ok(content) = fs::read_to_string(&abs) else {
         return;
     };
+    if markers::contains_conflict_markers(&content) {
+        return;
+    }
     if let Err(err) = shadow.record(rel, &content) {
         tracing::warn!(path = rel, ?err, "failed to record shadow base");
     }
@@ -782,6 +789,23 @@ mod tests {
         .unwrap();
 
         assert_eq!(ShadowStore::new(root.path()).base("notes/open.md"), None);
+    }
+
+    #[test]
+    fn marker_carrying_content_never_becomes_a_base() {
+        // The sweep's own marker writes echo back through the file watcher
+        // as ordinary external upserts — an unresolved review state must
+        // never be recorded as a synced ancestor.
+        let root = graph();
+        write(
+            root.path(),
+            "notes/a.md",
+            "<<<<<<< Mac\nmine\n=======\ntheirs\n>>>>>>> iPhone\n",
+        );
+
+        run_sweep(root.path(), &[], &["notes/a.md".to_string()], true).unwrap();
+
+        assert_eq!(ShadowStore::new(root.path()).base("notes/a.md"), None);
     }
 
     #[test]

@@ -170,8 +170,13 @@ describe('createIcloudController', () => {
     })
     const apply = invoked.find(([command]) => command === 'index_apply')
     expect(apply?.[1]).toMatchObject({ generation: 3 })
-    // …and the controller's own fan-out must not come back as an ingest.
-    emitFileChanges([{ path: 'notes/other.md', kind: 'upsert', modifiedMs: 9 }])
+    // …and neither the controller's own synchronous fan-out nor the file
+    // watcher's later echo of the sweep's write may come back as an ingest —
+    // only the genuinely external change does.
+    emitFileChanges([
+      { path: 'notes/merged.md', kind: 'upsert', modifiedMs: 6 }, // watcher echo
+      { path: 'notes/other.md', kind: 'upsert', modifiedMs: 9 },
+    ])
     await settleScan()
     expect(scanCalls[1]?.ingestedPaths).toEqual(['notes/other.md'])
   })
