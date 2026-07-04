@@ -141,7 +141,34 @@ pnpm tauri build      # Native app bundle, incl. the reflect CLI sidecar
 pnpm release:bump     # Bump the version everywhere + push the release tag (docs/macos-distribution.md)
 pnpm release:macos    # Signed + notarized macOS build for distribution (docs/macos-distribution.md)
 pnpm release:macos publish  # The above, then upload the DMG to a new GitHub release
+pnpm tauri ios dev "iPhone 17 Pro"  # Run the Tauri iOS target in the simulator (docs/contributing/mobile-simulator.md)
+pnpm release:ios preflight --build-number=123  # Check iOS/TestFlight signing, App Store Connect app record, and upload auth
+pnpm release:ios testflight --build-number=123 --wait  # Build and upload the iOS app to TestFlight
 ```
+
+**iOS simulator**
+
+The mobile app is the Tauri iOS target of `apps/desktop`, not a separate
+package. Use `pnpm tauri ios dev "iPhone 17 Pro"` from the repo root; list
+available simulator names with `xcrun simctl list devices available`. The first
+run can be quiet while Xcode compiles Rust, Swift plugin code, and native
+dependencies. See `docs/contributing/mobile-simulator.md` before committing
+changes under `apps/desktop/src-tauri/gen/apple/`, because Tauri/Xcode may
+normalize generated project and plist files.
+
+**iOS TestFlight**
+
+Use `pnpm release:ios` for TestFlight work; do not hand-roll `tauri ios build`
+and `altool` unless debugging the helper itself. Start with
+`pnpm release:ios preflight --build-number=<number>`, then run
+`pnpm release:ios testflight --build-number=<number> --wait` or upload an
+existing IPA with `pnpm release:ios upload --ipa=<path> --wait`.
+
+The iOS bundle identifier is `app.reflect.ios`, intentionally separate from the
+old Capacitor TestFlight app (`app.reflect.ReflectMobile`). The release helper
+verifies the IPA bundle identifier and `ITSAppUsesNonExemptEncryption=false`
+before upload. See `docs/ios-testflight.md` for App Store Connect setup, local
+keychain fallback (`reflect-notary`), API key CI secrets, and troubleshooting.
 
 # Code Conventions
 

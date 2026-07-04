@@ -185,6 +185,30 @@ pnpm --filter @reflect/desktop sidecar
 cargo test --workspace
 ```
 
+### iOS development and TestFlight
+
+Reflect's iOS app is the Tauri mobile target inside `apps/desktop`, not a
+separate package. To run the mobile app in the simulator:
+
+```bash
+pnpm tauri ios dev "iPhone 17 Pro"
+```
+
+See [docs/contributing/mobile-simulator.md](docs/contributing/mobile-simulator.md)
+for simulator names, first-run expectations, and generated Xcode file notes.
+
+TestFlight builds use the dedicated release helper:
+
+```bash
+pnpm release:ios preflight --build-number=123
+pnpm release:ios testflight --build-number=123 --wait
+```
+
+The TestFlight app is `app.reflect.ios`, intentionally separate from the old
+Capacitor mobile app (`app.reflect.ReflectMobile`). See
+[docs/ios-testflight.md](docs/ios-testflight.md) for signing credentials, App
+Store Connect setup, CI secrets, and troubleshooting.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions, the step-by-step
 guides in [docs/contributing/](docs/contributing/) (adding a command, adding a
 setting, editor architecture), and [AGENTS.md](AGENTS.md) for the full
@@ -202,8 +226,8 @@ Designed or in progress, each with a written plan:
 
 - **Mobile companion** ([mobile design](docs/plans/19-mobile.md)): iOS is in
   progress in the Tauri app, with Daily/All surfaces and editing foundations
-  landed; device validation, sync hardening, and TestFlight/App Store release
-  remain.
+  landed; simulator and TestFlight release paths are documented, while device
+  validation, sync hardening, and App Store submission remain.
 
 Windows, Android, and a plugin API are out of scope for now; the
 [product vision](docs/reflect-v2-product-vision.md) explains the long-term
