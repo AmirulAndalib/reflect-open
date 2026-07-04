@@ -10,9 +10,8 @@
  *   `spellcheck=false`: WebKit derives the keyboard's smart-punctuation
  *   traits from it, and smart punctuation corrupts markdown syntax) and
  *   explicit input traits — see `EditorInputTraits` (Plan 19, decision 7).
- * - `mobileApp` — shared components render their mobile-v1 variants, e.g.
- *   sync-conflict resolution stays desktop-side so the conflict notice
- *   points at desktop instead of offering actions (Plan 19).
+ * - `mobileApp` — shared components render their mobile variants, e.g.
+ *   touch-sized conflict-resolution actions in the protected note notice.
  */
 export interface PlatformSurface {
   touchEditor: boolean

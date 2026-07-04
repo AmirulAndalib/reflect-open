@@ -35,9 +35,8 @@ interface SyncConflictNoticeProps {
  * projection of the file content, so the banner clears itself once the
  * resolved file reindexes.
  *
- * On mobile, conflicts are contained, not resolved (Plan 19): the same
- * protected session contract, but the resolution actions stay desktop-side —
- * the banner says the note needs review on desktop and offers nothing else.
+ * Mobile uses the same protected session contract and raw-text resolution
+ * actions. The buttons are touch-sized there, but still call the same resolver.
  */
 export function SyncConflictNotice({ path, className }: SyncConflictNoticeProps): ReactElement | null {
   const { graph } = useGraph()
@@ -71,15 +70,8 @@ export function SyncConflictNotice({ path, className }: SyncConflictNoticeProps)
   const labels = markerInfo?.labels ?? null
   const manySided = (markerInfo?.blocks ?? 0) > 1
   const named = labels != null && labels.ours !== 'this device'
-
-  if (isMobileSurface()) {
-    return (
-      <InlineAlert tone="warning" className={className}>
-        Edited on two devices at once — review on desktop. Every version stays in the backup
-        history.
-      </InlineAlert>
-    )
-  }
+  const mobile = isMobileSurface()
+  const actionClassName = mobile ? 'h-9 justify-center px-3' : undefined
 
   return (
     <InlineAlert tone="warning" className={className}>
@@ -88,18 +80,36 @@ export function SyncConflictNotice({ path, className }: SyncConflictNoticeProps)
         conflict markers. Choose what to keep — every version stays recoverable in the backup
         history either way.
       </p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Button size="xs" variant="outline" disabled={busy} onClick={() => void resolve('ours')}>
+      <div className={mobile ? 'mt-3 grid gap-2' : 'mt-2 flex flex-wrap gap-2'}>
+        <Button
+          size="xs"
+          variant="outline"
+          className={actionClassName}
+          disabled={busy}
+          onClick={() => void resolve('ours')}
+        >
           {named ? `Keep “${labels.ours}”` : 'Keep this device’s version'}
         </Button>
-        <Button size="xs" variant="outline" disabled={busy} onClick={() => void resolve('theirs')}>
+        <Button
+          size="xs"
+          variant="outline"
+          className={actionClassName}
+          disabled={busy}
+          onClick={() => void resolve('theirs')}
+        >
           {manySided
             ? 'Keep the other versions'
             : named
               ? `Keep “${labels.theirs}”`
               : 'Keep the other device’s'}
         </Button>
-        <Button size="xs" variant="outline" disabled={busy} onClick={() => void resolve('both')}>
+        <Button
+          size="xs"
+          variant="outline"
+          className={actionClassName}
+          disabled={busy}
+          onClick={() => void resolve('both')}
+        >
           {manySided ? 'Keep all' : 'Keep both'}
         </Button>
       </div>

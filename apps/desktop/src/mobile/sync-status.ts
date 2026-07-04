@@ -46,8 +46,8 @@ export function mobileSyncStatus(
       tone: 'attention',
       detail:
         conflictCount === 1
-          ? 'A note was edited on two devices at once — open it on desktop to resolve.'
-          : `${conflictCount} notes were edited on two devices at once — open them on desktop to resolve.`,
+          ? 'A note was edited on two devices at once — open it to choose what to keep.'
+          : `${conflictCount} notes were edited on two devices at once — open them to choose what to keep.`,
     }
   }
   if (status.state === 'error') {
