@@ -463,6 +463,16 @@ fn fold_duplicate(
 ) {
     let dup_abs = root.join(&file.path);
     let canonical_abs = root.join(canonical_rel);
+    // Both conflict shapes can coincide: the canonical (or the duplicate)
+    // may carry unresolved NSFileVersion conflicts at the same time as the
+    // name collision. Folding first would rewrite the canonical and advance
+    // its shadow base *before* the version pass archives anything — breaking
+    // archive-first, and poisoning the base with content the other device
+    // hasn't seen. Edit conflicts resolve first; the fold retries next sweep.
+    if !unresolved_versions(&canonical_abs).none() || !unresolved_versions(&dup_abs).none() {
+        outcome.deferred.push(file.path.clone());
+        return;
+    }
     let Ok(dup_content) = fs::read_to_string(&dup_abs) else {
         return;
     };
