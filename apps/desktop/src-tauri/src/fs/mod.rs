@@ -20,8 +20,13 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::error::{AppError, AppResult};
 
-use self::io::{atomic_write, atomic_write_bytes, bootstrap, collect_files, NOTE_DIRS};
+use self::io::{atomic_write, bootstrap, collect_files, NOTE_DIRS};
 use self::resolve::resolve;
+
+/// Atomic byte write staged under `.reflect/tmp/`, shared with the conflict
+/// machinery (shadow bases, resolution writes) so every graph write follows
+/// the same crash-safe, sync-clean path.
+pub(crate) use self::io::atomic_write_bytes;
 
 // Consumed by the watcher (desktop) and the capture inbox (all platforms),
 // so the re-export is no longer desktop-gated.

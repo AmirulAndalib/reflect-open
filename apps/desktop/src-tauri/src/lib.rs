@@ -14,6 +14,7 @@
 
 mod calendar;
 mod capture;
+mod conflict;
 mod contacts;
 mod db;
 mod devtools;

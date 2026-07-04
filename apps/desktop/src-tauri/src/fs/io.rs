@@ -163,7 +163,7 @@ pub(super) fn atomic_write(root: &Path, target: &Path, contents: &str) -> AppRes
 /// Plan 21), and a temp created there is synced and, after a crash, stranded
 /// on every device. `.reflect/` is excluded from sync and swept on graph open,
 /// and it shares `target`'s volume, so the final rename stays atomic.
-pub(super) fn atomic_write_bytes(root: &Path, target: &Path, contents: &[u8]) -> AppResult<()> {
+pub(crate) fn atomic_write_bytes(root: &Path, target: &Path, contents: &[u8]) -> AppResult<()> {
     let dir = target
         .parent()
         .ok_or_else(|| AppError::io(format!("no parent directory for {}", target.display())))?;
