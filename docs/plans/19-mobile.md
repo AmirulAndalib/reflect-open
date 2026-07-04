@@ -266,11 +266,12 @@ later on the height events.
 
 ### 9. App identity & store
 
-The bundle identifier and `ios.project.yml` predate this plan
-(`com.alex.reflect-open` prefix, placeholder product name) — step 3 normalizes
-them to the product identity (`app.reflect.*`, product name "Reflect") before
-anything ships to TestFlight. Versioning tracks the desktop `version` in
-`tauri.conf.json`. Store metadata, privacy nutrition labels
+The iOS template now carries the product identity (`app.reflect.ios`, product
+name "Reflect", team `789ULN5MZB`) and `tauri.ios.conf.json` keeps the mobile
+bundle identifier separate from the desktop app. Versioning tracks the desktop
+`version` in `tauri.conf.json`; TestFlight builds use `pnpm release:ios` to add
+the per-upload build number and pass App Store Connect API key authentication
+through to xcodebuild/altool. Store metadata, privacy nutrition labels
 (`PrivacyInfo.xcprivacy` is required for fs access), and a review-account
 story (a demo graph — the app is fully usable with no account; reviewers must
 see that) land with the submission step.
@@ -371,9 +372,8 @@ Steps 1 and 2 are the existential gates; nothing else starts until both pass.
     protected with "Needs review on desktop", status pill live.
 11. **Harden + ship.** Memory pass on a large graph (webview process limits;
     editing a very large note), resume-after-process-death recovery check,
-    a11y labels, TestFlight build (`tauri ios build --export-method
-    app-store-connect`, App Store Connect API key in CI mirroring the macOS
-    release workflow), then App Store submission with the review story.
+    a11y labels, TestFlight build (`pnpm release:ios testflight`; see
+    `docs/ios-testflight.md`), then App Store submission with the review story.
 12. **Android (fast follow, same shape).** `tauri android init`, Kotlin half
     of the keyboard plugin, keystore signing, the same frontend gate already
     matching `'android'`, Play submission. No new product surface.

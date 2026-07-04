@@ -50,6 +50,10 @@ targets:
         # user can see, copy, and back up their markdown (Plan 19).
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        # Reflect only uses exempt encryption (standard HTTPS/Git transport and
+        # OS keychain storage), so App Store Connect should not ask for export
+        # compliance answers on every TestFlight upload.
+        ITSAppUsesNonExemptEncryption: false
         # Apple Contacts integration: read-only CNContactStore lookups for
         # person notes; the string is shown on the iOS permission prompt.
         NSContactsUsageDescription: Reflect reads your contacts to suggest details for person notes. Nothing is stored or sent anywhere.

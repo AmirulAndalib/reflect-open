@@ -289,5 +289,5 @@ on the runner keychain setup.
 
 ## Current limitations
 
-- The iOS project template (`src-tauri/ios.project.yml`) still uses the pre-rename bundle
-  identifier and needs its own provisioning pass.
+- iOS/TestFlight distribution is handled separately by `pnpm release:ios`; see
+  [iOS TestFlight Builds](ios-testflight.md).
