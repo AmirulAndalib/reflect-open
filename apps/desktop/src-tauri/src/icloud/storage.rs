@@ -124,7 +124,8 @@ fn find_graph_dirs(documents: &Path) -> Vec<PathBuf> {
 }
 
 /// The first existing graph in the container — the mobile
-/// open-what-exists path.
+/// open-what-exists path (desktop lists them all via `find_graph_dirs`).
+#[cfg(any(mobile, test))]
 fn find_graph_dir(documents: &Path) -> Option<PathBuf> {
     find_graph_dirs(documents).into_iter().next()
 }
