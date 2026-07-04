@@ -14,20 +14,40 @@ notice), Plan 19 (iOS target), Plan 02/04 (storage + index). **Supersedes:** the
 "file-sync providers are unsupported for sync by design" decision in Plan 12 and the
 [overview guardrails](00-overview.md) — iCloud is promoted from non-goal to the main
 consumer sync path; Git remotes remain fully supported as the power-user/backup path.
-**Status:** in progress. Phase 0 items 1–3 are in flight (PR #501: cross-platform
-exclusions, temp staging, placeholder handling). The **iOS leg of Phase 1** landed
-ahead of the macOS move-in flow (PR #505): CloudDocuments entitlements +
-`NSUbiquitousContainers`, container discovery off the main thread
-(`src-tauri/src/icloud.rs`, `mobile_storage`), iCloud-first mobile onboarding with
-the persisted `mobileStorage` kind, container-unavailable parking (never a silent
-empty graph), and — as an interim stand-in for the Phase 2 `NSMetadataQuery`
-module — a foreground refresh that nudges placeholder downloads
-(`icloud_download_pending`) and re-reconciles the index on app resume
-(`src/mobile/use-icloud-refresh.ts`). Fresh iOS graphs are created at
-`<container>/Documents/Notes/` per contract 1; on-device verification
-(entitlement registration, exclusion behavior, Mac↔iPhone round trip) is the
-release gate. Remaining: Phase 0 spikes 4–6, desktop move-in/migration
-(rest of Phase 1), Phases 2–4.
+**Status:** implemented through Phase 3 (PR #501, which also carries PR #505's
+iOS Phase 1 leg); on-device verification is the release gate. What exists:
+
+- **Phase 0**: cross-platform `.reflect/`/`.git/` exclusions, `.reflect/tmp/`
+  write staging, placeholder-eviction handling (items 1–3); spike 5 partially
+  (the objc2 surface is built and compiles for both targets — runtime proof
+  needs a container) and spike 6 resolved — the merge engine is the vendored
+  libgit2's buffer-level `git2::merge_file` (two quirks: it skips git2's lazy
+  global init, and asserts on NULL input paths). **Spike 4 remains the
+  release blocker**: the macOS iCloud entitlements are restricted and need a
+  Developer ID provisioning profile; they sit commented in
+  `Entitlements.plist` with the enabling checklist. iOS signing rides
+  `ios.project.yml`/`gen/apple` (PR #505).
+- **Phase 1**: iOS leg per PR #505 (container discovery, `mobile_storage`,
+  iCloud-first onboarding, `mobileStorage` kind, unavailable-parking,
+  `use-icloud-refresh` resume nudge). Desktop move-in: `icloud_status` +
+  `icloud_adopt_graph` (count+byte-verified copy; original untouched as the
+  recovery copy) behind Settings → iCloud sync (macOS only), which
+  disconnects a Git backup first (contract 5's mutual exclusion).
+- **Phase 2**: `src-tauri/src/icloud/` — `versions.rs` (NSFileVersion
+  surface), `sweep.rs` (`icloud_conflicts_scan`: archive → ladder →
+  atomic write → resolve versions; collision folding; deferred dirty paths),
+  `watch.rs` (NSMetadataQuery: `index:changed` source on iOS,
+  `icloud:conflicts` signal on both). `icloud-controller.ts` mounts per
+  (graph, index session) from `SyncProvider` for `…/Mobile Documents/`
+  roots; the conflict notice is label-aware (`conflictMarkerLabels`).
+- **Phase 3**: `src-tauri/src/conflict/` — the deterministic ladder
+  (identical/whitespace → diff3 → key-wise frontmatter → guarded
+  append-union → labeled markers), shadow store with the advance rule +
+  merge-pair loop breaker, conflict archive with age/count pruning.
+  Convergence covered by argument-order-independence tests.
+- **Phase 4**: docs ([docs/icloud-sync.md](../icloud-sync.md)); archive
+  pruning shipped with the sweep. Remaining: spike 4 (above), the two-device
+  manual matrix, and the deferred status-line upload/download mapping.
 
 **Explicitly not in scope:** AI-assisted conflict resolution (deferred enhancement —
 the ladder below is designed to hand it a ready-made `base/local/remote`, see
