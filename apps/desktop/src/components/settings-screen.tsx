@@ -9,7 +9,6 @@ import { DateTimeSection } from './settings/date-time-section'
 import { DestructiveSection } from './settings/destructive-section'
 import { EditorSection } from './settings/editor-section'
 import { IcloudSection } from './settings/icloud-section'
-import { ImportSection } from './settings/import-section'
 import { IntegrationsSection } from './settings/integrations-section'
 import { SearchSection } from './settings/search-section'
 import { TemplatesSection } from './settings/templates-section'
@@ -35,7 +34,6 @@ export function SettingsScreen(): ReactElement {
         <IntegrationsSection />
         <IcloudSection />
         <BackupSection />
-        <ImportSection />
         <AboutSection />
         <DestructiveSection />
       </div>

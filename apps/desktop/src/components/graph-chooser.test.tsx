@@ -17,7 +17,7 @@ let storedSettings: Record<string, unknown>
 let icloudStatusResponse: {
   available: boolean
   documentsRoot: string | null
-  existingGraphRoot: string | null
+  existingGraphRoots: string[]
 }
 let queryClient: QueryClient
 
@@ -38,7 +38,7 @@ beforeEach(() => {
     { root: '/graphs/personal', name: 'personal', openedMs: 1 },
   ]
   storedSettings = {}
-  icloudStatusResponse = { available: false, documentsRoot: null, existingGraphRoot: null }
+  icloudStatusResponse = { available: false, documentsRoot: null, existingGraphRoots: [] }
   queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   })
@@ -83,7 +83,7 @@ describe('GraphChooser', () => {
     icloudStatusResponse = {
       available: true,
       documentsRoot: '/icloud/Documents',
-      existingGraphRoot: null,
+      existingGraphRoots: [],
     }
     render(<GraphChooser />, { wrapper })
 
@@ -93,16 +93,13 @@ describe('GraphChooser', () => {
     expect(screen.getByText('Recommended')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'A folder you choose' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Choose a folder/ })).toBeInTheDocument()
-    // The v1 migration lives behind its link, not on the welcome screen.
-    expect(screen.queryByText(/Settings → Graph → Export/)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Coming from Reflect v1/ })).toBeInTheDocument()
   })
 
   it('creates an iCloud graph from the typed name', async () => {
     icloudStatusResponse = {
       available: true,
       documentsRoot: '/icloud/Documents',
-      existingGraphRoot: null,
+      existingGraphRoots: [],
     }
     const user = userEvent.setup()
     render(<GraphChooser />, { wrapper })
@@ -117,21 +114,44 @@ describe('GraphChooser', () => {
     )
   })
 
-  it('offers to open a graph already in the container', async () => {
+  it('lists every graph already in the container and opens the clicked one', async () => {
     icloudStatusResponse = {
       available: true,
       documentsRoot: '/icloud/Documents',
-      existingGraphRoot: '/icloud/Documents/Notes',
+      existingGraphRoots: ['/icloud/Documents/Notes', '/icloud/Documents/Work'],
     }
     const user = userEvent.setup()
     render(<GraphChooser />, { wrapper })
 
-    const openButton = await screen.findByRole('button', { name: 'Open “Notes”' })
+    await screen.findByRole('button', { name: 'Notes' })
     expect(screen.getByText('Your notes are already in iCloud.')).toBeInTheDocument()
-    await user.click(openButton)
+    await user.click(screen.getByRole('button', { name: 'Work' }))
 
     await waitFor(() =>
-      expect(invokeLog).toContainEqual(['graph_open', { path: '/icloud/Documents/Notes' }]),
+      expect(invokeLog).toContainEqual(['graph_open', { path: '/icloud/Documents/Work' }]),
+    )
+  })
+
+  it('creates a new graph alongside existing ones, refusing taken names', async () => {
+    icloudStatusResponse = {
+      available: true,
+      documentsRoot: '/icloud/Documents',
+      existingGraphRoots: ['/icloud/Documents/Notes'],
+    }
+    const user = userEvent.setup()
+    render(<GraphChooser />, { wrapper })
+
+    const nameInput = await screen.findByRole('textbox', { name: 'Name' })
+    // The default "Notes" collides (case-insensitively) with the existing
+    // graph — creating it would land inside that folder, so Create refuses.
+    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled()
+
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Journal')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(invokeLog).toContainEqual(['graph_create', { path: '/icloud/Documents/Journal' }]),
     )
   })
 
@@ -142,21 +162,6 @@ describe('GraphChooser', () => {
       expect(screen.getByText(/Sign in to iCloud on this Mac/)).toBeInTheDocument(),
     )
     expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled()
-  })
-
-  it('keeps the full v1 migration flow one step away', async () => {
-    const user = userEvent.setup()
-    render(<GraphChooser />, { wrapper })
-
-    await user.click(await screen.findByRole('button', { name: /Coming from Reflect v1/ }))
-
-    expect(screen.getByRole('heading', { name: 'Import from Reflect v1' })).toBeInTheDocument()
-    expect(screen.getByText(/Settings → Graph → Export/)).toBeInTheDocument()
-    expect(screen.getByText(/Unzip the file and move the folder/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Open exported folder/ })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Back' }))
-    expect(screen.getByRole('heading', { name: 'Welcome to Reflect' })).toBeInTheDocument()
   })
 
   it('hides the iCloud card outside macOS builds', async () => {

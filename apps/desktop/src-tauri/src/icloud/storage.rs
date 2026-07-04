@@ -106,22 +106,27 @@ pub async fn icloud_download_pending(root: String) -> AppResult<u32> {
         .map_err(|err| AppError::io(err.to_string()))?
 }
 
-/// Find an existing graph among the container `Documents/` subdirectories:
-/// the first (by name, for determinism) that holds notes. Multiple graph
-/// directories are possible once desktop migration lands (Plan 21 Phase 1);
-/// v1 mobile opens the first and leaves choosing among several to later.
-///
-/// Shared by mobile `mobile_storage` and desktop `icloud_status` — both
-/// offer the returning-user open-what-exists path.
-fn find_graph_dir(documents: &Path) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(documents).ok()?;
+/// Every existing graph among the container `Documents/` subdirectories
+/// (name-sorted, for determinism): a user can keep several graphs in the
+/// container, and desktop onboarding lists them all. Mobile v1 opens the
+/// first ([`find_graph_dir`]) and leaves choosing among several to later.
+fn find_graph_dirs(documents: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(documents) else {
+        return Vec::new();
+    };
     let mut dirs: Vec<PathBuf> = entries
         .flatten()
         .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
+        .filter(|path| path.is_dir() && dir_has_notes(path))
         .collect();
     dirs.sort();
-    dirs.into_iter().find(|dir| dir_has_notes(dir))
+    dirs
+}
+
+/// The first existing graph in the container — the mobile
+/// open-what-exists path.
+fn find_graph_dir(documents: &Path) -> Option<PathBuf> {
+    find_graph_dirs(documents).into_iter().next()
 }
 
 /// True when `root` already contains note files (downloaded, or eviction
@@ -244,11 +249,11 @@ pub struct IcloudStatus {
     pub available: bool,
     /// The container's `Documents/` directory when available.
     pub documents_root: Option<String>,
-    /// An existing graph inside the container, when one is found — the
-    /// returning-user fast path: onboarding offers to open it instead of
+    /// Every existing graph inside the container (name-sorted) — the
+    /// returning-user fast path: onboarding lists them to open alongside
     /// creating a fresh one. Same rule as every container path: derive
     /// fresh, never persist.
-    pub existing_graph_root: Option<String>,
+    pub existing_graph_roots: Vec<String>,
 }
 
 /// Command: can this build reach the iCloud container? Runs on a blocking
@@ -259,14 +264,17 @@ pub struct IcloudStatus {
 pub async fn icloud_status() -> AppResult<IcloudStatus> {
     tauri::async_runtime::spawn_blocking(|| {
         let documents = platform::ubiquity_documents_dir();
-        let existing_graph_root = documents
+        let existing_graph_roots = documents
             .as_deref()
-            .and_then(find_graph_dir)
-            .map(|dir| dir.to_string_lossy().into_owned());
+            .map(find_graph_dirs)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|dir| dir.to_string_lossy().into_owned())
+            .collect();
         Ok(IcloudStatus {
             available: documents.is_some(),
             documents_root: documents.map(|dir| dir.to_string_lossy().into_owned()),
-            existing_graph_root,
+            existing_graph_roots,
         })
     })
     .await
@@ -428,13 +436,21 @@ mod tests {
             Some(documents.path().join("Notes"))
         );
 
-        // Deterministic under multiple graphs: first by name.
+        // Deterministic under multiple graphs: all of them, name-sorted;
+        // mobile's `find_graph_dir` opens the first.
         std::fs::create_dir_all(documents.path().join("Archive/notes")).expect("mkdir");
         std::fs::write(
             documents.path().join("Archive/notes/.old.md.icloud"),
             b"stub",
         )
         .expect("write");
+        assert_eq!(
+            find_graph_dirs(documents.path()),
+            vec![
+                documents.path().join("Archive"),
+                documents.path().join("Notes")
+            ]
+        );
         assert_eq!(
             find_graph_dir(documents.path()),
             Some(documents.path().join("Archive"))

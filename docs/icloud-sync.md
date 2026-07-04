@@ -10,8 +10,8 @@ edit the same note while apart.
   **iCloud Drive → Reflect** in Files (iOS) and Finder (macOS). Notes stay
   plain markdown files; iCloud moves them between devices.
 - **Turning it on.** Both platforms offer iCloud first during onboarding: on
-  macOS the welcome screen's recommended card names the graph and creates it
-  straight in the container (or offers **Open** if one is already there);
+  macOS the welcome screen's recommended card lists every graph already in
+  the container to open, and names-and-creates a new one straight in there;
   choosing your own folder remains the self-managed alternative. An existing
   local graph moves later via Settings → **iCloud sync** → *Move graph to
   iCloud…*, which copies it into the container (verified file-by-file) and

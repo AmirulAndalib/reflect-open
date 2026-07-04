@@ -17,7 +17,6 @@ export const SETTINGS_SECTIONS = [
   // macOS only (same gate) — Windows/Linux have no iCloud Drive.
   { id: 'icloud', title: 'iCloud sync' },
   { id: 'backup', title: 'Backup' },
-  { id: 'import', title: 'Import' },
   { id: 'about', title: 'About' },
   { id: 'destructive', title: 'Danger zone' },
 ] as const

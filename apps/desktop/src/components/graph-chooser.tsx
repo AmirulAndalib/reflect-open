@@ -1,7 +1,7 @@
 import { useState, type ReactElement, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { hasBridge, icloudStatus } from '@reflect/core'
-import { ArrowLeft, Cloud, Folder, FolderInput, FolderPlus } from 'lucide-react'
+import { Cloud, Folder, FolderPlus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,27 +9,6 @@ import { useGraphColors } from '@/hooks/use-graph-colors'
 import { graphColorCss } from '@/lib/graph-colors'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
-
-/**
- * Steps a Reflect V1 user follows to bring their notes across. Kept as data so
- * the numbered list stays readable and the test can assert on the key actions.
- * The V1 menu path ("Settings → Graph → Export") is V1's own label, quoted
- * verbatim so it matches what the user sees in the old app.
- */
-const V1_STEPS: ReactNode[] = [
-  <>
-    In Reflect v1, go to <Emphasis>Settings → Graph → Export</Emphasis> and export a{' '}
-    <Emphasis>“Reflect Open folder”</Emphasis>.
-  </>,
-  <>Unzip the file and move the folder wherever you’d like to keep your notes.</>,
-  <>
-    Click <Emphasis>Open exported folder</Emphasis> below and select it.
-  </>,
-]
-
-function Emphasis({ children }: { children: ReactNode }): ReactElement {
-  return <span className="font-medium text-text">{children}</span>
-}
 
 /** iCloud is a real option only in the macOS shell. */
 function isIcloudCapablePlatform(): boolean {
@@ -59,11 +38,9 @@ function cleanGraphName(raw: string): string | null {
 /**
  * First-run / no-graph screen (Plan 21 UX pass). One decision, stated
  * plainly: where do your notes live? iCloud is the recommended default —
- * name the graph, click Create, done; returning users get "Open" for the
- * graph found in their container instead. Choosing a folder yourself is the
- * self-managed path (Git sync, local-only). The Reflect v1 import is a
- * separate second step behind a quiet link, so migrators get the full
- * guided flow without the welcome screen carrying it for everyone else.
+ * every graph already in the container is listed to open, and a name field
+ * creates a new one right there. Choosing a folder yourself is the
+ * self-managed path (Git sync, local-only).
  *
  * "Graph" is deliberately absent — newcomers don't know the word yet; the
  * iCloud card asks for a "name" and the folder card talks about folders.
@@ -71,49 +48,7 @@ function cleanGraphName(raw: string): string | null {
 export function GraphChooser(): ReactElement {
   const { recents, error, pickAndOpen, openRecent, createAt, forget } = useGraph()
   const { colorFor } = useGraphColors()
-  const [step, setStep] = useState<'welcome' | 'v1'>('welcome')
   const icloudCapable = isIcloudCapablePlatform()
-
-  if (step === 'v1') {
-    return (
-      <ChooserShell>
-        <div className="space-y-1.5 text-center">
-          <h1 className="text-2xl font-semibold text-text">Import from Reflect v1</h1>
-          <p className="text-sm text-text-secondary">Bring your notes across in three steps.</p>
-        </div>
-        <section className="mx-auto flex w-full max-w-md flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-sm">
-          <ol className="space-y-2.5">
-            {V1_STEPS.map((step, index) => (
-              <li key={index} className="flex gap-2.5 text-sm text-text-secondary">
-                <span
-                  aria-hidden
-                  className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-sunken text-xs font-medium text-text-secondary"
-                >
-                  {index + 1}
-                </span>
-                <span className="leading-5">{step}</span>
-              </li>
-            ))}
-          </ol>
-          <Button type="button" className="w-full" onClick={() => void pickAndOpen()}>
-            <FolderInput aria-hidden strokeWidth={1.75} />
-            Open exported folder…
-          </Button>
-        </section>
-        <div className="text-center">
-          <Button type="button" variant="ghost" size="sm" onClick={() => setStep('welcome')}>
-            <ArrowLeft aria-hidden strokeWidth={1.75} />
-            Back
-          </Button>
-        </div>
-        {error ? (
-          <p role="alert" className="text-center text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
-      </ChooserShell>
-    )
-  }
 
   return (
     <ChooserShell>
@@ -151,12 +86,6 @@ export function GraphChooser(): ReactElement {
             Choose a folder…
           </Button>
         </section>
-      </div>
-
-      <div className="text-center">
-        <Button type="button" variant="link" size="sm" onClick={() => setStep('v1')}>
-          Coming from Reflect v1? Import your notes
-        </Button>
       </div>
 
       {error ? (
@@ -228,10 +157,10 @@ function ChooserShell({ children }: { children: ReactNode }): ReactElement {
 }
 
 /**
- * The recommended path. Three states from `icloud_status`: a graph already
- * in the container (returning user — open it), a live container with no
- * graph (name it, create it), or no container (signed out / unentitled
- * build — honest copy, disabled action).
+ * The recommended path. Lists every graph already in the container (a user
+ * can keep several) with one-click Open, plus a name field to create a new
+ * one; with no container (signed out / unentitled build) the copy is honest
+ * and the action disabled.
  */
 function IcloudCard({
   openRecent,
@@ -249,11 +178,16 @@ function IcloudCard({
   })
 
   const available = status?.available === true
-  const existing = status?.existingGraphRoot ?? null
+  const existing = status?.existingGraphRoots ?? []
   const cleanName = cleanGraphName(name)
+  // macOS folder names are case-insensitive — a same-named create would
+  // land inside the existing graph instead of next to it.
+  const nameTaken =
+    cleanName !== null &&
+    existing.some((root) => graphNameFromRoot(root).toLowerCase() === cleanName.toLowerCase())
 
   async function create(): Promise<void> {
-    if (status?.documentsRoot == null || cleanName === null) {
+    if (status?.documentsRoot == null || cleanName === null || nameTaken) {
       return
     }
     setBusy(true)
@@ -264,6 +198,11 @@ function IcloudCard({
     }
   }
 
+  function open(root: string): void {
+    setBusy(true)
+    void openRecent(root).finally(() => setBusy(false))
+  }
+
   return (
     <section className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-sm">
       <div className="space-y-1.5">
@@ -272,7 +211,7 @@ function IcloudCard({
           <Badge variant="secondary">Recommended</Badge>
         </div>
         <p className="text-sm text-text-secondary">
-          {existing !== null
+          {existing.length > 0
             ? 'Your notes are already in iCloud.'
             : available
               ? 'Syncs across your Mac and iPhone. Backed up automatically.'
@@ -281,19 +220,50 @@ function IcloudCard({
                 : 'Sign in to iCloud on this Mac to sync your notes across devices.'}
         </p>
       </div>
-      {existing !== null ? (
-        <Button
-          type="button"
-          className="mt-auto w-full"
-          disabled={busy}
-          onClick={() => {
-            setBusy(true)
-            void openRecent(existing).finally(() => setBusy(false))
-          }}
-        >
-          <Cloud aria-hidden strokeWidth={1.75} />
-          Open “{graphNameFromRoot(existing)}”
-        </Button>
+      {existing.length > 0 ? (
+        <ul className="space-y-1.5">
+          {existing.map((root) => (
+            <li key={root}>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start"
+                disabled={busy}
+                onClick={() => open(root)}
+              >
+                <Cloud aria-hidden strokeWidth={1.75} />
+                <span className="truncate">{graphNameFromRoot(root)}</span>
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {existing.length > 0 ? (
+        // Compact create row under the list: a new graph next to the
+        // existing ones is the secondary action here, not the headline.
+        <div className="mt-auto flex gap-2">
+          <Input
+            aria-label="Name"
+            placeholder="New name"
+            value={name}
+            disabled={busy}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                void create()
+              }
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="shrink-0"
+            disabled={busy || cleanName === null || nameTaken}
+            onClick={() => void create()}
+          >
+            Create
+          </Button>
+        </div>
       ) : (
         <div className="mt-auto space-y-2">
           <Input
