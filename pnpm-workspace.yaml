@@ -17,6 +17,8 @@ minimumReleaseAgeExclude:
   - '@prosekit/*'
   - '@aria-ui/*'
   - virtua@0.49.2
+  - prosemirror-flat-list@0.7.0
+  - prosemirror-splittable@1.1.0
 
 # Uncomment the "blockExoticSubdeps" and "overrides" sections below to install packages from pkg.pr.new
 # blockExoticSubdeps: false
