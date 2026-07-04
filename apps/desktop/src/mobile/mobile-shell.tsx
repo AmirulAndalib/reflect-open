@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { MobileFormattingToolbar } from '@/mobile/formatting-toolbar'
 import { MobileStack } from '@/mobile/mobile-stack'
 import { MobileTabBar, type MobileTab } from '@/mobile/mobile-tab-bar'
 import {
@@ -67,8 +68,13 @@ export function MobileShell(): ReactElement {
         />
       </div>
       {/* V1 lets the keyboard cover the tab bar; with the root shrunk it
-          would ride above the keyboard instead, so it hides while typing. */}
-      {keyboardVisible ? null : (
+          would ride above the keyboard instead, so it hides while typing.
+          Its slot goes to the formatting toolbar, which — sitting at the
+          bottom of a root that ends at the keyboard's top — lands exactly
+          on the keyboard edge with no fixed positioning. */}
+      {keyboardVisible ? (
+        <MobileFormattingToolbar />
+      ) : (
         <MobileTabBar
           tab={tab}
           onSelect={(next) =>

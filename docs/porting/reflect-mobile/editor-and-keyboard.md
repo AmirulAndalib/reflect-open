@@ -43,6 +43,27 @@ toolbar — and the hard-won keyboard/focus lessons.
 > In the simulator, note that the software keyboard stays hidden while
 > "Connect Hardware Keyboard" is on (⇧⌘K; ⌘K toggles the software
 > keyboard) — that is a simulator setting, not an app bug.
+>
+> **Status (2026-07-04): the webview-drawn toolbar shipped.** It takes the
+> tab bar's slot at the bottom of the shell root while the keyboard is up —
+> with the root sized to end at the keyboard's top, that lands it exactly on
+> the keyboard edge with no fixed positioning, and hardware keyboards
+> suppress it for free (their reported overlap is 0, so `keyboardVisible`
+> never flips). Item set is V1's spec below minus AI prediction and image
+> (no v2 substrate yet), plus a dismiss button (V1 never needed one; iOS
+> gives a `contenteditable` no Done key). Selection-aware enablement is live
+> ProseKit `canExec`, recomputed on DOM `selectionchange` and republished
+> through a module store (`formatting-toolbar-store.ts`) by a bridge child
+> mounted inside the editor's ProseKit context
+> (`formatting-toolbar-bridge.tsx`) — the store renders `null` when the
+> keyboard belongs to a non-editor field (the All-tab search box), and
+> per-bridge ownership tokens keep the carousel's multiple mounted editors
+> from clobbering each other. Buttons cancel `pointerdown`/`mousedown` so a
+> tap never steals editor focus. **Owed to the device pass:** whether the
+> programmatic `[[`/`#`/`/` inserts open their autocomplete menus (they
+> insert correctly; if the menus don't open, the fallback is a small
+> upstream meowdown command to open them explicitly), plus haptic feel and
+> per-button focus retention on real WebKit.
 
 ## What V1 mobile does
 

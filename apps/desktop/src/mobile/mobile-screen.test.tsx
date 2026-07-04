@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { format } from 'date-fns'
 import { StrictMode, type ReactElement } from 'react'
 import { setBridge } from '@reflect/core'
+import {
+  clearFormattingToolbar,
+  publishFormattingToolbar,
+} from '@/editor/formatting-toolbar-store'
 import { RouterProvider, useRouter } from '@/routing/router'
 import type { Route } from '@/routing/route'
 import { addDaysIso, formatDayLabel, parseIsoDate, todayIso } from '@/lib/dates'
@@ -374,6 +378,41 @@ describe('MobileShell', () => {
     expect(view.queryByRole('navigation', { name: 'Sections' })).toBeNull()
 
     act(() => publishKeyboardHeight(0))
+    expect(view.getByRole('navigation', { name: 'Sections' })).toBeTruthy()
+  })
+
+  it('gives the tab bar slot to the formatting toolbar only while an editor is focused', () => {
+    const view = mount({ kind: 'today' })
+    const owner = Symbol('shell-test')
+
+    // Keyboard up with no focused editor (the All-tab search field): neither
+    // the tab bar nor a dead-button toolbar.
+    act(() => publishKeyboardHeight(316))
+    expect(view.queryByRole('toolbar', { name: 'Formatting' })).toBeNull()
+
+    act(() =>
+      publishFormattingToolbar(owner, {
+        capabilities: { canIndent: true, canDedent: false, canMoveUp: true, canMoveDown: true },
+        commands: {
+          toggleBulletList: vi.fn(),
+          toggleTaskList: vi.fn(),
+          indent: vi.fn(),
+          dedent: vi.fn(),
+          moveUp: vi.fn(),
+          moveDown: vi.fn(),
+          insertTrigger: vi.fn(),
+          dismissKeyboard: vi.fn(),
+        },
+      }),
+    )
+    expect(view.getByRole('toolbar', { name: 'Formatting' })).toBeTruthy()
+    expect(view.queryByRole('navigation', { name: 'Sections' })).toBeNull()
+
+    act(() => {
+      clearFormattingToolbar(owner)
+      publishKeyboardHeight(0)
+    })
+    expect(view.queryByRole('toolbar', { name: 'Formatting' })).toBeNull()
     expect(view.getByRole('navigation', { name: 'Sections' })).toBeTruthy()
   })
 
