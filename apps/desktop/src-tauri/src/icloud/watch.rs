@@ -124,6 +124,21 @@ mod platform {
         .map_err(|err| AppError::io(format!("failed to reach the main thread: {err}")))
     }
 
+    /// The root plus its canonicalized twin. Spotlight reports real paths —
+    /// on iOS the container lives behind the `/var` → `/private/var` symlink,
+    /// so a predicate (or a prefix strip) built from the un-resolved root
+    /// alone would match nothing and the watch would sit silent.
+    fn root_variants(root: &str) -> Vec<String> {
+        let mut variants = vec![root.to_string()];
+        if let Ok(canonical) = std::fs::canonicalize(root) {
+            let canonical = canonical.to_string_lossy().into_owned();
+            if !variants.contains(&canonical) {
+                variants.push(canonical);
+            }
+        }
+        variants
+    }
+
     /// Build, wire, and start the query. Main thread only.
     fn install(app: tauri::AppHandle, root: String, emit_file_changes: bool) {
         let mtm = MainThreadMarker::new().expect("run_on_main_thread is the main thread");
@@ -137,10 +152,20 @@ mod platform {
             let _: () = msg_send![&query, setSearchScopes: &*scopes];
         }
 
-        let format = NSString::from_str("%K BEGINSWITH %@");
+        let roots = root_variants(&root);
         let path_key: Retained<NSString> = unsafe { NSMetadataItemPathKey.copy() };
-        let root_ns = NSString::from_str(&root);
-        let args = NSArray::from_retained_slice(&[path_key, root_ns]);
+        let format = NSString::from_str(
+            &(0..roots.len())
+                .map(|_| "(%K BEGINSWITH %@)")
+                .collect::<Vec<_>>()
+                .join(" OR "),
+        );
+        let mut arg_list: Vec<Retained<NSString>> = Vec::new();
+        for variant in &roots {
+            arg_list.push(path_key.copy());
+            arg_list.push(NSString::from_str(variant));
+        }
+        let args = NSArray::from_retained_slice(&arg_list);
         let predicate: Retained<NSPredicate> = unsafe {
             msg_send![
                 objc2::class!(NSPredicate),
@@ -153,8 +178,9 @@ mod platform {
         let queue = NSOperationQueue::new();
         unsafe { query.setOperationQueue(Some(&queue)) };
 
+        let handler_roots = roots.clone();
         let block = RcBlock::new(move |notification: NonNull<NSNotification>| {
-            handle_notification(&app, &root, emit_file_changes, notification);
+            handle_notification(&app, &handler_roots, emit_file_changes, notification);
         });
         let center = NSNotificationCenter::defaultCenter();
         let query_object: &AnyObject = &query;
@@ -191,7 +217,7 @@ mod platform {
     /// One gathering/update round: snapshot the results, diff, emit.
     fn handle_notification(
         app: &tauri::AppHandle,
-        root: &str,
+        roots: &[String],
         emit_file_changes: bool,
         notification: NonNull<NSNotification>,
     ) {
@@ -214,7 +240,7 @@ mod platform {
             let Some(path) = attr_string(&item, unsafe { NSMetadataItemPathKey }) else {
                 continue;
             };
-            let Some(rel) = tracked_note_relpath(&path, root) else {
+            let Some(rel) = tracked_note_relpath(&path, roots) else {
                 continue;
             };
             if attr_bool(&item, unsafe {
@@ -280,9 +306,14 @@ mod platform {
     }
 
     /// The watcher's note-tracking rule, over absolute metadata paths:
-    /// `.md` under `daily/`, `notes/`, or `templates/`, graph-relative.
-    fn tracked_note_relpath(path: &str, root: &str) -> Option<String> {
-        let rel = path.strip_prefix(root)?.trim_start_matches('/');
+    /// `.md` under `daily/`, `notes/`, or `templates/`, graph-relative. Tries
+    /// every root variant — Spotlight may report either side of the
+    /// `/var` ↔ `/private/var` symlink.
+    fn tracked_note_relpath(path: &str, roots: &[String]) -> Option<String> {
+        let rel = roots
+            .iter()
+            .find_map(|root| path.strip_prefix(root.as_str()))?
+            .trim_start_matches('/');
         let tracked = (rel.starts_with("daily/")
             || rel.starts_with("notes/")
             || rel.starts_with("templates/"))
@@ -316,20 +347,26 @@ mod platform {
         use super::tracked_note_relpath;
 
         #[test]
-        fn tracks_notes_relative_to_the_root() {
-            let root = "/container/Documents/Notes";
+        fn tracks_notes_relative_to_any_root_variant() {
+            let roots = vec![
+                "/var/mobile/Containers/Notes".to_string(),
+                "/private/var/mobile/Containers/Notes".to_string(),
+            ];
+            // Spotlight may report the resolved (/private) side of the root
+            // symlink; either variant must strip.
             assert_eq!(
-                tracked_note_relpath("/container/Documents/Notes/daily/2026-07-04.md", root),
+                tracked_note_relpath("/var/mobile/Containers/Notes/daily/2026-07-04.md", &roots),
                 Some("daily/2026-07-04.md".to_string())
             );
             assert_eq!(
-                tracked_note_relpath("/container/Documents/Notes/.reflect/index.sqlite", root),
-                None
+                tracked_note_relpath("/private/var/mobile/Containers/Notes/notes/idea.md", &roots),
+                Some("notes/idea.md".to_string())
             );
             assert_eq!(
-                tracked_note_relpath("/container/Documents/Other/notes/a.md", root),
+                tracked_note_relpath("/var/mobile/Containers/Notes/.reflect/index.sqlite", &roots),
                 None
             );
+            assert_eq!(tracked_note_relpath("/elsewhere/notes/a.md", &roots), None);
         }
     }
 }

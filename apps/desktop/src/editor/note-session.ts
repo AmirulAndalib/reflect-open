@@ -265,6 +265,12 @@ export interface NoteSession {
    */
   liveContent: () => string | null
   /**
+   * Whether the buffer holds unsaved edits right now. A pull accessor for
+   * out-of-band consumers (the iCloud conflict sweep skips dirty notes,
+   * Plan 21) — everything reactive should keep using snapshots.
+   */
+  isDirty: () => boolean
+  /**
    * Patch frontmatter keys (e.g. `aliases`, Plan 07b) without touching the
    * editor: the header is updated in place and saved through the normal
    * pipeline. Returns false (and does nothing) when the session can't take
@@ -824,6 +830,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     loadTheirs,
     content: () => header + buffer,
     liveContent: () => (status === 'ready' ? header + buffer : null),
+    isDirty: () => dirty,
     updateFrontmatter,
     commitFrontmatter,
     commitTaskToggle,

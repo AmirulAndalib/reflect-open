@@ -143,6 +143,11 @@ fn run_sweep(
         }
     }
 
+    // External deletions never route through the store's `forget` — drop
+    // bases for notes that no longer exist so the store tracks the graph.
+    let live: BTreeSet<&str> = files.iter().map(|file| file.path.as_str()).collect();
+    shadow.prune_orphans(&live);
+
     archive::prune(root);
     Ok(outcome)
 }

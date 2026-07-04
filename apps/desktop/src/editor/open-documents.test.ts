@@ -13,6 +13,7 @@ function fakeSession(path: string, log: string[]): NoteSession {
       log.push(`flush:${path}`)
     },
     keepMine: () => {},
+    isDirty: () => false,
     loadTheirs: () => {},
     commitFrontmatter: async () => true,
     content: () => '',

@@ -226,6 +226,10 @@ export async function listPendingAudioMemos(generation: number): Promise<AudioMe
   ])
   const existingNotes = new Set(notes.map((file) => file.path))
   const candidates = recordings
+    // An iCloud-evicted recording lists under its logical name but its bytes
+    // aren't local — reading it would abort the pass. It transcribes on a
+    // later pass, once downloaded (Plan 21).
+    .filter((file) => file.placeholder !== true)
     .map((file) => audioMemoFromPath(file.path))
     .filter((memo): memo is AudioMemoIdentity => memo !== null)
     .filter((memo) => !existingNotes.has(memo.notePath))

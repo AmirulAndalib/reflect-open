@@ -417,7 +417,15 @@ interface AssetCandidates {
 async function candidateAssets(input: ReconcileAssetDescriptionsInput): Promise<AssetCandidates> {
   if (input.mode === 'backfill') {
     const listing = await listDir(ASSETS_DIR, input.generation)
-    return { paths: listing.map((file) => file.path).filter(isEligibleAssetPath), listing }
+    return {
+      // iCloud-evicted assets list under their logical names but aren't
+      // readable until downloaded — they get described on a later pass.
+      paths: listing
+        .filter((file) => file.placeholder !== true)
+        .map((file) => file.path)
+        .filter(isEligibleAssetPath),
+      listing,
+    }
   }
   const unique = new Set<string>()
   for (const path of input.changed ?? []) {

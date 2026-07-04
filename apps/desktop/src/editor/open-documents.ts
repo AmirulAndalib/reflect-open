@@ -51,6 +51,18 @@ export function openSession(path: string): NoteSession | null {
 }
 
 /**
+ * Paths of open documents holding unsaved edits right now. The iCloud
+ * conflict sweep (Plan 21) defers these — the session's own conflict parking
+ * protects the buffer regardless, but skipping avoids churning a note the
+ * user is mid-thought in.
+ */
+export function dirtyOpenPaths(): string[] {
+  return [...documents.values()]
+    .filter((document) => document.session.isDirty())
+    .map((document) => document.session.path)
+}
+
+/**
  * Re-key an open document after its note file moved (Plan 17), so
  * {@link openSession} lookups under the new path find the live session. The
  * entry moves only when it actually holds `session` — a failed move's

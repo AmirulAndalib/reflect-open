@@ -128,6 +128,15 @@ impl ShadowStore {
         }
     }
 
+    /// Drop bases (and pair records) for notes that no longer exist. In-app
+    /// deletes route through `forget`, but external deletions (another
+    /// device, a file manager) don't — without this the store grows
+    /// monotonically. `keep` is the graph's live note listing, placeholders
+    /// included. Best-effort: pruning must never fail a sweep.
+    pub fn prune_orphans(&self, keep: &std::collections::BTreeSet<&str>) {
+        prune_orphan_dir(&self.dir, &self.dir, keep);
+    }
+
     /// Map a graph-relative note path into the store, refusing anything that
     /// could escape it. Store paths mirror note paths one-to-one.
     fn entry_path(&self, rel: &str, suffix: &str) -> Option<PathBuf> {
@@ -141,6 +150,28 @@ impl ShadowStore {
             return None;
         }
         Some(self.dir.join(format!("{rel}{suffix}")))
+    }
+}
+
+fn prune_orphan_dir(dir: &Path, store_root: &Path, keep: &std::collections::BTreeSet<&str>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            prune_orphan_dir(&path, store_root, keep);
+            let _ = fs::remove_dir(&path); // gone once emptied
+            continue;
+        }
+        let Ok(rel) = path.strip_prefix(store_root) else {
+            continue;
+        };
+        let rel = rel.to_string_lossy().replace('\\', "/");
+        let note = rel.strip_suffix(".pair").unwrap_or(&rel);
+        if !keep.contains(note) {
+            let _ = fs::remove_file(&path);
+        }
     }
 }
 
@@ -187,6 +218,25 @@ mod tests {
         assert!(!store.is_repeated_merge("notes/a.md", &a, &content_hash("three")));
         store.clear_merge_pair("notes/a.md");
         assert!(!store.is_repeated_merge("notes/a.md", &a, &b));
+    }
+
+    #[test]
+    fn prune_drops_bases_for_vanished_notes_and_keeps_live_ones() {
+        let (_dir, store) = store();
+        store.record("notes/alive.md", "here\n").unwrap();
+        store
+            .record("notes/gone.md", "deleted elsewhere\n")
+            .unwrap();
+        store
+            .record_merge_pair("notes/gone.md", "hash-a", "hash-b")
+            .unwrap();
+
+        let keep: std::collections::BTreeSet<&str> = ["notes/alive.md"].into_iter().collect();
+        store.prune_orphans(&keep);
+
+        assert_eq!(store.base("notes/alive.md"), Some("here\n".to_string()));
+        assert_eq!(store.base("notes/gone.md"), None);
+        assert!(!store.is_repeated_merge("notes/gone.md", "hash-a", "hash-b"));
     }
 
     #[test]
