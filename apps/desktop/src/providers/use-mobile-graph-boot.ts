@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   createGraph,
   errorMessage,
@@ -10,7 +11,8 @@ import {
   type MobileStorageInfo,
   type MobileStorageKind,
 } from '@reflect/core'
-import { useSettings } from '@/providers/settings-provider'
+import { takeWarmMobileStorage } from '@/lib/mobile-boot-warm'
+import { SETTINGS_QUERY_KEY, useSettings } from '@/providers/settings-provider'
 
 /** The graph directory created in the container for a fresh start — reads as
  * `iCloud Drive → Reflect → Notes` in Files/Finder. */
@@ -119,9 +121,11 @@ export interface MobileGraphBoot {
  * `Documents/`) and only the *kind* is persisted, with absolute paths
  * derived fresh every launch.
  *
- * Boot order is deliberate: settings load first (a local file read), and
- * anything that doesn't strictly need the iCloud container never waits on
- * it — resolving the container can take a long time on a fresh install.
+ * Boot order is deliberate: the settings read is shared with the app-wide
+ * provider's query (started before this chunk even loaded) and the container
+ * resolve runs in parallel with it, so nothing on this path waits on work
+ * that already happened or could overlap — resolving the container can take
+ * a long time on a fresh install.
  * A fresh install shows onboarding immediately (sandbox root seeded
  * instantly, iCloud section pending); an onboarded local graph opens
  * without touching the container at all. Inert on desktop.
@@ -136,28 +140,47 @@ export function useMobileGraphBoot(options: MobileGraphBootOptions): MobileGraph
   // flag through it so its cached document carries the flag too — a raw save
   // would be clobbered by the next change.
   const { updateSettings, whenSettingsLoaded } = useSettings()
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     if (!isMobilePlatform(platform)) {
       return
     }
     let active = true
-    /** Fill the storage info once the container resolves — background only. */
+    // The container resolve is the slow IPC on this path and depends on
+    // nothing below — adopt the warm started at platform resolve (see
+    // mobile-boot-warm.ts) or start one now, so it overlaps the settings
+    // read instead of running after it. Every consumer below attaches its
+    // own handlers; this catch only silences the paths that never do.
+    const storagePromise = takeWarmMobileStorage() ?? mobileStorage()
+    storagePromise.catch(() => {})
+    /** Fill the storage info once the container resolves — background only.
+     * The early-started promise can hit a transient failure the old
+     * call-at-this-point wouldn't have; one fresh retry covers that. */
     const resolveStorageInBackground = (): void => {
-      void mobileStorage().then(
-        (storage) => {
-          if (active) {
-            setMobileStorageInfo(storage)
-          }
-        },
-        (err) => {
-          console.error('mobile storage resolution failed:', errorMessage(err))
-        },
-      )
+      void storagePromise
+        .catch(() => mobileStorage())
+        .then(
+          (storage) => {
+            if (active) {
+              setMobileStorageInfo(storage)
+            }
+          },
+          (err) => {
+            console.error('mobile storage resolution failed:', errorMessage(err))
+          },
+        )
     }
     void (async () => {
       try {
-        const settings = await loadSettings()
+        // The settings provider started this exact query at first render —
+        // before the mobile chunk was even fetched — so this reads the
+        // in-flight (usually settled) load instead of issuing a second
+        // settings_load round trip.
+        const settings = await queryClient.ensureQueryData({
+          queryKey: SETTINGS_QUERY_KEY,
+          queryFn: loadSettings,
+        })
         if (!active) {
           return
         }
@@ -184,8 +207,11 @@ export function useMobileGraphBoot(options: MobileGraphBootOptions): MobileGraph
               // Non-fatal: the full resolve below carries the local root too.
             },
           )
-          const resolveWithRetries = (attempt: number): void => {
-            void mobileStorage().then(
+          const resolveWithRetries = (
+            attempt: number,
+            pending: Promise<MobileStorageInfo>,
+          ): void => {
+            void pending.then(
               (storage) => {
                 if (active) {
                   setMobileStorageInfo(storage)
@@ -204,13 +230,13 @@ export function useMobileGraphBoot(options: MobileGraphBootOptions): MobileGraph
                 }
                 setTimeout(() => {
                   if (active) {
-                    resolveWithRetries(attempt + 1)
+                    resolveWithRetries(attempt + 1, mobileStorage())
                   }
                 }, delay)
               },
             )
           }
-          resolveWithRetries(0)
+          resolveWithRetries(0, storagePromise)
           return
         }
         const kind = settings.mobileStorage
@@ -227,7 +253,10 @@ export function useMobileGraphBoot(options: MobileGraphBootOptions): MobileGraph
           await openRecent(localRoot)
           return
         }
-        const storage = await mobileStorage()
+        // The early-started resolve, with one fresh retry on failure — a
+        // transient error from the head-start call must not park a graph the
+        // call-at-this-point would have opened.
+        const storage = await storagePromise.catch(() => mobileStorage())
         if (!active) {
           return
         }
@@ -254,7 +283,7 @@ export function useMobileGraphBoot(options: MobileGraphBootOptions): MobileGraph
     return () => {
       active = false
     }
-  }, [platform, openRecent, onParked])
+  }, [platform, openRecent, onParked, queryClient])
 
   const completeOnboarding = useCallback(
     async (kind: MobileStorageKind, chosenRoot?: string): Promise<void> => {
