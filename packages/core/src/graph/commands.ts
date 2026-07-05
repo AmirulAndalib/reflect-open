@@ -41,6 +41,16 @@ export async function windowBootstrap(): Promise<WindowBootstrap> {
   return call('window_bootstrap', {}, windowBootstrapSchema)
 }
 
+/**
+ * Close every note window and wait (bounded) for their flushes to land.
+ * Call BEFORE anything that bumps the graph/index generations (switch,
+ * delete): note windows adopted the outgoing session, and a bump-first
+ * ordering would reject their final saves as stale.
+ */
+export async function closeNoteWindows(): Promise<void> {
+  await call('close_note_windows', {}, voidSchema)
+}
+
 /** Create a new graph at `path` and open it. */
 export async function createGraph(path: string): Promise<GraphInfo> {
   return call('graph_create', { path }, graphInfoSchema)

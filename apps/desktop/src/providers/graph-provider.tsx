@@ -26,6 +26,7 @@ import { resetNoteRowOverlays } from '@/hooks/note-row-overlay'
 import { setIndexProgress } from '@/lib/index-progress'
 import { dropIcloudStatusQuery, throttledInvalidateIndexQueries } from '@/lib/query-client'
 import { ensureWelcomeNote } from '@/lib/welcome-note'
+import { closeSecondaryWindows } from '@/lib/windows/close-secondary-windows'
 import { isMainWindow, requireMainWindow } from '@/lib/windows/window-role'
 import { createGraphIndex } from './graph-index'
 import { useDesktopGraphBoot } from './use-desktop-graph-boot'
@@ -200,6 +201,7 @@ export function GraphProvider({
       const run = async (): Promise<boolean> => {
         let opened = false
         try {
+          await closeSecondaryWindows(platform) // before openGraph bumps the session
           const info = await openGraph(root)
           if (seq !== openSeq.current) {
             return false // superseded by a newer open
@@ -270,7 +272,7 @@ export function GraphProvider({
       openChain.current = next
       return next
     },
-    [loadRecents],
+    [loadRecents, platform],
   )
 
   // The mobile bootstrap + onboarding slice (Plans 19/21) lives in its own
@@ -365,9 +367,10 @@ export function GraphProvider({
     if (!requireMainWindow('switching graphs')) {
       return
     }
+    await closeSecondaryWindows(platform) // the session they adopted is ending
     await closeActiveGraph()
     await loadRecents({ surfaceErrors: true })
-  }, [closeActiveGraph, loadRecents])
+  }, [closeActiveGraph, loadRecents, platform])
 
   const forget = useCallback(
     async (root: string): Promise<void> => {
@@ -397,6 +400,7 @@ export function GraphProvider({
     // re-open the graph the user switched to.
     const seq = openSeq.current
     try {
+      await closeSecondaryWindows(platform) // before the delete invalidates the session
       await deleteGraphCommand(generation)
     } catch (err) {
       // The command invalidates the Rust session before touching the
@@ -416,7 +420,7 @@ export function GraphProvider({
       await closeActiveGraph()
     }
     await loadRecents()
-  }, [closeActiveGraph, graph, loadRecents, openRecent])
+  }, [closeActiveGraph, graph, loadRecents, openRecent, platform])
 
   const refreshIndex = useCallback((): void => {
     // Off-main, a refresh would start a second concurrent index writer.

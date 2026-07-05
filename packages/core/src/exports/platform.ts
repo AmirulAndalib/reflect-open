@@ -94,6 +94,7 @@ export {
   openGraph,
   openNoteWindow,
   windowBootstrap,
+  closeNoteWindows,
   createGraph,
   importReflectV1Zip,
   markReflectV1ImportOwnWrites,

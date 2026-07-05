@@ -262,6 +262,7 @@ pub fn run() {
             quit::quit_confirm,
             windows::open_note_window,
             windows::window_bootstrap,
+            windows::close_note_windows,
             devtools::toggle_devtools,
         ])
         .build(tauri::generate_context!())

@@ -191,6 +191,28 @@ describe('GraphProvider open sequencing', () => {
     expect(result.current.graph?.root).toBe('/b')
   })
 
+  it('closes note windows BEFORE the backend open bumps the session', async () => {
+    // Note windows adopted the outgoing session; their close-requested
+    // flushes must land against its still-valid generation, so the close
+    // command precedes graph_open (bump-first would reject the saves).
+    const { result } = renderHook(() => useGraph(), { wrapper })
+    await waitFor(() => expect(result.current.status).toBe('choosing'))
+
+    let opened: Promise<boolean>
+    act(() => {
+      opened = result.current.openRecent('/a')
+    })
+    await waitFor(() => expect(invokeLog).toContain('graph_open:/a'))
+    expect(invokeLog.indexOf('close_note_windows')).toBeGreaterThanOrEqual(0)
+    expect(invokeLog.indexOf('close_note_windows')).toBeLessThan(
+      invokeLog.indexOf('graph_open:/a'),
+    )
+    await act(async () => {
+      resolveOpen('/a')
+      await opened
+    })
+  })
+
   it('surfaces an open failure and returns to the chooser', async () => {
     const { result } = renderHook(() => useGraph(), { wrapper })
     await waitFor(() => expect(result.current.status).toBe('choosing'))

@@ -151,6 +151,42 @@ pub async fn open_note_window(
     Ok(())
 }
 
+/// Close every note window and wait (bounded) for them to be gone.
+///
+/// The graph provider calls this **before** any generation bump (graph
+/// switch or delete): note windows adopted the session being replaced, and
+/// each `close()` runs the child's close-requested flush against the
+/// still-valid generation — bumping first would reject their last saves as
+/// stale. A destroyed webview implies its flush completed (close-requested
+/// defers destruction until the handler resolves), so "all gone" is the
+/// safe-to-bump signal. Best-effort past the deadline: a wedged child must
+/// not block the switch forever — it dies with the old session either way.
+#[tauri::command]
+pub async fn close_note_windows(app: tauri::AppHandle) -> AppResult<()> {
+    let note_windows = |app: &tauri::AppHandle| -> Vec<tauri::WebviewWindow> {
+        app.webview_windows()
+            .into_iter()
+            .filter(|(label, _)| label.starts_with(NOTE_WINDOW_PREFIX))
+            .map(|(_, window)| window)
+            .collect()
+    };
+    let open = note_windows(&app);
+    if open.is_empty() {
+        return Ok(());
+    }
+    for window in open {
+        let _ = window.close();
+    }
+    for _ in 0..40 {
+        if note_windows(&app).is_empty() {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    tracing::warn!("note windows still open after the close deadline; proceeding");
+    Ok(())
+}
+
 /// What a secondary window needs to boot: the open graph's identity (both
 /// session generations, unbumped) and the deep link it was created to show.
 #[derive(Serialize)]

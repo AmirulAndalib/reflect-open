@@ -122,6 +122,13 @@ silently dropped the note window's initial link.
   land on disk, but nothing indexes, syncs, or propagates renames. Rather
   than run in that half-alive state, they close with their owner (via
   `close()`, so each child's flush runs exactly like ⌘W — no data loss).
+- **Switching or deleting the graph closes note windows first.** They
+  adopted the outgoing session, so `GraphProvider` awaits
+  `close_note_windows` **before** anything bumps the generations: each
+  child's flush runs against the still-valid session, and a destroyed
+  webview implies its flush landed (close-requested defers destruction until
+  the handler resolves). Bump-first ordering would reject their final saves
+  as stale. The wait is bounded — a wedged child can't block the switch.
 - **App quit (⌘Q):** the run loop defers the exit, arms `QuitState` with the
   **labels** of every live webview, and emits `app:quit-requested`. Every
   window flushes and calls `quit_confirm`; settling the *last owed label*

@@ -22,6 +22,9 @@ tauri-build = { version = "2.6.3", features = [] }
 # debug-only), so a shipped app stays debuggable — see `src/devtools.rs`.
 tauri = { version = "2.11.3", features = ["protocol-asset", "devtools"] }
 tauri-plugin-opener = "2.5.4"
+# `time` backs the bounded wait in `windows::close_note_windows` (tauri
+# already runs on tokio; this only makes the sleep primitive addressable).
+tokio = { version = "1", features = ["time"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # `hooks` adds the authorizer API used to lock the read-only `db_query` bridge
