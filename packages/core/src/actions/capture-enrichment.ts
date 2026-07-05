@@ -1,0 +1,241 @@
+import { describePage, isDescriptionRejected } from '../ai/describe-page'
+import { defaultAiProvider, type AiProvidersState } from '../ai/provider-config'
+import { aiKeySecretName } from '../ai/secrets'
+import { errorMessage, isAppError, toAppError } from '../errors'
+import { listFiles, readAsset, readNote, writeNote } from '../graph/commands'
+import { dailyPath } from '../graph/paths'
+import { hashContent } from '../indexing/hash'
+import { parseNote } from '../markdown/extract'
+import { parseFrontmatter, splitFrontmatter, upsertFrontmatter } from '../markdown/frontmatter'
+import { getSecret } from '../secrets/keychain'
+import type { ReconcileStop } from './audio-memo'
+import { captureFromPath, type CaptureIdentity } from './capture-identity'
+import {
+  captureNoteMeta,
+  capturePageTextFromBody,
+  hasDescription,
+  metadataValue,
+  notePrivate,
+  noteSource,
+  withDescription,
+  type CaptureStatus,
+} from './capture-note'
+import { scrapePageMeta, type PageMeta } from './meta-scrape'
+
+/**
+ * Capture notes still awaiting enrichment, oldest first: well-formed capture
+ * notes whose frontmatter says `captureStatus: pending`.
+ */
+export async function listPendingCaptures(generation: number): Promise<CaptureIdentity[]> {
+  const files = await listFiles(generation)
+  const candidates = files
+    .map((file) => captureFromPath(file.path))
+    .filter((identity): identity is CaptureIdentity => identity !== null)
+    .sort((first, second) => first.base.localeCompare(second.base))
+  const pending: CaptureIdentity[] = []
+  for (const identity of candidates) {
+    let source: string
+    try {
+      source = await readNote(identity.notePath, generation)
+    } catch (cause) {
+      if (isAppError(cause) && cause.kind === 'notFound') {
+        continue
+      }
+      throw cause
+    }
+    const meta = captureNoteMeta(parseFrontmatter(splitFrontmatter(source).raw).data)
+    if (meta?.captureStatus === 'pending') {
+      pending.push(identity)
+    }
+  }
+  return pending
+}
+
+export interface ReconcileCaptureEnrichmentInput {
+  /** The configured-providers state — decides the provider and keychain entry. */
+  providers: AiProvidersState
+  /** `GraphInfo.generation` — pins every read and write to the issuing graph. */
+  generation: number
+  /** Transport for the provider call (the Tauri HTTP plugin's fetch). */
+  fetchFn?: typeof fetch
+  /** Abort gate, checked between notes and after every slow await. */
+  isStale?: () => boolean
+  /** Observes how many captures need enrichment, before work starts. */
+  onPending?: (count: number) => void
+}
+
+export interface ReconcileCaptureEnrichmentOutcome {
+  /** Captures that were pending when the pass started. */
+  pending: number
+  /** Captures this pass enriched (meta tags, plus AI when configured). */
+  enriched: number
+  /** Captures marked skipped (made private, or edited since the raw save). */
+  skipped: number
+  /** Why captures remain pending, or `null` when the pass drained. */
+  stopped: ReconcileStop | null
+}
+
+/**
+ * Enrich every pending capture: scrape the page's meta tags, generate the AI
+ * description when a provider is configured, and stamp `captureStatus: done`.
+ * Never throws.
+ */
+export async function reconcileCaptureEnrichment(
+  input: ReconcileCaptureEnrichmentInput,
+): Promise<ReconcileCaptureEnrichmentOutcome> {
+  let pending: CaptureIdentity[]
+  try {
+    pending = await listPendingCaptures(input.generation)
+  } catch (cause) {
+    return {
+      pending: 0,
+      enriched: 0,
+      skipped: 0,
+      stopped: { reason: toAppError(cause).kind, message: errorMessage(cause) },
+    }
+  }
+  input.onPending?.(pending.length)
+  if (pending.length === 0) {
+    return { pending: 0, enriched: 0, skipped: 0, stopped: null }
+  }
+
+  const config = defaultAiProvider(input.providers)
+  let apiKey: string | null = null
+  if (config !== null) {
+    apiKey = await getSecret(aiKeySecretName(config.id)).catch(() => null)
+    if (apiKey === null) {
+      return {
+        pending: pending.length,
+        enriched: 0,
+        skipped: 0,
+        stopped: {
+          reason: 'config',
+          message: `The API key for the configured ${config.provider} model is missing from the keychain.`,
+        },
+      }
+    }
+  }
+
+  let enriched = 0
+  let skipped = 0
+  const stale = (): boolean => input.isStale?.() === true
+  const outcome = (stopped: ReconcileStop | null): ReconcileCaptureEnrichmentOutcome => ({
+    pending: pending.length,
+    enriched,
+    skipped,
+    stopped,
+  })
+  const markSkipped = async (source: string, identity: CaptureIdentity): Promise<void> => {
+    await writeNote(
+      identity.notePath,
+      upsertFrontmatter(source, { captureStatus: 'skipped' }),
+      input.generation,
+    )
+    skipped += 1
+  }
+
+  for (const identity of pending) {
+    if (stale()) {
+      return outcome({ reason: 'stale', message: 'the graph session ended mid-pass' })
+    }
+    try {
+      let source: string
+      try {
+        source = await readNote(identity.notePath, input.generation)
+      } catch (cause) {
+        if (isAppError(cause) && cause.kind === 'notFound') {
+          continue
+        }
+        throw cause
+      }
+      const split = splitFrontmatter(source)
+      const frontmatter = parseFrontmatter(split.raw).data
+      const meta = captureNoteMeta(frontmatter)
+      if (meta === null || meta.captureStatus !== 'pending') {
+        continue
+      }
+
+      const dailySource = await noteSource(dailyPath(identity.date), input.generation)
+      if (frontmatter.private || notePrivate(dailySource)) {
+        await markSkipped(source, identity)
+        continue
+      }
+      if ((await hashContent(split.body)) !== meta.captureHash) {
+        await markSkipped(source, identity)
+        continue
+      }
+
+      let pageMeta: PageMeta | null = null
+      try {
+        pageMeta = await scrapePageMeta(meta.captureUrl)
+      } catch (cause) {
+        const kind = toAppError(cause).kind
+        if (kind === 'network' || kind === 'auth') {
+          throw cause
+        }
+        pageMeta = null
+      }
+      if (stale()) {
+        return outcome({ reason: 'stale', message: 'the graph session ended mid-pass' })
+      }
+
+      let description: string | null = null
+      if (config !== null && apiKey !== null) {
+        let screenshotBase64: string | undefined
+        if (meta.captureScreenshot) {
+          try {
+            screenshotBase64 = await readAsset(meta.captureScreenshot, input.generation)
+          } catch (cause) {
+            if (!isAppError(cause) || cause.kind !== 'notFound') {
+              throw cause
+            }
+          }
+        }
+        try {
+          description = await describePage({
+            config,
+            apiKey,
+            fetchFn: input.fetchFn,
+            url: meta.captureUrl,
+            title: parseNote({ path: identity.notePath, source }).title,
+            metaDescription: pageMeta?.description ?? undefined,
+            contentText: capturePageTextFromBody(split.body),
+            screenshotBase64,
+          })
+        } catch (cause) {
+          if (!isDescriptionRejected(cause)) {
+            throw cause
+          }
+          description = null
+        }
+        if (stale()) {
+          return outcome({ reason: 'stale', message: 'the graph session ended mid-pass' })
+        }
+      }
+
+      const usedAi =
+        description !== null && metadataValue(description) !== '' && config !== null
+      const text = usedAi
+        ? description
+        : hasDescription(split.body)
+          ? null
+          : pageMeta?.description ?? null
+      const newBody = text !== null ? withDescription(split.body, text) : split.body
+      const reassembled = source.slice(0, split.bodyOffset) + newBody
+      await writeNote(
+        identity.notePath,
+        upsertFrontmatter(reassembled, {
+          captureStatus: 'done' satisfies CaptureStatus,
+          captureHash: await hashContent(newBody),
+          captureProvider: usedAi ? config.provider : undefined,
+          captureModel: usedAi ? config.model : undefined,
+        }),
+        input.generation,
+      )
+      enriched += 1
+    } catch (cause) {
+      return outcome({ reason: toAppError(cause).kind, message: errorMessage(cause) })
+    }
+  }
+  return outcome(null)
+}
