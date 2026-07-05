@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState, type ReactElement } from 'react'
 import { getAppPlatform, hasBridge, isMobilePlatform, type AppPlatform } from '@reflect/core'
+import { warmMobileStorage } from '@/lib/mobile-boot-warm'
 
 const DesktopRoot = lazy(() =>
   import('@/desktop-root').then((module) => ({ default: module.DesktopRoot })),
@@ -19,6 +20,31 @@ let platformPromise: Promise<AppPlatform> | undefined
 function resolveAppPlatform(): Promise<AppPlatform> {
   platformPromise ??= getAppPlatform().catch(() => 'desktop' as AppPlatform)
   return platformPromise
+}
+
+/**
+ * Head start for the boot-critical path, called from `main.tsx` right after
+ * the bridge installs — before React's first render reaches the lazy gate
+ * below. Resolves the platform IPC and starts fetching the matching surface
+ * chunk immediately (the dynamic imports here and in the `lazy()` factories
+ * dedupe to one chunk load); on mobile it also kicks the slow
+ * iCloud-container resolve so it overlaps the chunk eval and the settings
+ * read (see `mobile-boot-warm.ts`). No-op in plain-browser dev: with no
+ * bridge the desktop tree renders directly, and the `?platform=ios`
+ * override installs its own bridge first.
+ */
+export function warmPlatformRoot(): void {
+  if (!hasBridge()) {
+    return
+  }
+  void resolveAppPlatform().then((platform) => {
+    if (isMobilePlatform(platform)) {
+      warmMobileStorage()
+      void import('@/mobile/mobile-root')
+    } else {
+      void import('@/desktop-root')
+    }
+  })
 }
 
 // Dev-only escape hatch: `?platform=ios` (or `android`) in a plain browser
