@@ -1,14 +1,11 @@
 import type { Unlisten } from '../ipc/bridge'
 import { isAssetPath, isNotePath } from '../graph/paths'
 import { readNote } from '../graph/commands'
-import { parseNote } from '../markdown'
-import { applyIndexedNote, applyIndexedNotes, moveIndexedRows, removeFromIndex } from './commands'
-import { gatherAssetDescriptionText } from './asset-description-text'
+import { moveIndexedRows, removeFromIndex } from './commands'
 import { subscribeFileChanges, type FileChange } from './file-changes'
 import { hashContent, matchesTrustedMtime } from './hash'
 import { emitIndexApplied } from './index-applied'
-import { buildIndexedNote, type IndexedNote } from './indexed-note'
-import { indexNote, INDEX_APPLY_BATCH_SIZE } from './indexer'
+import { buildNoteProjection, createIndexApplyBatch, indexNote } from './indexer'
 import { detectExternalMoves } from './move-healing'
 import { INDEX_PASS_YIELD_EVERY, yieldToEventLoop } from './pacing'
 import { getIndexedFileFactsByPath, getNoteIdsByPath, type IndexedFileFacts } from './queries'
@@ -158,30 +155,14 @@ export async function applyIndexChanges(
   )
   const now = Date.now()
   const changeByPath = new Map(notes.map((change) => [change.path, change]))
-  let batch: IndexedNote[] = []
-
-  /** One shared transaction per slice; a refused slice degrades to per-note
-   * applies so failures attribute to their change. */
-  const flushBatch = async (): Promise<void> => {
-    if (batch.length === 0) {
-      return
-    }
-    const notesToApply = batch
-    batch = []
-    try {
-      await applyIndexedNotes(notesToApply, generation)
-      mutations += notesToApply.length
-    } catch {
-      for (const note of notesToApply) {
-        try {
-          await applyIndexedNote(note, generation)
-          mutations += 1
-        } catch (error) {
-          onError(error, changeByPath.get(note.path) ?? { path: note.path, kind: 'upsert' })
-        }
-      }
-    }
-  }
+  // A write refused even alone (after the batcher's halving retry) reports
+  // through the batch's own error channel, mapped back to its change.
+  const batch = createIndexApplyBatch(generation, (skipped) => {
+    onError(
+      new Error(skipped.message),
+      changeByPath.get(skipped.path) ?? { path: skipped.path, kind: 'upsert' },
+    )
+  })
 
   let done = 0
   for (const change of notes) {
@@ -196,7 +177,7 @@ export async function applyIndexChanges(
       if (change.kind === 'remove') {
         // Flush first: a same-batch upsert(x) … remove(x) sequence must not
         // have the batched upsert land *after* the remove and resurrect it.
-        await flushBatch()
+        await batch.flush()
         await removeFromIndex(change.path, generation)
         mutations += 1
         continue
@@ -210,27 +191,18 @@ export async function applyIndexChanges(
       if (facts?.fileHash === fileHash) {
         continue // content unchanged; only the mtime moved
       }
-      const parsed = parseNote({ path: change.path, source: content })
-      const assetText = await gatherAssetDescriptionText(
-        parsed.assets.map((asset) => asset.path),
-      )
-      batch.push(
-        buildIndexedNote(parsed, {
+      await batch.add(
+        await buildNoteProjection(change.path, content, {
           fileHash,
           mtime: change.modifiedMs ?? Date.now(),
-          source: content,
-          assetText,
         }),
       )
-      if (batch.length >= INDEX_APPLY_BATCH_SIZE) {
-        await flushBatch()
-      }
     } catch (error) {
       onError(error, change)
     }
   }
-  await flushBatch()
-  return mutations
+  await batch.flush()
+  return mutations + batch.applied()
 }
 
 /**

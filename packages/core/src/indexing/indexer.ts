@@ -56,18 +56,34 @@ export async function indexNote(
   options: { generation: number; content?: string | undefined; mtime?: number | undefined },
 ): Promise<void> {
   const content = options.content ?? (await readNote(path))
-  const parsed = parseNote({ path, source: content })
   const fileHash = await hashContent(content)
+  const note = await buildNoteProjection(path, content, {
+    fileHash,
+    mtime: options.mtime ?? Date.now(),
+  })
+  await applyIndexedNote(note, options.generation)
+}
+
+/**
+ * Parse `content` and flatten it into the note's index projection — the one
+ * home of the parse → asset-description-gather → build step that every
+ * indexing path (single note, rebuild, reconcile, watcher batch) shares.
+ * Callers hash first: the hash gates whether this (comparatively expensive)
+ * step runs at all.
+ */
+export async function buildNoteProjection(
+  path: string,
+  content: string,
+  facts: { fileHash: string; mtime: number },
+): Promise<IndexedNote> {
+  const parsed = parseNote({ path, source: content })
   const assetText = await gatherAssetDescriptionText(parsed.assets.map((asset) => asset.path))
-  await applyIndexedNote(
-    buildIndexedNote(parsed, {
-      fileHash,
-      mtime: options.mtime ?? Date.now(),
-      source: content,
-      assetText,
-    }),
-    options.generation,
-  )
+  return buildIndexedNote(parsed, {
+    fileHash: facts.fileHash,
+    mtime: facts.mtime,
+    source: content,
+    assetText,
+  })
 }
 
 /**
@@ -138,28 +154,78 @@ export interface SkippedIndexedNote {
   message: string
 }
 
-async function applyRebuildBatch(
+/**
+ * Apply `notes` in one transaction, splitting a refused batch in half until
+ * the failing note stands alone — one bad projection must not cost the rest
+ * of the batch. The lone failure reports through `onSkippedNote`, or throws
+ * without one. Returns how many notes were actually written.
+ */
+async function applySplitBatch(
   notes: IndexedNote[],
   generation: number,
   onSkippedNote?: (note: SkippedIndexedNote) => void,
-): Promise<void> {
+): Promise<number> {
   if (notes.length === 0) {
-    return
+    return 0
   }
   try {
     await applyIndexedNotes(notes, generation)
-    return
+    return notes.length
   } catch (cause) {
     if (notes.length === 1) {
       if (onSkippedNote === undefined) {
         throw cause
       }
       onSkippedNote({ path: notes[0]!.path, message: errorMessage(cause) })
-      return
+      return 0
     }
     const midpoint = Math.ceil(notes.length / 2)
-    await applyRebuildBatch(notes.slice(0, midpoint), generation, onSkippedNote)
-    await applyRebuildBatch(notes.slice(midpoint), generation, onSkippedNote)
+    const first = await applySplitBatch(notes.slice(0, midpoint), generation, onSkippedNote)
+    return first + (await applySplitBatch(notes.slice(midpoint), generation, onSkippedNote))
+  }
+}
+
+/** A shared accumulator for bulk index writes — see {@link createIndexApplyBatch}. */
+export interface IndexApplyBatch {
+  /** Queue a projection; flushes automatically at the transaction cap. */
+  add: (note: IndexedNote) => Promise<void>
+  /** Apply everything still queued. Safe to call repeatedly. */
+  flush: () => Promise<void>
+  /** Projections actually written so far (skipped notes excluded). */
+  applied: () => number
+}
+
+/**
+ * The one write path for the bulk index passes (rebuild, reconcile, watcher
+ * batches): accumulate projections, apply them in shared
+ * `index_apply_batch` transactions of {@link INDEX_APPLY_BATCH_SIZE}, and
+ * degrade refused batches through {@link applySplitBatch}'s halving retry so
+ * failures attribute to single notes. Callers own *when* to flush early —
+ * e.g. before a remove that must not be overtaken by queued upserts.
+ */
+export function createIndexApplyBatch(
+  generation: number,
+  onSkippedNote?: (note: SkippedIndexedNote) => void,
+): IndexApplyBatch {
+  let batch: IndexedNote[] = []
+  let appliedCount = 0
+  async function flush(): Promise<void> {
+    if (batch.length === 0) {
+      return
+    }
+    const notes = batch
+    batch = []
+    appliedCount += await applySplitBatch(notes, generation, onSkippedNote)
+  }
+  return {
+    add: async (note) => {
+      batch.push(note)
+      if (batch.length >= INDEX_APPLY_BATCH_SIZE) {
+        await flush()
+      }
+    },
+    flush,
+    applied: () => appliedCount,
   }
 }
 
@@ -177,7 +243,7 @@ export async function rebuildIndex(options: IndexPassOptions): Promise<void> {
   }
   await clearIndex(generation)
   const files = await listFiles()
-  let batch: IndexedNote[] = []
+  const batch = createIndexApplyBatch(generation, onSkippedNote)
   let done = 0
   for (const file of files) {
     done += 1
@@ -189,16 +255,10 @@ export async function rebuildIndex(options: IndexPassOptions): Promise<void> {
       continue // evicted to iCloud — unreadable until re-download, indexed then
     }
     const content = await readNote(file.path)
-    const parsed = parseNote({ path: file.path, source: content })
     const fileHash = await hashContent(content)
-    const assetText = await gatherAssetDescriptionText(parsed.assets.map((asset) => asset.path))
-    batch.push(buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs, source: content, assetText }))
-    if (batch.length >= INDEX_APPLY_BATCH_SIZE) {
-      await applyRebuildBatch(batch, generation, onSkippedNote)
-      batch = []
-    }
+    await batch.add(await buildNoteProjection(file.path, content, { fileHash, mtime: file.modifiedMs }))
   }
-  await applyRebuildBatch(batch, generation, onSkippedNote)
+  await batch.flush()
   onFileProgress?.(files.length, files.length)
   // The rows now match the current projection — stamp it so `syncIndex` can
   // reconcile cheaply from here on. A superseded pass stamps into a stale
@@ -292,7 +352,7 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
   }
 
   const now = Date.now()
-  let batch: IndexedNote[] = []
+  const batch = createIndexApplyBatch(generation, onSkippedNote)
   let done = 0
   for (const file of files) {
     if (signal?.aborted) {
@@ -335,17 +395,9 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
     if (signal?.aborted) {
       return // re-check after the awaits — don't write for a superseded pass
     }
-    const parsed = parseNote({ path: file.path, source: content })
-    const assetText = await gatherAssetDescriptionText(parsed.assets.map((asset) => asset.path))
-    batch.push(
-      buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs, source: content, assetText }),
-    )
-    if (batch.length >= INDEX_APPLY_BATCH_SIZE) {
-      await applyRebuildBatch(batch, generation, onSkippedNote)
-      batch = []
-    }
+    await batch.add(await buildNoteProjection(file.path, content, { fileHash, mtime: file.modifiedMs }))
   }
-  await applyRebuildBatch(batch, generation, onSkippedNote)
+  await batch.flush()
   onFileProgress?.(files.length, files.length)
 
   for (const path of stored.keys()) {

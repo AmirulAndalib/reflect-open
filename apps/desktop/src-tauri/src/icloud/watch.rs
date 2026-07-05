@@ -320,10 +320,12 @@ mod platform {
     fn item_state(item: &NSMetadataItem, roots: &[String]) -> Option<ItemState> {
         let abs = attr_string(item, unsafe { NSMetadataItemPathKey })?;
         let rel = tracked_note_relpath(&abs, roots)?;
-        let downloaded = attr_string(item, unsafe { NSMetadataUbiquitousItemDownloadingStatusKey })
-            .is_some_and(|status| {
-                status == unsafe { NSMetadataUbiquitousItemDownloadingStatusCurrent }.to_string()
-            });
+        let downloaded = attr_string(item, unsafe {
+            NSMetadataUbiquitousItemDownloadingStatusKey
+        })
+        .is_some_and(|status| {
+            status == unsafe { NSMetadataUbiquitousItemDownloadingStatusCurrent }.to_string()
+        });
         let mtime = attr_date_ms(item, unsafe { NSMetadataItemFSContentChangeDateKey });
         let conflict = attr_bool(item, unsafe {
             NSMetadataUbiquitousItemHasUnresolvedConflictsKey
@@ -337,17 +339,46 @@ mod platform {
         })
     }
 
-    /// Request downloads for placeholders not yet nudged this watch, and
-    /// clear completed ones from the nudge set (a later eviction re-nudges).
-    fn nudge_pending(items: &[ItemState]) {
-        let mut nudged = NUDGED.lock().expect("nudge lock");
+    /// What one notification round produced: the file events to emit and the
+    /// paths the provider reports as conflicted.
+    struct Round {
+        changes: Vec<FileChange>,
+        conflicts: Vec<String>,
+    }
+
+    /// Pure half of the nudge bookkeeping: mark placeholders not yet nudged
+    /// this watch (returning their absolute paths, for the caller to
+    /// request), and clear completed ones so a later eviction re-nudges.
+    fn plan_nudges(nudged: &mut HashSet<String>, items: &[ItemState]) -> Vec<String> {
+        let mut request: Vec<String> = Vec::new();
         for item in items {
             if item.downloaded {
                 nudged.remove(&item.rel);
             } else if nudged.insert(item.rel.clone()) {
-                crate::icloud::storage::request_download(std::path::Path::new(&item.abs));
+                request.push(item.abs.clone());
             }
         }
+        request
+    }
+
+    /// Request downloads for the placeholders [`plan_nudges`] marked.
+    fn nudge_pending(items: &[ItemState]) {
+        let request = {
+            let mut nudged = NUDGED.lock().expect("nudge lock");
+            plan_nudges(&mut nudged, items)
+        };
+        for abs in request {
+            crate::icloud::storage::request_download(std::path::Path::new(&abs));
+        }
+    }
+
+    /// The items the provider flags as carrying unresolved conflict versions.
+    fn conflicted_rels(items: &[ItemState]) -> Vec<String> {
+        items
+            .iter()
+            .filter(|item| item.conflict)
+            .map(|item| item.rel.clone())
+            .collect()
     }
 
     /// One gathering/update round. Updates apply the notification's own
@@ -369,47 +400,52 @@ mod platform {
             return;
         };
 
-        let is_update =
-            &*notification.name() == unsafe { NSMetadataQueryDidUpdateNotification };
-        let (changes, conflicts) = if is_update {
+        let is_update = &*notification.name() == unsafe { NSMetadataQueryDidUpdateNotification };
+        let round = if is_update {
             match update_delta(notification, roots) {
-                Some((upserted, removed)) => {
-                    nudge_pending(&upserted);
-                    let mut snapshot = SNAPSHOT.lock().expect("snapshot lock");
-                    let changes = apply_update_delta(&mut snapshot, &upserted, &removed);
-                    drop(snapshot);
-                    let mut nudged = NUDGED.lock().expect("nudge lock");
-                    for rel in &removed {
-                        nudged.remove(rel);
-                    }
-                    drop(nudged);
-                    let conflicts: Vec<String> = upserted
-                        .iter()
-                        .filter(|item| item.conflict)
-                        .map(|item| item.rel.clone())
-                        .collect();
-                    (changes, conflicts)
-                }
+                Some((upserted, removed)) => update_round(&upserted, &removed),
                 None => full_round(&query, roots),
             }
         } else {
             full_round(&query, roots)
         };
 
-        if emit_file_changes && !changes.is_empty() {
-            let _ = app.emit("index:changed", changes);
+        if emit_file_changes && !round.changes.is_empty() {
+            let _ = app.emit("index:changed", round.changes);
         }
-        if !conflicts.is_empty() {
-            let mut conflicts = conflicts;
+        if !round.conflicts.is_empty() {
+            let mut conflicts = round.conflicts;
             conflicts.sort();
             let _ = app.emit("icloud:conflicts", conflicts);
         }
     }
 
-    /// Snapshot the query's full results listing and diff it against the
-    /// previous snapshot — the gather round, and the fallback for an update
-    /// notification without a usable delta.
-    fn full_round(query: &NSMetadataQuery, roots: &[String]) -> (Vec<FileChange>, Vec<String>) {
+    /// Apply one update notification's delta: nudge new placeholders, fold
+    /// the delta into the snapshot, and drop nudge marks for removed items.
+    fn update_round(upserted: &[ItemState], removed: &[String]) -> Round {
+        nudge_pending(upserted);
+        let changes = {
+            let mut snapshot = SNAPSHOT.lock().expect("snapshot lock");
+            apply_update_delta(&mut snapshot, upserted, removed)
+        };
+        {
+            let mut nudged = NUDGED.lock().expect("nudge lock");
+            for rel in removed {
+                nudged.remove(rel);
+            }
+        }
+        Round {
+            changes,
+            conflicts: conflicted_rels(upserted),
+        }
+    }
+
+    /// Snapshot the query's full results listing — the gather round, and the
+    /// fallback for an update notification without a usable delta. Expressed
+    /// through [`apply_update_delta`] (every listed item as an upsert, every
+    /// snapshot row missing from the listing as a remove) so the full and
+    /// incremental paths share one set of diff rules and can never drift.
+    fn full_round(query: &NSMetadataQuery, roots: &[String]) -> Round {
         query.disableUpdates();
         let results = query.results();
         let mut items: Vec<ItemState> = Vec::new();
@@ -424,25 +460,26 @@ mod platform {
         query.enableUpdates();
 
         nudge_pending(&items);
-        let current: HashMap<String, Option<u64>> = items
-            .iter()
-            .map(|item| (item.rel.clone(), item.snapshot_state()))
-            .collect();
+        let listed: HashSet<&str> = items.iter().map(|item| item.rel.as_str()).collect();
         {
             // Placeholders that vanished from the listing can't complete —
             // drop their nudge marks along with the snapshot rows.
             let mut nudged = NUDGED.lock().expect("nudge lock");
-            nudged.retain(|rel| current.contains_key(rel));
+            nudged.retain(|rel| listed.contains(rel.as_str()));
         }
-        let conflicts: Vec<String> = items
-            .iter()
-            .filter(|item| item.conflict)
-            .map(|item| item.rel.clone())
-            .collect();
-        let mut snapshot = SNAPSHOT.lock().expect("snapshot lock");
-        let changes = snapshot_changes(&snapshot, &current);
-        *snapshot = current;
-        (changes, conflicts)
+        let changes = {
+            let mut snapshot = SNAPSHOT.lock().expect("snapshot lock");
+            let removed: Vec<String> = snapshot
+                .keys()
+                .filter(|rel| !listed.contains(rel.as_str()))
+                .cloned()
+                .collect();
+            apply_update_delta(&mut snapshot, &items, &removed)
+        };
+        Round {
+            changes,
+            conflicts: conflicted_rels(&items),
+        }
     }
 
     /// The added/changed/removed items an update notification carries in its
@@ -454,7 +491,8 @@ mod platform {
     ) -> Option<(Vec<ItemState>, Vec<String>)> {
         let info = notification.userInfo()?;
         let items_for = |key: &NSString| -> Vec<Retained<NSMetadataItem>> {
-            let value: Option<Retained<AnyObject>> = unsafe { msg_send![&*info, objectForKey: key] };
+            let value: Option<Retained<AnyObject>> =
+                unsafe { msg_send![&*info, objectForKey: key] };
             let Some(value) = value else {
                 return Vec::new();
             };
@@ -467,10 +505,9 @@ mod platform {
                 .collect()
         };
         let mut upserted: Vec<ItemState> = Vec::new();
-        for key in [
-            unsafe { NSMetadataQueryUpdateAddedItemsKey },
-            unsafe { NSMetadataQueryUpdateChangedItemsKey },
-        ] {
+        for key in [unsafe { NSMetadataQueryUpdateAddedItemsKey }, unsafe {
+            NSMetadataQueryUpdateChangedItemsKey
+        }] {
             for item in items_for(key) {
                 if let Some(state) = item_state(&item, roots) {
                     upserted.push(state);
@@ -487,11 +524,14 @@ mod platform {
         Some((upserted, removed))
     }
 
-    /// Apply an update notification's delta to the snapshot, returning the
-    /// events to emit. Same rules as [`snapshot_changes`], incrementally:
-    /// upserts only for local content that is new or mtime-changed, removes
-    /// only for items gone from the listing, and an eviction (downloaded →
-    /// placeholder) is silent in both directions.
+    /// Apply a delta to the snapshot, returning the events to emit — the one
+    /// home of the diff rules (both the incremental update path and the
+    /// full-listing round route through it, kept free of Objective-C so it is
+    /// unit testable): upserts only for content that is **local**
+    /// (downloaded) and new or mtime-changed; removes only for paths gone
+    /// from the listing entirely; and an eviction (downloaded → placeholder)
+    /// is silent in both directions — eviction is not deletion, and its bytes
+    /// aren't local to upsert — until iCloud downloads the item again.
     fn apply_update_delta(
         snapshot: &mut HashMap<String, Option<u64>>,
         upserted: &[ItemState],
@@ -514,44 +554,6 @@ mod platform {
         }
         for rel in removed {
             if snapshot.remove(rel).is_some() {
-                changes.push(FileChange {
-                    path: rel.clone(),
-                    kind: "remove".to_string(),
-                    modified_ms: None,
-                });
-            }
-        }
-        changes
-    }
-
-    /// Diff one results listing against the previous snapshot (the pure heart
-    /// of [`handle_notification`], kept free of Objective-C so it is unit
-    /// testable). Upserts only for content that is **local** (downloaded) and
-    /// new or mtime-changed; removes only for paths gone from the listing
-    /// entirely. An evicted item stays listed in a placeholder state (`None`)
-    /// and produces no event in either direction — eviction is not deletion,
-    /// and its bytes aren't local to upsert — until iCloud downloads it again.
-    fn snapshot_changes(
-        previous: &HashMap<String, Option<u64>>,
-        current: &HashMap<String, Option<u64>>,
-    ) -> Vec<FileChange> {
-        let mut changes: Vec<FileChange> = Vec::new();
-        for (rel, state) in current {
-            let Some(mtime) = state else {
-                continue; // not downloaded: bytes aren't local, never an upsert
-            };
-            if previous.get(rel).copied().flatten() != Some(*mtime) {
-                changes.push(FileChange {
-                    path: rel.clone(),
-                    kind: "upsert".to_string(),
-                    modified_ms: Some(*mtime),
-                });
-            }
-        }
-        for rel in previous.keys() {
-            // Absent from the listing entirely = deleted. (Evicted items
-            // stay listed with a non-current status — not removes.)
-            if !current.contains_key(rel) {
                 changes.push(FileChange {
                     path: rel.clone(),
                     kind: "remove".to_string(),
@@ -606,9 +608,9 @@ mod platform {
     #[cfg(test)]
     mod tests {
         use super::{
-            apply_update_delta, root_variants, snapshot_changes, tracked_note_relpath, ItemState,
+            apply_update_delta, plan_nudges, root_variants, tracked_note_relpath, ItemState,
         };
-        use std::collections::HashMap;
+        use std::collections::{HashMap, HashSet};
 
         fn state(entries: &[(&str, Option<u64>)]) -> HashMap<String, Option<u64>> {
             entries
@@ -638,14 +640,16 @@ mod platform {
 
         #[test]
         fn upserts_need_local_bytes_and_a_new_mtime() {
-            let previous = state(&[("notes/same.md", Some(1))]);
-            let current = state(&[
-                ("notes/same.md", Some(1)),    // unchanged: no event
-                ("notes/changed.md", Some(2)), // new content: upsert
-                ("notes/stub.md", None),       // listed but not downloaded: no event
-            ]);
+            // A full listing applied as a delta (how `full_round` uses it):
+            // every listed item upserts, removes come precomputed.
+            let mut snapshot = state(&[("notes/same.md", Some(1))]);
+            let listing = vec![
+                item("notes/same.md", true, Some(1)),    // unchanged: no event
+                item("notes/changed.md", true, Some(2)), // new content: upsert
+                item("notes/stub.md", false, Some(9)),   // not downloaded: no event
+            ];
             assert_eq!(
-                shapes(&snapshot_changes(&previous, &current)),
+                shapes(&apply_update_delta(&mut snapshot, &listing, &[])),
                 vec![(
                     "notes/changed.md".to_string(),
                     "upsert".to_string(),
@@ -656,23 +660,37 @@ mod platform {
 
         #[test]
         fn eviction_is_not_deletion_but_disappearance_is() {
-            let previous = state(&[("notes/evicted.md", Some(1)), ("notes/deleted.md", Some(1))]);
+            let mut snapshot =
+                state(&[("notes/evicted.md", Some(1)), ("notes/deleted.md", Some(1))]);
             // The evicted note stays listed placeholder-state; the deleted one
             // is gone from the listing entirely.
-            let current = state(&[("notes/evicted.md", None)]);
+            let listing = vec![item("notes/evicted.md", false, None)];
+            let removed = vec!["notes/deleted.md".to_string()];
             assert_eq!(
-                shapes(&snapshot_changes(&previous, &current)),
+                shapes(&apply_update_delta(&mut snapshot, &listing, &removed)),
                 vec![("notes/deleted.md".to_string(), "remove".to_string(), None)]
             );
         }
 
         #[test]
-        fn a_finished_download_upserts_the_note() {
-            let previous = state(&[("notes/a.md", None)]);
-            let current = state(&[("notes/a.md", Some(5))]);
+        fn plan_nudges_requests_each_placeholder_once() {
+            let mut nudged: HashSet<String> = HashSet::new();
+            let stub = item("notes/a.md", false, None);
+
+            // First sighting: request it. Every later round: already marked.
             assert_eq!(
-                shapes(&snapshot_changes(&previous, &current)),
-                vec![("notes/a.md".to_string(), "upsert".to_string(), Some(5))]
+                plan_nudges(&mut nudged, std::slice::from_ref(&stub)),
+                vec!["/container/Notes/notes/a.md".to_string()]
+            );
+            assert!(plan_nudges(&mut nudged, std::slice::from_ref(&stub)).is_empty());
+
+            // Completion clears the mark, so a later eviction re-nudges.
+            let downloaded = item("notes/a.md", true, Some(5));
+            assert!(plan_nudges(&mut nudged, std::slice::from_ref(&downloaded)).is_empty());
+            assert!(!nudged.contains("notes/a.md"));
+            assert_eq!(
+                plan_nudges(&mut nudged, std::slice::from_ref(&stub)),
+                vec!["/container/Notes/notes/a.md".to_string()]
             );
         }
 
@@ -697,7 +715,11 @@ mod platform {
             assert_eq!(
                 shapes(&changes),
                 vec![
-                    ("notes/changed.md".to_string(), "upsert".to_string(), Some(2)),
+                    (
+                        "notes/changed.md".to_string(),
+                        "upsert".to_string(),
+                        Some(2)
+                    ),
                     ("notes/deleted.md".to_string(), "remove".to_string(), None),
                 ]
             );

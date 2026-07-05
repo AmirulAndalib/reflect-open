@@ -99,11 +99,9 @@ pub async fn mobile_storage(app: tauri::AppHandle) -> AppResult<MobileStorage> {
 /// zero it polls [`icloud_pending_count`], which never re-requests.
 #[tauri::command]
 pub async fn icloud_download_pending(root: String) -> AppResult<u32> {
-    tauri::async_runtime::spawn_blocking(move || {
-        Ok(platform::pending_walk(Path::new(&root), true))
-    })
-    .await
-    .map_err(|err| AppError::io(err.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || Ok(platform::pending_walk(Path::new(&root), true)))
+        .await
+        .map_err(|err| AppError::io(err.to_string()))?
 }
 
 /// Command: the app-sandbox `Documents/` root alone — the cheap half of

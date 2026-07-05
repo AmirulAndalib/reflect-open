@@ -173,4 +173,55 @@ describe('createGraphIndex', () => {
     expect(unlisten).toHaveBeenCalledTimes(1)
     expect(mockWatchStop).toHaveBeenCalledTimes(1)
   })
+
+  it('refresh() coalesces stacked triggers into a single queued rerun', async () => {
+    // Resume, poll-end, and watch-failed can fire together; each used to
+    // abort the in-flight pass and start another — a full pass per trigger.
+    const settles: Array<() => void> = []
+    mockSync.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settles.push(resolve)
+        }),
+    )
+    const index = createGraphIndex()
+
+    index.refresh(5, () => false)
+    await vi.waitFor(() => expect(settles).toHaveLength(1))
+    index.refresh(5, () => false)
+    index.refresh(5, () => false)
+    index.refresh(5, () => false)
+
+    settles[0]!()
+    // The three stacked triggers fold into exactly one rerun…
+    await vi.waitFor(() => expect(settles).toHaveLength(2))
+    settles[1]!()
+    // …and nothing further runs once the queue drains.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockSync).toHaveBeenCalledTimes(2)
+  })
+
+  it('refresh() bails without a rerun when superseded', async () => {
+    const index = createGraphIndex()
+    index.refresh(5, () => true) // a newer open owns the lifecycle
+    await index.settled()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockSync).not.toHaveBeenCalled()
+  })
+
+  it('stops reporting file progress once the pass is superseded', async () => {
+    const onFileProgress = vi.fn()
+    let stale = false
+    mockSync.mockImplementation(async (options) => {
+      options.onFileProgress?.(10, 100)
+      stale = true
+      options.onFileProgress?.(20, 100) // a superseded pass must go quiet
+    })
+    const index = createGraphIndex({ onFileProgress })
+    index.sync(5, () => stale)
+    await index.stop()
+
+    expect(onFileProgress).toHaveBeenCalledTimes(1)
+    expect(onFileProgress).toHaveBeenCalledWith(10, 100)
+  })
 })

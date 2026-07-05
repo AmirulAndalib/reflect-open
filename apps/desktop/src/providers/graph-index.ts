@@ -56,6 +56,13 @@ export interface GraphIndex {
    * open supersedes this one. Call only after the graph row is committed.
    */
   sync: (generation: number, isStale: () => boolean) => void
+  /**
+   * Re-run the sync pass, coalescing concurrent triggers (resume, poll-end,
+   * watch-failed can fire together): while one refresh is settling, further
+   * calls fold into a single queued rerun instead of stacking abort/restart
+   * cycles — on a large graph each stacked cycle was a full pass.
+   */
+  refresh: (generation: number, isStale: () => boolean) => void
 }
 
 /** Stage of the index lifecycle that failed, for `onError` reporting. */
@@ -188,5 +195,33 @@ export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
     })()
   }
 
-  return { stop, settled, close, open, sync }
+  let refreshRunning = false
+  let refreshQueued = false
+
+  function refresh(generation: number, isStale: () => boolean): void {
+    if (refreshRunning) {
+      refreshQueued = true
+      return
+    }
+    refreshRunning = true
+    void (async () => {
+      try {
+        do {
+          refreshQueued = false
+          // Settle (abort) any in-flight pass first so two passes never write
+          // concurrently, then bail if a newer open superseded this graph.
+          await stop()
+          if (isStale()) {
+            return
+          }
+          sync(generation, isStale)
+          await settled()
+        } while (refreshQueued)
+      } finally {
+        refreshRunning = false
+      }
+    })()
+  }
+
+  return { stop, settled, close, open, sync, refresh }
 }
