@@ -76,6 +76,22 @@ export function MobileTasks(): ReactElement {
     [open, completed, recentlyCompleted, filters, needle, today],
   )
 
+  // The sheet edits the task's *live* row, not the snapshot taken when it
+  // opened: a mutation or reindex can rewrite the row (raw, checked) while
+  // `editingTask` is set, and acting on the stale copy could flip a marker the
+  // wrong way or trip the write-back guard needlessly. Fall back to the
+  // snapshot when the row left the lists — the raw-match guard then refuses
+  // any write that no longer applies.
+  const liveEditingTask = useMemo(() => {
+    if (editingTask === null) {
+      return null
+    }
+    const key = taskKey(editingTask)
+    return (
+      groups.flatMap((group) => group.tasks).find((row) => taskKey(row) === key) ?? editingTask
+    )
+  }, [groups, editingTask])
+
   const editTask = (task: OpenTask): void => {
     setEditingTask(task)
     setSheetOpen(true)
@@ -160,10 +176,10 @@ export function MobileTasks(): ReactElement {
           ))}
         </div>
       )}
-      {editingTask !== null ? (
+      {liveEditingTask !== null ? (
         <MobileTaskEditSheet
-          key={taskKey(editingTask)}
-          task={editingTask}
+          key={taskKey(liveEditingTask)}
+          task={liveEditingTask}
           open={sheetOpen}
           onOpenChange={setSheetOpen}
           today={today}

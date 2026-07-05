@@ -20,16 +20,16 @@ export function visibleGroups(groups: TaskGroup[], filters: TaskFilters): TaskGr
 
 export interface TaskListSources {
   /** The open-tasks query data (`undefined` while loading). */
-  open: OpenTask[] | undefined
+  readonly open: OpenTask[] | undefined
   /** The completed-tasks query data — only read when `filters.archived` is on. */
-  completed: OpenTask[] | undefined
+  readonly completed: OpenTask[] | undefined
   /** This session's completed tasks, still showing struck until archived. */
-  recentlyCompleted: readonly OpenTask[]
-  filters: TaskFilters
+  readonly recentlyCompleted: readonly OpenTask[]
+  readonly filters: TaskFilters
   /** The search text, already trimmed and lowercased (empty = no filter). */
-  needle: string
+  readonly needle: string
   /** Today's ISO `YYYY-MM-DD` date. */
-  today: string
+  readonly today: string
 }
 
 /**
