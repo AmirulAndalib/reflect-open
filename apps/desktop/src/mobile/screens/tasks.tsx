@@ -49,6 +49,9 @@ export function MobileTasks(): ReactElement {
   // content; `sheetOpen` alone drives visibility.
   const [editingTask, setEditingTask] = useState<OpenTask | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+  // Whether the current sheet visit should open with the editor focused
+  // (keyboard up) — set per visit: true for "+"-added tasks, false for row taps.
+  const [autoFocusEditor, setAutoFocusEditor] = useState(false)
   const enabled = hasBridge() && graph !== null
 
   const { data: open, isError: openFailed } = useQuery({
@@ -95,18 +98,20 @@ export function MobileTasks(): ReactElement {
     )
   }, [groups, editingTask])
 
-  const editTask = (task: OpenTask): void => {
+  const editTask = (task: OpenTask, options?: { autoFocus?: boolean }): void => {
+    setAutoFocusEditor(options?.autoFocus === true)
     setEditingTask(task)
     setSheetOpen(true)
   }
 
   // The group headers' "+" (V1): drop any search filter so the new row is
-  // visible, write it, then open its quick-edit sheet to type into.
+  // visible, write it, then open its quick-edit sheet with the editor focused
+  // so typing starts immediately.
   const onAdd = (target: InsertTaskTarget): void => {
     setQuery('')
     void actions.insert(target).then((created) => {
       if (created !== null) {
-        editTask(created)
+        editTask(created, { autoFocus: true })
       }
     })
   }
@@ -191,6 +196,7 @@ export function MobileTasks(): ReactElement {
           today={today}
           actions={actions}
           onOpenNote={(path) => navigate(routeForPath(path))}
+          autoFocusEditor={autoFocusEditor}
         />
       ) : null}
       <TaskFiltersDrawer

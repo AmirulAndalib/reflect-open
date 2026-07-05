@@ -1,4 +1,11 @@
-import { useState, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 import {
   ArrowRight,
   CalendarDays,
@@ -9,9 +16,16 @@ import {
   Undo2,
   X,
 } from 'lucide-react'
+import { Priority } from '@meowdown/core'
+import { useKeymap } from '@meowdown/react'
 import type { OpenTask } from '@reflect/core'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
+import { markModeFromSyntax } from '@/editor/mark-mode'
+import { NoteEditor, type NoteEditorHandle } from '@/editor/note-editor'
+import { useEditorAutocomplete } from '@/editor/use-editor-autocomplete'
+import { useTagNavigation } from '@/editor/use-tag-navigation'
+import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
 import { addDaysIso, formatDayLabel } from '@/lib/dates'
 import type { TaskActions } from '@/lib/tasks/use-task-actions'
 import { cn } from '@/lib/utils'
@@ -19,6 +33,7 @@ import { hapticImpactLight } from '@/mobile/haptics'
 import { draftDueDate, withDraftDueDate } from '@/mobile/task-draft'
 import { TaskScheduleGrid } from '@/mobile/task-schedule-grid'
 import { useTaskSheetFinalizer } from '@/mobile/use-task-sheet-finalizer'
+import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
 
 interface MobileTaskEditSheetProps {
@@ -33,18 +48,26 @@ interface MobileTaskEditSheetProps {
   actions: TaskActions
   /** Navigate to the task's source note (the sheet commits the draft first). */
   onOpenNote: (notePath: string) => void
+  /**
+   * Focus the editor (raising the keyboard) as soon as the sheet opens — the
+   * "+"-add flow, where the task is brand new and typing is the next step.
+   * Row taps leave focus alone so the action list stays visible.
+   */
+  autoFocusEditor?: boolean
 }
 
 /**
  * The quick-edit bottom sheet (V1 mobile's edit modal over Plan 18 data): edit
  * a task's text, schedule it, complete it, or jump to its source note — without
- * opening the note. The draft is markdown (links and tags intact) and due-date
- * changes edit the draft's `[[YYYY-MM-DD]]` link in place, so everything lands
- * as **one** write when the sheet closes: dismissing commits a changed draft,
- * an emptied draft deletes the task, and an untouched draft writes nothing —
- * the exit rules live in {@link useTaskSheetFinalizer}. The action buttons
- * route through the same {@link TaskActions} the desktop view uses —
- * save-then-act, never a racing second write path.
+ * opening the note. The text is desktop's inline task editor surface — the real
+ * {@link NoteEditor}, with meowdown's `[[`/`#` menus and clickable links — over
+ * the same markdown draft, and due-date changes edit the draft's
+ * `[[YYYY-MM-DD]]` link in place, so everything lands as **one** write when the
+ * sheet closes: dismissing commits a changed draft, an emptied draft deletes
+ * the task, and an untouched draft writes nothing — the exit rules live in
+ * {@link useTaskSheetFinalizer}. The action buttons route through the same
+ * {@link TaskActions} the desktop view uses — save-then-act, never a racing
+ * second write path.
  */
 export function MobileTaskEditSheet({
   task,
@@ -53,9 +76,18 @@ export function MobileTaskEditSheet({
   today,
   actions,
   onOpenNote,
+  autoFocusEditor = false,
 }: MobileTaskEditSheetProps): ReactElement {
+  const { graph } = useGraph()
   const { settings } = useSettings()
+  const generation = graph?.generation ?? null
+  const navigateWikiLink = useWikiLinkNavigation(generation)
+  const navigateTag = useTagNavigation()
+  const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()
   const [showCalendar, setShowCalendar] = useState(false)
+  // The editor is uncontrolled; a reopen reseeds the draft (the row may have
+  // been rewritten by an action), so remount it via this seed to re-read it.
+  const [editorSeed, setEditorSeed] = useState(0)
   // The commit/cancel/delete rules — baseline frozen at open, reseed on
   // reopen, dismissal vs navigate vs unmount — live in the finalizer.
   const { draft, setDraft, resolve, handleOpenChange, closeHandled, closeNavigate } =
@@ -64,9 +96,34 @@ export function MobileTaskEditSheet({
       open,
       onOpenChange,
       actions,
-      onReseed: () => setShowCalendar(false),
+      onReseed: () => {
+        setShowCalendar(false)
+        setEditorSeed((seed) => seed + 1)
+      },
     })
   const dueDate = draftDueDate(draft)
+
+  const editorRef = useRef<NoteEditorHandle | null>(null)
+  // Stable while the editor is mounted: the flag only changes between visits
+  // (the screen sets it before opening), never mid-edit, so the ref callback
+  // can depend on it without re-attach churn.
+  const handleEditorRef = useCallback(
+    (handle: NoteEditorHandle | null) => {
+      editorRef.current = handle
+      if (handle !== null && autoFocusEditor) {
+        handle.focus()
+      }
+    },
+    [autoFocusEditor],
+  )
+
+  // Enter finishes the visit exactly like a dismissal (commit / delete-empty),
+  // read through a latest-closure ref so the keymap binds once.
+  const finishRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    finishRef.current = () => handleOpenChange(false)
+  })
+  const finishEdit = useCallback(() => finishRef.current(), [])
 
   const complete = (): void => {
     hapticImpactLight()
@@ -102,32 +159,70 @@ export function MobileTaskEditSheet({
     onOpenNote(task.notePath)
   }
 
+  // A link tapped *inside* the draft navigates like "Open note": commit the
+  // draft first, then resolve the target (the shared editor hooks).
+  const openWikiLink = (target: string): void => {
+    closeNavigate()
+    navigateWikiLink(target)
+  }
+
+  const openTag = (tag: string): void => {
+    closeNavigate()
+    navigateTag(tag)
+  }
+
   const remove = (): void => {
     actions.remove([task])
     closeHandled()
   }
 
   const schedule = (isoDate: string | null): void => {
-    setDraft((current) => withDraftDueDate(current, isoDate))
+    const next = withDraftDueDate(draft, isoDate)
+    setDraft(next)
+    // setMarkdown is silent (no onChange echo), so the state write above is
+    // the one source the finalizer resolves against.
+    editorRef.current?.setMarkdown(next)
     setShowCalendar(false)
   }
 
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
-      <DrawerContent aria-label="Edit task">
+      <DrawerContent
+        aria-label="Edit task"
+        // On the "+"-add path the editor takes focus instead of the sheet
+        // container, so typing can start immediately.
+        onOpenAutoFocus={(event) => {
+          if (autoFocusEditor) {
+            event.preventDefault()
+            editorRef.current?.focus()
+          }
+        }}
+      >
         <DrawerTitle className="sr-only">Edit task</DrawerTitle>
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          rows={2}
-          aria-label="Task text"
-          // Touch-surface hygiene, like the note editor: no autocap/autocorrect
-          // rewriting markdown syntax under the user.
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          className="w-full resize-none rounded-md border border-border bg-surface px-3 py-2 text-base leading-6 text-text outline-none focus-visible:ring-1 focus-visible:ring-accent"
-        />
+        {/* vaul must not turn a drag inside the editor (text selection) into a
+            sheet drag. */}
+        <div
+          data-vaul-no-drag
+          className="rounded-md border border-border bg-surface px-3 py-2 focus-within:ring-1 focus-within:ring-accent"
+        >
+          <NoteEditor
+            key={editorSeed}
+            initialContent={draft}
+            onChange={setDraft}
+            markMode={markModeFromSyntax(settings.editorMarkdownSyntax)}
+            spellCheck={settings.editorSpellCheck}
+            // A one-line editor has nothing to reorder, so keep the gutter grip off.
+            blockHandle={false}
+            onWikiLinkClick={openWikiLink}
+            onTagClick={openTag}
+            onWikilinkSearch={onWikilinkSearch}
+            onTagSearch={onTagSearch}
+            className="reflect-task-editor min-h-12 text-base leading-6"
+            handleRef={handleEditorRef}
+          >
+            <TaskSheetKeymap onDone={finishEdit} />
+          </NoteEditor>
+        </div>
         <div className="flex flex-wrap items-center gap-1.5" aria-label="Schedule">
           <ScheduleChip
             label="Today"
@@ -205,6 +300,30 @@ export function MobileTaskEditSheet({
       </DrawerContent>
     </Drawer>
   )
+}
+
+/**
+ * Enter (and Shift-Enter) finishes the edit — a task is one line, so a new
+ * block is never the right outcome. Bound at high priority inside the editor's
+ * ProseKit context, but the `[[`/`#` menus still claim Enter first while open,
+ * so accepting a suggestion never closes the sheet.
+ */
+function TaskSheetKeymap({ onDone }: { onDone: () => void }): null {
+  const keymap = useMemo(
+    () => ({
+      Enter: () => {
+        onDone()
+        return true
+      },
+      'Shift-Enter': () => {
+        onDone()
+        return true
+      },
+    }),
+    [onDone],
+  )
+  useKeymap(keymap, { priority: Priority.high })
+  return null
 }
 
 function ScheduleChip({

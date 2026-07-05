@@ -13,24 +13,34 @@ import { MobileTasks } from './tasks'
  * groups and guarded write-backs with a touch surface — checkbox toggles,
  * the quick-edit sheet (edit / schedule / complete / convert / open note /
  * delete), the filter sheet, and "+" add. The core getters and the note-task
- * write layer are mocked, like the desktop screen's tests; grouping/merge
+ * write layer are mocked, like the desktop screen's tests; the sheet's markdown
+ * editor is a textarea stand-in (jsdom can't mount ProseKit); grouping/merge
  * rules are unit-tested in task-visibility.test.ts.
  */
 
 const getOpenTasks = vi.hoisted(() => vi.fn())
 const getCompletedTasks = vi.hoisted(() => vi.fn())
+const resolveWikiTarget = vi.hoisted(() => vi.fn())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   getOpenTasks,
   getCompletedTasks,
+  resolveWikiTarget,
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
 }))
 vi.mock('@/lib/use-today', () => ({ useToday: () => '2026-06-14' }))
 vi.mock('@/providers/settings-provider', () => ({
-  useSettings: () => ({ settings: { dateFormat: 'mdy', weekStartDay: 'monday' } }),
+  useSettings: () => ({
+    settings: {
+      dateFormat: 'mdy',
+      weekStartDay: 'monday',
+      editorMarkdownSyntax: 'hide',
+      editorSpellCheck: false,
+    },
+  }),
 }))
 // TaskText renders through meowdown's MarkdownView, which jsdom can't mount.
 vi.mock('@/editor/markdown-preview', () => ({
@@ -40,6 +50,79 @@ vi.mock('@/editor/markdown-preview', () => ({
     </span>
   ),
 }))
+// The autocomplete hook reads the contacts authorization over IPC; the menus
+// themselves live inside meowdown, which is stubbed out below anyway.
+vi.mock('@/editor/use-editor-autocomplete', () => ({
+  useEditorAutocomplete: () => ({
+    onWikilinkSearch: async () => [],
+    onTagSearch: async () => [],
+  }),
+}))
+
+const editorProbe = vi.hoisted(() => ({ focusCalls: 0 }))
+
+// The sheet hosts the real markdown editor (desktop's inline task-editor
+// surface), which mounts ProseKit — jsdom can't render it. This stand-in is a
+// textarea over the same NoteEditor contract: uncontrolled seed from
+// `initialContent`, `onChange` with the markdown, a **silent** `setMarkdown`
+// (no onChange echo, matching meowdown), plus probes for focus and wiki-link
+// clicks. Children (the Enter keymap) need the ProseKit context, so they are
+// not rendered.
+vi.mock('@/editor/note-editor', async () => {
+  const { useEffect, useRef } = await import('react')
+  return {
+    NoteEditor: ({
+      initialContent,
+      onChange,
+      onWikiLinkClick,
+      handleRef,
+    }: {
+      initialContent: string
+      onChange?: (markdown: string) => void
+      onWikiLinkClick?: (target: string) => void
+      handleRef?: (handle: import('@/editor/note-editor').NoteEditorHandle | null) => void
+    }) => {
+      const areaRef = useRef<HTMLTextAreaElement | null>(null)
+      useEffect(() => {
+        handleRef?.({
+          getMarkdown: () => areaRef.current?.value ?? '',
+          setMarkdown: (markdown) => {
+            if (areaRef.current !== null) {
+              areaRef.current.value = markdown
+            }
+          },
+          insertMarkdown: () => {},
+          focus: () => {
+            editorProbe.focusCalls += 1
+          },
+          setSelection: () => {},
+          getSelectedText: () => '',
+          openSelectionMenu: () => {},
+          startPendingReplacement: () => false,
+          appendPendingReplacementText: () => {},
+          acceptPendingReplacement: () => {},
+          discardPendingReplacement: () => {},
+        })
+        return () => handleRef?.(null)
+      }, [handleRef])
+      return (
+        <>
+          <textarea
+            ref={areaRef}
+            aria-label="Task text"
+            defaultValue={initialContent}
+            onChange={(event) => onChange?.(event.target.value)}
+          />
+          {onWikiLinkClick !== undefined ? (
+            <button type="button" onClick={() => onWikiLinkClick('Other Note')}>
+              fake-wikilink
+            </button>
+          ) : null}
+        </>
+      )
+    },
+  }
+})
 
 const toggleTask = vi.hoisted(() => vi.fn())
 const deleteTask = vi.hoisted(() => vi.fn())
@@ -104,7 +187,7 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
   }
 }
 
-/** Narrow a queried element to the sheet's textarea so `.value` typechecks. */
+/** Narrow a queried element to the editor stub's textarea so `.value` typechecks. */
 function asTextArea(element: HTMLElement): HTMLTextAreaElement {
   if (!(element instanceof HTMLTextAreaElement)) {
     throw new Error('expected a textarea')
@@ -143,6 +226,9 @@ beforeEach(() => {
   convertTaskToBullet.mockResolvedValue(undefined)
   startOperation.mockClear()
   fail.mockReset()
+  resolveWikiTarget.mockReset()
+  resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/other.md' })
+  editorProbe.focusCalls = 0
   resetRecentlyCompleted()
 })
 
@@ -411,6 +497,55 @@ describe('MobileTasks', () => {
     await user.click(view.getByRole('button', { name: 'dismiss-drawer' }))
     expect(editTask).toHaveBeenCalledTimes(1)
     expect(editTask.mock.calls[0]?.[1]).toBe('new thing')
+    view.unmount()
+  })
+
+  it('focuses the editor when "+" adds a new task', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ text: 'jotted today', dailyDate: '2026-06-14', notePath: 'daily/2026-06-14.md' }),
+    ])
+    const user = userEvent.setup()
+    const view = renderScreen()
+
+    await user.click(await view.findByRole('button', { name: 'Add a task to today' }))
+    await view.findByRole('textbox', { name: 'Task text' })
+
+    // The new task is empty — typing is the next step, so the keyboard rises.
+    await waitFor(() => expect(editorProbe.focusCalls).toBeGreaterThan(0))
+    view.unmount()
+  })
+
+  it('leaves focus alone when a row tap opens the sheet', async () => {
+    getOpenTasks.mockResolvedValue([task({ text: 'buy milk' })])
+    const user = userEvent.setup()
+    const view = renderScreen()
+
+    await user.click(await view.findByRole('button', { name: 'Edit: buy milk' }))
+    view.getByRole('textbox', { name: 'Task text' })
+
+    // A row tap is usually after an action button — the keyboard would bury them.
+    expect(editorProbe.focusCalls).toBe(0)
+    view.unmount()
+  })
+
+  it('commits the draft before a wiki link inside it navigates', async () => {
+    getOpenTasks.mockResolvedValue([task({ text: 'buy milk' })])
+    const user = userEvent.setup()
+    const view = renderScreen()
+
+    await user.click(await view.findByRole('button', { name: 'Edit: buy milk' }))
+    const input = view.getByRole('textbox', { name: 'Task text' })
+    await user.clear(input)
+    await user.type(input, 'buy oat milk')
+    await user.click(view.getByRole('button', { name: 'fake-wikilink' }))
+
+    // Commit-then-navigate, like "Open note": the edit lands exactly once, and
+    // the resolved target opens.
+    expect(editTask).toHaveBeenCalledTimes(1)
+    expect(editTask.mock.calls[0]?.[1]).toBe('buy oat milk')
+    await waitFor(() =>
+      expect(view.getByTestId('route').textContent).toContain('notes/other.md'),
+    )
     view.unmount()
   })
 
