@@ -2,7 +2,6 @@ import { useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { errorMessage, hasBridge, icloudAdoptGraph, icloudStatus } from '@reflect/core'
 import { SettingsField } from '@/components/settings/field'
-import { SettingsSection } from '@/components/settings/section'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -21,8 +20,8 @@ import { useGraph } from '@/providers/graph-provider'
 import { useSync } from '@/providers/sync-provider'
 
 /**
- * Settings → iCloud sync (Plan 21 Phase 1, the desktop leg): see whether the
- * graph syncs through iCloud Drive, and move a local graph into the
+ * Settings → Sync → iCloud Drive (Plan 21 Phase 1, the desktop leg): see
+ * whether the graph syncs through iCloud Drive, and move a local graph into the
  * container. The move copies (count+byte verified), then disconnects the
  * Git backup remote (iCloud sync and a Git remote are mutually exclusive per
  * graph — two merge machines over the same files would fight; the iCloud
@@ -34,7 +33,7 @@ import { useSync } from '@/providers/sync-provider'
  * macOS only — Windows/Linux have no iCloud Drive, and mobile chooses its
  * storage in onboarding.
  */
-export function IcloudSection(): ReactElement | null {
+export function IcloudSettingsField(): ReactElement | null {
   const { graph, openRecent } = useGraph()
   const { backup, disconnectGraph } = useSync()
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -95,7 +94,7 @@ export function IcloudSection(): ReactElement | null {
   }
 
   return (
-    <SettingsSection id="icloud">
+    <>
       <SettingsField
         legend="iCloud Drive"
         description={
@@ -141,6 +140,6 @@ export function IcloudSection(): ReactElement | null {
         )}
         {error !== null ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
       </SettingsField>
-    </SettingsSection>
+    </>
   )
 }

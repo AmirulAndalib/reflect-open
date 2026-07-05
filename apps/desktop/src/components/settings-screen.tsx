@@ -5,14 +5,13 @@ import { AiPromptsSection } from './settings/ai-prompts-section'
 import { AiProvidersSection } from './settings/ai-providers-section'
 import { AllNotesSection } from './settings/all-notes-section'
 import { AppearanceSection } from './settings/appearance-section'
-import { BackupSection } from './settings/backup-section'
 import { DateTimeSection } from './settings/date-time-section'
 import { DestructiveSection } from './settings/destructive-section'
 import { EditorSection } from './settings/editor-section'
-import { IcloudSection } from './settings/icloud-section'
 import { ImportSection } from './settings/import-section'
 import { IntegrationsSection } from './settings/integrations-section'
 import { SearchSection } from './settings/search-section'
+import { SyncSection } from './settings/sync-section'
 import { TemplatesSection } from './settings/templates-section'
 
 /**
@@ -35,9 +34,8 @@ export function SettingsScreen(): ReactElement {
         <AiPromptsSection />
         <AgentsSection />
         <IntegrationsSection />
-        <IcloudSection />
+        <SyncSection />
         <ImportSection />
-        <BackupSection />
         <AboutSection />
         <DestructiveSection />
       </div>

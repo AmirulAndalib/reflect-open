@@ -5,7 +5,6 @@ import { getConflictedNotes, getDuplicateNoteIds, hasBridge } from '@reflect/cor
 import { ExternalLink } from 'lucide-react'
 import { ConnectGithubDialog } from '@/components/settings/connect-github-dialog'
 import { SettingsField } from '@/components/settings/field'
-import { SettingsSection } from '@/components/settings/section'
 import { SyncForkNotice } from '@/components/settings/sync-fork-notice'
 import { Button } from '@/components/ui/button'
 import {
@@ -47,12 +46,12 @@ function githubRepoBrowserUrl(repo: NonNullable<Extract<BackupState, { phase: 'c
 }
 
 /**
- * Settings → Backup: connect a GitHub repository, see the current backup
- * state in product language, back up on demand, and disconnect. Conflicted
- * notes ("needs review") surface here with a count; each conflicted note
- * also shows its own banner when opened.
+ * Settings → Sync → Backup: connect a GitHub repository, see the current
+ * backup state in product language, back up on demand, and disconnect.
+ * Conflicted notes ("needs review") surface here with a count; each conflicted
+ * note also shows its own banner when opened.
  */
-export function BackupSection(): ReactElement {
+export function BackupSettingsField(): ReactElement {
   const { backup, disconnectGraph, signOut, backUpNow } = useSync()
   const { graph } = useGraph()
   const [connectOpen, setConnectOpen] = useState(false)
@@ -121,7 +120,7 @@ export function BackupSection(): ReactElement {
   }
 
   return (
-    <SettingsSection id="backup">
+    <>
       <SettingsField
         legend={genericRemote ? 'Backup' : 'GitHub backup'}
         description={
@@ -246,6 +245,6 @@ export function BackupSection(): ReactElement {
           onClose={() => setConnectOpen(false)}
         />
       ) : null}
-    </SettingsSection>
+    </>
   )
 }

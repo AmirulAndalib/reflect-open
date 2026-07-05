@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BackupState } from '@/lib/backup-controller'
-import { BackupSection } from './backup-section'
+import { BackupSettingsField } from './backup-section'
 
 // The section's GitHub-vs-generic split (Plan 16): a hand-wired remote must
 // render host-neutrally, and its auth errors must surface the engine's
@@ -28,7 +28,7 @@ function renderSection(backup: BackupState): void {
   sync.backup = backup
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <BackupSection />
+      <BackupSettingsField />
     </QueryClientProvider>,
   )
 }
@@ -39,7 +39,7 @@ const AUTH_ERROR = {
   message: 'the SSH agent offered no key this host accepts — `ssh-add` the right key',
 } as const
 
-describe('BackupSection', () => {
+describe('BackupSettingsField', () => {
   it('renders a generic remote host-neutrally with the engine’s own auth message', async () => {
     renderSection({
       phase: 'connected',
