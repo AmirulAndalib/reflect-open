@@ -29,7 +29,11 @@ const MANAGED_SUFFIX: &str = " -->";
 
 /// The CLI sidecar, staged beside the app binary by the Tauri bundler (and
 /// beside the dev binary by `tauri dev`) — same layout as the capture host.
-const CLI_BINARY: &str = if cfg!(windows) { "reflect.exe" } else { "reflect" };
+const CLI_BINARY: &str = if cfg!(windows) {
+    "reflect.exe"
+} else {
+    "reflect"
+};
 
 /// Where the installed skill file stands relative to what this app would
 /// write today.
@@ -279,7 +283,11 @@ mod tests {
     }
 
     fn test_context(dir: &Path, graph: &Path) -> SkillContext {
-        context_for(graph, dir, PathBuf::from("/Applications/Reflect.app/Contents/MacOS/reflect"))
+        context_for(
+            graph,
+            dir,
+            PathBuf::from("/Applications/Reflect.app/Contents/MacOS/reflect"),
+        )
     }
 
     #[test]
