@@ -8,8 +8,10 @@ import { RouteContent } from '@/components/route-content'
  * in the main window.
  */
 export function NoteWindowContent(): ReactElement {
+  // Mirrors AppShell's main region (bg-surface text-text): without it the
+  // window shows the webview's default background.
   return (
-    <div className="h-screen w-screen">
+    <div className="h-screen w-screen overflow-hidden bg-surface text-text">
       <RouteContent />
     </div>
   )
