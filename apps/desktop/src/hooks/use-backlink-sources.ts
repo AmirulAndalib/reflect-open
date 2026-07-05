@@ -7,7 +7,7 @@ import { useGraph } from '@/providers/graph-provider'
 
 /** What a backlinks surface needs to render: grouped rows plus the states. */
 export interface BacklinkSources {
-  /** Inbound references grouped by source note, in the query's title order. */
+  /** Inbound references grouped by source note, newest edited source first. */
   groups: BacklinkSource[]
   /** Total inbound references (the "(N)" in the section header). */
   count: number

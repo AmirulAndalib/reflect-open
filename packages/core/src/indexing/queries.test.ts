@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '../ipc/bridge'
 import {
   dailyDatesInRange,
+  getBacklinksWithContext,
   getDuplicateNoteIds,
   getNoteIdsByPath,
   getOpenTasks,
@@ -245,5 +246,24 @@ describe('getOpenTasks', () => {
     const [, args] = mockInvoke.mock.calls[0]!
     expect(String(args['sql'])).toContain('"notes"."kind" != ?')
     expect(args['params']).toContain('template')
+  })
+})
+
+describe('getBacklinksWithContext', () => {
+  it('queries incoming backlinks newest source first, then document order', async () => {
+    mockInvoke.mockResolvedValue([])
+
+    await getBacklinksWithContext('notes/target.md')
+
+    const [, args] = mockInvoke.mock.calls[0]!
+    const sql = String(args['sql']).toLowerCase()
+    const orderBy = sql.slice(sql.indexOf('order by'))
+    const mtimeOrder = orderBy.indexOf('"notes"."mtime" desc')
+    const sourcePathOrder = orderBy.indexOf('"backlinks"."source_path"')
+    const posOrder = orderBy.indexOf('"backlinks"."pos_from"')
+
+    expect(mtimeOrder).toBeGreaterThanOrEqual(0)
+    expect(sourcePathOrder).toBeGreaterThan(mtimeOrder)
+    expect(posOrder).toBeGreaterThan(sourcePathOrder)
   })
 })

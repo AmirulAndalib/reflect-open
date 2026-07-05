@@ -36,9 +36,12 @@ export type Backlink = Pick<
 export function getBacklinks(path: string): Promise<Backlink[]> {
   return db
     .selectFrom('backlinks')
+    .innerJoin('notes', 'notes.path', 'backlinks.sourcePath')
     .where('targetPath', '=', path)
     .select(['sourcePath', 'targetRaw', 'alias', 'posFrom', 'posTo'])
+    .orderBy('notes.mtime', 'desc')
     .orderBy('sourcePath')
+    .orderBy('posFrom')
     .execute()
 }
 
@@ -69,7 +72,7 @@ export async function getBacklinksWithContext(path: string): Promise<BacklinkCon
     // The view's generated types are nullable (SQLite views lose NOT NULL),
     // but these columns come from NOT NULL `links` columns via an inner join.
     .$narrowType<{ sourcePath: string; posFrom: number }>()
-    .orderBy('notes.title')
+    .orderBy('notes.mtime', 'desc')
     .orderBy('backlinks.sourcePath')
     .orderBy('backlinks.posFrom')
     .execute()
