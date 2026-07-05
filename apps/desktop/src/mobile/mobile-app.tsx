@@ -8,6 +8,7 @@ import { useICloudRefresh } from '@/mobile/use-icloud-refresh'
 import { useKeyboardHeightVar } from '@/mobile/use-keyboard'
 import { useTaskCheckboxHaptics } from '@/mobile/use-task-haptics'
 import { CaptureProvider } from '@/providers/capture-provider'
+import { ChatProvider } from '@/providers/chat-provider'
 import { useGraph } from '@/providers/graph-provider'
 import { SyncProvider } from '@/providers/sync-provider'
 import { RouterProvider } from '@/routing/router'
@@ -25,8 +26,20 @@ import { RouterProvider } from '@/routing/router'
  * mounts here so it covers every screen's editors.
  */
 export function MobileApp(): ReactElement {
-  const { status, graph, error, needsOnboarding } = useGraph()
+  const { status, graph, error, needsOnboarding, indexGeneration } = useGraph()
   useKeyboardHeightVar()
+
+  // TEMPORARY (Plan 23 spike): dev-build platform probes for the chat port;
+  // delete with `spike-plan23.ts` once the verdicts are recorded.
+  useEffect(() => {
+    if (!import.meta.env.DEV || status !== 'ready' || indexGeneration === null) {
+      return
+    }
+    void import('@/mobile/spike-plan23').then(({ runPlan23Spike }) =>
+      runPlan23Spike(indexGeneration),
+    )
+  }, [status, indexGeneration])
+
   useTaskCheckboxHaptics()
   // iCloud graphs have an out-of-process writer (the OS syncing files in):
   // nudge downloads + re-reconcile on resume. Inert for local/git graphs.
@@ -52,8 +65,14 @@ export function MobileApp(): ReactElement {
             {/* Link capture (Plan 11, iOS share extension): relay the App
                 Group inbox + drain on launch and on every resume. */}
             <CaptureProvider graph={graph}>
-              <MobileShell />
-              <MobileStatusLayer />
+              {/* Same chat session engine as desktop (Plan 23): the
+                  conversation and composer draft live here so the Chat tab
+                  survives tab switches; semantic search is forced off on
+                  this surface inside the provider. */}
+              <ChatProvider graph={graph}>
+                <MobileShell />
+                <MobileStatusLayer />
+              </ChatProvider>
             </CaptureProvider>
           </SyncProvider>
         </RouterProvider>

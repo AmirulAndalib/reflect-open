@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactElement } from 'react'
+import { useMemo, type ReactElement } from 'react'
 import { aiProvider, type AiProviderConfig, type ChatModelOption } from '@reflect/core'
 import { ArrowUp, Plus, Square, X } from 'lucide-react'
 import { ShortcutKeys } from '@/components/shortcut-keys'
@@ -27,7 +27,7 @@ import { ChatHistoryMenu } from './chat-history-menu'
 
 const NEW_CHAT_BINDING = keybindingFor('chat.new')
 
-interface ModelOptionGroup {
+export interface ModelOptionGroup {
   configId: string
   /** Provider label, key-hint-qualified when the provider is configured twice. */
   label: string
@@ -38,9 +38,10 @@ interface ModelOptionGroup {
 /**
  * The flat option list regrouped per configured provider for rendering
  * (options arrive consecutively per entry). Values are list indexes — model
- * ids alone can collide across providers.
+ * ids alone can collide across providers. Shared with the mobile model
+ * drawer, which renders the same groups as sheet rows.
  */
-function groupModelOptions(
+export function groupModelOptions(
   options: ChatModelOption[],
   providers: AiProviderConfig[],
 ): ModelOptionGroup[] {
@@ -82,6 +83,8 @@ export function ChatInput(): ReactElement {
     modelOptions,
     activeModel,
     selectModel,
+    draft,
+    setDraft,
     attachments,
     attachImages,
     removeAttachment,
@@ -89,9 +92,8 @@ export function ChatInput(): ReactElement {
     stop,
     newChat,
   } = useChatSession()
-  const [text, setText] = useState('')
   const streaming = status === 'streaming'
-  const empty = text.trim() === '' && attachments.length === 0
+  const empty = draft.trim() === '' && attachments.length === 0
 
   const groups = useMemo(
     () => groupModelOptions(modelOptions, providers),
@@ -104,12 +106,14 @@ export function ChatInput(): ReactElement {
       option.modelId === activeModel.model,
   )
 
+  // The draft lives in the provider (it must survive the screen unmounting —
+  // on mobile every tab switch does that), and a send that goes through
+  // clears it there.
   const submit = () => {
     if (streaming || empty) {
       return
     }
-    void send(text)
-    setText('')
+    void send(draft)
   }
 
   return (
@@ -141,8 +145,8 @@ export function ChatInput(): ReactElement {
           </AttachmentGroup>
         ) : null}
         <textarea
-          value={text}
-          onChange={(event) => setText(event.target.value)}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault()
