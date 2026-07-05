@@ -132,7 +132,7 @@ export function MobileGraphs(): ReactElement {
           </SettingsGroup>
 
           {localRoot !== null ? (
-            <SettingsGroup footer="Notes stay on this device.">
+            <SettingsGroup footer="Notes stay on this device. Sync with GitHub from Settings.">
               <SettingsSelectRow
                 label="This device"
                 selected={graph?.root === localRoot}

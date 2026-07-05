@@ -27,9 +27,9 @@ interface GithubAuthStepProps {
 const FIELD_LABEL_CLASS = 'text-xs font-medium text-text-secondary'
 
 /**
- * The shared "sign in to GitHub" step (connect + restore dialogs): the guided
- * device flow when the GitHub App is registered, fine-grained-PAT entry
- * otherwise. Every path ends in a `GET /user` round-trip
+ * The shared "sign in to GitHub" step (desktop's connect dialog and the
+ * mobile connect drawer): the guided device flow when the GitHub App is
+ * registered, fine-grained-PAT entry otherwise. Every path ends in a `GET /user` round-trip
  * ({@link fetchSignedInUser}), so the step only completes with a credential
  * GitHub actually accepts — and the caller learns *who* signed in, which the
  * wizard uses to connect `owner/name` without ever asking for the owner.

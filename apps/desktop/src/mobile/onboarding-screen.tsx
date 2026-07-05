@@ -83,7 +83,9 @@ export function MobileOnboardingScreen(): ReactElement {
               </div>
               <div className="min-w-0 flex-1 space-y-1">
                 <h2 className="text-sm font-semibold">This device</h2>
-                <p className="text-xs text-text-muted">Stored locally in Reflect on this device.</p>
+                <p className="text-xs text-text-muted">
+                  Stored locally in Reflect on this device. Sync with GitHub later from Settings.
+                </p>
               </div>
             </div>
             <Button

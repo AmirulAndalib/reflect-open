@@ -9,6 +9,7 @@ import {
 } from '@reflect/core'
 import { useAppVersion } from '@/hooks/use-app-version'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
+import { ConnectGithubDrawer } from '@/mobile/connect-github-drawer'
 import { MobileScreenHeader } from '@/mobile/screen-header'
 import {
   SettingsActionRow,
@@ -42,8 +43,9 @@ const TEXT_SIZE_OPTIONS: readonly SegmentedOption<EditorTextSize>[] = [
  * iOS inset-grouped idiom, replacing the old bottom-sheet hodgepodge. The
  * graph row discloses into the Graphs switcher screen; appearance and editor
  * preferences edit the shared settings document (the same keys desktop
- * exposes); the backup group mirrors the status pill's engine state and can
- * disconnect GitHub (connecting happens in onboarding).
+ * exposes); the backup group mirrors the status pill's engine state, connects
+ * GitHub for the local graph (the {@link ConnectGithubDrawer} sheet — iCloud
+ * graphs sync through the container instead, Plan 21), and can disconnect.
  */
 export function MobileSettings(): ReactElement {
   const { back, canBack, navigate } = useRouter()
@@ -56,6 +58,7 @@ export function MobileSettings(): ReactElement {
   // over conflict markers already on disk and then flips.
   const status = useMobileSyncStatus()
   const [disconnecting, setDisconnecting] = useState(false)
+  const [connectOpen, setConnectOpen] = useState(false)
 
   const { data: notes } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-note-count'],
@@ -65,6 +68,11 @@ export function MobileSettings(): ReactElement {
 
   const backup = sync?.backup ?? null
   const repo = backup !== null && backup.phase === 'connected' ? backup.repo : null
+  // The connect entry point is local-graph-only (iCloud sync and a Git remote
+  // are mutually exclusive per graph, Plan 21) and waits out the controller's
+  // `loading` phase so the row never flashes on a graph that turns out to be
+  // connected.
+  const canConnect = mobileStorageKind === 'local' && backup?.phase === 'disconnected'
 
   // Stop backing this graph up and forget the GitHub credential (one graph
   // per device — unlinking is signing out). The local clone stays; the
@@ -144,12 +152,22 @@ export function MobileSettings(): ReactElement {
             />
           </SettingsGroup>
 
-          {repo !== null || status !== null ? (
-            <SettingsGroup header="Backup" footer={status?.detail ?? null}>
+          {repo !== null || status !== null || canConnect ? (
+            <SettingsGroup
+              header="Backup"
+              footer={
+                canConnect
+                  ? 'Sync notes with Reflect on your other devices.'
+                  : (status?.detail ?? null)
+              }
+            >
               {repo !== null ? (
                 <SettingsValueRow label="GitHub" value={`${repo.owner}/${repo.name}`} />
               ) : null}
               {status !== null ? <SettingsValueRow label="Status" value={status.label} /> : null}
+              {canConnect ? (
+                <SettingsActionRow label="Connect GitHub" onPress={() => setConnectOpen(true)} />
+              ) : null}
               {repo !== null ? (
                 <SettingsActionRow
                   label="Disconnect GitHub"
@@ -170,6 +188,7 @@ export function MobileSettings(): ReactElement {
           </SettingsGroup>
         </div>
       </main>
+      <ConnectGithubDrawer open={connectOpen} onOpenChange={setConnectOpen} />
     </div>
   )
 }

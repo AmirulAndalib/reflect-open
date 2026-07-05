@@ -86,7 +86,9 @@ describe('MobileOnboardingScreen', () => {
 
     expect(screen.queryByText(/Your notes are plain markdown files/i)).toBeNull()
     expect(screen.getByRole('heading', { name: 'This device' })).toBeTruthy()
-    expect(screen.getByText('Stored locally in Reflect on this device.')).toBeTruthy()
+    expect(
+      screen.getByText('Stored locally in Reflect on this device. Sync with GitHub later from Settings.'),
+    ).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Choose a folder on this device' }))
 
     await waitFor(() => expect(completeOnboarding).toHaveBeenCalledWith('local'))

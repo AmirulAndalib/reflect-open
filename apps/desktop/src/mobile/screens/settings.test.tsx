@@ -55,6 +55,13 @@ vi.mock('@/providers/sync-provider', () => ({
   useSyncContext: () => sync.value,
 }))
 
+// The sheet itself is covered by connect-github-drawer.test.tsx; the screen
+// test only cares that Settings opens it.
+vi.mock('@/mobile/connect-github-drawer', () => ({
+  ConnectGithubDrawer: ({ open }: { open: boolean }) =>
+    open ? <div>connect-github-sheet</div> : null,
+}))
+
 function connected(status: Extract<BackupState, { phase: 'connected' }>['status']): BackupState {
   return {
     phase: 'connected',
@@ -145,6 +152,56 @@ describe('MobileSettings', () => {
       expect(sync.value?.disconnectGraph).toHaveBeenCalledTimes(1)
       expect(sync.value?.signOut).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it('offers Connect GitHub for a disconnected local graph and opens the sheet', async () => {
+    const user = userEvent.setup()
+    graphState.mobileStorageKind = 'local'
+    sync.value = {
+      backup: { phase: 'disconnected' },
+      disconnectGraph: vi.fn(async () => {}),
+      signOut: vi.fn(async () => {}),
+    }
+    mount()
+
+    expect(screen.getByText('Sync notes with Reflect on your other devices.')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Connect GitHub' }))
+
+    expect(await screen.findByText('connect-github-sheet')).toBeTruthy()
+  })
+
+  it('hides the connect row once the local graph is connected', async () => {
+    graphState.mobileStorageKind = 'local'
+    mount()
+
+    expect(await screen.findByText('alex/notes')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Disconnect GitHub' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull()
+  })
+
+  it('never offers connect for iCloud graphs — they sync through the container', () => {
+    sync.value = {
+      backup: { phase: 'disconnected' },
+      disconnectGraph: vi.fn(async () => {}),
+      signOut: vi.fn(async () => {}),
+    }
+    mount()
+
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull()
+    expect(screen.queryByText('Backup')).toBeNull()
+  })
+
+  it('waits out the loading phase — no connect row that could flash', () => {
+    graphState.mobileStorageKind = 'local'
+    sync.value = {
+      backup: { phase: 'loading' },
+      disconnectGraph: vi.fn(async () => {}),
+      signOut: vi.fn(async () => {}),
+    }
+    mount()
+
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull()
+    expect(screen.queryByText('Backup')).toBeNull()
   })
 
   it('degrades to the local groups where no sync lifecycle is mounted', async () => {
