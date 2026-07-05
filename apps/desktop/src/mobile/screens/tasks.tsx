@@ -68,8 +68,11 @@ export function MobileTasks(): ReactElement {
   const actions = useTaskActions()
 
   // Defer the needle like the All tab defers its query: fast typing coalesces
-  // while the input stays live.
-  const needle = useDeferredValue(query).trim().toLowerCase()
+  // while the input stays live. A cleared query applies immediately — the "+"
+  // add clears it so the new row is visible, and a stale deferred needle must
+  // not keep hiding that row while it catches up.
+  const deferredQuery = useDeferredValue(query)
+  const needle = (query === '' ? '' : deferredQuery).trim().toLowerCase()
   const groups = useMemo(
     () =>
       composeVisibleTaskGroups({ open, completed, recentlyCompleted, filters, needle, today }),
