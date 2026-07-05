@@ -6,9 +6,9 @@ import {
   type AiProvidersState,
   type GraphInfo,
 } from '@reflect/core'
+import { useMainWindowEffect } from '@/hooks/use-main-window-effect'
 import { createCaptureController } from '@/lib/capture-controller'
 import { isMobileSurface } from '@/lib/platform-surface'
-import { isMainWindow } from '@/lib/window-role'
 import { useSettings } from '@/providers/settings-provider'
 
 /**
@@ -45,12 +45,9 @@ export function CaptureProvider({ graph, children }: CaptureProviderProps): Reac
     }
   })
 
-  useEffect(() => {
-    // One drain per app: a secondary note window running its own would race
-    // the main window's over the same spooled envelopes.
-    if (!isMainWindow()) {
-      return
-    }
+  // One drain per app: a secondary note window running its own would race
+  // the main window's over the same spooled envelopes.
+  useMainWindowEffect(() => {
     const mobile = isMobileSurface()
     const controller = createCaptureController({
       generation: graph.generation,

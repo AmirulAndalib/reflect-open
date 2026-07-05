@@ -32,6 +32,17 @@ export default tseslint.config(
     ...reactHooks.configs.flat['recommended-latest'],
   },
   {
+    // `useMainWindowEffect` forwards a deps array to useEffect (the main-window
+    // gate for app-wide singletons) — its callers get the same deps checking.
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'react-hooks/exhaustive-deps': [
+        'warn',
+        { additionalHooks: '^useMainWindowEffect$' },
+      ],
+    },
+  },
+  {
     // Test harnesses legitimately break the Rules of React that the compiler
     // assumes — reassigning module-scoped probe variables from a render to
     // capture output, rendering throwaway components, etc. None of this code is

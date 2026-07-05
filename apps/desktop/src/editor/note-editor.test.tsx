@@ -42,6 +42,12 @@ vi.mock('@/lib/deep-links/intake', () => ({
   dispatchDeepLink: vi.fn(),
 }))
 
+const openDeepLinkInNewWindow = vi.hoisted(() => vi.fn<() => Promise<boolean>>())
+vi.mock('@/lib/windows/open-in-new-window', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/windows/open-in-new-window')>()),
+  openDeepLinkInNewWindow,
+}))
+
 // Stub the editor: capture its props and render the image-preview DOM shape
 // meowdown produces, so the source element lookup in `onImageClick` resolves.
 // `useEditor` backs `EditorInputTraits` (mounted inside the editor).
@@ -329,6 +335,29 @@ describe('NoteEditor link opening', () => {
 
     expect(dispatchDeepLink).toHaveBeenCalledWith('reflect://note/abc123')
     expect(openUrl).not.toHaveBeenCalled()
+  })
+
+  it('⌘-click sends a reflect:// link to a new window instead of dispatching', async () => {
+    openDeepLinkInNewWindow.mockResolvedValue(true)
+    renderEditor()
+
+    const event = new MouseEvent('click', { metaKey: true })
+    act(() => captured.props?.onLinkClick?.({ href: 'reflect://note/abc123', event }))
+
+    await waitFor(() =>
+      expect(openDeepLinkInNewWindow).toHaveBeenCalledWith('reflect://note/abc123'),
+    )
+    expect(dispatchDeepLink).not.toHaveBeenCalled()
+  })
+
+  it('a declined ⌘-click open degrades to the normal deep-link dispatch', async () => {
+    openDeepLinkInNewWindow.mockResolvedValue(false)
+    renderEditor()
+
+    const event = new MouseEvent('click', { metaKey: true })
+    act(() => captured.props?.onLinkClick?.({ href: 'reflect://append?text=hi', event }))
+
+    await waitFor(() => expect(dispatchDeepLink).toHaveBeenCalledWith('reflect://append?text=hi'))
   })
 })
 

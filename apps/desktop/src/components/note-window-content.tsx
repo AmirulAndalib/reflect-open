@@ -1,13 +1,12 @@
 import type { ReactElement } from 'react'
 import { dailyPath } from '@reflect/core'
-import { NotePane } from '@/components/note-pane'
 import { RouteContent } from '@/components/route-content'
+import { SingleNoteView } from '@/components/single-note-view'
 import { useNoteRow } from '@/hooks/use-note-row'
 import { useNoteWindowTitle } from '@/hooks/use-note-window-title'
 import { formatDayLabel, todayIso } from '@/lib/dates'
 import { useSettings } from '@/providers/settings-provider'
 import { useRouter } from '@/routing/router'
-import { ScrollRestored } from '@/routing/scroll-restore'
 
 /**
  * A secondary note window's whole surface (⌘-click → new window): the routed
@@ -41,26 +40,17 @@ export function NoteWindowContent(): ReactElement {
   return (
     <div className="h-screen w-screen overflow-hidden bg-surface text-text">
       {dailyDate !== null ? (
-        // Mirrors RouteContent's note route (padding on the inner column so
-        // `min-h-full` fills the viewport; the gutter is the editor's own
-        // padding so the whole body is click-to-focus), with the stream's day
-        // label standing in for the title a daily note doesn't carry.
-        <ScrollRestored className="h-full overflow-auto px-0">
-          <div className="mx-auto flex min-h-full w-full max-w-full flex-col py-8">
+        <SingleNoteView
+          path={dailyPath(dailyDate)}
+          dailyDate={dailyDate}
+          heading={
+            // The stream's day label, standing in for the title a daily
+            // note doesn't carry.
             <h2 className="reflect-daily-subject reflect-content-gutter mb-3">
               {formatDayLabel(dailyDate, settings.dateFormat)}
             </h2>
-            <NotePane
-              path={dailyPath(dailyDate)}
-              dailyDate={dailyDate}
-              lazy
-              autoFocus
-              className="flex grow flex-col"
-              gutterClassName="reflect-content-gutter"
-              editorClassName="grow"
-            />
-          </div>
-        </ScrollRestored>
+          }
+        />
       ) : (
         <RouteContent />
       )}

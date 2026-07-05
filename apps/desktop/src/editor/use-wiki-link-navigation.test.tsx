@@ -12,8 +12,8 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   resolveWikiTarget,
   createNoteWithTitle,
 }))
-vi.mock('@/lib/open-in-new-window', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/open-in-new-window')>()),
+vi.mock('@/lib/windows/open-in-new-window', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/windows/open-in-new-window')>()),
   openRouteInNewWindow,
 }))
 

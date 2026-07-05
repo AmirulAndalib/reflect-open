@@ -1,7 +1,6 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useState,
   useSyncExternalStore,
@@ -9,12 +8,12 @@ import {
   type ReactNode,
 } from 'react'
 import { hasBridge } from '@reflect/core'
+import { useMainWindowEffect } from '@/hooks/use-main-window-effect'
 import {
   createUpdateController,
   type UpdateController,
   type UpdateState,
 } from '@/lib/update-controller'
-import { isMainWindow } from '@/lib/window-role'
 
 interface UpdateContextValue {
   state: UpdateState
@@ -54,16 +53,15 @@ export function UpdateProvider({ children, autoCheck }: UpdateProviderProps): Re
   const resolvedAutoCheck = autoCheck ?? (supported && !import.meta.env.DEV)
   const [controller, setController] = useState<UpdateController | null>(null)
 
-  useEffect(() => {
-    // One checker per app: secondary note windows never poll for updates.
-    if (!supported || !isMainWindow()) {
+  // One checker per app: secondary note windows never poll for updates.
+  useMainWindowEffect(() => {
+    if (!supported) {
       return
     }
     const next = createUpdateController({ autoCheck: resolvedAutoCheck })
     // The controller is an imperative lifecycle object created for the app's
     // lifetime; it must be instantiated in an effect (it subscribes and starts)
     // and stored so useSyncExternalStore can read it.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setController(next)
     next.start()
     return () => {

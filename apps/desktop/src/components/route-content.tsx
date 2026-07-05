@@ -2,8 +2,8 @@ import type { ReactElement } from 'react'
 import { AllNotesScreen } from '@/components/all-notes/all-notes-screen'
 import { ChatScreen } from '@/components/chat/chat-screen'
 import { DailyStream } from '@/components/daily-stream'
-import { NotePane } from '@/components/note-pane'
 import { SearchRoute } from '@/components/search-route'
+import { SingleNoteView } from '@/components/single-note-view'
 import { SettingsNavigator } from '@/components/settings/settings-navigator'
 import { SettingsScreen } from '@/components/settings-screen'
 import { TasksScreen } from '@/components/tasks/tasks-screen'
@@ -30,26 +30,7 @@ export function RouteContent(): ReactElement {
       // is a real calendar day by the time it reaches a view.
       return <DailyStream target={{ kind: 'date', date: route.date }} />
     case 'note':
-      // The vertical padding lives on the inner column (not the scroll
-      // container) so `min-h-full` fills the viewport exactly; the flex chain
-      // stretches the editor over any leftover vertical space. `gutterClassName`
-      // does the same horizontally: the editor spans the full width with its
-      // reading gutter as its own padding, so clicking anywhere in the note body
-      // (even the blank side margins) focuses the editor.
-      return (
-        <ScrollRestored className="h-full overflow-auto px-0">
-          <div className="mx-auto flex min-h-full w-full max-w-full flex-col py-8">
-            <NotePane
-              path={route.path}
-              lazy
-              autoFocus
-              className="flex grow flex-col"
-              gutterClassName="reflect-content-gutter"
-              editorClassName="grow"
-            />
-          </div>
-        </ScrollRestored>
-      )
+      return <SingleNoteView path={route.path} />
     case 'allNotes':
       // Owns its scroll container (virtualized table + fixed header), so no
       // ScrollRestored wrapper — same shape as the daily stream.

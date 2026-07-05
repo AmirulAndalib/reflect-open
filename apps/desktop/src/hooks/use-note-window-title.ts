@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { setWindowTitle } from '@/lib/window-title'
+import { setWindowTitle } from '@/lib/windows/window-title'
 
 /**
  * Keep a note window's OS title on its current note (route changes and

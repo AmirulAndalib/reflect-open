@@ -2,7 +2,7 @@ import { useEffect, type ReactElement } from 'react'
 import { GraphChooser } from '@/components/graph-chooser'
 import { GraphWorkspace } from '@/components/graph-workspace'
 import { installQuitFlush } from '@/lib/quit-flush'
-import { isMainWindow } from '@/lib/window-role'
+import { isMainWindow } from '@/lib/windows/window-role'
 import { useGraph } from '@/providers/graph-provider'
 
 /**

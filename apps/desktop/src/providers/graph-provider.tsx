@@ -2,7 +2,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -15,7 +14,6 @@ import {
   errorMessage,
   forgetRecent,
   hasBridge,
-  isMobilePlatform,
   createGraph,
   openGraph,
   recentGraphs,
@@ -28,8 +26,9 @@ import { resetNoteRowOverlays } from '@/hooks/note-row-overlay'
 import { setIndexProgress } from '@/lib/index-progress'
 import { dropIcloudStatusQuery, throttledInvalidateIndexQueries } from '@/lib/query-client'
 import { ensureWelcomeNote } from '@/lib/welcome-note'
-import { isMainWindow, requireMainWindow } from '@/lib/window-role'
+import { isMainWindow, requireMainWindow } from '@/lib/windows/window-role'
 import { createGraphIndex } from './graph-index'
+import { useDesktopGraphBoot } from './use-desktop-graph-boot'
 import { useMobileGraphBoot, type MobileGraphBoot } from './use-mobile-graph-boot'
 import { useNoteWindowBoot } from './use-note-window-boot'
 
@@ -306,26 +305,12 @@ export function GraphProvider({
 
   // Desktop main-window boot: reopen the most recent graph, or show the
   // chooser. Mobile and note windows boot through their hooks above.
-  useEffect(() => {
-    if (isMobilePlatform(platform) || !isMainWindow()) {
-      return
-    }
-    let active = true
-    void (async () => {
-      const list = await loadRecents({ surfaceErrors: true })
-      if (!active) {
-        return
-      }
-      if (list.length > 0) {
-        await openRecent(list[0]!.root)
-      } else {
-        setStatus('choosing')
-      }
-    })()
-    return () => {
-      active = false
-    }
-  }, [loadRecents, openRecent, platform])
+  useDesktopGraphBoot({
+    platform,
+    loadRecents,
+    openRecent,
+    onChoose: useCallback(() => setStatus('choosing'), []),
+  })
 
   /**
    * Create (and open) a graph at an app-chosen path — desktop onboarding's

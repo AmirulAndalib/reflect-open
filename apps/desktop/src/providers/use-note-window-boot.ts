@@ -10,7 +10,8 @@ import {
 } from '@reflect/core'
 import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { throttledInvalidateIndexQueries } from '@/lib/query-client'
-import { isMainWindow } from '@/lib/window-role'
+import { trackSubscriptions } from '@/lib/subscriptions'
+import { isMainWindow } from '@/lib/windows/window-role'
 
 /** The graph provider's channels for the note-window boot leg. */
 export interface NoteWindowBootOptions {
@@ -39,15 +40,7 @@ export function useNoteWindowBoot({ platform, onAdopted, onFailed }: NoteWindowB
       return
     }
     let active = true
-    const unlisteners: Array<() => void> = []
-    const subscribe = async (subscription: Promise<() => void>): Promise<void> => {
-      const unlisten = await subscription
-      if (active) {
-        unlisteners.push(unlisten)
-      } else {
-        unlisten()
-      }
-    }
+    const subscriptions = trackSubscriptions()
     void (async () => {
       try {
         const boot = await windowBootstrap()
@@ -57,12 +50,12 @@ export function useNoteWindowBoot({ platform, onAdopted, onFailed }: NoteWindowB
         if (boot.initialDeepLink !== null) {
           dispatchDeepLink(boot.initialDeepLink)
         }
-        await subscribe(subscribeIndexWritten(throttledInvalidateIndexQueries))
+        await subscriptions.add(subscribeIndexWritten(throttledInvalidateIndexQueries))
         // (Rename follow-through lives in desktop-root — every window needs
         // it, not just this one.)
         // Re-⌘-clicking this window's target focuses it AND re-navigates it
         // there (it may have navigated elsewhere since it opened).
-        await subscribe(subscribeWindowNavigate(dispatchDeepLink))
+        await subscriptions.add(subscribeWindowNavigate(dispatchDeepLink))
         if (!active) {
           return
         }
@@ -75,10 +68,7 @@ export function useNoteWindowBoot({ platform, onAdopted, onFailed }: NoteWindowB
     })()
     return () => {
       active = false
-      for (const unlisten of unlisteners) {
-        unlisten()
-      }
-      unlisteners.length = 0
+      subscriptions.disposeAll()
     }
   }, [platform, onAdopted, onFailed])
 }

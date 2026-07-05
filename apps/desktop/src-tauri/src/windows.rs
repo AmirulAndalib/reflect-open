@@ -56,6 +56,33 @@ fn note_window_label(deep_link: &str) -> String {
     format!("{NOTE_WINDOW_PREFIX}{:016x}", hasher.finish())
 }
 
+/// Surface an already-open window for this target, when one exists: show,
+/// focus, and deliver the link ([`WINDOW_NAVIGATE_EVENT`]) so a window that
+/// has navigated away comes back to the note that was clicked. All
+/// best-effort — a focus that fails must not fail the click.
+fn focus_existing(app: &tauri::AppHandle, label: &str, deep_link: &str) -> bool {
+    let Some(existing) = app.get_webview_window(label) else {
+        return false;
+    };
+    let _ = existing.show();
+    let _ = existing.set_focus();
+    let _ = app.emit_to(label, WINDOW_NAVIGATE_EVENT, deep_link);
+    true
+}
+
+/// Cascade step for the next note window: successive opens from one window
+/// must not stack at a single offset, covering each other exactly. Steps by
+/// the number of live note windows and wraps so a pile never marches
+/// off-screen.
+fn cascade_offset(app: &tauri::AppHandle) -> f64 {
+    let open_note_windows = app
+        .webview_windows()
+        .keys()
+        .filter(|existing| existing.starts_with(NOTE_WINDOW_PREFIX))
+        .count();
+    48.0 * ((open_note_windows % 10) + 1) as f64
+}
+
 /// Open (or focus) a secondary window on a `reflect://` route link.
 ///
 /// Requires an open graph: a note window can only *adopt* the main window's
@@ -85,24 +112,10 @@ pub async fn open_note_window(
     fs::current_graph_info(&graph)?;
 
     let label = note_window_label(&deep_link);
-    if let Some(existing) = app.get_webview_window(&label) {
-        let _ = existing.show();
-        let _ = existing.set_focus();
-        // The window may have navigated away from its original target —
-        // deliver the link so it comes back to the note that was clicked.
-        let _ = app.emit_to(label.as_str(), WINDOW_NAVIGATE_EVENT, &deep_link);
+    if focus_existing(&app, &label, &deep_link) {
         return Ok(());
     }
-
-    // Cascade step: successive opens from the same window must not stack at
-    // one offset, covering each other exactly. Wraps so a pile of windows
-    // never marches off-screen.
-    let open_note_windows = app
-        .webview_windows()
-        .keys()
-        .filter(|existing| existing.starts_with(NOTE_WINDOW_PREFIX))
-        .count();
-    let cascade = 48.0 * ((open_note_windows % 10) + 1) as f64;
+    let cascade = cascade_offset(&app);
 
     lock_init(&init)?.insert(label.clone(), deep_link);
 

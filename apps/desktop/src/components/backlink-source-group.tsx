@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react'
 import type { WikilinkClickHandler } from '@meowdown/core'
 import { BacklinkSnippet } from '@/components/backlink-snippet'
 import type { BacklinkSource } from '@/lib/group-backlinks'
-import type { NewWindowClickEvent } from '@/lib/open-in-new-window'
+import type { NewWindowClickEvent } from '@/lib/windows/open-in-new-window'
 
 interface BacklinkSourceGroupProps {
   source: BacklinkSource

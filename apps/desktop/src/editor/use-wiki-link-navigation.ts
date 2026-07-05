@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { createNoteWithTitle, resolveWikiTarget } from '@reflect/core'
 import { isIsoDate } from '@/lib/dates'
-import { isNewWindowClick, openRouteInNewWindow } from '@/lib/open-in-new-window'
+import { isNewWindowClick, openRouteInNewWindow } from '@/lib/windows/open-in-new-window'
 import { routeForPath, type Route } from '@/routing/route'
 import { useRouter } from '@/routing/router'
 

@@ -6,7 +6,7 @@ import {
   ensureEmbeddingsVisibly,
 } from '@/lib/semantic'
 import { useEmbedStatus } from '@/lib/use-embed-status'
-import { isMainWindow } from '@/lib/window-role'
+import { isMainWindow } from '@/lib/windows/window-role'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
 

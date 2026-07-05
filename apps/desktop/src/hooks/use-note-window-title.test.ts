@@ -2,7 +2,7 @@ import { renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const setWindowTitle = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/window-title', () => ({ setWindowTitle }))
+vi.mock('@/lib/windows/window-title', () => ({ setWindowTitle }))
 
 import { useNoteWindowTitle } from './use-note-window-title'
 

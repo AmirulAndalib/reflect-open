@@ -19,7 +19,7 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   subscribeIndexWritten,
   subscribeWindowNavigate,
 }))
-vi.mock('@/lib/window-role', () => ({ isMainWindow }))
+vi.mock('@/lib/windows/window-role', () => ({ isMainWindow }))
 vi.mock('@/lib/deep-links/intake', () => ({ dispatchDeepLink }))
 vi.mock('@/lib/query-client', () => ({ throttledInvalidateIndexQueries }))
 

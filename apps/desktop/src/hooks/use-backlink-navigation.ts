@@ -6,7 +6,7 @@ import {
   isNewWindowClick,
   openRouteInNewWindow,
   type NewWindowClickEvent,
-} from '@/lib/open-in-new-window'
+} from '@/lib/windows/open-in-new-window'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'

@@ -7,8 +7,9 @@ import { UpdateToast } from '@/components/update-toast'
 import { Toaster } from '@/components/ui/sonner'
 import { WindowDragRegion } from '@/components/window-drag-region'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useMainWindowEffect } from '@/hooks/use-main-window-effect'
 import { startDeepLinkListener } from '@/lib/deep-links/intake'
-import { isMainWindow } from '@/lib/window-role'
+import { trackSubscriptions } from '@/lib/subscriptions'
 import { GraphProvider } from '@/providers/graph-provider'
 import { UpdateProvider } from '@/providers/update-provider'
 
@@ -25,8 +26,8 @@ export function DesktopRoot(): ReactElement {
   // ⌘-clicked note window must not also navigate itself on OS-delivered URLs
   // (in-note `reflect://` clicks still work — `dispatchDeepLink` and the
   // handler are per-webview state).
-  useEffect(() => {
-    if (!hasBridge() || !isMainWindow()) {
+  useMainWindowEffect(() => {
+    if (!hasBridge()) {
       return
     }
     startDeepLinkListener().catch((cause: unknown) => {
@@ -43,18 +44,10 @@ export function DesktopRoot(): ReactElement {
     if (!hasBridge()) {
       return
     }
-    let disposed = false
-    let unlisten: (() => void) | null = null
-    void subscribeNoteMoved(followHealedMove).then((dispose) => {
-      if (disposed) {
-        dispose()
-      } else {
-        unlisten = dispose
-      }
-    })
+    const subscriptions = trackSubscriptions()
+    void subscriptions.add(subscribeNoteMoved(followHealedMove))
     return () => {
-      disposed = true
-      unlisten?.()
+      subscriptions.disposeAll()
     }
   }, [])
 

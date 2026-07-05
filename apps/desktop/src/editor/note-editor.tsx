@@ -38,7 +38,7 @@ import { isTouchEditorSurface } from '@/lib/platform-surface'
 import { useLightboxTransition } from '@/editor/use-lightbox-transition'
 import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { isDeepLinkUrl } from '@/lib/deep-links/parse'
-import { isNewWindowClick, openDeepLinkInNewWindow } from '@/lib/open-in-new-window'
+import { isNewWindowClick, openDeepLinkInNewWindow } from '@/lib/windows/open-in-new-window'
 import { cn } from '@/lib/utils'
 
 /**
