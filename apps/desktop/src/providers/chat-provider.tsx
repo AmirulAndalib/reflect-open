@@ -37,6 +37,7 @@ import { toChatAttachment, type ChatAttachment } from '@/lib/chat-attachments'
 import { todayIso } from '@/lib/dates'
 import { providerFetch } from '@/lib/provider-fetch'
 import { invalidateChatQueries } from '@/lib/query-client'
+import { conversationTitle } from '@/providers/chat-title'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
 
@@ -60,9 +61,6 @@ export type ChatStatus = 'idle' | 'streaming'
 
 /** Resume the latest conversation within this window; otherwise start fresh. */
 const CHAT_IDLE_CUTOFF_MS = 6 * 60 * 60 * 1000
-
-/** Conversation titles are the first message, cut for the history list. */
-const TITLE_MAX_CHARS = 60
 
 interface ChatContextValue {
   turns: ChatTurn[]
@@ -103,15 +101,6 @@ interface ChatContextValue {
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
-
-/** `title` for a conversation row: its first message, cut to list length. */
-function conversationTitle(firstUserText: string): string {
-  const trimmed = firstUserText.trim().replace(/\s+/g, ' ')
-  if (trimmed === '') {
-    return 'New chat'
-  }
-  return trimmed.length > TITLE_MAX_CHARS ? `${trimmed.slice(0, TITLE_MAX_CHARS)}…` : trimmed
-}
 
 interface ChatProviderProps {
   /** The open graph — names the prompt's overview block. */
