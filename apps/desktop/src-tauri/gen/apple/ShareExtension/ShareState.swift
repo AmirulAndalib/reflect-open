@@ -26,11 +26,21 @@ final class ShareState: ObservableObject {
 
     var extensionContext: NSExtensionContext?
 
+    /// Single-flight: SwiftUI can fire `onAppear` more than once, and a
+    /// second pass would mint a fresh envelope id — a duplicate capture.
+    /// (The drain would dedup an identical re-share anyway, but the spool
+    /// should never carry one in the first place.)
+    private var started = false
+
     /// How long the "Saved" confirmation stays up before the sheet dismisses
     /// itself — long enough to read, short enough to keep the flow two-tap.
     private static let dismissDelay: TimeInterval = 0.9
 
     func save() {
+        guard !started else {
+            return
+        }
+        started = true
         guard let context = extensionContext else {
             return update(.failed)
         }

@@ -84,12 +84,16 @@ enum CaptureInbox {
         )
         // The URL is the one uncapped field (truncating it would save a
         // broken link): a pathological one can outgrow the spool cap. Shed
-        // the biggest optional field first; past that the share fails
+        // the optional fields biggest-first; past that the share fails
         // honestly rather than claiming "Saved" for a file the relay can
         // only quarantine.
         var data = try JSONEncoder().encode(envelope)
         if data.count > spoolMaxBytes, envelope.selection != nil {
             envelope.selection = nil
+            data = try JSONEncoder().encode(envelope)
+        }
+        if data.count > spoolMaxBytes, envelope.metaDescription != nil {
+            envelope.metaDescription = nil
             data = try JSONEncoder().encode(envelope)
         }
         guard data.count <= spoolMaxBytes else {
