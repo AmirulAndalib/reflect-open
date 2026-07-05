@@ -20,7 +20,7 @@ type PendingChoice = string | 'icloud-create' | 'local' | null
  * iCloud Drive leads (Plan 21): it is the primary way a graph syncs between
  * iPhone and Mac, so the hero block ({@link OnboardingIcloudSection}) lists
  * every graph already in the app's iCloud container plus a create row.
- * **Keep notes on this device** opens the app-sandbox root instead (and is
+ * **Choose a folder on this device** opens the app-sandbox root instead (and is
  * promoted to the only storage card when iCloud is unavailable). Every
  * path ends in `completeOnboarding(kind, root)`, which opens the chosen root
  * and records the flag + storage kind + graph name.
@@ -57,11 +57,8 @@ export function MobileOnboardingScreen(): ReactElement {
       }}
     >
       <div className="my-auto flex w-full flex-col gap-6">
-        <div className="flex flex-col gap-1.5 text-center">
+        <div className="text-center">
           <h1 className="text-xl font-semibold tracking-tight">Welcome to Reflect</h1>
-          <p className="text-sm text-text-muted">
-            Your notes are plain markdown files. Choose where to keep them.
-          </p>
         </div>
 
         <div className="flex flex-col gap-3">
@@ -91,7 +88,7 @@ export function MobileOnboardingScreen(): ReactElement {
             </div>
             <Button
               variant={icloudReady || icloudPending ? 'outline' : 'default'}
-              className="w-full"
+              className="w-full justify-start text-left"
               onClick={() => runChoice('local', () => completeOnboarding('local'))}
               disabled={action.pending || mobileStorageInfo === null}
             >
@@ -100,7 +97,7 @@ export function MobileOnboardingScreen(): ReactElement {
               ) : (
                 <HardDrive aria-hidden strokeWidth={1.75} />
               )}
-              {pendingChoice === 'local' ? 'Setting up…' : 'Keep notes on this device'}
+              {pendingChoice === 'local' ? 'Setting up…' : 'Choose a folder on this device'}
             </Button>
           </section>
           {!icloudReady && !icloudPending ? (

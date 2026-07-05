@@ -81,12 +81,13 @@ describe('MobileOnboardingScreen', () => {
     )
   })
 
-  it('keeps notes on this device without cloning', async () => {
+  it('chooses a folder on this device without cloning', async () => {
     render(<MobileOnboardingScreen />)
 
+    expect(screen.queryByText(/Your notes are plain markdown files/i)).toBeNull()
     expect(screen.getByRole('heading', { name: 'This device' })).toBeTruthy()
     expect(screen.getByText('Stored locally in Reflect on this device.')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Keep notes on this device' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a folder on this device' }))
 
     await waitFor(() => expect(completeOnboarding).toHaveBeenCalledWith('local'))
   })
@@ -104,7 +105,7 @@ describe('MobileOnboardingScreen', () => {
     expect(screen.queryByRole('button', { name: 'Create' })).toBeNull()
     expect(screen.queryByText(/Sign in to iCloud/)).toBeNull()
     // The on-device path stays live — its root is already known.
-    const local = screen.getByRole('button', { name: 'Keep notes on this device' })
+    const local = screen.getByRole('button', { name: 'Choose a folder on this device' })
     expect((local as HTMLButtonElement).disabled).toBe(false)
   })
 
@@ -117,7 +118,7 @@ describe('MobileOnboardingScreen', () => {
       screen.getByText('Sign in to iCloud on this device to sync notes with iCloud Drive.'),
     ).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'This device' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Keep notes on this device' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Choose a folder on this device' })).toBeTruthy()
   })
 
   it('does not offer repository setup from the first-run picker', () => {
