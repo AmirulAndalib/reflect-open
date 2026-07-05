@@ -160,6 +160,46 @@ describe('useTaskSheetFinalizer', () => {
     expect(edit).not.toHaveBeenCalled()
   })
 
+  it('resolves against the live surface when readDraft is fresher than the mirrored state', () => {
+    // An uncontrolled editor can hold a change whose onChange hasn't
+    // re-rendered into the draft state yet — the commit must not drop it.
+    const { result } = renderHook(() =>
+      useTaskSheetFinalizer(deps({ readDraft: () => 'alpha typed live' })),
+    )
+
+    act(() => result.current.handleOpenChange(false))
+
+    expect(edit).toHaveBeenCalledTimes(1)
+    expect(edit.mock.calls[0]?.[1]).toBe('alpha typed live')
+  })
+
+  it('falls back to the mirrored draft when readDraft cannot answer', () => {
+    const { result } = renderHook(() =>
+      useTaskSheetFinalizer(deps({ readDraft: () => null })),
+    )
+
+    act(() => result.current.setDraft('alpha edited'))
+    act(() => result.current.handleOpenChange(false))
+
+    expect(edit).toHaveBeenCalledTimes(1)
+    expect(edit.mock.calls[0]?.[1]).toBe('alpha edited')
+  })
+
+  it('ignores readDraft during the unmount flush — a torn-down surface can misreport empty', () => {
+    const { result, unmount } = renderHook(() =>
+      useTaskSheetFinalizer(deps({ readDraft: () => '' })),
+    )
+
+    act(() => result.current.setDraft('alpha edited'))
+    unmount()
+
+    // Trusting the misreported '' would delete a real task; the flush must
+    // resolve from the mirrored state instead.
+    expect(remove).not.toHaveBeenCalled()
+    expect(edit).toHaveBeenCalledTimes(1)
+    expect(edit.mock.calls[0]?.[1]).toBe('alpha edited')
+  })
+
   it('flushes like a dismissal when unmounted under an open sheet', () => {
     const { result, unmount } = renderHook(() => useTaskSheetFinalizer(deps()))
 

@@ -88,22 +88,24 @@ export function MobileTaskEditSheet({
   // The editor is uncontrolled; a reopen reseeds the draft (the row may have
   // been rewritten by an action), so remount it via this seed to re-read it.
   const [editorSeed, setEditorSeed] = useState(0)
+  const editorRef = useRef<NoteEditorHandle | null>(null)
   // The commit/cancel/delete rules — baseline frozen at open, reseed on
-  // reopen, dismissal vs navigate vs unmount — live in the finalizer.
+  // reopen, dismissal vs navigate vs unmount — live in the finalizer. It
+  // resolves against the editor's live markdown (readDraft) so a change whose
+  // onChange hasn't re-rendered yet is never dropped by a commit.
   const { draft, setDraft, resolve, handleOpenChange, closeHandled, closeNavigate } =
     useTaskSheetFinalizer({
       task,
       open,
       onOpenChange,
       actions,
+      readDraft: () => editorRef.current?.getMarkdown() ?? null,
       onReseed: () => {
         setShowCalendar(false)
         setEditorSeed((seed) => seed + 1)
       },
     })
   const dueDate = draftDueDate(draft)
-
-  const editorRef = useRef<NoteEditorHandle | null>(null)
   // Stable while the editor is mounted: the flag only changes between visits
   // (the screen sets it before opening), never mid-edit, so the ref callback
   // can depend on it without re-attach churn.
@@ -177,10 +179,13 @@ export function MobileTaskEditSheet({
   }
 
   const schedule = (isoDate: string | null): void => {
-    const next = withDraftDueDate(draft, isoDate)
+    // Derive from the editor's live markdown, not the mirrored state: a change
+    // whose onChange hasn't re-rendered yet must not be clobbered by the
+    // silent rewrite below.
+    const next = withDraftDueDate(editorRef.current?.getMarkdown() ?? draft, isoDate)
     setDraft(next)
-    // setMarkdown is silent (no onChange echo), so the state write above is
-    // the one source the finalizer resolves against.
+    // setMarkdown is silent (no onChange echo), so the state write above keeps
+    // the mirrored draft (chip highlights) in step.
     editorRef.current?.setMarkdown(next)
     setShowCalendar(false)
   }

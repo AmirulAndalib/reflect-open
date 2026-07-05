@@ -16,6 +16,15 @@ export interface TaskSheetFinalizerDeps {
   actions: TaskSheetWriteActions
   /** Reset sheet-local presentation (collapse the calendar) on reopen. */
   onReseed: () => void
+  /**
+   * Read the editing surface's markdown, or null when the surface can't
+   * answer. An uncontrolled editor can hold a change whose `onChange` hasn't
+   * re-rendered into the mirrored draft yet; resolving against the live text
+   * keeps that change from being dropped. Consulted only at interactive
+   * decision points (dismissal, navigate, `resolve`) — the unmount flush uses
+   * the mirrored state, because a surface mid-teardown can misreport empty.
+   */
+  readDraft?: () => string | null
 }
 
 export interface TaskSheetFinalizer {
@@ -60,6 +69,7 @@ export function useTaskSheetFinalizer({
   onOpenChange,
   actions,
   onReseed,
+  readDraft,
 }: TaskSheetFinalizerDeps): TaskSheetFinalizer {
   const liveContent = taskContent(task.raw)
   const [initial, setInitial] = useState(liveContent)
@@ -78,11 +88,17 @@ export function useTaskSheetFinalizer({
     }
   }
 
-  const resolve = (): TaskEditResult => resolveTaskEdit(initial, draft)
+  // The freshest draft available at an *interactive* decision point (a
+  // dismissal gesture, an action button) — the surface is mounted there. The
+  // unmount flush must NOT use this: a surface mid-teardown can misreport
+  // empty, and "empty" means delete.
+  const currentDraft = (): string => readDraft?.() ?? draft
 
-  /** Persist the draft: a real change commits, an emptied draft deletes. */
-  const commitDraft = (): void => {
-    const result = resolve()
+  const resolve = (): TaskEditResult => resolveTaskEdit(initial, currentDraft())
+
+  /** Persist `current` vs the baseline: a real change commits, an emptied draft deletes. */
+  const commitCurrent = (current: string): void => {
+    const result = resolveTaskEdit(initial, current)
     if (result.type === 'commit') {
       actions.edit(task, result.content)
     } else if (result.type === 'delete') {
@@ -90,11 +106,11 @@ export function useTaskSheetFinalizer({
     }
   }
 
-  const finishAbandonedVisit = (): void => {
-    if (resolve().type === 'cancel' && draft.trim() === '') {
+  const finishAbandonedVisit = (current: string): void => {
+    if (resolveTaskEdit(initial, current).type === 'cancel' && current.trim() === '') {
       actions.remove([task])
     } else {
-      commitDraft()
+      commitCurrent(current)
     }
   }
 
@@ -105,7 +121,7 @@ export function useTaskSheetFinalizer({
       // same commit/delete twice (a second delete would trip the stale guard
       // and surface a spurious failure).
       setHandled(true)
-      finishAbandonedVisit()
+      finishAbandonedVisit(currentDraft())
     }
     onOpenChange(nextOpen)
   }
@@ -116,7 +132,7 @@ export function useTaskSheetFinalizer({
   }
 
   const closeNavigate = (): void => {
-    commitDraft()
+    commitCurrent(currentDraft())
     setHandled(true)
     onOpenChange(false)
   }
@@ -125,11 +141,13 @@ export function useTaskSheetFinalizer({
   // drawer is open — no dismissal callback fires, so flush like a dismissal
   // would (desktop's inline editor flushes on unmount the same way). The
   // latest-closure ref keeps the unmount-only cleanup reading current state.
+  // Resolve from the mirrored draft, never readDraft: the surface is tearing
+  // down with us and can misreport empty, which would delete a real task.
   const unmountFlushRef = useRef<() => void>(() => {})
   useEffect(() => {
     unmountFlushRef.current = () => {
       if (open && !handled) {
-        finishAbandonedVisit()
+        finishAbandonedVisit(draft)
       }
     }
   })
