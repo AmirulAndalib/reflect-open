@@ -197,10 +197,11 @@ search: `embed_mobile.rs` stubs fail loudly by design.
 
 3. **Navigation.** Add `case 'chat'` to `mobile-screen.tsx`, extend
    `MobileTab` + `mobile-tab-bar.tsx` + the shell's tab⇄route mapping with a
-   Chat tab (haptics like the others; double-tap scrolls to the latest
-   turn). `mobile-stack.tsx` needs **no change** — `chat` is already a root
-   route by `isStacked`'s definition. Tests: turns survive a tab
-   round-trip; the lifted draft survives a tab round-trip.
+   Chat tab (haptics like the others; no special double-tap — the transcript
+   scroller's own jump-to-latest button covers it). `mobile-stack.tsx` needs
+   **no change** — `chat` is already a root route by `isStacked`'s
+   definition. Tests: turns survive a tab round-trip; the lifted draft
+   survives a tab round-trip.
 
 4. **AI provider settings on mobile.** In `screens/settings.tsx`, a new "AI"
    `SettingsGroup`: one row per configured provider (name + `keyHint`,
