@@ -99,6 +99,10 @@ targets:
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
       groups: [app]
     dependencies:
+      # The share-sheet capture extension (Plan 11's iOS producer): embedded
+      # into the app bundle and signed with it.
+      - target: ShareExtension
+        embed: true
       - framework: libapp.a
         embed: false
       # libgit2 (vendored into libapp.a) needs zlib and iconv at the final
@@ -122,3 +126,51 @@ targets:
         outputFiles:
           - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
           - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
+  # The share-sheet capture extension: saves links/text shared from any app
+  # into the App Group inbox (`group.app.reflect`), entirely offline; the main
+  # app relays + drains on next launch/foreground (Plan 11's envelope model).
+  # Swift only — no Rust, no webview, no network.
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension/ShareViewController.swift
+      - path: ShareExtension/ShareState.swift
+      - path: ShareExtension/ShareView.swift
+      - path: ShareExtension/CaptureInbox.swift
+      # The Safari preprocessor (title/URL/selection/meta description); a
+      # bundle resource the NSExtension attributes reference by base name.
+      - path: ShareExtension/ExtensionClass.js
+        buildPhase: resources
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        # The share sheet's row label (the icon comes from the host app).
+        CFBundleDisplayName: Reflect
+        CFBundleShortVersionString: {{apple.bundle-version-short}}
+        CFBundleVersion: {{apple.bundle-version}}
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          # Storyboard-less principal class; `@objc(ShareViewController)`
+          # pins the runtime name the plist references.
+          NSExtensionPrincipalClass: ShareViewController
+          NSExtensionAttributes:
+            # Dictionary version 2 allows subset matching — Chrome shares a
+            # URL *and* text, which version 1's exact match would refuse
+            # (V1 parity; see the porting doc).
+            NSExtensionActivationRule:
+              NSExtensionActivationDictionaryVersion: 2
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebPageWithMaxCount: 1
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+            NSExtensionJavaScriptPreprocessingFile: ExtensionClass
+    entitlements:
+      path: ShareExtension/ShareExtension.entitlements
+    settings:
+      base:
+        PRODUCT_NAME: ShareExtension
+        PRODUCT_BUNDLE_IDENTIFIER: app.reflect.ios.share
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 789ULN5MZB
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: 1,2

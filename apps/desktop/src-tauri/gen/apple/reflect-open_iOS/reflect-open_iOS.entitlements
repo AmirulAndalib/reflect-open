@@ -18,5 +18,12 @@
 	<array>
 		<string>iCloud.app.reflect</string>
 	</array>
+	<!-- Shared with the ShareExtension target: the share sheet spools capture
+	     envelopes into this container's inbox/, and the app relays them into
+	     the graph's .reflect/inbox/ on launch/foreground (Plan 11). -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.app.reflect</string>
+	</array>
 </dict>
 </plist>

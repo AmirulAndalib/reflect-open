@@ -125,6 +125,7 @@ export {
   captureInboxReject,
   captureInboxRemove,
   captureMetaFetch,
+  captureSharedInboxRelay,
   promoteCaptureScreenshot,
 } from './graph/commands'
 export { createAsset, importAsset } from './graph/assets'

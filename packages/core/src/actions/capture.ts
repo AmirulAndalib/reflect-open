@@ -216,10 +216,15 @@ function captureNoteBody(
   hasScreenshot: boolean,
 ): string {
   const title = displayTitle(envelope)
-  const parts = [
-    `# ${title}`,
-    [`- URL: ${envelope.url}`, '- Type: #link'].join('\n'),
-  ]
+  const metadata = [`- URL: ${envelope.url}`, '- Type: #link']
+  // The in-page meta description (iOS share captures) lands in the raw save,
+  // so an offline capture still reads complete; enrichment later replaces
+  // this exact line in place (`withDescription`) with the scraped/AI one.
+  const metaDescription = envelope.metaDescription?.trim()
+  if (metaDescription) {
+    metadata.push(`- Description: ${metadataValue(metaDescription)}`)
+  }
+  const parts = [`# ${title}`, metadata.join('\n')]
   const note = envelope.note?.trim()
   if (note) {
     parts.push(`## Note\n\n${note}`)

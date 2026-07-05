@@ -33,6 +33,15 @@ describe('captureEnvelopeSchema', () => {
     expect(captureEnvelopeSchema.parse(full)).toEqual(full)
   })
 
+  it('accepts an iOS share capture with its in-page meta description', () => {
+    const shared = {
+      ...VALID,
+      source: 'ios-share',
+      metaDescription: 'A page about examples.',
+    }
+    expect(captureEnvelopeSchema.parse(shared)).toEqual(shared)
+  })
+
   it('accepts an offset timestamp', () => {
     const parsed = captureEnvelopeSchema.safeParse({
       ...VALID,
@@ -103,6 +112,12 @@ describe('textCaptureEnvelopeSchema', () => {
     expect(textCaptureEnvelopeSchema.parse(VALID_TEXT)).toEqual(VALID_TEXT)
     expect(
       textCaptureEnvelopeSchema.safeParse({ ...VALID_TEXT, kind: 'task' }).success,
+    ).toBe(true)
+  })
+
+  it('accepts the iOS share sheet as a text producer', () => {
+    expect(
+      textCaptureEnvelopeSchema.safeParse({ ...VALID_TEXT, source: 'ios-share' }).success,
     ).toBe(true)
   })
 

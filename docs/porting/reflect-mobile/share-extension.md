@@ -1,10 +1,21 @@
 # Porting the share extension
 
-**v2 status: later wave.** Deferred until the mobile share target can
-reuse the Plan 11 capture envelope/inbox model (desktop Chrome capture has
-shipped; the App Group ingestion half is the open work). V1's extension is
-the behavioral spec: save a link from any app in two taps, working even
-when the main app isn't running.
+**v2 status: implemented.** The `ShareExtension` target
+(`gen/apple/ShareExtension/`, declared in `ios.project.yml`) accepts URLs,
+web pages, and text from the share sheet and spools Plan 11 capture
+envelopes into the App Group inbox (`group.app.reflect/inbox/`) — entirely
+offline, no network, no graph access. The main app relays them into
+`.reflect/inbox/` (`capture_shared_inbox_relay`, `src-tauri/src/capture.rs`)
+and the shared drain/enrich pipeline materializes them; the mobile tree
+mounts `CaptureProvider`, which relays + drains on graph open and on every
+foreground (`visibilitychange`). Safari captures carry title, selection,
+and the meta description in-page (`ExtensionClass.js` →
+`metaDescription`), so an offline save still reads complete; enrichment
+replaces the description later when online. Non-URL text saves as a
+daily-note bullet (`kind: append`, `source: ios-share`). Remaining
+release-gate work: a device pass, and confirming automatic signing
+provisions the new `app.reflect.ios.share` App ID + App Group for
+TestFlight.
 
 ## What V1 mobile does
 
@@ -69,11 +80,21 @@ There is no API to POST to — the design inverts from *send to server* to
 | Errors queued in App Group defaults           | Same pattern: queue in the container, surface in-app            |
 | Daily-note `[[Links]]` entry (applied later)  | Same product shape, written locally at ingest                   |
 
-## Open questions
+## Resolved decisions
 
-- Envelope schema versioning shared between the desktop capture path and
-  the iOS extension (one format, two producers).
-- When to provision the extension target + App Group in
-  `ios.project.yml` (with the audio wave, most likely — same container).
-- Whether ingest should run on a background refresh or strictly on
-  foreground (v1 posture: foreground-only, like sync).
+- **One envelope schema, two producers**: the extension mirrors
+  `capture-envelope.ts` (`LinkCaptureEnvelope`/`TextCaptureEnvelope` in
+  `CaptureInbox.swift`); provenance is the widened `source: 'ios-share'`
+  member, never a new envelope variant. Safari's in-page description rides
+  the new optional `metaDescription` field, which the drain writes into the
+  raw save and enrichment replaces in place.
+- **App Group provisioned with this wave**: `group.app.reflect` on both
+  targets; the extension writes `<uuid>.json` atomically (tmp + same-volume
+  rename), the app-side Rust relay moves committed `.json` files into the
+  graph inbox (copy + atomic write + delete — the containers are different
+  volumes), quarantining oversized files beside the shared inbox.
+- **Ingest is foreground-only** (v1 posture, like sync): graph open, window
+  focus/online, and `visibilitychange` → visible all schedule the
+  relay+drain pass; no background refresh task.
+- **Regen caution**: `tauri ios init` rewrites both `.entitlements` files to
+  empty dicts — restore the iCloud + App Group entries before committing.

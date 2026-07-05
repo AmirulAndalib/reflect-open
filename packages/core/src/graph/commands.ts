@@ -176,6 +176,16 @@ export async function captureInboxRemove(name: string, generation: number): Prom
 }
 
 /**
+ * Relay envelopes the iOS share extension spooled into the App Group inbox
+ * into the graph's capture inbox, returning how many moved. iOS-only in
+ * effect (elsewhere there is no shared container and the relay is zero);
+ * called by the mobile capture controller before every drain pass.
+ */
+export async function captureSharedInboxRelay(generation: number): Promise<number> {
+  return call('capture_shared_inbox_relay', { generation }, z.number())
+}
+
+/**
  * Quarantine an unparseable spool file into `.reflect/inbox-rejected/` —
  * moved, never deleted: "the raw link is never lost" holds even for an
  * envelope a newer extension wrote that this app version can't read yet.
