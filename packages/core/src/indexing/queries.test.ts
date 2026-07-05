@@ -50,7 +50,7 @@ describe('dailyDatesInRange', () => {
 })
 
 describe('noteTitleOwningEmail', () => {
-  it('joins note_emails to notes by folded key, regular notes only, first path wins', async () => {
+  it('joins note_emails to #person-tagged regular notes by folded key, first path wins', async () => {
     mockInvoke.mockResolvedValue([{ title: 'Jane Doe' }])
 
     await expect(noteTitleOwningEmail('  Jane@Corp.com ')).resolves.toBe('Jane Doe')
@@ -60,9 +60,10 @@ describe('noteTitleOwningEmail', () => {
     const sql = String(args['sql'])
     expect(sql).toContain('note_emails')
     expect(sql).toContain('email_key')
+    expect(sql).toContain('tag_key')
     expect(sql).toContain('kind')
     expect(sql).toContain('order by')
-    expect(args['params']).toEqual(['jane@corp.com', 'note'])
+    expect(args['params']).toEqual(['jane@corp.com', 'person', 'note'])
   })
 
   it('answers null for an unowned address without guessing', async () => {

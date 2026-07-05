@@ -600,11 +600,16 @@ export async function getNoteIdsByPath(paths: string[]): Promise<Map<string, str
   return ids
 }
 
+/** The folded tag key marking person notes (`- Type: #person`, v1's typing). */
+const PERSON_TAG_KEY = 'person'
+
 /**
  * The title of the note that owns `email` through a `- Email:` contact-field
- * bullet (the `note_emails` projection), or null. Regular notes only: a daily
- * note or template quoting an address must never become a `[[Person]]` link
- * target. Several notes claiming one address resolve to the first path
+ * bullet (the `note_emails` projection), or null. Only `#person`-tagged
+ * regular notes qualify: a daily note, template, or non-person note quoting
+ * an address must never become a `[[Person]]` link target — the projection
+ * records every field bullet, and this query is where the ownership policy
+ * lives. Several notes claiming one address resolve to the first path
  * alphabetically, the resolver's rule everywhere else.
  */
 export async function noteTitleOwningEmail(email: string): Promise<string | null> {
@@ -615,7 +620,9 @@ export async function noteTitleOwningEmail(email: string): Promise<string | null
   const owner = await db
     .selectFrom('noteEmails')
     .innerJoin('notes', 'notes.path', 'noteEmails.notePath')
+    .innerJoin('tags', 'tags.notePath', 'notes.path')
     .where('noteEmails.emailKey', '=', key)
+    .where('tags.tagKey', '=', PERSON_TAG_KEY)
     .where('notes.kind', '=', 'note')
     .select('notes.title as title')
     .orderBy('notes.path')

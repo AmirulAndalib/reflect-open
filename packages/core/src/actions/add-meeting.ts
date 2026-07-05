@@ -24,8 +24,9 @@ import { resolveMeetingAttendees } from './resolve-attendees'
  * v1), not a link — only attendees get `[[Person]]` links and notes.
  *
  * Attendees resolve by invite email first ({@link resolveMeetingAttendees}):
- * a note owning the address via a `- Email:` bullet supplies the link name,
- * so a person keeps one note however the calendar spelled them. With the
+ * a `#person`-tagged note owning the address via a `- Email:` bullet supplies
+ * the link name, so a person keeps one note however the calendar spelled
+ * them. With the
  * contacts integration on (docs/porting/contacts-integration.md), a fresh
  * person note is named and pre-filled from the Apple Contacts entry matching
  * the attendee's invite email. After that, they are ordinary notes; nothing

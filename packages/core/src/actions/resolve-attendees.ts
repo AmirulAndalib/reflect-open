@@ -13,10 +13,10 @@ import type { MeetingAttendee } from './add-meeting'
  * therefore mints duplicate person notes. The invite email is the stable
  * identity, so each attendee that carries one resolves in order:
  *
- * 1. **The graph.** A note owning the address via a `- Email:` contact-field
- *    bullet (the `note_emails` projection) wins outright — the attendee is
- *    renamed to that note's title, so the `[[Person]]` link lands on the
- *    existing note.
+ * 1. **The graph.** A `#person`-tagged note owning the address via a
+ *    `- Email:` contact-field bullet (the `note_emails` projection) wins
+ *    outright — the attendee is renamed to that note's title, so the
+ *    `[[Person]]` link lands on the existing note.
  * 2. **Apple Contacts** (gate on), only when the attendee's name *is* the
  *    address — the calendar knew no better. The contact's full name becomes
  *    the attendee, so the note the flow then creates (pre-filled with the
