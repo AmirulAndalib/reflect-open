@@ -55,6 +55,8 @@ export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
         // local-storage path (and, via `mobileOnboarded` above, skips
         // onboarding entirely).
         return { localRoot: DEV_GRAPH_ROOT, icloudDocumentsRoot: null, icloudGraphRoots: [] }
+      case 'mobile_storage_local':
+        return DEV_GRAPH_ROOT
       case 'icloud_download_pending':
         return 0
       case 'graph_open':
@@ -71,6 +73,9 @@ export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
         return null
       case 'capture_inbox_list':
         return []
+      case 'capture_shared_inbox_relay':
+        // No share-extension App Group inbox in a browser; nothing to relay.
+        return 0
 
       case 'note_read': {
         const { path } = pathArgsSchema.parse(args)
