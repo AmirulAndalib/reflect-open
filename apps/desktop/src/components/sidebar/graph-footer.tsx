@@ -78,13 +78,13 @@ export function GraphFooter({ graph, context }: GraphFooterProps): ReactElement 
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex min-w-0 flex-1 items-center space-x-2.5 text-left"
+                className="group flex min-w-0 flex-1 items-center space-x-2.5 rounded-md px-1.5 py-1 text-left transition-colors duration-100 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
                 <GraphSwatch
                   color={colorFor(graph.root)}
                   className={cn('h-5 w-5', indexing && 'motion-safe:animate-pulse')}
                 />
-                <span className="min-w-0 truncate text-xs font-medium text-text-secondary">
+                <span className="min-w-0 truncate text-xs font-medium text-text-secondary transition-colors duration-100 group-hover:text-text">
                   {graph.name}
                 </span>
                 {dot !== null ? (

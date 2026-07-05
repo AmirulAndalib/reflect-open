@@ -13,6 +13,9 @@ import { graphColorCss } from '@/lib/graph-colors'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
 
+const CHOOSER_BUTTON_CLASS =
+  'transition-[background-color,border-color,box-shadow,transform,color] duration-150 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-surface-hover hover:shadow-sm'
+
 /** iCloud is a real option only in the macOS shell. */
 function isIcloudCapablePlatform(): boolean {
   return import.meta.env.TAURI_ENV_PLATFORM === 'darwin'
@@ -23,10 +26,11 @@ function isIcloudCapablePlatform(): boolean {
  * plainly: where do your notes live? iCloud is the recommended default —
  * every graph already in the container is listed to open, and a name field
  * creates a new one right there. Choosing a folder yourself is the
- * self-managed path (Git sync, local-only).
+ * self-managed path.
  *
- * "Graph" is deliberately absent — newcomers don't know the word yet; the
- * iCloud card asks for a "name" and the folder card talks about folders.
+ * The iCloud card uses "graph" only where the user is deciding between
+ * existing containers and creating another one; the folder card talks about
+ * folders.
  */
 export function GraphChooser(): ReactElement {
   const { recents, error, pickAndOpen, openRecent, createAt, forget } = useGraph()
@@ -56,13 +60,12 @@ export function GraphChooser(): ReactElement {
             icon={<Folder aria-hidden className="size-4" strokeWidth={1.75} />}
             title="A folder you choose"
           >
-            Keep notes in any folder on this {icloudCapable ? 'Mac' : 'computer'}. Sync with
-            GitHub from Settings, or keep them local.
+            Keep notes in any folder on this {icloudCapable ? 'Mac' : 'computer'}.
           </CardHeader>
           <Button
             type="button"
             variant={icloudCapable ? 'outline' : 'default'}
-            className="mt-auto w-full"
+            className={cn('mt-auto w-full', CHOOSER_BUTTON_CLASS)}
             onClick={() => void pickAndOpen()}
           >
             <FolderPlus aria-hidden strokeWidth={1.75} />
@@ -242,7 +245,7 @@ function IcloudCard({
         tinted
       >
         {existing.length > 0
-          ? 'Your notes are already in iCloud.'
+          ? 'Open an existing graph from iCloud Drive.'
           : available
             ? 'Syncs across your Mac and iPhone. Backed up automatically.'
             : status === undefined
@@ -256,7 +259,7 @@ function IcloudCard({
               <Button
                 type="button"
                 variant="outline"
-                className="w-full justify-start"
+                className={cn('w-full justify-start', CHOOSER_BUTTON_CLASS)}
                 disabled={pending}
                 onClick={() => open(root)}
               >
@@ -274,7 +277,8 @@ function IcloudCard({
       {existing.length > 0 ? (
         // Compact create row under the list: a new graph next to the
         // existing ones is the secondary action here, not the headline.
-        <div className="mt-auto space-y-1.5">
+        <div className="mt-auto space-y-2">
+          <ChooserDivider>or create new graph</ChooserDivider>
           <div className="flex gap-2">
             <Input
               aria-label="Name"
@@ -292,7 +296,7 @@ function IcloudCard({
             <Button
               type="button"
               variant="outline"
-              className="shrink-0"
+              className={cn('shrink-0', CHOOSER_BUTTON_CLASS)}
               disabled={pending || cleanName === null || nameTaken}
               onClick={() => void create()}
             >
@@ -324,7 +328,7 @@ function IcloudCard({
           </div>
           <Button
             type="button"
-            className="w-full"
+            className={cn('w-full', CHOOSER_BUTTON_CLASS)}
             disabled={!available || pending || cleanName === null}
             onClick={() => void create()}
           >
@@ -334,5 +338,15 @@ function IcloudCard({
         </div>
       )}
     </section>
+  )
+}
+
+function ChooserDivider({ children }: { children: string }): ReactElement {
+  return (
+    <div className="flex items-center gap-3 py-1">
+      <span aria-hidden className="h-px flex-1 bg-border" />
+      <span className="text-2xs font-medium text-text-muted">{children}</span>
+      <span aria-hidden className="h-px flex-1 bg-border" />
+    </div>
   )
 }
