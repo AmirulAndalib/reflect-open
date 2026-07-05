@@ -16,6 +16,8 @@ const core = vi.hoisted(() => ({
   duplicateIds: [] as Array<{ id: string; paths: string[] }>,
 }))
 
+const platform = vi.hoisted(() => ({ isMacosDesktop: true }))
+
 const graph = vi.hoisted(() => ({
   current: null as GraphInfo | null,
   openRecent: vi.fn<(root: string) => Promise<boolean>>(async () => true),
@@ -36,7 +38,11 @@ vi.mock('@reflect/core', async (importOriginal) => ({
   getConflictedNotes: vi.fn(async () => core.conflictedNotes),
   getDuplicateNoteIds: vi.fn(async () => core.duplicateIds),
 }))
-vi.mock('@/lib/platform', () => ({ isMacosDesktop: true }))
+vi.mock('@/lib/platform', () => ({
+  get isMacosDesktop(): boolean {
+    return platform.isMacosDesktop
+  },
+}))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: graph.current, openRecent: graph.openRecent }),
 }))
@@ -64,6 +70,7 @@ beforeEach(() => {
   core.pendingNotes = 0
   core.conflictedNotes = []
   core.duplicateIds = []
+  platform.isMacosDesktop = true
   sync.backup = { phase: 'disconnected' }
 })
 
@@ -117,5 +124,20 @@ describe('SyncSection', () => {
       await within(section).findByText('2 notes are still downloading from iCloud.'),
     ).toBeTruthy()
     expect(within(section).getByText('1 note needs review, 1 sync fork')).toBeTruthy()
+  })
+
+  it('keeps backup visible when the iCloud row is platform-hidden', () => {
+    platform.isMacosDesktop = false
+    graph.current = {
+      root: '/Users/alex/Library/Mobile Documents/iCloud~app/Documents/Notes',
+      name: 'Notes',
+      generation: 1,
+    }
+
+    renderSection()
+
+    const section = screen.getByRole('region', { name: 'Sync' })
+    expect(within(section).queryByText('iCloud Drive', { selector: 'legend' })).toBeNull()
+    expect(within(section).getByText('GitHub backup', { selector: 'legend' })).toBeTruthy()
   })
 })

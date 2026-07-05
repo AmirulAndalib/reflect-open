@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import { isICloudRoot } from '@/lib/icloud-controller'
+import { isMacosDesktop } from '@/lib/platform'
 import { useGraph } from '@/providers/graph-provider'
 import { BackupSettingsField } from './backup-section'
 import { IcloudSettingsField } from './icloud-section'
@@ -12,7 +13,7 @@ import { SettingsSection } from './section'
  */
 export function SyncSection(): ReactElement {
   const { graph } = useGraph()
-  const iCloudSyncEnabled = graph !== null && isICloudRoot(graph.root)
+  const iCloudSyncEnabled = isMacosDesktop && graph !== null && isICloudRoot(graph.root)
 
   return (
     <SettingsSection id="sync">
