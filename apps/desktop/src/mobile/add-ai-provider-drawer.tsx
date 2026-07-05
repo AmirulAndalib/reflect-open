@@ -1,12 +1,18 @@
 import { useState, type ReactElement } from 'react'
-import { AI_PROVIDERS, aiProvider, type AiProviderId } from '@reflect/core'
+import { AI_PROVIDERS, aiProvider, aiProviderIdSchema, type AiProviderId } from '@reflect/core'
 import { InlineAlert } from '@/components/inline-alert'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useAddAiProviderSubmit } from '@/hooks/use-add-ai-provider-submit'
 import type { NewAiProvider } from '@/hooks/use-ai-providers'
-import { SettingsGroup, SettingsSelectRow, SettingsSwitchRow } from '@/mobile/settings-list'
 
 interface AddAiProviderDrawerProps {
   open: boolean
@@ -15,13 +21,16 @@ interface AddAiProviderDrawerProps {
   onAdd: (draft: NewAiProvider) => Promise<void>
 }
 
+const FIELD_LABEL_CLASS = 'text-xs font-medium text-text-secondary'
+
 /**
- * The mobile "Add AI provider" bottom sheet — desktop's dialog in the
- * inset-grouped idiom over the same {@link useAddAiProviderSubmit} flow
- * (verify key → inline rejection / save-anyway downgrade → persist).
- * Models come from the provider's curated list; custom model ids stay a
- * desktop affordance. The sheet body mounts per open cycle, so a dismissed
- * half-typed key never leaks into the next open.
+ * The mobile "Add AI provider" bottom sheet — desktop's dialog as a Drawer
+ * (the {@link ConnectGithubDrawer} form idiom: labeled fields, shadcn
+ * Selects) over the same {@link useAddAiProviderSubmit} flow: verify key →
+ * inline rejection / save-anyway downgrade → persist. Models come from the
+ * provider's curated list; custom model ids stay a desktop affordance. The
+ * sheet body mounts per open cycle, so a dismissed half-typed key never
+ * leaks into the next open.
  */
 export function AddAiProviderDrawer({
   open,
@@ -68,66 +77,84 @@ function AddAiProviderSheet({
   return (
     <>
       <DrawerTitle className="px-4 pt-1">Add AI provider</DrawerTitle>
-      <div className="flex max-h-[75dvh] flex-col gap-6 overflow-y-auto px-4 pb-8 pt-4">
+      <div className="flex max-h-[75dvh] flex-col gap-4 overflow-y-auto px-4 pb-8 pt-3">
         <p className="text-sm text-text-muted">
           The API key is stored in this device’s keychain, never in your graph — add it on each
           device you chat from.
         </p>
-        <SettingsGroup header="Provider">
-          {AI_PROVIDERS.map((candidate) => (
-            <SettingsSelectRow
-              key={candidate.id}
-              label={candidate.label}
-              selected={candidate.id === providerId}
-              onPress={() => {
-                setProviderId(candidate.id)
-                setModel(candidate.models[0].id)
-                resetUnverified()
-              }}
-            />
-          ))}
-        </SettingsGroup>
-        <SettingsGroup header="Default model">
-          {provider.models.map((candidate) => (
-            <SettingsSelectRow
-              key={candidate.id}
-              label={candidate.label}
-              selected={candidate.id === model}
-              onPress={() => setModel(candidate.id)}
-            />
-          ))}
-        </SettingsGroup>
-        <SettingsGroup header="API key">
-          <div className="px-4 py-2">
-            <Input
-              type="password"
-              placeholder={provider.keyPlaceholder}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="API key"
-              value={apiKey}
-              onChange={(event) => {
-                setApiKey(event.target.value)
-                resetUnverified()
-              }}
-            />
-          </div>
-          <SettingsSwitchRow
-            label="Use as the default provider"
-            checked={isDefault}
-            onCheckedChange={setIsDefault}
+
+        <div className="flex flex-col gap-1">
+          <span className={FIELD_LABEL_CLASS}>Provider</span>
+          <Select
+            value={provider.id}
+            onValueChange={(value) => {
+              const next = aiProvider(aiProviderIdSchema.parse(value))
+              setProviderId(next.id)
+              setModel(next.models[0].id)
+              resetUnverified()
+            }}
+          >
+            <SelectTrigger aria-label="Provider" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {AI_PROVIDERS.map((candidate) => (
+                <SelectItem key={candidate.id} value={candidate.id}>
+                  {candidate.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <span className={FIELD_LABEL_CLASS}>Default model</span>
+          <Select value={model} onValueChange={setModel}>
+            <SelectTrigger aria-label="Default model" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {provider.models.map((candidate) => (
+                <SelectItem key={candidate.id} value={candidate.id}>
+                  {candidate.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <label className="flex flex-col gap-1">
+          <span className={FIELD_LABEL_CLASS}>API key</span>
+          <Input
+            type="password"
+            placeholder={provider.keyPlaceholder}
+            autoComplete="off"
+            spellCheck={false}
+            value={apiKey}
+            onChange={(event) => {
+              setApiKey(event.target.value)
+              resetUnverified()
+            }}
           />
-        </SettingsGroup>
+        </label>
+
+        <label className="flex items-center gap-2 py-1">
+          <input
+            type="checkbox"
+            className="accent-accent"
+            checked={isDefault}
+            onChange={(event) => setIsDefault(event.target.checked)}
+          />
+          <span className="text-sm text-text">Use as the default provider</span>
+        </label>
+
         {submitError !== null ? <InlineAlert tone="error">{submitError}</InlineAlert> : null}
         {unverified ? (
           <InlineAlert tone="warning">
             Couldn’t reach {provider.label} to verify the key. Submit again to save it unverified.
           </InlineAlert>
         ) : null}
-        <Button
-          disabled={apiKey.trim() === '' || submitting}
-          onClick={() => void submitDraft()}
-        >
+        <Button disabled={apiKey.trim() === '' || submitting} onClick={() => void submitDraft()}>
           {unverified ? 'Save anyway' : 'Add provider'}
         </Button>
       </div>

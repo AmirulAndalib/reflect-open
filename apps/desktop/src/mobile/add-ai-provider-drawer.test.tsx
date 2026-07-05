@@ -27,6 +27,10 @@ vi.mock('@/components/ui/drawer', () => ({
   DrawerTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
 }))
 
+// jsdom doesn't implement this; Radix Select scrolls the selected option into
+// view when the listbox opens.
+Element.prototype.scrollIntoView ??= () => {}
+
 const { AddAiProviderDrawer } = await import('./add-ai-provider-drawer')
 
 afterEach(cleanup)
@@ -54,7 +58,10 @@ describe('AddAiProviderDrawer', () => {
     validateApiKey.mockResolvedValue('valid')
     renderSheet()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Anthropic' }))
+    // Keyboard-driven (the pointer path needs capture APIs jsdom lacks);
+    // options render in a portal, so they're queried from screen.
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Provider' }), { key: 'ArrowDown' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'Anthropic' }), { key: 'Enter' })
     await typeKeyAndSubmit('sk-ant-key')
 
     await waitFor(() =>
