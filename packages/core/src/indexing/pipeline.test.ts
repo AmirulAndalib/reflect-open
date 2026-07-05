@@ -185,28 +185,95 @@ describe('syncIndex', () => {
 })
 
 describe('applyIndexChanges (watcher dispatch)', () => {
-  it('re-indexes upserts and removes deletes at the given generation', async () => {
-    await applyIndexChanges(
+  it('re-indexes upserts (batched) and removes deletes at the given generation', async () => {
+    const mutations = await applyIndexChanges(
       [
         { path: 'notes/a.md', kind: 'upsert', modifiedMs: 4242 },
         { path: 'notes/gone.md', kind: 'remove' },
       ],
       9,
     )
-    const apply = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_apply')
+    const apply = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_apply_batch')
     const remove = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_remove')
-    expect((apply![1] as { note: { path: string }; generation: number }).generation).toBe(9)
-    expect((apply![1] as { note: { path: string } }).note.path).toBe('notes/a.md')
-    expect((apply![1] as { note: { mtime: number } }).note.mtime).toBe(4242)
+    const args = apply![1] as { notes: Array<{ path: string; mtime: number }>; generation: number }
+    expect(args.generation).toBe(9)
+    expect(args.notes.map((note) => note.path)).toEqual(['notes/a.md'])
+    expect(args.notes[0]!.mtime).toBe(4242)
     expect(remove![1]).toMatchObject({ path: 'notes/gone.md', generation: 9 })
+    expect(mutations).toBe(2)
   })
 
   it('stamps "now" — never epoch zero — when an upsert carries no modifiedMs', async () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_750_000_000_000)
     try {
       await applyIndexChanges([{ path: 'notes/a.md', kind: 'upsert' }], 9)
-      const apply = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_apply')
-      expect((apply![1] as { note: { mtime: number } }).note.mtime).toBe(1_750_000_000_000)
+      const apply = mockInvoke.mock.calls.find(([cmd]) => cmd === 'index_apply_batch')
+      const notes = (apply![1] as { notes: Array<{ mtime: number }> }).notes
+      expect(notes[0]!.mtime).toBe(1_750_000_000_000)
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  it('skips upserts whose indexed row already matches an old mtime, without reading', async () => {
+    // The iCloud watch's initial gather re-reports every downloaded note; a
+    // row indexed at the same (settled) mtime must cost neither a read nor a
+    // write — and a zero-mutation batch reports 0 so no invalidation fires.
+    mockInvoke.mockImplementation(async (command, args) => {
+      const sql = String(args['sql'] ?? '')
+      if (command === 'db_query' && sql.includes('file_hash')) {
+        return [{ path: 'notes/a.md', file_hash: 'stored', mtime: 1_000 }]
+      }
+      if (command === 'db_query') {
+        return []
+      }
+      if (command === 'note_read') {
+        throw new Error('must not read an mtime-matched file')
+      }
+      return null
+    })
+
+    const mutations = await applyIndexChanges(
+      [{ path: 'notes/a.md', kind: 'upsert', modifiedMs: 1_000 }],
+      9,
+    )
+
+    expect(mutations).toBe(0)
+    const commands = mockInvoke.mock.calls.map(([cmd]) => cmd)
+    expect(commands).not.toContain('note_read')
+    expect(commands).not.toContain('index_apply_batch')
+  })
+
+  it('still reads when the reported mtime is too fresh to trust', async () => {
+    // Local write echoes stamp rows with Date.now(): two same-millisecond
+    // saves would look "unchanged" by mtime alone, so fresh mtimes always
+    // take the read-and-hash path.
+    const now = 1_750_000_000_000
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now)
+    try {
+      mockInvoke.mockImplementation(async (command, args) => {
+        const sql = String(args['sql'] ?? '')
+        if (command === 'db_query' && sql.includes('file_hash')) {
+          return [{ path: 'notes/a.md', file_hash: 'stale', mtime: now - 10 }]
+        }
+        if (command === 'db_query') {
+          return []
+        }
+        if (command === 'note_read') {
+          return '# fresh content'
+        }
+        return null
+      })
+
+      const mutations = await applyIndexChanges(
+        [{ path: 'notes/a.md', kind: 'upsert', modifiedMs: now - 10 }],
+        9,
+      )
+
+      expect(mutations).toBe(1)
+      const commands = mockInvoke.mock.calls.map(([cmd]) => cmd)
+      expect(commands).toContain('note_read')
+      expect(commands).toContain('index_apply_batch')
     } finally {
       nowSpy.mockRestore()
     }
@@ -300,6 +367,7 @@ describe('reconcileIndex move healing (Plan 17)', () => {
     // The moved row carried its hash: identical content means no re-apply —
     // and crucially no remove, so embeddings survived.
     expect(commands).not.toContain('index_apply')
+    expect(commands).not.toContain('index_apply_batch')
     expect(commands).not.toContain('index_remove')
   })
 
@@ -320,9 +388,10 @@ describe('reconcileIndex move healing (Plan 17)', () => {
     const commands = calls.map(([command]) => command)
     expect(commands).toContain('index_move')
     expect(commands).not.toContain('index_remove')
-    const apply = calls.find(([command]) => command === 'index_apply')
+    const apply = calls.find(([command]) => command === 'index_apply_batch')
     expect(apply).toBeDefined()
-    expect((apply![1]['note'] as { path: string }).path).toBe(NEW)
+    const notes = apply![1]['notes'] as Array<{ path: string }>
+    expect(notes.map((note) => note.path)).toEqual([NEW])
   })
 
   it('a legacy file without an id still reconciles as delete+create', async () => {
@@ -335,8 +404,62 @@ describe('reconcileIndex move healing (Plan 17)', () => {
 
     const commands = calls.map(([command]) => command)
     expect(commands).not.toContain('index_move')
-    expect(commands).toContain('index_apply')
+    expect(commands).toContain('index_apply_batch')
     expect(commands).toContain('index_remove')
+  })
+})
+
+describe('reconcileIndex mtime skip', () => {
+  it('never reads a file whose indexed row matches its settled mtime', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      const sql = String(args['sql'] ?? '')
+      if (command === 'list_files') {
+        return [{ path: 'notes/a.md', size: 1, modifiedMs: 1_000 }]
+      }
+      if (command === 'db_query' && sql.includes('file_hash')) {
+        return [{ path: 'notes/a.md', file_hash: 'stored', mtime: 1_000 }]
+      }
+      if (command === 'db_query') {
+        return []
+      }
+      if (command === 'note_read') {
+        throw new Error('must not read an mtime-matched file')
+      }
+      return null
+    })
+
+    await reconcileIndex({ generation: 4 })
+
+    const commands = mockInvoke.mock.calls.map(([cmd]) => cmd)
+    expect(commands).not.toContain('note_read')
+    expect(commands).not.toContain('index_apply_batch')
+  })
+
+  it('reads (and hash-skips) when the stored mtime differs — providers rewrite mtimes', async () => {
+    const content = '# Hello\n'
+    mockInvoke.mockImplementation(async (command, args) => {
+      const sql = String(args['sql'] ?? '')
+      if (command === 'list_files') {
+        return [{ path: 'notes/a.md', size: 1, modifiedMs: 2_000 }]
+      }
+      if (command === 'db_query' && sql.includes('file_hash')) {
+        return [{ path: 'notes/a.md', file_hash: await hashContent(content), mtime: 1_000 }]
+      }
+      if (command === 'db_query') {
+        return []
+      }
+      if (command === 'note_read') {
+        return content
+      }
+      return null
+    })
+
+    await reconcileIndex({ generation: 4 })
+
+    const commands = mockInvoke.mock.calls.map(([cmd]) => cmd)
+    expect(commands).toContain('note_read')
+    // Identical content under a rewritten mtime: the hash still gates the write.
+    expect(commands).not.toContain('index_apply_batch')
   })
 })
 
@@ -371,6 +494,7 @@ describe('iCloud eviction placeholders (Plan 21)', () => {
     expect(commands).not.toContain('note_read')
     expect(commands).not.toContain('index_remove')
     expect(commands).not.toContain('index_apply')
+    expect(commands).not.toContain('index_apply_batch')
   })
 
   it('placeholders are not move-healing arrivals, and true orphans still drop', async () => {

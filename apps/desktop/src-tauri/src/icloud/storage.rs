@@ -95,13 +95,55 @@ pub async fn mobile_storage(app: tauri::AppHandle) -> AppResult<MobileStorage> {
 /// returning how many placeholders were found. iCloud does not pull files
 /// down eagerly on iOS, so an edit made on the Mac exists only as a
 /// `.name.md.icloud` stub until something requests it. The frontend calls
-/// this on open/resume for iCloud graphs and re-reconciles while the count
-/// stays above zero.
+/// this once per open/resume for iCloud graphs; while the count stays above
+/// zero it polls [`icloud_pending_count`], which never re-requests.
 #[tauri::command]
 pub async fn icloud_download_pending(root: String) -> AppResult<u32> {
-    tauri::async_runtime::spawn_blocking(move || Ok(platform::download_pending(Path::new(&root))))
-        .await
-        .map_err(|err| AppError::io(err.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(platform::pending_walk(Path::new(&root), true))
+    })
+    .await
+    .map_err(|err| AppError::io(err.to_string()))?
+}
+
+/// Command: the app-sandbox `Documents/` root alone — the cheap half of
+/// [`mobile_storage`]. Resolving the iCloud container can take a long time on
+/// a fresh install (the first `URLForUbiquityContainerIdentifier` call
+/// provisions it and may touch the network); the local root needs none of
+/// that, and the onboarding screen's on-device and GitHub paths only need
+/// this. Same persistence rule as every container path: derive fresh, never
+/// persist.
+#[tauri::command]
+pub fn mobile_storage_local(app: tauri::AppHandle) -> AppResult<String> {
+    #[cfg(mobile)]
+    {
+        let local = app
+            .path()
+            .document_dir()
+            .map_err(|err| AppError::io(format!("no documents directory: {err}")))?;
+        Ok(local.to_string_lossy().into_owned())
+    }
+    #[cfg(desktop)]
+    {
+        let _ = app;
+        Err(AppError::Unknown {
+            message: "mobile_storage_local is mobile-only".into(),
+        })
+    }
+}
+
+/// Command: count the `.icloud` placeholders under `root` without requesting
+/// anything. The poll loop that waits for a download burst to settle calls
+/// this every second — re-*requesting* thousands of in-flight downloads on
+/// every tick is wasted `NSFileManager` traffic (the open/resume nudge and
+/// the metadata watch already own the requests).
+#[tauri::command]
+pub async fn icloud_pending_count(root: String) -> AppResult<u32> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(platform::pending_walk(Path::new(&root), false))
+    })
+    .await
+    .map_err(|err| AppError::io(err.to_string()))?
 }
 
 /// Every existing graph among the container `Documents/` subdirectories
@@ -173,10 +215,10 @@ mod platform {
         Some(documents)
     }
 
-    /// Walk `root` and request a download for every `.icloud` placeholder.
-    /// Returns the number of placeholders seen. Individual failures are
-    /// logged and skipped — one undownloadable file must not stop the rest.
-    pub fn download_pending(root: &Path) -> u32 {
+    /// Walk `root` counting `.icloud` placeholders; with `nudge`, request a
+    /// download for each. Individual failures are logged and skipped — one
+    /// undownloadable file must not stop the rest.
+    pub fn pending_walk(root: &Path, nudge: bool) -> u32 {
         let manager = NSFileManager::defaultManager();
         let mut pending = 0;
         let mut stack = vec![root.to_path_buf()];
@@ -205,7 +247,7 @@ mod platform {
                     continue;
                 };
                 pending += 1;
-                if !start_download(&manager, &path) {
+                if nudge && !start_download(&manager, &path) {
                     // Some iOS releases want the logical URL, not the stub.
                     start_download(&manager, &dir.join(target));
                 }
@@ -237,7 +279,7 @@ mod platform {
     }
 
     /// Nothing to download without a container.
-    pub fn download_pending(_root: &Path) -> u32 {
+    pub fn pending_walk(_root: &Path, _nudge: bool) -> u32 {
         0
     }
 }

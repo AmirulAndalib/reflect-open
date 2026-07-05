@@ -5,8 +5,13 @@ import { MobileOnboardingScreen } from './onboarding-screen'
 
 const completeOnboarding = vi.hoisted(() => vi.fn(async (_kind: string, _root?: string) => {}))
 const storageInfo = vi.hoisted<{ current: unknown }>(() => ({ current: null }))
+const storageResolving = vi.hoisted<{ current: boolean }>(() => ({ current: false }))
 vi.mock('@/providers/graph-provider', () => ({
-  useGraph: () => ({ mobileStorageInfo: storageInfo.current, completeOnboarding }),
+  useGraph: () => ({
+    mobileStorageInfo: storageInfo.current,
+    mobileStorageResolving: storageResolving.current,
+    completeOnboarding,
+  }),
 }))
 
 function setStorage(info: MobileStorageInfo): void {
@@ -14,6 +19,7 @@ function setStorage(info: MobileStorageInfo): void {
 }
 
 beforeEach(() => {
+  storageResolving.current = false
   setStorage({
     localRoot: '/Documents',
     icloudDocumentsRoot: '/iCloud/Documents',
@@ -81,6 +87,23 @@ describe('MobileOnboardingScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Keep notes on this device' }))
 
     await waitFor(() => expect(completeOnboarding).toHaveBeenCalledWith('local'))
+  })
+
+  it('shows the iCloud section as pending while the container resolves', () => {
+    // Fresh install: the sandbox root is seeded instantly but the container
+    // lookup is still running — the iCloud card must read as loading, not as
+    // signed-out, and the create form must wait for the real listing.
+    storageResolving.current = true
+    setStorage({ localRoot: '/Documents', icloudDocumentsRoot: null, icloudGraphRoots: [] })
+    render(<MobileOnboardingScreen />)
+
+    expect(screen.getByRole('heading', { name: 'iCloud Drive' })).toBeTruthy()
+    expect(screen.getByText('Looking for your notes…')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Create' })).toBeNull()
+    expect(screen.queryByText(/Sign in to iCloud/)).toBeNull()
+    // The on-device path stays live — its root is already known.
+    const local = screen.getByRole('button', { name: 'Keep notes on this device' })
+    expect((local as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('hides the iCloud action and explains why when iCloud is unavailable', () => {

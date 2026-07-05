@@ -29,6 +29,14 @@ const OWN_WRITE_TTL_MS = 5_000
 /** Debounce between a change signal and the sweep it triggers. */
 const SCAN_DEBOUNCE_MS = 1_000
 /**
+ * Debounce for scans triggered purely by external file arrivals. During an
+ * initial iCloud sync, arrivals stream in continuously and every sweep walks
+ * the whole graph (an `NSFileVersion` query per file); a wider window batches
+ * a download burst into far fewer sweeps. Conflict signals and resumes keep
+ * the shorter window — and an earlier-due request always wins.
+ */
+const INGEST_SCAN_DEBOUNCE_MS = 5_000
+/**
  * Resume-trigger dedupe: one transition can fire `focus` and
  * `visibilitychange` together (the backup controller's window, same value).
  */
@@ -85,17 +93,26 @@ export function createIcloudController(options: IcloudControllerOptions): Icloud
   let pendingIngest = new Set<string>()
   let applyingSweepResult = false
   let scanTimer: ReturnType<typeof setTimeout> | null = null
+  let scanTimerDue = 0
   let scanRunning = false
   let scanQueued = false
 
-  function scheduleScan(): void {
-    if (disposed || scanTimer !== null) {
+  function scheduleScan(delayMs: number = SCAN_DEBOUNCE_MS): void {
+    if (disposed) {
       return
     }
+    const due = Date.now() + delayMs
+    if (scanTimer !== null) {
+      if (due >= scanTimerDue) {
+        return // a sooner (or equal) scan is already on its way
+      }
+      clearTimeout(scanTimer)
+    }
+    scanTimerDue = due
     scanTimer = setTimeout(() => {
       scanTimer = null
       void runScan()
-    }, SCAN_DEBOUNCE_MS)
+    }, delayMs)
   }
 
   async function runScan(): Promise<void> {
@@ -212,7 +229,9 @@ export function createIcloudController(options: IcloudControllerOptions): Icloud
             }
             pendingIngest.add(change.path)
           }
-          scheduleScan()
+          // Arrival-driven: the wide window, so a download burst folds into
+          // few sweeps instead of one per watch batch.
+          scheduleScan(INGEST_SCAN_DEBOUNCE_MS)
         }),
       )
       disposers.push(

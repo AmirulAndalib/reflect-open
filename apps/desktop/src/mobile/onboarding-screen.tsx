@@ -31,9 +31,14 @@ type PendingChoice = string | 'icloud-create' | 'local' | null
  * when iCloud is unavailable). Every path ends in
  * `completeOnboarding(kind, root)`, which opens the chosen root and records
  * the flag + storage kind + graph name.
+ *
+ * The screen renders before the iCloud container has resolved (the boot no
+ * longer waits on it — see `GraphProvider`): while `mobileStorageResolving`
+ * is set the iCloud card shows a pending row instead of vanishing, since a
+ * null container root only means "signed out" once the lookup finished.
  */
 export function MobileOnboardingScreen(): ReactElement {
-  const { mobileStorageInfo, completeOnboarding } = useGraph()
+  const { mobileStorageInfo, mobileStorageResolving, completeOnboarding } = useGraph()
   const action = useAsyncAction()
   const [pendingChoice, setPendingChoice] = useState<PendingChoice>(null)
   const [typedIcloudName, setTypedIcloudName] = useState<string | null>(null)
@@ -41,6 +46,9 @@ export function MobileOnboardingScreen(): ReactElement {
 
   const icloudDocumentsRoot = mobileStorageInfo?.icloudDocumentsRoot ?? null
   const icloudReady = icloudDocumentsRoot !== null
+  // While the container is still resolving, the section renders in a pending
+  // state instead of vanishing — "no iCloud" is only honest once known.
+  const icloudPending = !icloudReady && mobileStorageResolving
   const icloudGraphs = mobileStorageInfo?.icloudGraphRoots ?? []
   // "Notes" pre-fills only a fresh container. Next to an existing list the
   // row starts empty — a prefilled default would collide with the usual
@@ -89,7 +97,7 @@ export function MobileOnboardingScreen(): ReactElement {
         </div>
 
         <div className="flex flex-col gap-3">
-          {icloudReady ? (
+          {icloudReady || icloudPending ? (
             <section className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
               <div className="flex items-start gap-3">
                 <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -110,78 +118,90 @@ export function MobileOnboardingScreen(): ReactElement {
                 </div>
               </div>
 
-              {icloudGraphs.length > 0 ? (
-                <>
-                  <ul className="flex flex-col gap-1.5">
-                    {icloudGraphs.map((root) => (
-                      <li key={root}>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full justify-start"
-                          onClick={() => openIcloudGraph(root)}
-                          disabled={action.pending}
-                        >
-                          {pendingChoice === root ? (
-                            <Spinner />
-                          ) : (
-                            <FolderOpen aria-hidden strokeWidth={1.75} />
-                          )}
-                          <span className="truncate">{graphNameFromRoot(root, root)}</span>
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                  <MobileDivider>or create new graph</MobileDivider>
-                </>
-              ) : null}
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor={icloudNameId} className="text-xs font-medium text-text-secondary">
-                  Name
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    id={icloudNameId}
-                    value={icloudName}
-                    placeholder={icloudGraphs.length > 0 ? 'New name' : undefined}
-                    enterKeyHint="go"
-                    onChange={(event) => setTypedIcloudName(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        createIcloudGraph()
-                      }
-                    }}
-                    aria-invalid={icloudNameTaken}
-                    disabled={action.pending}
-                  />
-                  <Button
-                    type="button"
-                    className="shrink-0"
-                    onClick={createIcloudGraph}
-                    disabled={action.pending || cleanIcloudName === null || icloudNameTaken}
-                  >
-                    {pendingChoice === 'icloud-create' ? (
-                      <Spinner />
-                    ) : (
-                      <Plus aria-hidden strokeWidth={1.75} />
-                    )}
-                    {pendingChoice === 'icloud-create' ? 'Setting up…' : 'Create'}
-                  </Button>
+              {icloudPending ? (
+                <div className="flex items-center gap-2 text-xs text-text-muted">
+                  <Spinner />
+                  Looking for your notes…
                 </div>
-              </div>
-              {icloudNameTaken ? (
-                <p className="text-xs text-destructive">
-                  That name already exists in iCloud Drive.
-                </p>
-              ) : null}
+              ) : (
+                <>
+                  {icloudGraphs.length > 0 ? (
+                    <>
+                      <ul className="flex flex-col gap-1.5">
+                        {icloudGraphs.map((root) => (
+                          <li key={root}>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full justify-start"
+                              onClick={() => openIcloudGraph(root)}
+                              disabled={action.pending}
+                            >
+                              {pendingChoice === root ? (
+                                <Spinner />
+                              ) : (
+                                <FolderOpen aria-hidden strokeWidth={1.75} />
+                              )}
+                              <span className="truncate">{graphNameFromRoot(root, root)}</span>
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                      <MobileDivider>or create new graph</MobileDivider>
+                    </>
+                  ) : null}
+
+                  <div className="flex flex-col gap-1.5">
+                    <label
+                      htmlFor={icloudNameId}
+                      className="text-xs font-medium text-text-secondary"
+                    >
+                      Name
+                    </label>
+                    <div className="flex gap-2">
+                      <Input
+                        id={icloudNameId}
+                        value={icloudName}
+                        placeholder={icloudGraphs.length > 0 ? 'New name' : undefined}
+                        enterKeyHint="go"
+                        onChange={(event) => setTypedIcloudName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            createIcloudGraph()
+                          }
+                        }}
+                        aria-invalid={icloudNameTaken}
+                        disabled={action.pending}
+                      />
+                      <Button
+                        type="button"
+                        className="shrink-0"
+                        onClick={createIcloudGraph}
+                        disabled={action.pending || cleanIcloudName === null || icloudNameTaken}
+                      >
+                        {pendingChoice === 'icloud-create' ? (
+                          <Spinner />
+                        ) : (
+                          <Plus aria-hidden strokeWidth={1.75} />
+                        )}
+                        {pendingChoice === 'icloud-create' ? 'Setting up…' : 'Create'}
+                      </Button>
+                    </div>
+                  </div>
+                  {icloudNameTaken ? (
+                    <p className="text-xs text-destructive">
+                      That name already exists in iCloud Drive.
+                    </p>
+                  ) : null}
+                </>
+              )}
             </section>
           ) : null}
 
           <Button
-            variant={icloudReady ? 'outline' : 'default'}
+            variant={icloudReady || icloudPending ? 'outline' : 'default'}
             onClick={keepOnDevice}
-            disabled={action.pending}
+            disabled={action.pending || mobileStorageInfo === null}
           >
             {pendingChoice === 'local' ? (
               <Spinner />
@@ -190,7 +210,7 @@ export function MobileOnboardingScreen(): ReactElement {
             )}
             {pendingChoice === 'local' ? 'Setting up…' : 'Keep notes on this device'}
           </Button>
-          {!icloudReady ? (
+          {!icloudReady && !icloudPending ? (
             <p className="text-center text-xs text-text-muted">
               Sign in to iCloud on this device to sync notes with iCloud Drive.
             </p>

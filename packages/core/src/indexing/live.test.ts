@@ -33,8 +33,11 @@ describe('applyIndexChanges', () => {
         }
         return '# ok'
       }
-      if (command === 'index_apply') {
-        applied.push((args['note'] as { path: string }).path)
+      if (command === 'index_apply_batch') {
+        applied.push(...(args['notes'] as Array<{ path: string }>).map((note) => note.path))
+      }
+      if (command === 'db_query') {
+        return []
       }
       return null
     })
@@ -62,6 +65,37 @@ describe('applyIndexChanges', () => {
 
     await applyIndexChanges([{ path: 'notes/gone.md', kind: 'remove' }], 9)
     expect(calls).toEqual([['index_remove', { path: 'notes/gone.md', generation: 9 }]])
+  })
+
+  it('applies an upsert(x) … remove(x) sequence in order — the remove wins', async () => {
+    const order: string[] = []
+    fakeBridge(async (command, args) => {
+      if (command === 'note_read') {
+        return '# recreated then deleted'
+      }
+      if (command === 'index_apply_batch') {
+        order.push(...(args['notes'] as Array<{ path: string }>).map((note) => `apply:${note.path}`))
+      }
+      if (command === 'index_remove') {
+        order.push(`remove:${String(args['path'])}`)
+      }
+      if (command === 'db_query') {
+        return []
+      }
+      return null
+    })
+
+    await applyIndexChanges(
+      [
+        { path: 'notes/x.md', kind: 'upsert', modifiedMs: 42 },
+        { path: 'notes/x.md', kind: 'remove' },
+      ],
+      9,
+    )
+
+    // The batched upsert must flush before the remove — a remove overtaken by
+    // its own earlier upsert would resurrect a deleted note as a ghost row.
+    expect(order).toEqual(['apply:notes/x.md', 'remove:notes/x.md'])
   })
 
   it('skips non-note paths — the watcher also reports audio-memo recordings', async () => {
@@ -97,8 +131,11 @@ describe('subscribeIndexChanges', () => {
         }
         return '# content'
       }
-      if (command === 'index_apply') {
-        order.push(`apply:${(args['note'] as { path: string }).path}`)
+      if (command === 'index_apply_batch') {
+        order.push(...(args['notes'] as Array<{ path: string }>).map((note) => `apply:${note.path}`))
+      }
+      if (command === 'db_query') {
+        return []
       }
       return null
     })
@@ -130,8 +167,11 @@ describe('subscribeIndexChanges', () => {
       if (command === 'note_read') {
         return '# content'
       }
-      if (command === 'index_apply') {
-        order.push(`apply:${(args['note'] as { path: string }).path}`)
+      if (command === 'index_apply_batch') {
+        order.push(...(args['notes'] as Array<{ path: string }>).map((note) => `apply:${note.path}`))
+      }
+      if (command === 'db_query') {
+        return []
       }
       return null
     })
@@ -158,8 +198,11 @@ describe('subscribeIndexChanges', () => {
       if (command === 'note_read') {
         return '# content'
       }
-      if (command === 'index_apply') {
-        order.push(`apply:${(args['note'] as { path: string }).path}`)
+      if (command === 'index_apply_batch') {
+        order.push(...(args['notes'] as Array<{ path: string }>).map((note) => `apply:${note.path}`))
+      }
+      if (command === 'db_query') {
+        return []
       }
       return null
     })
@@ -204,8 +247,11 @@ describe('subscribeIndexChanges', () => {
       if (command === 'note_read') {
         return '# content'
       }
-      if (command === 'index_apply') {
-        mtimes.push((args['note'] as { mtime: number }).mtime)
+      if (command === 'index_apply_batch') {
+        mtimes.push(...(args['notes'] as Array<{ mtime: number }>).map((note) => note.mtime))
+      }
+      if (command === 'db_query') {
+        return []
       }
       return null
     })
@@ -322,7 +368,7 @@ describe('applyIndexChanges move healing (Plan 17)', () => {
     const commands = calls.map(([command]) => command)
     expect(commands).not.toContain('index_move')
     expect(commands).toContain('index_remove')
-    expect(commands).toContain('index_apply')
+    expect(commands).toContain('index_apply_batch')
   })
 
   it("Reflect's own move echo never pairs: the removed side has no row left", async () => {
@@ -349,6 +395,6 @@ describe('applyIndexChanges move healing (Plan 17)', () => {
     const commands = calls.map(([command]) => command)
     expect(commands).not.toContain('index_move')
     expect(commands).toContain('index_remove') // no-op against a moved row
-    expect(commands).toContain('index_apply') // idempotent re-apply
+    expect(commands).toContain('index_apply_batch') // idempotent re-apply
   })
 })

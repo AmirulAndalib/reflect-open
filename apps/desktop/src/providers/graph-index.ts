@@ -32,6 +32,11 @@ export interface GraphIndex {
    */
   stop: () => Promise<void>
   /**
+   * Wait for the current sync pass (if any) to finish, without aborting it.
+   * The refresh coalescer serializes reruns off this.
+   */
+  settled: () => Promise<void>
+  /**
    * Fully close the active index lifecycle: abort any reconcile, drop the live
    * subscription, stop the file watcher, and report idle progress.
    */
@@ -80,6 +85,12 @@ export interface GraphIndexOptions {
    * in-app rename.
    */
   onMoved?: (from: string, to: string) => void
+  /**
+   * Called as a sync pass advances through the file listing (`done`,
+   * `total`) — the substrate for a "Preparing your notes… 400 of 3,000"
+   * surface during a first index. Superseded passes stop reporting.
+   */
+  onFileProgress?: (done: number, total: number) => void
 }
 
 /**
@@ -88,7 +99,7 @@ export interface GraphIndexOptions {
  * keeps one instance (e.g. in a ref) across graph switches.
  */
 export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
-  const { onError, onProgress, onApplied, onMoved } = options
+  const { onError, onProgress, onApplied, onMoved, onFileProgress } = options
   let abort: AbortController | null = null
   let done: Promise<void> = Promise.resolve()
   // Boxed so the async sync pass can read/replace the active subscription without
@@ -98,6 +109,10 @@ export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
 
   async function stop(): Promise<void> {
     abort?.abort()
+    await done.catch(() => {})
+  }
+
+  async function settled(): Promise<void> {
     await done.catch(() => {})
   }
 
@@ -136,6 +151,15 @@ export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
           generation,
           signal: controller.signal,
           ...(onMoved !== undefined ? { onMoved } : {}),
+          ...(onFileProgress !== undefined
+            ? {
+                onFileProgress: (progressDone: number, total: number) => {
+                  if (!isStale()) {
+                    onFileProgress(progressDone, total)
+                  }
+                },
+              }
+            : {}),
         })
         if (isStale()) {
           return
@@ -164,5 +188,5 @@ export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
     })()
   }
 
-  return { stop, close, open, sync }
+  return { stop, settled, close, open, sync }
 }

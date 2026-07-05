@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { errorMessage, hasBridge, icloudDownloadPending } from '@reflect/core'
+import { errorMessage, hasBridge, icloudDownloadPending, icloudPendingCount } from '@reflect/core'
 import { useGraph } from '@/providers/graph-provider'
 
 /**
@@ -28,10 +28,14 @@ const PENDING_POLL_LIMIT_MS = 20_000
  * OS lands files in the container behind the app's back, and on iOS it
  * doesn't even download them until asked. The metadata-query watch nudges
  * downloads live while the app is open; this hook covers the resume seams
- * the query can miss: on every app resume (and once after the graph opens)
- * it nudges the pending downloads, re-runs the index reconcile, and while
- * placeholders remain it polls the pending count, reconciling the moment
- * downloads land instead of waiting for the next resume.
+ * the query can miss: on every resume it nudges the pending downloads and
+ * re-runs the index reconcile, and while placeholders remain it polls the
+ * pending *count* (never re-requesting), reconciling the moment downloads
+ * land instead of waiting for the next resume.
+ *
+ * The on-open trigger only nudges: the open itself just synced the index
+ * against local disk, so an immediate second full pass would repeat that
+ * work — on a first sync of a large graph, at the worst possible moment.
  *
  * Inert unless an iCloud graph is open (`mobileStorageKind === 'icloud'`).
  */
@@ -56,7 +60,7 @@ export function useICloudRefresh(): void {
         if (disposed) {
           return
         }
-        void icloudDownloadPending(root).then(
+        void icloudPendingCount(root).then(
           (pending) => {
             if (disposed) {
               return
@@ -79,7 +83,7 @@ export function useICloudRefresh(): void {
       }, PENDING_POLL_MS)
     }
 
-    const refresh = async (): Promise<void> => {
+    const refresh = async (options: { reconcile: boolean }): Promise<void> => {
       let pending = 0
       try {
         pending = await icloudDownloadPending(root)
@@ -90,7 +94,9 @@ export function useICloudRefresh(): void {
       if (disposed) {
         return
       }
-      refreshIndex()
+      if (options.reconcile) {
+        refreshIndex()
+      }
       if (pending > 0) {
         pollPending(Date.now())
       }
@@ -102,7 +108,7 @@ export function useICloudRefresh(): void {
         return
       }
       lastRefreshAt = now
-      void refresh()
+      void refresh({ reconcile: true })
     }
     const onVisibilityChange = (): void => {
       if (document.visibilityState === 'visible') {
@@ -111,8 +117,10 @@ export function useICloudRefresh(): void {
     }
 
     // Once on open: the reconcile that ran at open indexed what was already
-    // local; this pass asks iCloud for the rest.
-    onResume()
+    // local, so this pass only asks iCloud for the rest — the poll (or the
+    // live watch) reconciles once something actually lands.
+    lastRefreshAt = Date.now()
+    void refresh({ reconcile: false })
     window.addEventListener('focus', onResume)
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {

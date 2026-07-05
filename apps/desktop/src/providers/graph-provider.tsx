@@ -18,6 +18,7 @@ import {
   isMobilePlatform,
   loadSettings,
   mobileStorage,
+  mobileStorageLocal,
   createGraph,
   openGraph,
   recentGraphs,
@@ -29,6 +30,7 @@ import {
 } from '@reflect/core'
 import { followHealedMove } from '@/editor/move-note'
 import { resetNoteRowOverlays } from '@/hooks/note-row-overlay'
+import { setIndexProgress } from '@/lib/index-progress'
 import { dropIcloudStatusQuery, invalidateIndexQueries } from '@/lib/query-client'
 import { ensureWelcomeNote } from '@/lib/welcome-note'
 import { useSettings } from '@/providers/settings-provider'
@@ -82,9 +84,19 @@ interface GraphContextValue {
   /**
    * Mobile only: the storage roots available to the graph (Plan 21), derived
    * fresh at bootstrap (null elsewhere). Paths must never be persisted — iOS
-   * container paths change across restore/update.
+   * container paths change across restore/update. On a fresh install this is
+   * seeded with the sandbox root alone (available instantly) while the iCloud
+   * container resolves — see {@link mobileStorageResolving}.
    */
   mobileStorageInfo: MobileStorageInfo | null
+  /**
+   * Mobile only: true while the iCloud container is still resolving (the
+   * first `URLForUbiquityContainerIdentifier` call on a fresh install can
+   * take a long time). Onboarding shows the iCloud section as pending rather
+   * than hiding it — a null `icloudDocumentsRoot` alone would read as
+   * "signed out".
+   */
+  mobileStorageResolving: boolean
   /**
    * Mobile only: which root the open graph lives in — `'icloud'` for the
    * iCloud Drive container, `'local'` for the app sandbox. Null until a graph
@@ -202,6 +214,7 @@ export function GraphProvider({
   // Mobile onboarding gate (Plan 19, step 6) — inert on desktop.
   const [needsOnboarding, setNeedsOnboarding] = useState(false)
   const [mobileStorageInfo, setMobileStorageInfo] = useState<MobileStorageInfo | null>(null)
+  const [mobileStorageResolving, setMobileStorageResolving] = useState(false)
   const [mobileStorageKind, setMobileStorageKind] = useState<MobileStorageKind | null>(null)
   // Settings live in one place (the app-wide provider, mounted above
   // PlatformRoot): write the onboarded flag through it so its cached document
@@ -218,8 +231,14 @@ export function GraphProvider({
   const indexRef = useRef(
     createGraphIndex({
       onError: (stage, err) => console.error(`index ${stage} failed:`, errorMessage(err)),
-      onProgress: (progress) => setIndexing(progress === 'reconciling'),
+      onProgress: (progress) => {
+        setIndexing(progress === 'reconciling')
+        if (progress !== 'reconciling') {
+          setIndexProgress(null) // the pass finished (or went idle) — clear the pill
+        }
+      },
       onApplied: invalidateIndexQueries,
+      onFileProgress: (done, total) => setIndexProgress({ done, total }),
       // External renames healed by id follow through to sessions and routes,
       // exactly as for an in-app rename (Plan 17).
       onMoved: followHealedMove,
@@ -338,41 +357,97 @@ export function GraphProvider({
     void (async () => {
       if (isMobilePlatform(platform)) {
         // Fixed roots, derived fresh (never from recents — see the docblock).
+        // Settings load first: they're a local file read, while resolving the
+        // iCloud container can take a long time on a fresh install — nothing
+        // that doesn't strictly need the container may wait on it.
         try {
-          const storage = await mobileStorage()
+          const settings = await loadSettings()
           if (!active) {
             return
           }
-          setMobileStorageInfo(storage)
           // Gate the first launch on the onboarding choice (Plan 19, step 6).
           // A missing/false flag is a fresh install: defer the open so the
           // GitHub path can clone into the still-empty local root (`git_clone`
           // refuses a non-empty directory, and opening here would bootstrap
           // and seed it). Once onboarded, open the persisted storage kind.
-          const settings = await loadSettings()
+          if (settings.mobileOnboarded !== true) {
+            // Show onboarding immediately. The sandbox root resolves in
+            // milliseconds and unlocks the on-device and GitHub choices; the
+            // iCloud section renders as pending until the container resolves.
+            setNeedsOnboarding(true)
+            setStatus('choosing')
+            setMobileStorageResolving(true)
+            void mobileStorageLocal().then(
+              (localRoot) => {
+                if (active) {
+                  setMobileStorageInfo(
+                    (prev) =>
+                      prev ?? { localRoot, icloudDocumentsRoot: null, icloudGraphRoots: [] },
+                  )
+                }
+              },
+              () => {
+                // Non-fatal: the full resolve below carries the local root too.
+              },
+            )
+            void mobileStorage().then(
+              (storage) => {
+                if (active) {
+                  setMobileStorageInfo(storage)
+                  setMobileStorageResolving(false)
+                }
+              },
+              (err) => {
+                if (active) {
+                  console.error('mobile storage resolution failed:', errorMessage(err))
+                  setMobileStorageResolving(false)
+                }
+              },
+            )
+            return
+          }
+          const kind = settings.mobileStorage
+          if (kind === 'local') {
+            // The sandbox graph needs no container: open it right away and
+            // let the full storage info (the settings switcher reads it)
+            // resolve in the background.
+            const localRoot = await mobileStorageLocal()
+            if (!active) {
+              return
+            }
+            void mobileStorage().then(
+              (storage) => {
+                if (active) {
+                  setMobileStorageInfo(storage)
+                }
+              },
+              (err) => {
+                console.error('mobile storage resolution failed:', errorMessage(err))
+              },
+            )
+            setMobileStorageKind('local')
+            await openRecent(localRoot)
+            return
+          }
+          const storage = await mobileStorage()
           if (!active) {
             return
           }
-          if (settings.mobileOnboarded === true) {
-            const kind = settings.mobileStorage
-            const root = storageRoot(storage, kind, settings.mobileGraphName)
-            if (root === null) {
-              // The graph lives in iCloud but the account is gone (signed
-              // out, iCloud Drive off). Opening the empty local root instead
-              // would silently start a second graph — park on an honest
-              // error until iCloud is back.
-              setError(
-                'Your notes are stored in iCloud Drive, but iCloud isn’t available on this device. Sign in to iCloud in Settings, then reopen Reflect.',
-              )
-              setStatus('choosing')
-              return
-            }
-            setMobileStorageKind(kind)
-            await openRecent(root)
-          } else {
-            setNeedsOnboarding(true)
+          setMobileStorageInfo(storage)
+          const root = storageRoot(storage, kind, settings.mobileGraphName)
+          if (root === null) {
+            // The graph lives in iCloud but the account is gone (signed
+            // out, iCloud Drive off). Opening the empty local root instead
+            // would silently start a second graph — park on an honest
+            // error until iCloud is back.
+            setError(
+              'Your notes are stored in iCloud Drive, but iCloud isn’t available on this device. Sign in to iCloud in Settings, then reopen Reflect.',
+            )
             setStatus('choosing')
+            return
           }
+          setMobileStorageKind(kind)
+          await openRecent(root)
         } catch (err) {
           if (active) {
             setError(errorMessage(err))
@@ -547,20 +622,42 @@ export function GraphProvider({
     [mobileStorageInfo, openRecent, updateSettings, whenSettingsLoaded],
   )
 
+  // Refresh coalescing: triggers can stack (resume + poll-end + watch-failed
+  // fire close together), and each used to abort the in-flight pass and start
+  // another — on a large graph that meant full read-the-graph passes queued
+  // back to back. One runner drains a single "run again" flag instead.
+  const refreshRunning = useRef(false)
+  const refreshQueued = useRef(false)
+
   const refreshIndex = useCallback((): void => {
     if (indexGeneration === null) {
       return
     }
-    const seq = openSeq.current
+    if (refreshRunning.current) {
+      refreshQueued.current = true
+      return
+    }
+    refreshRunning.current = true
     const index = indexRef.current
-    // Settle (abort) any in-flight pass first so two reconciles never write
-    // concurrently, then bail if a newer open superseded this graph meanwhile.
-    void index.stop().then(() => {
-      if (seq !== openSeq.current) {
-        return
+    void (async () => {
+      try {
+        do {
+          refreshQueued.current = false
+          const seq = openSeq.current
+          // Settle (abort) any in-flight pass first so two reconciles never
+          // write concurrently, then bail if a newer open superseded this
+          // graph meanwhile.
+          await index.stop()
+          if (seq !== openSeq.current) {
+            return
+          }
+          index.sync(indexGeneration, () => seq !== openSeq.current)
+          await index.settled()
+        } while (refreshQueued.current)
+      } finally {
+        refreshRunning.current = false
       }
-      index.sync(indexGeneration, () => seq !== openSeq.current)
-    })
+    })()
   }, [indexGeneration])
 
   const value = useMemo<GraphContextValue>(
@@ -579,6 +676,7 @@ export function GraphProvider({
       deleteGraph,
       needsOnboarding,
       mobileStorageInfo,
+      mobileStorageResolving,
       mobileStorageKind,
       completeOnboarding,
       refreshIndex,
@@ -598,6 +696,7 @@ export function GraphProvider({
       deleteGraph,
       needsOnboarding,
       mobileStorageInfo,
+      mobileStorageResolving,
       mobileStorageKind,
       completeOnboarding,
       refreshIndex,

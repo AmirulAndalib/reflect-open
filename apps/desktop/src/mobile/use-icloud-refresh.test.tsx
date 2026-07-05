@@ -17,13 +17,15 @@ vi.mock('@/providers/graph-provider', () => ({
 }))
 
 let downloadCalls: string[]
-/** What the fake `icloud_download_pending` reports — placeholders remaining. */
+let countCalls: string[]
+/** What the fake pending commands report — placeholders remaining. */
 let pendingCount: number
 let refreshIndex: ReturnType<typeof vi.fn<() => void>>
 
 beforeEach(() => {
   vi.useFakeTimers()
   downloadCalls = []
+  countCalls = []
   pendingCount = 0
   refreshIndex = vi.fn<() => void>()
   graphState.current = {
@@ -35,6 +37,10 @@ beforeEach(() => {
     invoke: async (command, args) => {
       if (command === 'icloud_download_pending') {
         downloadCalls.push(String(args['root']))
+        return pendingCount
+      }
+      if (command === 'icloud_pending_count') {
+        countCalls.push(String(args['root']))
         return pendingCount
       }
       return null
@@ -72,27 +78,32 @@ describe('useICloudRefresh', () => {
     expect(refreshIndex).not.toHaveBeenCalled()
   })
 
-  it('nudges downloads and reconciles once on mount', async () => {
+  it('nudges downloads on mount without repeating the open-time reconcile', async () => {
     renderHook(() => useICloudRefresh())
     await flush()
 
     expect(downloadCalls).toEqual(['/iCloud/Documents'])
-    expect(refreshIndex).toHaveBeenCalledTimes(1)
+    // The graph open just synced the index against local disk; an immediate
+    // second full pass would repeat that work on a large first sync.
+    expect(refreshIndex).not.toHaveBeenCalled()
   })
 
-  it('polls while placeholders are pending and reconciles when they land', async () => {
+  it('polls the count while placeholders are pending and reconciles when they land', async () => {
     pendingCount = 3
     renderHook(() => useICloudRefresh())
     await flush()
-    expect(refreshIndex).toHaveBeenCalledTimes(1)
+    expect(downloadCalls).toHaveLength(1)
+    expect(refreshIndex).not.toHaveBeenCalled()
 
-    // Still pending after one poll: no reconcile yet, keep waiting.
+    // Still pending after one poll: no reconcile yet, keep waiting — and the
+    // poll only counts, it never re-requests the downloads.
     await act(async () => {
       vi.runOnlyPendingTimers()
     })
     await flush()
-    expect(downloadCalls).toHaveLength(2)
-    expect(refreshIndex).toHaveBeenCalledTimes(1)
+    expect(countCalls).toHaveLength(1)
+    expect(downloadCalls).toHaveLength(1)
+    expect(refreshIndex).not.toHaveBeenCalled()
 
     // Downloads finished: the next poll reconciles immediately — the Mac
     // edit appears seconds after it lands, not on the next resume.
@@ -101,22 +112,22 @@ describe('useICloudRefresh', () => {
       vi.runOnlyPendingTimers()
     })
     await flush()
-    expect(downloadCalls).toHaveLength(3)
-    expect(refreshIndex).toHaveBeenCalledTimes(2)
+    expect(countCalls).toHaveLength(2)
+    expect(refreshIndex).toHaveBeenCalledTimes(1)
 
     // Settled — no further polling.
     await act(async () => {
       vi.runOnlyPendingTimers()
     })
     await flush()
-    expect(downloadCalls).toHaveLength(3)
+    expect(countCalls).toHaveLength(2)
   })
 
   it('gives up polling at the limit with one final reconcile', async () => {
     pendingCount = 3
     renderHook(() => useICloudRefresh())
     await flush()
-    expect(refreshIndex).toHaveBeenCalledTimes(1)
+    expect(refreshIndex).not.toHaveBeenCalled()
 
     // Never finishes downloading (a big asset on a slow link): the poll caps
     // out with a last reconcile instead of spinning forever.
@@ -126,12 +137,13 @@ describe('useICloudRefresh', () => {
       })
       await flush()
     }
-    expect(refreshIndex).toHaveBeenCalledTimes(2)
-    // Well-bounded call count: one nudge + at most limit/interval polls.
-    expect(downloadCalls.length).toBeLessThanOrEqual(22)
+    expect(refreshIndex).toHaveBeenCalledTimes(1)
+    // Well-bounded: one nudge, then at most limit/interval count polls.
+    expect(downloadCalls).toHaveLength(1)
+    expect(countCalls.length).toBeLessThanOrEqual(21)
   })
 
-  it('collapses the resume event burst into one refresh', async () => {
+  it('collapses the resume event burst into one refresh — which reconciles', async () => {
     renderHook(() => useICloudRefresh())
     await flush()
     expect(downloadCalls).toHaveLength(1)
@@ -143,6 +155,7 @@ describe('useICloudRefresh', () => {
     })
     await flush()
     expect(downloadCalls).toHaveLength(1) // deduped — still within the window
+    expect(refreshIndex).not.toHaveBeenCalled()
 
     await act(async () => {
       vi.advanceTimersByTime(2000)
@@ -150,6 +163,7 @@ describe('useICloudRefresh', () => {
     })
     await flush()
     expect(downloadCalls).toHaveLength(2) // a real later resume refreshes
+    expect(refreshIndex).toHaveBeenCalledTimes(1) // and resume does reconcile
   })
 
   it('stops listening after unmount', async () => {

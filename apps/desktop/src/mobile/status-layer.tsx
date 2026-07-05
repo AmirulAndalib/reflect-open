@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { IndexProgressPill } from '@/mobile/index-progress-pill'
 import { MobileOperationsPills } from '@/mobile/operations-pill'
 import { SyncStatusPill } from '@/mobile/sync-status-pill'
 import { useKeyboardVisible } from '@/mobile/use-keyboard'
@@ -27,6 +28,7 @@ export function MobileStatusLayer(): ReactElement | null {
       }}
     >
       <MobileOperationsPills />
+      <IndexProgressPill />
       <SyncStatusPill />
     </div>
   )

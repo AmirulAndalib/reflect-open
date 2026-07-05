@@ -11,10 +11,11 @@ import {
 } from './commands'
 import { assetReferencingNotePaths } from './asset-refs'
 import { gatherAssetDescriptionText } from './asset-description-text'
-import { hashContent } from './hash'
+import { hashContent, matchesTrustedMtime } from './hash'
 import { buildIndexedNote, PROJECTION_VERSION, type IndexedNote } from './indexed-note'
 import { detectExternalMoves } from './move-healing'
-import { getIndexedHashes, getIndexMeta } from './queries'
+import { INDEX_PASS_YIELD_EVERY, yieldToEventLoop } from './pacing'
+import { getIndexedFileFacts, getIndexMeta } from './queries'
 
 /**
  * The indexing pipeline (Plan 04): read (Plan 02) → parse/extract in TS
@@ -29,11 +30,12 @@ import { getIndexedHashes, getIndexMeta } from './queries'
  */
 
 /**
- * Notes per `index_apply_batch` transaction during a full rebuild. Bounds the
- * IPC payload and transaction size on large graphs while keeping the
- * transaction/round-trip count far below one-per-note.
+ * Notes per `index_apply_batch` transaction in the bulk passes (rebuild,
+ * reconcile, and large watcher batches). Bounds the IPC payload and
+ * transaction size on large graphs while keeping the transaction/round-trip
+ * count far below one-per-note.
  */
-const REBUILD_BATCH_SIZE = 256
+export const INDEX_APPLY_BATCH_SIZE = 256
 
 /**
  * The `index_meta` key holding the {@link PROJECTION_VERSION} the stored rows
@@ -118,6 +120,14 @@ export interface IndexPassOptions {
    * — without it, history entries keep pointing at the dead path.
    */
   onMoved?: (from: string, to: string) => void
+  /**
+   * Called as the pass advances through the file listing — at every pacing
+   * break and once at the end — so a first index over thousands of notes can
+   * show real progress instead of a frozen shell. `done` counts every listed
+   * file the pass has moved past (skipped or indexed); `total` is the listing
+   * size.
+   */
+  onFileProgress?: (done: number, total: number) => void
 }
 
 /** One note omitted from a rebuild because its projection could not be written. */
@@ -161,14 +171,20 @@ async function applyRebuildBatch(
  * empty or half-populated.
  */
 export async function rebuildIndex(options: IndexPassOptions): Promise<void> {
-  const { generation, onSkippedNote } = options
+  const { generation, onSkippedNote, onFileProgress } = options
   if (options.signal?.aborted) {
     return // don't wipe the current index for an already-cancelled pass
   }
   await clearIndex(generation)
   const files = await listFiles()
   let batch: IndexedNote[] = []
+  let done = 0
   for (const file of files) {
+    done += 1
+    if (done % INDEX_PASS_YIELD_EVERY === 0) {
+      onFileProgress?.(done, files.length)
+      await yieldToEventLoop()
+    }
     if (file.placeholder === true) {
       continue // evicted to iCloud — unreadable until re-download, indexed then
     }
@@ -177,12 +193,13 @@ export async function rebuildIndex(options: IndexPassOptions): Promise<void> {
     const fileHash = await hashContent(content)
     const assetText = await gatherAssetDescriptionText(parsed.assets.map((asset) => asset.path))
     batch.push(buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs, source: content, assetText }))
-    if (batch.length >= REBUILD_BATCH_SIZE) {
+    if (batch.length >= INDEX_APPLY_BATCH_SIZE) {
       await applyRebuildBatch(batch, generation, onSkippedNote)
       batch = []
     }
   }
   await applyRebuildBatch(batch, generation, onSkippedNote)
+  onFileProgress?.(files.length, files.length)
   // The rows now match the current projection — stamp it so `syncIndex` can
   // reconcile cheaply from here on. A superseded pass stamps into a stale
   // generation, which Rust drops: the next open then rebuilds again, which is
@@ -212,15 +229,21 @@ export async function syncIndex(options: IndexPassOptions): Promise<void> {
  * rebuild on an already-populated index, and abortable on graph switch. Writes
  * carry `generation`, so even a pass that races a connection swap can't corrupt
  * the newly-opened index — Rust drops its stale writes.
+ *
+ * Two skip layers keep a repeat pass over a large, mostly-unchanged graph
+ * cheap: a file whose listed mtime matches its indexed row is never even read
+ * ({@link matchesTrustedMtime}), and a read whose hash matches skips the
+ * write. Changed notes apply in shared `index_apply_batch` transactions
+ * rather than one round-trip each.
  */
 export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
-  const { generation, signal, onMoved } = options
+  const { generation, signal, onMoved, onSkippedNote, onFileProgress } = options
   const files = await listFiles()
   if (signal?.aborted) {
     return
   }
   const onDisk = new Set(files.map((file) => file.path))
-  const stored = await getIndexedHashes()
+  const stored = await getIndexedFileFacts()
 
   // Id-based move healing (Plan 17): a row whose file vanished plus a new
   // file carrying the same frontmatter id is a rename observed after the
@@ -251,12 +274,12 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
         console.error(`id-based move failed (${move.from} → ${move.to}):`, err)
         continue
       }
-      // The moved row carries the old path's hash: the main pass re-indexes
+      // The moved row carries the old path's facts: the main pass re-indexes
       // at the new path only if the content actually changed in transit.
-      const hash = stored.get(move.from)
+      const facts = stored.get(move.from)
       stored.delete(move.from)
-      if (hash !== undefined) {
-        stored.set(move.to, hash)
+      if (facts !== undefined) {
+        stored.set(move.to, facts)
       }
       onMoved?.(move.from, move.to)
     }
@@ -268,9 +291,17 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
     return
   }
 
+  const now = Date.now()
+  let batch: IndexedNote[] = []
+  let done = 0
   for (const file of files) {
     if (signal?.aborted) {
       return
+    }
+    done += 1
+    if (done % INDEX_PASS_YIELD_EVERY === 0) {
+      onFileProgress?.(done, files.length)
+      await yieldToEventLoop()
     }
     if (file.placeholder === true) {
       // Evicted to iCloud: present but unreadable until re-download. Keep the
@@ -278,6 +309,10 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
       // reading would land in the notFound arm below and delete the note from
       // the index, turning eviction into disappearance.
       continue
+    }
+    const facts = stored.get(file.path)
+    if (matchesTrustedMtime(facts?.mtime, file.modifiedMs, now)) {
+      continue // untouched since it was indexed — skip the read entirely
     }
     let content = arrivalContent.get(file.path)
     if (content === undefined) {
@@ -294,7 +329,7 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
       }
     }
     const fileHash = await hashContent(content)
-    if (stored.get(file.path) === fileHash) {
+    if (facts?.fileHash === fileHash) {
       continue // unchanged
     }
     if (signal?.aborted) {
@@ -302,11 +337,16 @@ export async function reconcileIndex(options: IndexPassOptions): Promise<void> {
     }
     const parsed = parseNote({ path: file.path, source: content })
     const assetText = await gatherAssetDescriptionText(parsed.assets.map((asset) => asset.path))
-    await applyIndexedNote(
+    batch.push(
       buildIndexedNote(parsed, { fileHash, mtime: file.modifiedMs, source: content, assetText }),
-      generation,
     )
+    if (batch.length >= INDEX_APPLY_BATCH_SIZE) {
+      await applyRebuildBatch(batch, generation, onSkippedNote)
+      batch = []
+    }
   }
+  await applyRebuildBatch(batch, generation, onSkippedNote)
+  onFileProgress?.(files.length, files.length)
 
   for (const path of stored.keys()) {
     if (signal?.aborted) {

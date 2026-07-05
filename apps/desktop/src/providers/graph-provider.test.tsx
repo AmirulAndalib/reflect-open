@@ -34,6 +34,9 @@ let storedStorage: {
   icloudDocumentsRoot: string | null
   icloudGraphRoots: string[]
 }
+/** When set, `mobile_storage` stays pending until {@link releaseStorage}. */
+let storageHangs: boolean
+let releaseStorage: () => void
 /** A fresh QueryClient per test — the settings provider reads through it. */
 let queryClient: QueryClient
 
@@ -52,6 +55,8 @@ function installFakeBridge(): void {
   metaStore = {}
   settingsStore = {}
   storedStorage = { localRoot: MOBILE_ROOT, icloudDocumentsRoot: ICLOUD_ROOT, icloudGraphRoots: [] }
+  storageHangs = false
+  releaseStorage = () => {}
   let generation = 0
   setBridge({
     invoke: async (command, args) => {
@@ -83,7 +88,14 @@ function installFakeBridge(): void {
           storedRecents = storedRecents.filter((recent) => recent.root !== String(args['root']))
           return null
         case 'mobile_storage':
+          if (storageHangs) {
+            await new Promise<void>((resolve) => {
+              releaseStorage = resolve
+            })
+          }
           return storedStorage
+        case 'mobile_storage_local':
+          return storedStorage.localRoot
         case 'settings_load':
           return settingsStore
         case 'settings_save':
@@ -415,6 +427,26 @@ describe('GraphProvider mobile onboarding (Plans 19/21)', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'))
     expect(invokeLog).toContain(`graph_create:${journalRoot}`)
     await waitFor(() => expect(settingsStore['mobileGraphName']).toBe('Journal'))
+  })
+
+  it('shows onboarding immediately while the iCloud container is still resolving', async () => {
+    storageHangs = true
+    const { result } = renderHook(() => useGraph(), { wrapper: mobileWrapper })
+
+    // Onboarding must not wait on the container lookup — on a fresh install
+    // that call can take a long time, and it used to hold the whole app on a
+    // bare "Loading…" screen.
+    await waitFor(() => expect(result.current.needsOnboarding).toBe(true))
+    expect(result.current.mobileStorageResolving).toBe(true)
+    // The sandbox root seeds instantly so the on-device/GitHub paths work.
+    await waitFor(() => expect(result.current.mobileStorageInfo?.localRoot).toBe(MOBILE_ROOT))
+    expect(result.current.mobileStorageInfo?.icloudDocumentsRoot).toBeNull()
+
+    await act(async () => {
+      releaseStorage()
+    })
+    await waitFor(() => expect(result.current.mobileStorageResolving).toBe(false))
+    expect(result.current.mobileStorageInfo?.icloudDocumentsRoot).toBe(ICLOUD_ROOT)
   })
 
   it('rejects completeOnboarding(icloud) when iCloud is unavailable', async () => {

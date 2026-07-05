@@ -95,9 +95,11 @@ function controller(overrides: { emit?: boolean } = {}) {
   return active
 }
 
-/** Fire the debounce and let the async scan settle. */
-async function settleScan(): Promise<void> {
-  await vi.advanceTimersByTimeAsync(1_100)
+/** Fire the debounce and let the async scan settle. Signal-triggered scans
+ * fire on the 1s window (the default); arrival-driven ingest scans use the
+ * wide 5s window — pass `5_100` to fire those. */
+async function settleScan(advanceMs = 1_100): Promise<void> {
+  await vi.advanceTimersByTimeAsync(advanceMs)
   // The post-scan fan-out (emit → reindex → invalidate) continues past the
   // last timer, and hashing awaits `crypto.subtle` — a *real* async source
   // fake timers can't flush. setImmediate stays un-faked (see beforeEach) so
@@ -144,7 +146,7 @@ describe('createIcloudController', () => {
       { path: 'notes/external.md', kind: 'upsert', modifiedMs: 2 },
       { path: 'notes/gone.md', kind: 'remove' },
     ])
-    await settleScan()
+    await settleScan(5_100) // arrival-driven: the wide ingest window
 
     expect(scanCalls).toHaveLength(2)
     expect(scanCalls[1]?.ingestedPaths).toEqual(['notes/external.md'])
@@ -166,9 +168,9 @@ describe('createIcloudController', () => {
     // chain hashes via crypto.subtle (real thread-pool async) — poll for its
     // arrival instead of counting event-loop yields, which is CI-speed flaky.
     await vi.waitFor(() => {
-      expect(invoked.some(([command]) => command === 'index_apply')).toBe(true)
+      expect(invoked.some(([command]) => command === 'index_apply_batch')).toBe(true)
     })
-    const apply = invoked.find(([command]) => command === 'index_apply')
+    const apply = invoked.find(([command]) => command === 'index_apply_batch')
     expect(apply?.[1]).toMatchObject({ generation: 3 })
     // …and neither the controller's own synchronous fan-out nor the file
     // watcher's later echo of the sweep's write may come back as an ingest —
@@ -177,7 +179,7 @@ describe('createIcloudController', () => {
       { path: 'notes/merged.md', kind: 'upsert', modifiedMs: 6 }, // watcher echo
       { path: 'notes/other.md', kind: 'upsert', modifiedMs: 9 },
     ])
-    await settleScan()
+    await settleScan(5_100) // arrival-driven: the wide ingest window
     expect(scanCalls[1]?.ingestedPaths).toEqual(['notes/other.md'])
   })
 
@@ -187,10 +189,10 @@ describe('createIcloudController', () => {
     await icloud.start()
 
     emitFileChanges([{ path: 'notes/external.md', kind: 'upsert', modifiedMs: 2 }])
-    await settleScan() // scan #1: baseline + ingest — fails
+    await settleScan() // scan #1 (the sooner baseline timer wins): baseline + ingest — fails
 
     emitFileChanges([{ path: 'notes/external.md', kind: 'upsert', modifiedMs: 3 }])
-    await settleScan() // scan #2 retries both
+    await settleScan(5_100) // scan #2 retries both, on the ingest window
 
     expect(scanCalls).toHaveLength(2)
     expect(scanCalls[0]?.recordBaseline).toBe(true)

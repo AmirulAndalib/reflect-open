@@ -579,14 +579,46 @@ export async function searchNotes(query: string, limit = 50): Promise<SearchHit[
     .execute()
 }
 
+/** What a pass knows about an indexed note without reading its file. */
+export interface IndexedFileFacts {
+  /** Content hash the row was built from — the authority for "changed". */
+  readonly fileHash: string
+  /** The mtime stamped on the row — lets a pass skip reading untouched files. */
+  readonly mtime: number
+}
+
 /**
- * Stored `path → fileHash` map, for content-hash reconciliation on open. Loads
- * every note's hash into memory — fine at first-wave graph sizes; revisit with a
- * streamed/keyset scan if graphs grow large (tracked with the Plan 04b watcher).
+ * Stored `path → {fileHash, mtime}` map, for reconciliation on open. Loads
+ * every note's facts into memory — fine at first-wave graph sizes; revisit with
+ * a streamed/keyset scan if graphs grow large (tracked with the Plan 04b
+ * watcher).
  */
-export async function getIndexedHashes(): Promise<Map<string, string>> {
-  const rows = await db.selectFrom('notes').select(['path', 'fileHash']).execute()
-  return new Map(rows.map((row) => [row.path, row.fileHash]))
+export async function getIndexedFileFacts(): Promise<Map<string, IndexedFileFacts>> {
+  const rows = await db.selectFrom('notes').select(['path', 'fileHash', 'mtime']).execute()
+  return new Map(rows.map((row) => [row.path, { fileHash: row.fileHash, mtime: row.mtime }]))
+}
+
+/**
+ * {@link getIndexedFileFacts} for a specific path set — the live watcher-batch
+ * variant, so applying a large `index:changed` batch (e.g. the metadata
+ * query's initial gather) can skip already-indexed files without a full-table
+ * load. Chunked past SQLite's bound-variable budget.
+ */
+export async function getIndexedFileFactsByPath(
+  paths: string[],
+): Promise<Map<string, IndexedFileFacts>> {
+  const facts = new Map<string, IndexedFileFacts>()
+  for (const chunk of inClauseChunks(paths)) {
+    const rows = await db
+      .selectFrom('notes')
+      .where('path', 'in', chunk)
+      .select(['path', 'fileHash', 'mtime'])
+      .execute()
+    for (const row of rows) {
+      facts.set(row.path, { fileHash: row.fileHash, mtime: row.mtime })
+    }
+  }
+  return facts
 }
 
 /**

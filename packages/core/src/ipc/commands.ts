@@ -66,11 +66,30 @@ const icloudDownloadPendingSchema = z.number().int().nonnegative()
 /**
  * Asks iCloud to download every not-yet-local file under `root`, returning
  * how many placeholders were found. iOS does not pull container files down
- * eagerly; call this on open/resume for iCloud graphs and re-reconcile the
- * index while the count stays above zero.
+ * eagerly; call this once per open/resume for iCloud graphs, then poll
+ * {@link icloudPendingCount} while the count stays above zero.
  */
 export async function icloudDownloadPending(root: string): Promise<number> {
   return call('icloud_download_pending', { root }, icloudDownloadPendingSchema)
+}
+
+/**
+ * Counts the not-yet-local placeholders under `root` without requesting
+ * anything — the poll half of {@link icloudDownloadPending}: re-requesting
+ * thousands of in-flight downloads every tick is wasted traffic.
+ */
+export async function icloudPendingCount(root: string): Promise<number> {
+  return call('icloud_pending_count', { root }, icloudDownloadPendingSchema)
+}
+
+/**
+ * The app-sandbox `Documents/` root alone — the cheap half of
+ * {@link mobileStorage}, available before the iCloud container resolves (the
+ * first container lookup can take a long time on a fresh install). Mobile
+ * only; derive fresh every launch and never persist.
+ */
+export async function mobileStorageLocal(): Promise<string> {
+  return call('mobile_storage_local', {}, z.string())
 }
 
 const icloudStatusSchema = z.object({
