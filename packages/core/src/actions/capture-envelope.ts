@@ -2,11 +2,11 @@ import { z } from 'zod'
 
 /**
  * The platform-agnostic capture envelope (Plan 11): the contract between
- * every capture producer and the desktop drain. The Chrome extension's
+ * every capture producer and the app's drain. The Chrome extension's
  * native-messaging host writes one `<id>.json` envelope (plus an optional
- * sibling screenshot) into the graph's capture inbox today; the future iOS
- * share extension and Android intent handler write the same shape into their
- * own inboxes. This module is deliberately browser-safe — it imports nothing
+ * sibling screenshot) into the graph's capture inbox; the iOS share
+ * extension writes the same shape into the App Group inbox the main app
+ * relays on foreground. This module is deliberately browser-safe — it imports nothing
  * but zod, and the extension consumes it through the package's
  * `./capture-envelope` subpath without pulling the rest of core.
  *
@@ -14,8 +14,13 @@ import { z } from 'zod'
  * (`apps/native-host`) mirror it and must be kept in sync.
  */
 
-/** Where a capture originated. Widens when mobile capture lands. */
-export const captureSourceSchema = z.literal('extension')
+/**
+ * Where a link capture originated: the Chrome extension (through the
+ * native-messaging host) or the iOS share extension (through the App Group
+ * inbox the main app relays on foreground). Provenance only — every source
+ * produces the same envelope shape.
+ */
+export const captureSourceSchema = z.enum(['extension', 'ios-share'])
 
 /** Only web pages are capturable — `chrome://`, `file://` etc. never spool. */
 function isHttpUrl(value: string): boolean {
@@ -44,6 +49,13 @@ export const captureEnvelopeSchema = z.object({
   selection: z.string().optional(),
   /** Plain text paragraphs extracted from the captured page. */
   contentText: z.string().optional(),
+  /**
+   * The page's own meta/OpenGraph description, extracted in-page at capture
+   * time (the iOS share extension's Safari preprocessor). The drain writes it
+   * into the raw save so an offline capture still lands with a description;
+   * enrichment later replaces it in place with the scraped/AI one.
+   */
+  metaDescription: z.string().optional(),
   /** A comment the user typed into the capture UI. */
   note: z.string().optional(),
   /**
@@ -91,11 +103,11 @@ export const textCaptureKindSchema = z.enum(['append', 'task'])
 /**
  * Where a text capture originated. Deliberately separate from
  * {@link captureSourceSchema} and from the envelope *shape*: provenance and
- * shape are different axes, so a future producer (an iOS share sheet, a
- * widget) joins by adding a member here — never by growing a new envelope
- * variant.
+ * shape are different axes, so a future producer (a widget, an Android
+ * intent) joins by adding a member here — never by growing a new envelope
+ * variant. `ios-share` is non-URL text shared through the iOS share sheet.
  */
-export const textCaptureSourceSchema = z.enum(['deep-link'])
+export const textCaptureSourceSchema = z.enum(['deep-link', 'ios-share'])
 
 /**
  * A text write (`reflect://append?text=…` / `reflect://task?text=…`),

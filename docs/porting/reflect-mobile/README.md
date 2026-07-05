@@ -59,7 +59,7 @@ never lost. That behavior is what these docs pin down.
 | [Tasks](./tasks.md)                                                   | Task groups, drag-and-drop, quick edit     | **Shipped** — desktop Plan 18 data + touch surface |
 | [Note actions, sharing, export](./note-actions-sharing-and-export.md) | Pin/share/publish/trash, JSON export       | **v1** pin/share/trash; publish deferred          |
 | [Audio memos](./audio-memos.md)                                       | Native recording + server transcription    | Later wave — raw-first + BYOK transcription       |
-| [Share extension](./share-extension.md)                               | Share-sheet link capture via API           | Later wave — App Group capture inbox              |
+| [Share extension](./share-extension.md)                               | Share-sheet link capture via API           | **Done** — App Group inbox → relay → shared drain |
 | [Native entry points](./native-entry-points.md)                       | Widgets, Siri, quick actions, deep links   | Later waves / partially dropped                   |
 | [Sync, offline, and data](./sync-offline-and-data.md)                 | Firestore↔SQLite sync, Yjs, job queue      | Replaced — behavior ports, architecture doesn't   |
 | [Assets and images](./assets-and-images.md)                           | Encrypted asset cache + custom scheme      | Replaced — assets are plain files                 |

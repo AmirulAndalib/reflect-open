@@ -255,6 +255,23 @@ describe('drainCaptureInbox', () => {
     )
   })
 
+  it('writes an iOS share capture with its in-page description into the raw save', async () => {
+    addSpool(
+      envelope({ source: 'ios-share', metaDescription: '  A page\nabout examples.  ' }),
+      { screenshot: false },
+    )
+
+    const outcome = await drain()
+
+    expect(outcome).toEqual({ pending: 1, drained: 1, deduped: 0, invalid: 0, stopped: null })
+    const note = files.get(IDENTITY.notePath)
+    expect(note).toContain('captureSource: ios-share')
+    // Whitespace-folded onto the one metadata line, right where enrichment
+    // will replace it in place.
+    expect(note).toContain('- Type: #link\n- Description: A page about examples.')
+    expect(note).toContain('captureStatus: pending')
+  })
+
   it('removes the spool only after the note and daily entry are written', async () => {
     addSpool(envelope())
     await drain()
@@ -618,6 +635,34 @@ describe('reconcileCaptureEnrichment', () => {
     )
     // Enriched means no longer pending: a second pass finds nothing.
     expect((await reconcile()).pending).toBe(0)
+  })
+
+  it('replaces the drain-written in-page description in place, never duplicating it', async () => {
+    await drainOne({ source: 'ios-share', metaDescription: 'The in-page description.' })
+
+    const outcome = await reconcile()
+
+    expect(outcome.enriched).toBe(1)
+    const note = files.get(IDENTITY.notePath) ?? ''
+    expect(note).toContain('- Description: An AI description of the page.')
+    expect(note).not.toContain('The in-page description.')
+  })
+
+  it('meta-only enrichment keeps a drain-written in-page description (never truncates)', async () => {
+    await drainOne({ source: 'ios-share', metaDescription: 'The full in-page description.' })
+    scrapeMock.mockResolvedValue({
+      title: 'An article',
+      description: 'A shorter scraped description.',
+      siteName: null,
+    })
+
+    const outcome = await reconcile({ providers: NO_PROVIDERS })
+
+    expect(outcome.enriched).toBe(1)
+    const note = files.get(IDENTITY.notePath) ?? ''
+    expect(note).toContain('- Description: The full in-page description.')
+    expect(note).not.toContain('A shorter scraped description.')
+    expect(note).toContain('captureStatus: done')
   })
 
   it('enriches with the scraped description alone when no provider is configured', async () => {

@@ -216,10 +216,15 @@ function captureNoteBody(
   hasScreenshot: boolean,
 ): string {
   const title = displayTitle(envelope)
-  const parts = [
-    `# ${title}`,
-    [`- URL: ${envelope.url}`, '- Type: #link'].join('\n'),
-  ]
+  const metadata = [`- URL: ${envelope.url}`, '- Type: #link']
+  // The in-page meta description (iOS share captures) lands in the raw save,
+  // so an offline capture still reads complete; enrichment later replaces
+  // this exact line in place (`withDescription`) with the scraped/AI one.
+  const metaDescription = envelope.metaDescription?.trim()
+  if (metaDescription) {
+    metadata.push(`- Description: ${metadataValue(metaDescription)}`)
+  }
+  const parts = [`# ${title}`, metadata.join('\n')]
   const note = envelope.note?.trim()
   if (note) {
     parts.push(`## Note\n\n${note}`)
@@ -649,6 +654,15 @@ function metadataValue(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
+function descriptionLineIndex(metadataLines: readonly string[]): number {
+  return metadataLines.findIndex((candidate) => candidate.startsWith('- Description: '))
+}
+
+/** Does the raw body already carry a description metadata bullet? */
+function hasDescription(body: string): boolean {
+  return descriptionLineIndex(body.slice(0, firstSectionStart(body)).split('\n')) !== -1
+}
+
 /**
  * Insert or replace the single visible generated-text surface for link
  * captures. The raw body has a `- Type: #link` anchor.
@@ -657,9 +671,7 @@ function withDescription(body: string, description: string): string {
   const line = `- Description: ${metadataValue(description)}`
   const metadataEnd = firstSectionStart(body)
   const metadataLines = body.slice(0, metadataEnd).split('\n')
-  const descriptionLine = metadataLines.findIndex((candidate) =>
-    candidate.startsWith('- Description: '),
-  )
+  const descriptionLine = descriptionLineIndex(metadataLines)
   if (descriptionLine !== -1) {
     metadataLines[descriptionLine] = line
     return `${metadataLines.join('\n')}${body.slice(metadataEnd)}`
@@ -827,7 +839,14 @@ export async function reconcileCaptureEnrichment(
 
       const usedAi =
         description !== null && metadataValue(description) !== '' && config !== null
-      const text = usedAi ? description : pageMeta?.description ?? null
+      // An AI description always replaces the drain-written in-page one, but
+      // the scraped fallback never does: it is the same page's meta text,
+      // hard-capped by the scraper — replacing could only ever lose content.
+      const text = usedAi
+        ? description
+        : hasDescription(split.body)
+          ? null
+          : pageMeta?.description ?? null
       const newBody = text !== null ? withDescription(split.body, text) : split.body
       const reassembled = source.slice(0, split.bodyOffset) + newBody
       await writeNote(

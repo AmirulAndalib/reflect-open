@@ -7,6 +7,7 @@ import { MobileStatusLayer } from '@/mobile/status-layer'
 import { useICloudRefresh } from '@/mobile/use-icloud-refresh'
 import { useKeyboardHeightVar } from '@/mobile/use-keyboard'
 import { useTaskCheckboxHaptics } from '@/mobile/use-task-haptics'
+import { CaptureProvider } from '@/providers/capture-provider'
 import { useGraph } from '@/providers/graph-provider'
 import { SyncProvider } from '@/providers/sync-provider'
 import { RouterProvider } from '@/routing/router'
@@ -48,8 +49,12 @@ export function MobileApp(): ReactElement {
               controller owns resume/edit/online; mobile adds only the
               plain-language status pill (step 10). */}
           <SyncProvider graph={graph}>
-            <MobileShell />
-            <MobileStatusLayer />
+            {/* Link capture (Plan 11, iOS share extension): relay the App
+                Group inbox + drain on launch and on every resume. */}
+            <CaptureProvider graph={graph}>
+              <MobileShell />
+              <MobileStatusLayer />
+            </CaptureProvider>
           </SyncProvider>
         </RouterProvider>
       </MobileErrorBoundary>

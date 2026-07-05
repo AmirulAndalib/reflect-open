@@ -1,10 +1,12 @@
 import {
   drainCaptureInbox,
+  errorMessage,
   hasBridge,
   isCaptureSpoolPath,
   isSilentStop,
   reconcileCaptureEnrichment,
   subscribeFileChanges,
+  toAppError,
   type AiProvidersState,
   type ReconcileStop,
 } from '@reflect/core'
@@ -41,25 +43,37 @@ export interface CaptureControllerOptions {
    * added in Settings mid-session must be seen by the very next pass.
    */
   getProviders: () => AiProvidersState
+  /**
+   * Mobile only: move envelopes the iOS share extension spooled into the App
+   * Group inbox into the graph's capture inbox, ahead of every drain.
+   * Providing it also arms the resume trigger (`visibilitychange` → visible):
+   * the mobile shell has no file watcher, so returning to the app is the
+   * arrival signal for captures shared while it was backgrounded.
+   */
+  relaySharedInbox?: () => Promise<number>
 }
 
 /** Build the controller for one graph session. `dispose()` is terminal. */
 export function createCaptureController(options: CaptureControllerOptions): CaptureController {
-  /** Last surfaced stop message — retries must not re-toast it. */
-  let surfacedStop: string | null = null
+  /**
+   * Last surfaced stop message per phase label — retries must not re-toast
+   * it. Keyed by label so one phase succeeding (which clears its own entry)
+   * cannot make another phase's persistent failure re-toast every pass.
+   */
+  const surfacedStops = new Map<string, string>()
 
   function surfaceStop(label: string, stopped: ReconcileStop | null): void {
     if (stopped === null) {
-      surfacedStop = null
+      surfacedStops.delete(label)
       return
     }
     // Self-healing stops (network/config/stale) stay silent: offline retries on
     // the next trigger, config means no provider/key (enrichment waits; the raw
     // save is done), stale is a graph switch tearing the pass down.
-    if (isSilentStop(stopped) || surfacedStop === stopped.message) {
+    if (isSilentStop(stopped) || surfacedStops.get(label) === stopped.message) {
       return
     }
-    surfacedStop = stopped.message
+    surfacedStops.set(label, stopped.message)
     startOperation(label).fail(stopped.message)
   }
 
@@ -67,6 +81,20 @@ export function createCaptureController(options: CaptureControllerOptions): Capt
   const reconcile = async (isStale: () => boolean): Promise<void> => {
     if (!hasBridge()) {
       return // browser dev: no inbox commands to drain against
+    }
+    if (options.relaySharedInbox) {
+      let relayStop: ReconcileStop | null = null
+      try {
+        await options.relaySharedInbox()
+      } catch (cause) {
+        // Already-relayed envelopes must still drain, so a relay failure
+        // surfaces like a drain stop instead of aborting the pass.
+        relayStop = { reason: toAppError(cause).kind, message: errorMessage(cause) }
+      }
+      surfaceStop('Saving shared capture', relayStop)
+      if (isStale()) {
+        return
+      }
     }
     const drained = await drainCaptureInbox({ generation: options.generation, isStale })
     surfaceStop('Saving link capture', drained.stopped)
@@ -90,6 +118,17 @@ export function createCaptureController(options: CaptureControllerOptions): Capt
     }
     loop.schedule() // the launch pass: captures spooled while the app was closed
     loop.retryOnWake() // the network's natural retry signals (enrichment)
+    if (options.relaySharedInbox) {
+      // Mobile resume: `focus` alone is unreliable in the iOS webview (the
+      // iCloud refresh hook listens to both for the same reason).
+      const onVisible = (): void => {
+        if (document.visibilityState === 'visible') {
+          loop.schedule()
+        }
+      }
+      document.addEventListener('visibilitychange', onVisible)
+      loop.onDispose(() => document.removeEventListener('visibilitychange', onVisible))
+    }
     if (!hasBridge()) {
       return // browser dev: no watcher to follow
     }

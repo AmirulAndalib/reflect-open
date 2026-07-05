@@ -22,6 +22,10 @@ pub struct Envelope {
     pub selection: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_text: Option<String>,
+    /// In-page meta description; only the iOS share extension sets it, so a
+    /// Chrome wire message carrying one passes through untouched.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta_description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
