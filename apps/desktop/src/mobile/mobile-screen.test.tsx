@@ -49,6 +49,7 @@ globalThis.matchMedia ??= ((query: string) => ({
 
 const editorProbe = vi.hoisted(() => ({
   focusCalls: 0,
+  selectionCalls: [] as Array<'start' | 'end'>,
 }))
 
 vi.mock('@/editor/note-editor', async () => {
@@ -71,7 +72,9 @@ vi.mock('@/editor/note-editor', async () => {
           focus: () => {
             editorProbe.focusCalls += 1
           },
-          setSelection: () => {},
+          setSelection: (position: 'start' | 'end') => {
+            editorProbe.selectionCalls.push(position)
+          },
           getSelectedText: () => '',
           openSelectionMenu: () => {},
           startPendingReplacement: () => false,
@@ -141,6 +144,7 @@ afterEach(() => {
 beforeEach(() => {
   files = {}
   editorProbe.focusCalls = 0
+  editorProbe.selectionCalls = []
   mockInvoke.mockReset()
   mockInvoke.mockImplementation(async (command, args) => {
     if (command === 'note_read') {
@@ -356,6 +360,8 @@ describe('MobileShell', () => {
     await waitFor(() => {
       expect(editorProbe.focusCalls).toBe(1)
     })
+    // A note arrival keeps the default caret placement (the document start).
+    expect(editorProbe.selectionCalls).toEqual([])
   })
 
   it('switches tabs: All shows the searchable list, Daily returns to the last-open day', async () => {
@@ -379,7 +385,7 @@ describe('MobileShell', () => {
     )
   })
 
-  it('double-tapping Daily opens today and focuses the daily editor', async () => {
+  it('double-tapping Daily opens today and focuses the daily editor at its end', async () => {
     const user = userEvent.setup()
     const today = todayIso()
     const other = otherDayInWeek(today)
@@ -405,9 +411,35 @@ describe('MobileShell', () => {
         view.getByRole('button', { name: dayCellLabel(today) }).getAttribute('aria-current'),
       ).toBe('date')
     })
+    // The capture gesture: focus with the caret at the end of today's content.
     await waitFor(() => {
       expect(editorProbe.focusCalls).toBe(1)
     })
+    expect(editorProbe.selectionCalls).toEqual(['end'])
+  })
+
+  it('double-tapping Daily while already on today focuses the editor at its end', async () => {
+    const today = todayIso()
+    files[`daily/${today}.md`] = 'first thought'
+    const view = mount({ kind: 'today' })
+    await waitFor(() => {
+      const editors = view.getAllByTestId('fake-editor')
+      expect(editors.some((editor) => editor.textContent?.includes('first thought'))).toBe(true)
+    })
+
+    let fakeNow = 1_000
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => fakeNow)
+    fireEvent.click(view.getByRole('button', { name: 'Daily' }))
+    fakeNow = 1_100
+    fireEvent.click(view.getByRole('button', { name: 'Daily' }))
+    now.mockRestore()
+
+    // A date-preserving focus arrival: the caret lands at the end (the
+    // re-anchor-to-top of a plain re-arrival must not fire over it).
+    await waitFor(() => {
+      expect(editorProbe.focusCalls).toBe(1)
+    })
+    expect(editorProbe.selectionCalls).toEqual(['end'])
   })
 
   it('does not jump to today on a single tap of the active Daily tab', async () => {

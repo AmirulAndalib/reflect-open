@@ -33,6 +33,13 @@ interface NotePaneProps {
   lazy?: boolean
   /** Focus the editor when it mounts (the navigated-to day/note). */
   autoFocus?: boolean
+  /**
+   * Where the caret lands when {@link autoFocus} applies: the document start
+   * (default — a seeded new note's empty H1, so typing names the note) or the
+   * end of the note's content (append-style capture, e.g. the mobile daily
+   * double-tap).
+   */
+  autoFocusSelection?: 'start' | 'end'
   /** Called once the autofocus actually happened (the editor mounted). */
   onAutoFocused?: () => void
   /**
@@ -99,6 +106,7 @@ export function NotePaneComponent({
   path,
   lazy = false,
   autoFocus = false,
+  autoFocusSelection = 'start',
   onAutoFocused,
   className,
   editorClassName,
@@ -184,13 +192,17 @@ export function NotePaneComponent({
         registerHandle?.(dailyDate, handle)
       }
       if (handle && autoFocus) {
-        // The caret lands at the document start — for a seeded new note
-        // that is the empty H1, so typing names the note.
+        // By default the caret lands at the document start — for a seeded
+        // new note that is the empty H1, so typing names the note. An `end`
+        // selection moves it (and the scroll) to the note's content end.
         handle.focus()
+        if (autoFocusSelection === 'end') {
+          handle.setSelection('end')
+        }
         onAutoFocused?.()
       }
     },
-    [bindEditor, path, dailyDate, registerHandle, autoFocus, onAutoFocused],
+    [bindEditor, path, dailyDate, registerHandle, autoFocus, autoFocusSelection, onAutoFocused],
   )
 
   const aiMenu = useEditorAiMenu({

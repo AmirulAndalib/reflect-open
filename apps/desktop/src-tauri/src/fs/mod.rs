@@ -321,9 +321,32 @@ pub fn asset_open(
     if !abs.is_file() {
         return Err(AppError::not_found(format!("asset not found: {path}")));
     }
+    open_asset_path(&app, &abs)
+}
+
+#[cfg(target_os = "ios")]
+fn open_asset_path(app: &tauri::AppHandle, path: &Path) -> AppResult<()> {
+    let url = asset_file_url(path)?;
     app.opener()
-        .open_path(abs.to_string_lossy().into_owned(), None::<&str>)
+        .open_url(url.as_str(), None::<&str>)
         .map_err(|err| AppError::io(err.to_string()))
+}
+
+#[cfg(not(target_os = "ios"))]
+fn open_asset_path(app: &tauri::AppHandle, path: &Path) -> AppResult<()> {
+    app.opener()
+        .open_path(path.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|err| AppError::io(err.to_string()))
+}
+
+#[cfg(any(target_os = "ios", test))]
+fn asset_file_url(path: &Path) -> AppResult<tauri::Url> {
+    tauri::Url::from_file_path(path).map_err(|()| {
+        AppError::io(format!(
+            "failed to convert asset path to file URL: {}",
+            path.display()
+        ))
+    })
 }
 
 /// List every file (any extension) under a graph-relative directory, e.g.
@@ -536,7 +559,7 @@ pub(crate) fn note_files(root: &Path) -> AppResult<Vec<FileMeta>> {
 
 #[cfg(test)]
 mod move_tests {
-    use super::{ensure_asset_path, move_note_file};
+    use super::{asset_file_url, ensure_asset_path, move_note_file};
     use std::fs;
 
     fn graph() -> tempfile::TempDir {
@@ -593,5 +616,14 @@ mod move_tests {
         assert!(ensure_asset_path("notes/cat.png").is_err());
         assert!(ensure_asset_path("assets/").is_err());
         assert!(ensure_asset_path("assets").is_err());
+    }
+
+    #[test]
+    fn asset_file_url_percent_encodes_local_paths() {
+        let path = std::env::temp_dir().join("Reflect Cat Photo.png");
+        let url = asset_file_url(&path).unwrap();
+
+        assert_eq!(url.scheme(), "file");
+        assert!(url.as_str().contains("Reflect%20Cat%20Photo.png"));
     }
 }

@@ -26,7 +26,10 @@ interface DaySlideProps {
    * tapped while already there): the selected slide re-anchors to the top.
    */
   scrollResetSeq: number
-  /** True when this slide's editor should focus as soon as its handle exists. */
+  /**
+   * True when this slide's editor should focus as soon as its handle exists —
+   * caret at the end of the day's content (the double-tap capture gesture).
+   */
   focusRequested: boolean
   /** Called after the focus request has been applied. */
   onFocusConsumed: () => void
@@ -69,8 +72,14 @@ export function DaySlide({
     if (!selected) {
       return
     }
+    if (focusRequested) {
+      // A focus arrival (the Daily tab double-tap) anchors to the caret at
+      // the note's end — jumping to the top would yank the scroll away from
+      // the selection the editor just placed.
+      return
+    }
     resetToTop()
-  }, [scrollResetSeq, selected, resetToTop])
+  }, [scrollResetSeq, selected, focusRequested, resetToTop])
 
   return (
     <div
@@ -98,6 +107,9 @@ export function DaySlide({
           path={dailyPath(day)}
           lazy
           autoFocus={focusRequested}
+          // V1's double-tap-to-today is a capture gesture: the caret (and the
+          // scroll) land at the end of the day's content, ready to append.
+          autoFocusSelection="end"
           onAutoFocused={onFocusConsumed}
           showBacklinks={false}
           gutterClassName={MOBILE_CONTENT_GUTTER}
