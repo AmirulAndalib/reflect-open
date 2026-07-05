@@ -16,6 +16,15 @@ import { useSettings } from '@/providers/settings-provider'
  * `iCloud Drive → Reflect → Notes` in Files/Finder. */
 const DEFAULT_ICLOUD_GRAPH_NAME = 'Notes'
 
+/**
+ * Backoff for the onboarding-time container resolve. A failed lookup is
+ * usually transient (network, first-run provisioning) — giving up on the
+ * first error would flip the onboarding iCloud card to its signed-out copy
+ * even though iCloud is fine. Only after these retries drain does the card
+ * degrade to the (still actionable) signed-out state.
+ */
+const ONBOARDING_RESOLVE_RETRY_DELAYS_MS = [2_000, 8_000]
+
 /** `/…/Documents/My Notes` → `My Notes`. */
 function graphNameFromRoot(root: string): string {
   return root.split('/').filter(Boolean).at(-1) ?? ''
@@ -134,19 +143,15 @@ export function useMobileGraphBoot(options: MobileGraphBootOptions): MobileGraph
     }
     let active = true
     /** Fill the storage info once the container resolves — background only. */
-    const resolveStorageInBackground = (onDone?: () => void): void => {
+    const resolveStorageInBackground = (): void => {
       void mobileStorage().then(
         (storage) => {
           if (active) {
             setMobileStorageInfo(storage)
-            onDone?.()
           }
         },
         (err) => {
           console.error('mobile storage resolution failed:', errorMessage(err))
-          if (active) {
-            onDone?.()
-          }
         },
       )
     }
@@ -179,7 +184,33 @@ export function useMobileGraphBoot(options: MobileGraphBootOptions): MobileGraph
               // Non-fatal: the full resolve below carries the local root too.
             },
           )
-          resolveStorageInBackground(() => setMobileStorageResolving(false))
+          const resolveWithRetries = (attempt: number): void => {
+            void mobileStorage().then(
+              (storage) => {
+                if (active) {
+                  setMobileStorageInfo(storage)
+                  setMobileStorageResolving(false)
+                }
+              },
+              (err) => {
+                console.error('mobile storage resolution failed:', errorMessage(err))
+                if (!active) {
+                  return
+                }
+                const delay = ONBOARDING_RESOLVE_RETRY_DELAYS_MS[attempt]
+                if (delay === undefined) {
+                  setMobileStorageResolving(false)
+                  return
+                }
+                setTimeout(() => {
+                  if (active) {
+                    resolveWithRetries(attempt + 1)
+                  }
+                }, delay)
+              },
+            )
+          }
+          resolveWithRetries(0)
           return
         }
         const kind = settings.mobileStorage

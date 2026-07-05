@@ -169,7 +169,11 @@ export function createBackupController(options: BackupControllerOptions): Backup
     emitFileChanges(changes)
     const indexable = changes.filter((change) => isNotePath(change.path))
     if (indexGeneration !== null && indexable.length > 0) {
-      void applyIndexChanges(indexable, indexGeneration).then(invalidateIndexQueries)
+      void applyIndexChanges(indexable, indexGeneration).then((mutations) => {
+        if (mutations > 0) {
+          invalidateIndexQueries()
+        }
+      })
     }
   }
 
