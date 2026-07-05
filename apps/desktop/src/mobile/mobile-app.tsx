@@ -26,20 +26,8 @@ import { RouterProvider } from '@/routing/router'
  * mounts here so it covers every screen's editors.
  */
 export function MobileApp(): ReactElement {
-  const { status, graph, error, needsOnboarding, indexGeneration } = useGraph()
+  const { status, graph, error, needsOnboarding } = useGraph()
   useKeyboardHeightVar()
-
-  // TEMPORARY (Plan 23 spike): dev-build platform probes for the chat port;
-  // delete with `spike-plan23.ts` once the verdicts are recorded.
-  useEffect(() => {
-    if (!import.meta.env.DEV || status !== 'ready' || indexGeneration === null) {
-      return
-    }
-    void import('@/mobile/spike-plan23').then(({ runPlan23Spike }) =>
-      runPlan23Spike(indexGeneration),
-    )
-  }, [status, indexGeneration])
-
   useTaskCheckboxHaptics()
   // iCloud graphs have an out-of-process writer (the OS syncing files in):
   // nudge downloads + re-reconcile on resume. Inert for local/git graphs.

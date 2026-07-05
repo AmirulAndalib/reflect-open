@@ -33,12 +33,16 @@ keyboard's own dictation.
 > sheet swaps model lists per provider and takes key input. Owed on a
 > physical device with a real key: the full streaming pass (send, stop,
 > tool chips, private-note refusal, history restore) and the picker/HEIC
-> attachment check — plus deleting the spike set (`spike-plan23.ts`,
-> `spike_log`, the `127.0.0.1:8787` capability entry, the `mobile-app.tsx`
-> hook) once those verdicts are recorded here.
+> attachment check.
 >
-> **Step 0 verdicts (2026-07-05, iPhone 17 Pro simulator; `spike-plan23.ts`
-> stays in-tree, Plan 19-style, until the physical-device re-run):**
+> **Step 0 verdicts (2026-07-05, iPhone 17 Pro simulator).** Product call
+> (2026-07-05): the simulator verdicts are accepted for hardware too, so the
+> TEMPORARY spike set (`spike-plan23.ts`, the `spike_log` command, the
+> `127.0.0.1:8787` capability entry, the `mobile-app.tsx` hook) was deleted
+> in-branch rather than held for a device re-run — the real-key device pass
+> above stands in for the synthetic probes (a real streamed answer is the
+> streaming verdict; backgrounding it mid-answer is the suspension one).
+> The simulator verdicts:
 > all PASS. Streaming granularity: 6/6 SSE chunks with ~400ms inter-chunk
 > gaps through `providerFetch` — tauri-plugin-http streams incrementally on
 > iOS, no Rust fallback needed. Keychain `ai-api-key:*` round-trip PASS.

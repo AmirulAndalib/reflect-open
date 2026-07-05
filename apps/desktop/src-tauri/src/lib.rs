@@ -74,13 +74,6 @@ fn app_platform() -> &'static str {
     }
 }
 
-// TEMPORARY (Plan 23 spike): webview-side spike verdicts need to reach the
-// `tauri ios dev` console stream; delete with the spike.
-#[tauri::command]
-fn spike_log(line: String) {
-    tracing::info!("{line}");
-}
-
 /// Route `tracing` output to stderr, honoring `RUST_LOG` (default `info`).
 fn init_tracing() {
     use tracing_subscriber::EnvFilter;
@@ -185,7 +178,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_version,
             app_platform,
-            spike_log,
             icloud::storage::mobile_storage,
             icloud::storage::mobile_storage_local,
             icloud::storage::icloud_download_pending,
