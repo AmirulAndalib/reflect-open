@@ -76,11 +76,13 @@ fn status_response(status: StatusCode) -> Response<Cow<'static, [u8]>> {
         .expect("a status-only response always builds")
 }
 
-fn serve<R: Runtime>(app: &AppHandle<R>, request_path: &str) -> Result<(String, Vec<u8>), StatusCode> {
+fn serve<R: Runtime>(
+    app: &AppHandle<R>,
+    request_path: &str,
+) -> Result<(String, Vec<u8>), StatusCode> {
     let (generation, rel) = parse_request_path(request_path)?;
     let state = app.state::<GraphState>();
-    let root =
-        super::root_for_generation(&state, generation).map_err(|_| StatusCode::FORBIDDEN)?;
+    let root = super::root_for_generation(&state, generation).map_err(|_| StatusCode::FORBIDDEN)?;
     let abs = super::resolve::resolve(&root, rel).map_err(|_| StatusCode::FORBIDDEN)?;
     // On an iCloud graph this read blocks until the file is materialized on
     // the device — acceptable here on the blocking pool, and exactly the wait
@@ -128,7 +130,10 @@ mod tests {
             parse_request_path("assets/cat.png").unwrap_err(),
             StatusCode::BAD_REQUEST,
         );
-        assert_eq!(parse_request_path("3").unwrap_err(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            parse_request_path("3").unwrap_err(),
+            StatusCode::BAD_REQUEST
+        );
         assert_eq!(
             parse_request_path("nope/assets/cat.png").unwrap_err(),
             StatusCode::BAD_REQUEST,
