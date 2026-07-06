@@ -63,6 +63,13 @@ vi.mock('@meowdown/react', () => ({
             src={props.resolveImageUrl?.('assets/cat.png') ?? ''}
             alt="Cat"
             data-testid="inline-image"
+            onClick={(event) =>
+              props.onImageClick?.({
+                src: 'assets/cat.png',
+                alt: 'Cat',
+                event: event.nativeEvent,
+              })
+            }
           />
         </span>
         {props.children}
@@ -255,6 +262,24 @@ describe('NoteEditor image lightbox', () => {
 
     expect(startViewTransition).toHaveBeenCalledTimes(1)
     expect(await screen.findByRole('dialog', { name: 'Image preview' })).toBeInTheDocument()
+  })
+
+  it('prevents touch image taps from focusing the editor while still opening the lightbox', async () => {
+    setPlatformSurface({ touchEditor: true, mobileApp: true })
+    renderEditor()
+
+    const image = screen.getByTestId('inline-image')
+    expect(fireEvent.pointerDown(image, { pointerType: 'touch' })).toBe(false)
+    fireEvent.click(image)
+
+    expect(await screen.findByRole('dialog', { name: 'Image preview' })).toBeInTheDocument()
+  })
+
+  it('leaves desktop image pointerdown alone', () => {
+    renderEditor()
+
+    const image = screen.getByTestId('inline-image')
+    expect(fireEvent.pointerDown(image, { pointerType: 'mouse' })).toBe(true)
   })
 
   it('opens a local image through the graph asset opener', async () => {

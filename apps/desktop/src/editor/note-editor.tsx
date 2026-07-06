@@ -5,6 +5,7 @@ import {
   useRef,
   type ReactElement,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   type Ref,
 } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
@@ -41,6 +42,8 @@ import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { isDeepLinkUrl } from '@/lib/deep-links/parse'
 import { isNewWindowClick, openDeepLinkInNewWindow } from '@/lib/windows/open-in-new-window'
 import { cn } from '@/lib/utils'
+
+const IMAGE_PREVIEW_SELECTOR = '.md-image-view-preview, .md-image-preview'
 
 /**
  * Reflect's note editor: a thin wrapper over `@meowdown/react`'s
@@ -186,6 +189,10 @@ interface NoteEditorProps {
    * bullet-after-heading keymap.
    */
   children?: ReactNode
+}
+
+function closestImagePreview(target: EventTarget | null): HTMLElement | null {
+  return target instanceof HTMLElement ? target.closest(IMAGE_PREVIEW_SELECTOR) : null
 }
 
 export function NoteEditor({
@@ -347,6 +354,17 @@ export function NoteEditor({
     (href) => resolveFileInfoRef.current?.(href),
     [],
   )
+  const handleEditorPointerDownCapture = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>): void => {
+      if (!isTouchEditorSurface() || event.pointerType === 'mouse') {
+        return
+      }
+      if (closestImagePreview(event.target) !== null) {
+        event.preventDefault()
+      }
+    },
+    [],
+  )
   const handleImageClick = useCallback(
     ({ src, alt, event }: { src: string; alt: string; event: MouseEvent }) => {
       const displayUrl = resolveImageUrlRef.current?.(src) ?? null
@@ -355,12 +373,7 @@ export function NoteEditor({
       }
       // The clicked target is the `<img>` or its meowdown image wrapper;
       // the source element drives the View Transition zoom.
-      const sourceImage =
-        event.target instanceof HTMLElement
-          ? event.target
-              .closest('.md-image-view-preview, .md-image-preview')
-              ?.querySelector('img') ?? null
-          : null
+      const sourceImage = closestImagePreview(event.target)?.querySelector('img') ?? null
       openLightbox(sourceImage, {
         src: displayUrl,
         alt,
@@ -381,45 +394,47 @@ export function NoteEditor({
 
   return (
     <>
-      <MeowdownEditor
-        handleRef={innerRef}
-        mode={markMode}
-        initialMarkdown={initialContent}
-        // On the touch surface spellcheck is pinned off regardless of the
-        // setting: iOS derives the keyboard's smart-quotes/smart-dashes traits
-        // from it at focus time, and smart punctuation corrupts markdown
-        // syntax ([[ wiki links, code spans, --- fences) — Plan 19 gate.
-        // Autocorrect is independent and stays on (EditorInputTraits).
-        spellCheck={isTouchEditorSurface() ? false : spellCheck}
-        // Reflect's implementation-neutral `12h`/`24h` maps to meowdown's
-        // `12`/`24` here at the boundary, like `markModeFromSyntax`.
-        timeFormat={timeFormat === '24h' ? '24' : '12'}
-        bulletAfterHeading={bulletAfterHeading}
-        blockHandle={blockHandle}
-        editorClassName={cn('reflect-editor', className)}
-        {...(titlePlaceholder !== undefined ? { placeholder: titlePlaceholder } : {})}
-        onDocChange={handleDocChange}
-        onWikilinkClick={handleWikilinkClick}
-        onTagClick={handleTagClick}
-        onLinkClick={handleLinkClick}
-        onImageClick={handleImageClick}
-        {...(onWikilinkSearch !== undefined ? { onWikilinkSearch } : {})}
-        {...(onTagSearch !== undefined ? { onTagSearch } : {})}
-        {...(onSelectionMenuSearch !== undefined ? { onSelectionMenuSearch } : {})}
-        {...(pendingReplacementActions !== undefined ? { pendingReplacementActions } : {})}
-        {...(onPendingReplacementResolve !== undefined ? { onPendingReplacementResolve } : {})}
-        {...(onSlashMenuSearch !== undefined ? { onSlashMenuSearch } : {})}
-        resolveImageUrl={handleResolveImageUrl}
-        onFilePaste={handleFilePaste}
-        {...(resolveFileLink !== undefined ? { resolveFileLink } : {})}
-        resolveFileInfo={handleResolveFileInfo}
-        onFileClick={handleFileClick}
-        onExitBoundary={handleExitBoundary}
-      >
-        <EditorInputTraits />
-        <FormattingToolbarBridge />
-        {children}
-      </MeowdownEditor>
+      <div className="contents" onPointerDownCapture={handleEditorPointerDownCapture}>
+        <MeowdownEditor
+          handleRef={innerRef}
+          mode={markMode}
+          initialMarkdown={initialContent}
+          // On the touch surface spellcheck is pinned off regardless of the
+          // setting: iOS derives the keyboard's smart-quotes/smart-dashes traits
+          // from it at focus time, and smart punctuation corrupts markdown
+          // syntax ([[ wiki links, code spans, --- fences) — Plan 19 gate.
+          // Autocorrect is independent and stays on (EditorInputTraits).
+          spellCheck={isTouchEditorSurface() ? false : spellCheck}
+          // Reflect's implementation-neutral `12h`/`24h` maps to meowdown's
+          // `12`/`24` here at the boundary, like `markModeFromSyntax`.
+          timeFormat={timeFormat === '24h' ? '24' : '12'}
+          bulletAfterHeading={bulletAfterHeading}
+          blockHandle={blockHandle}
+          editorClassName={cn('reflect-editor', className)}
+          {...(titlePlaceholder !== undefined ? { placeholder: titlePlaceholder } : {})}
+          onDocChange={handleDocChange}
+          onWikilinkClick={handleWikilinkClick}
+          onTagClick={handleTagClick}
+          onLinkClick={handleLinkClick}
+          onImageClick={handleImageClick}
+          {...(onWikilinkSearch !== undefined ? { onWikilinkSearch } : {})}
+          {...(onTagSearch !== undefined ? { onTagSearch } : {})}
+          {...(onSelectionMenuSearch !== undefined ? { onSelectionMenuSearch } : {})}
+          {...(pendingReplacementActions !== undefined ? { pendingReplacementActions } : {})}
+          {...(onPendingReplacementResolve !== undefined ? { onPendingReplacementResolve } : {})}
+          {...(onSlashMenuSearch !== undefined ? { onSlashMenuSearch } : {})}
+          resolveImageUrl={handleResolveImageUrl}
+          onFilePaste={handleFilePaste}
+          {...(resolveFileLink !== undefined ? { resolveFileLink } : {})}
+          resolveFileInfo={handleResolveFileInfo}
+          onFileClick={handleFileClick}
+          onExitBoundary={handleExitBoundary}
+        >
+          <EditorInputTraits />
+          <FormattingToolbarBridge />
+          {children}
+        </MeowdownEditor>
+      </div>
       <ImageLightbox
         image={lightboxImage}
         onClose={closeLightbox}
