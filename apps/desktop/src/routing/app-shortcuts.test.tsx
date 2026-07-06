@@ -144,6 +144,23 @@ describe('app shortcuts', () => {
     }
   })
 
+  it('matches bracket history shortcuts by produced key on non-US layouts', () => {
+    const { result } = shortcutsHook()
+    act(() => press('n'))
+    const opened = result.current.router.route
+    act(() => press('d'))
+    expect(result.current.router.route).toEqual({ kind: 'today' })
+
+    // On JIS keyboards the key labeled `[` can report a physical BracketRight
+    // code. The user-facing shortcut is character-based, so event.key wins.
+    act(() => press('[', { code: 'BracketRight' }))
+    expect(result.current.router.route).toEqual(opened)
+
+    act(() => press(']', { code: 'BracketLeft' }))
+    expect(result.current.router.route).toEqual({ kind: 'today' })
+    expect(result.current.router.canForward).toBe(false)
+  })
+
   it('⌘K opens the palette', () => {
     const { result } = shortcutsHook()
     expect(result.current.palette.open).toBe(false)

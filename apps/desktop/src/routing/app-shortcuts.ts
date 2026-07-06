@@ -50,6 +50,9 @@ function isModKey(event: KeyboardEvent): boolean {
 }
 
 function bindingKeyFor(event: KeyboardEvent): string {
+  if (!event.altKey && event.key.length === 1) {
+    return event.key.toLowerCase()
+  }
   const fromCode = CODE_TO_BINDING_KEY[event.code]
   if (fromCode !== undefined) {
     return fromCode
