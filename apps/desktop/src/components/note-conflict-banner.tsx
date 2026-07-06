@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import { InlineAlert } from '@/components/inline-alert'
+import { Button } from '@/components/ui/button'
 
 interface NoteConflictBannerProps {
   /** Resolve by keeping the editor buffer (rewrites the file). */
@@ -19,24 +20,18 @@ export function NoteConflictBanner({
   onLoadTheirs,
 }: NoteConflictBannerProps): ReactElement {
   return (
-    <InlineAlert className="mb-4 flex flex-wrap items-center gap-3">
+    <InlineAlert className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
       <span className="min-w-0 flex-1">
         This note changed on disk while you had unsaved edits.
       </span>
-      <button
-        type="button"
-        onClick={onKeepMine}
-        className="rounded border border-current/30 px-2 py-0.5 font-medium"
-      >
-        Keep mine
-      </button>
-      <button
-        type="button"
-        onClick={onLoadTheirs}
-        className="rounded border border-current/30 px-2 py-0.5 font-medium"
-      >
-        Load theirs
-      </button>
+      <div className="flex gap-2">
+        <Button size="xs" variant="outline" onClick={onKeepMine}>
+          Keep mine
+        </Button>
+        <Button size="xs" variant="outline" onClick={onLoadTheirs}>
+          Load theirs
+        </Button>
+      </div>
     </InlineAlert>
   )
 }

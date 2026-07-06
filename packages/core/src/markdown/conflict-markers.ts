@@ -98,6 +98,95 @@ export function conflictMarkerLabels(source: string): ConflictMarkerLabels | nul
   return null
 }
 
+/** One side of a conflict block: its marker label and verbatim content. */
+export interface ConflictSide {
+  /** The device name (or colliding filename) from the marker line. */
+  readonly label: string
+  /** The side's raw lines, newline-joined — may be empty. */
+  readonly text: string
+}
+
+/** A run of plain text, or one complete conflict block, in file order. */
+export type ConflictSegment =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'conflict'; readonly ours: ConflictSide; readonly theirs: ConflictSide }
+
+/**
+ * Split `source` into plain-text runs and complete conflict blocks, in file
+ * order, so the conflict view can render each side styled instead of dumping
+ * raw marker lines. Uses the same state machine as
+ * {@link resolveConflictMarkers}, so a rendered side is exactly what the
+ * matching resolution keeps. Every content byte lands in some segment: an
+ * unterminated block (a truncated file) flows back into the surrounding text
+ * verbatim, marker lines included, rather than pretending to be resolvable.
+ */
+export function parseConflictMarkers(source: string): ConflictSegment[] {
+  const segments: ConflictSegment[] = []
+  let text: string[] = []
+  // The in-progress block's raw lines, so an unterminated block can rejoin
+  // the text stream untouched.
+  let pending: string[] = []
+  let ours: string[] = []
+  let theirs: string[] = []
+  let oursLabel = ''
+  let section: 'text' | 'ours' | 'theirs' = 'text'
+
+  const flushText = (): void => {
+    if (text.length > 0) {
+      segments.push({ kind: 'text', text: text.join('\n') })
+      text = []
+    }
+  }
+
+  for (const rawLine of source.split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    switch (section) {
+      case 'text':
+        if (line.startsWith('<<<<<<< ')) {
+          section = 'ours'
+          oursLabel = line.slice('<<<<<<< '.length).trim()
+          pending = [rawLine]
+          ours = []
+          theirs = []
+        } else {
+          text.push(rawLine)
+        }
+        break
+      case 'ours':
+        pending.push(rawLine)
+        if (line === '=======') {
+          section = 'theirs'
+        } else {
+          ours.push(rawLine)
+        }
+        break
+      case 'theirs':
+        if (line.startsWith('>>>>>>> ')) {
+          flushText()
+          segments.push({
+            kind: 'conflict',
+            ours: { label: oursLabel, text: ours.join('\n') },
+            theirs: {
+              label: line.slice('>>>>>>> '.length).trim(),
+              text: theirs.join('\n'),
+            },
+          })
+          section = 'text'
+          pending = []
+        } else {
+          pending.push(rawLine)
+          theirs.push(rawLine)
+        }
+        break
+    }
+  }
+  if (section !== 'text') {
+    text.push(...pending)
+  }
+  flushText()
+  return segments
+}
+
 /**
  * How many complete conflict blocks `source` carries. The iCloud sweep's
  * three-plus-way folds stack one block per extra side (Plan 21), and the

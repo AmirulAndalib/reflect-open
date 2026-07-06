@@ -3,6 +3,7 @@ import {
   conflictMarkerBlockCount,
   conflictMarkerLabels,
   detectConflictMarkers,
+  parseConflictMarkers,
   resolveConflictMarkers,
 } from './conflict-markers'
 
@@ -125,6 +126,61 @@ describe('conflictMarkerLabels', () => {
     expect(conflictMarkerLabels('<<<<<<< a\nunterminated')).toBeNull()
     // Out-of-order marker lines are prose, not a conflict.
     expect(conflictMarkerLabels('=======\n>>>>>>> b\n<<<<<<< a\n')).toBeNull()
+  })
+})
+
+describe('parseConflictMarkers', () => {
+  it('splits text and conflict blocks in file order, labels included', () => {
+    expect(parseConflictMarkers(CONFLICTED)).toEqual([
+      { kind: 'text', text: '# Shared\n' },
+      {
+        kind: 'conflict',
+        ours: { label: 'this device', text: 'edited on a' },
+        theirs: { label: 'other device', text: 'edited on b' },
+      },
+      { kind: 'text', text: '' },
+    ])
+  })
+
+  it('keeps the sides a resolution would keep — same splice, per side', () => {
+    const segments = parseConflictMarkers(CONFLICTED)
+    const conflict = segments.find((segment) => segment.kind === 'conflict')
+    expect(conflict?.kind).toBe('conflict')
+    if (conflict?.kind === 'conflict') {
+      expect(resolveConflictMarkers(CONFLICTED, 'ours')).toContain(conflict.ours.text)
+      expect(resolveConflictMarkers(CONFLICTED, 'theirs')).toContain(conflict.theirs.text)
+    }
+  })
+
+  it('parses the iCloud sweep’s stacked shape, empty sides included', () => {
+    const stacked =
+      '<<<<<<< Mac\nmac\n=======\nphone\n>>>>>>> iPhone\n<<<<<<< Mac\n=======\nipad\n>>>>>>> iPad\n'
+    expect(parseConflictMarkers(stacked)).toEqual([
+      {
+        kind: 'conflict',
+        ours: { label: 'Mac', text: 'mac' },
+        theirs: { label: 'iPhone', text: 'phone' },
+      },
+      {
+        kind: 'conflict',
+        ours: { label: 'Mac', text: '' },
+        theirs: { label: 'iPad', text: 'ipad' },
+      },
+      { kind: 'text', text: '' },
+    ])
+  })
+
+  it('flows an unterminated block back into the text verbatim', () => {
+    const truncated = 'before\n<<<<<<< this device\nkept line'
+    expect(parseConflictMarkers(truncated)).toEqual([
+      { kind: 'text', text: truncated },
+    ])
+  })
+
+  it('is a single text segment on unconflicted text', () => {
+    expect(parseConflictMarkers('plain\ntext\n')).toEqual([
+      { kind: 'text', text: 'plain\ntext\n' },
+    ])
   })
 })
 

@@ -55,9 +55,12 @@ export {
   conflictMarkerBlockCount,
   conflictMarkerLabels,
   detectConflictMarkers,
+  parseConflictMarkers,
   resolveConflictMarkers,
   type ConflictMarkerLabels,
   type ConflictResolution,
+  type ConflictSegment,
+  type ConflictSide,
 } from './conflict-markers'
 export { extractEmailFields, foldEmail } from './email-fields'
 export { foldKey, foldTag } from './keys'

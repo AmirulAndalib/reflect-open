@@ -220,14 +220,17 @@ describe('RouteContent', () => {
   })
 
   it('opens a note the editor cannot round-trip as read-only, never editable', async () => {
-    // Git conflict markers are a known meowdown converter gap (see roundtrip.ts).
+    // Git conflict markers are a known meowdown converter gap (see roundtrip.ts),
+    // and get their own view: both sides shown, labeled by the marker names.
     files['notes/conflict.md'] =
       '# Shared\n\n<<<<<<< this device\nedited on a\n=======\nedited on b\n>>>>>>> other device\n'
     const view = renderRoute({ kind: 'note', path: 'notes/conflict.md' })
 
-    await view.findByText(/read-only to protect your file/)
+    await view.findByText(/edited on a/)
     expect(view.queryByTestId('fake-editor')).toBeNull()
-    expect(view.getByText(/edited on a/)).toBeDefined()
+    expect(view.getByText('this device')).toBeDefined()
+    expect(view.getByText('other device')).toBeDefined()
+    expect(view.getByText(/edited on b/)).toBeDefined()
     view.unmount()
   })
 

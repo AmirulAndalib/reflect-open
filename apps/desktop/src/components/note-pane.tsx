@@ -1,7 +1,8 @@
 import { memo, useCallback, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { ExitBoundaryHandler } from '@meowdown/core'
-import { isDaily, isTemplatePath, untitledNoteSeed } from '@reflect/core'
+import { detectConflictMarkers, isDaily, isTemplatePath, untitledNoteSeed } from '@reflect/core'
 import { BacklinksPanel } from '@/components/backlinks-panel'
+import { ConflictNoteView } from '@/components/conflict-note-view'
 import { InlineAlert } from '@/components/inline-alert'
 import { NoteConflictBanner } from '@/components/note-conflict-banner'
 import { ProtectedNoteView } from '@/components/protected-note-view'
@@ -256,11 +257,19 @@ export function NotePaneComponent({
 
   if (document.protected) {
     // Sync-conflicted notes land here (markers classify as lossy), so the
-    // conflict notice — with its raw-text resolution actions — leads the view.
+    // conflict notice — with its raw-text resolution actions — leads the
+    // view, and the file renders with each block's sides color-coded instead
+    // of the generic read-only dump (whose converter-gap alert would only
+    // double up on the conflict explanation).
+    const conflicted = detectConflictMarkers(document.initialContent)
     return (
       <div className={cn(gutterClassName, className)}>
         <SyncConflictNotice path={path} className="mb-4" />
-        <ProtectedNoteView content={document.initialContent} />
+        {conflicted ? (
+          <ConflictNoteView content={document.initialContent} />
+        ) : (
+          <ProtectedNoteView content={document.initialContent} />
+        )}
         {showBacklinks ? <BacklinksPanel path={path} /> : null}
       </div>
     )
