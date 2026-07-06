@@ -103,8 +103,8 @@ describe('MobileNote focus contract', () => {
     expect(paneProps.autoFocus).toBe(true)
   })
 
-  it('consumes the focusEditor arrival intent (wiki-link / backlink taps)', () => {
+  it('ignores a focusEditor arrival intent (navigation never raises the keyboard)', () => {
     renderArrival('notes/target.md', { focusEditor: true })
-    expect(paneProps.autoFocus).toBe(true)
+    expect(paneProps.autoFocus).toBe(false)
   })
 })

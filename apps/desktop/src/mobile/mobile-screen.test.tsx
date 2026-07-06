@@ -334,7 +334,7 @@ describe('MobileShell', () => {
     expect(view.getByRole('heading', { level: 1 }).textContent).toBe(monthLabel(todayIso()))
   })
 
-  it('restores editor focus on the destination of a wiki-link tap, but not on plain arrivals', async () => {
+  it('never focuses the destination editor on navigation (keyboard stays down)', async () => {
     const user = userEvent.setup()
     files['notes/source.md'] = 'see [[Target Note]]'
     const view = mount({ kind: 'note', path: 'notes/source.md' })
@@ -349,18 +349,18 @@ describe('MobileShell', () => {
     })
     expect(editorProbe.focusCalls).toBe(0)
 
-    // The tap resolves (unresolved title → create-from-unresolved), navigates,
-    // and the destination consumes the focus request when its editor mounts —
-    // the whole Plan 19 focus contract, end to end through the real router,
-    // NotePane, and document pipeline.
+    // The tap resolves (unresolved title → create-from-unresolved) and
+    // navigates, but the destination must NOT focus: the keyboard raise
+    // would cut through the stack push animation — end to end through the
+    // real router, NotePane, and document pipeline.
     await user.click(view.getByRole('button', { name: 'fake-wikilink' }))
     await waitFor(() => {
       expect(view.getByRole('heading').textContent).not.toContain('source')
     })
     await waitFor(() => {
-      expect(editorProbe.focusCalls).toBe(1)
+      expect(within(visibleLayer(view)).getByTestId('fake-editor')).toBeTruthy()
     })
-    // A note arrival keeps the default caret placement (the document start).
+    expect(editorProbe.focusCalls).toBe(0)
     expect(editorProbe.selectionCalls).toEqual([])
   })
 

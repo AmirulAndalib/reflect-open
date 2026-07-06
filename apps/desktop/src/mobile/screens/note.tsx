@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { type ReactElement } from 'react'
 import { isUntitledNotePath } from '@reflect/core'
 import { NotePane } from '@/components/note-pane'
 import { IncomingBacklinks } from '@/mobile/incoming-backlinks'
@@ -13,19 +13,15 @@ import { useRouter } from '@/routing/router'
  * (Plan 19). Lazy like the desktop note route, so a link to a not-yet-created
  * note opens an empty editor and the file is born on the first keystroke; a
  * fresh untitled note (`+`, V1 parity) autofocuses so the keyboard is up and
- * typing names it via the ghost-title flow. A wiki-link or backlink tap
- * arrives with the router's `focusEditor` intent, so the destination restores
- * focus too (the mobile focus contract) — while a plain arrival (All list,
- * back) never raises the keyboard. Back pops the history stack; a cold entry
- * (nothing to pop) lands on today instead.
+ * typing names it via the ghost-title flow. That is the only arrival that
+ * focuses: navigating here (wiki link, backlink, All list, back) never raises
+ * the keyboard — a focus during the stack animation would pull the keyboard
+ * up mid-slide. Back pops the history stack; a cold entry (nothing to pop)
+ * lands on today instead.
  */
 export function MobileNote({ path }: { path: string }): ReactElement {
-  const { back, canBack, navigate, arrivalFocusEditor } = useRouter()
+  const { back, canBack, navigate } = useRouter()
   const untitled = isUntitledNotePath(path)
-  // Latched at mount (the screen is keyed by path, so a mount IS the
-  // arrival): the editor appears only after the document loads, and by then
-  // a background navigation could have rewritten the arrival intent.
-  const [focusRequested] = useState(arrivalFocusEditor)
 
   return (
     <div className="flex h-full w-screen flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -49,7 +45,7 @@ export function MobileNote({ path }: { path: string }): ReactElement {
         <NotePane
           path={path}
           lazy
-          autoFocus={untitled || focusRequested}
+          autoFocus={untitled}
           showBacklinks={false}
           // The daily surface gets its top inset from the date header; a
           // plain note has no chrome between the header bar and the body,

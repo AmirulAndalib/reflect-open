@@ -16,10 +16,10 @@ export interface BacklinkNavigation {
   /**
    * Open an already-resolved source-note path: a daily note opens the daily
    * view (on mobile that swipes the carousel to the date — the surface stays
-   * mounted), anything else opens the note. A backlink tap restores focus on
-   * the destination (the mobile focus contract); desktop autofocuses note
-   * arrivals anyway. `event` (desktop) lets ⌘-click open a new window;
-   * mobile taps omit it.
+   * mounted), anything else opens the note. The arrival never requests focus
+   * — on mobile that would raise the keyboard through the stack animation;
+   * desktop autofocuses note arrivals anyway. `event` (desktop) lets ⌘-click
+   * open a new window; mobile taps omit it.
    */
   openSource: (path: string, event?: NewWindowClickEvent) => void
   /**
@@ -55,7 +55,7 @@ export function useBacklinkNavigation(): BacklinkNavigation {
   const openSource = useCallback(
     (target: string, event?: NewWindowClickEvent) => {
       const route = routeForPath(target)
-      const arrive = (): void => navigate(route, { focusEditor: route.kind === 'note' })
+      const arrive = (): void => navigate(route)
       if (isNewWindowClick(event)) {
         // Degrade a declined/failed open to in-window navigation so the
         // modifier can never make the click do nothing.

@@ -45,7 +45,7 @@ export function useWikiLinkNavigation(
   return useCallback(
     (target: string, event?: MouseEvent | KeyboardEvent) => {
       const newWindow = isNewWindowClick(event)
-      const open = async (route: Route, options?: { focusEditor: boolean }): Promise<void> => {
+      const open = async (route: Route): Promise<void> => {
         if (newWindow) {
           if (await openRouteInNewWindow(route)) {
             return
@@ -56,7 +56,7 @@ export function useWikiLinkNavigation(
             return
           }
         }
-        navigate(route, options)
+        navigate(route)
       }
       void (async () => {
         try {
@@ -66,16 +66,16 @@ export function useWikiLinkNavigation(
           }
           if (resolution.kind === 'resolved') {
             const route = routeForPath(resolution.ref)
-            // A link tap is an intent to keep writing there: the arrival
-            // carries a focus request the mobile note screen consumes (Plan 19
-            // focus contract). Desktop autofocuses note arrivals anyway.
-            await open(route, { focusEditor: route.kind === 'note' })
+            // Deliberately no focus request: on mobile, focusing mid-arrival
+            // raises the keyboard through the stack animation. Desktop
+            // autofocuses note arrivals on its own.
+            await open(route)
           } else if (isIsoDate(resolution.text)) {
             await open({ kind: 'daily', date: resolution.text })
           } else if (generation !== null && resolution.text.trim() !== '') {
             const created = await createNoteWithTitle(resolution.text, generation)
             if (!unmountedRef.current) {
-              await open({ kind: 'note', path: created }, { focusEditor: true })
+              await open({ kind: 'note', path: created })
             }
           }
         } catch (err) {

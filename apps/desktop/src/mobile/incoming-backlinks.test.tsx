@@ -109,7 +109,7 @@ describe('IncomingBacklinks', () => {
     view.unmount()
   })
 
-  it('navigates an ordinary source to the note route with the focus intent', async () => {
+  it('navigates an ordinary source to the note route without a focus intent', async () => {
     getBacklinksWithContext.mockResolvedValue([
       {
         sourcePath: 'notes/meeting.md',
@@ -122,9 +122,9 @@ describe('IncomingBacklinks', () => {
 
     await userEvent.click(await view.findByText('Meeting Notes'))
     expect(view.getByTestId('route').textContent).toContain('notes/meeting.md')
-    // A backlink tap restores focus on the destination note (the mobile
-    // focus contract) — the arrival carries the router's focusEditor intent.
-    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('true')
+    // A backlink tap must not request focus — that would raise the keyboard
+    // through the mobile stack animation.
+    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('false')
     view.unmount()
   })
 

@@ -64,12 +64,12 @@ describe('useWikiLinkNavigation', () => {
     view.unmount()
   })
 
-  it('arrives at a resolved note with the focus intent (the mobile focus contract)', async () => {
+  it('arrives at a resolved note without a focus intent (no keyboard on navigation)', async () => {
     resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/target.md' })
     const view = renderHost()
     lastHandler?.('Target')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/target.md'))
-    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('true')
+    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('false')
     view.unmount()
   })
 
@@ -84,14 +84,14 @@ describe('useWikiLinkNavigation', () => {
     view.unmount()
   })
 
-  it('creates and opens an unresolved title, arriving with the focus intent', async () => {
+  it('creates and opens an unresolved title, without a focus intent', async () => {
     resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: 'Brand New' })
     createNoteWithTitle.mockResolvedValue('notes/created.md')
     const view = renderHost(7)
     lastHandler?.('Brand New')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/created.md'))
     expect(createNoteWithTitle).toHaveBeenCalledWith('Brand New', 7)
-    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('true')
+    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('false')
     view.unmount()
   })
 

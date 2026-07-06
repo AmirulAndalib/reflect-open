@@ -15,11 +15,14 @@ toolbar — and the hard-won keyboard/focus lessons.
 > derives the keyboard's smart-quotes/smart-dashes traits from it at focus
 > time (not from `autocorrect`, which stays on for typo fixing) — and
 > `autocapitalize`/`autocorrect` are set explicitly (`EditorInputTraits`).
-> Focus contract: wiki-link taps and backlink rows navigate with the
-> router's one-shot `focusEditor` arrival intent, which the mobile note
-> screen consumes into `autoFocus`; plain arrivals and back/forward never
-> raise the keyboard; no V1-style 500 ms timer (focus fires on editor
-> mount, after the async document load). Keyboard avoidance is by
+> Focus contract (revised 2026-07-06): navigation never focuses the
+> destination editor — a focus at arrival time raises the keyboard through
+> the stack push/pop animation. Wiki-link taps, backlink rows, plain
+> arrivals, and back/forward all land with the keyboard down. Only explicit
+> write gestures focus: the `+` new-note flow (untitled autofocus) and the
+> Daily-tab double-tap (the router's one-shot `focusEditor` intent, now
+> consumed only by the daily surface); no V1-style 500 ms timer (focus
+> fires on editor mount, after the async document load). Keyboard avoidance is by
 > **layout, in one place**: the mobile shell root is
 > `calc(100dvh - var(--keyboard-height))`, so scroll containers, the
 > editor, and floating-ui's positioning boundary (`body`) all end at the

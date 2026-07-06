@@ -134,9 +134,9 @@ describe('BacklinksPanel', () => {
 
     await userEvent.click(view.getByText('Meeting Notes'))
     expect(view.getByTestId('route').textContent).toContain('notes/meeting.md')
-    // A backlink tap restores focus on the destination (the mobile focus
-    // contract) — the arrival carries the router's focusEditor intent.
-    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('true')
+    // A backlink tap must not request focus — on mobile that would raise the
+    // keyboard mid-arrival; desktop autofocuses note arrivals on its own.
+    expect(view.getByTestId('route').getAttribute('data-focus')).toBe('false')
     view.unmount()
   })
 

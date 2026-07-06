@@ -22,8 +22,8 @@ interface IncomingBacklinksProps {
  * mounted surface and persisted for the session (V1 kept it in session
  * storage too). Tapping a source that is a daily note swipes the day carousel
  * to that date — the daily surface stays mounted and follows the route —
- * while other sources open the note screen with the editor focused (the
- * mobile focus contract). Renders nothing when the note has no inbound
+ * while other sources open the note screen (without focusing the editor, so
+ * the keyboard stays down). Renders nothing when the note has no inbound
  * links; a failed query surfaces as an alert, because a failing query means
  * the index is broken, not that the note is unlinked.
  */
