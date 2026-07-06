@@ -349,6 +349,7 @@ mod tests {
         assert!(context
             .managed_content
             .contains("/Applications/Reflect.app/Contents/MacOS/reflect"));
+        assert!(context.managed_content.contains("git -C \"/graphs/Personal\""));
         assert!(!context.managed_content.contains("{{"));
     }
 
