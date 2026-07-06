@@ -192,10 +192,31 @@ function writeVersion(current, next) {
   replaceOnce(tauriConfPath, `"version": "${current}"`, `"version": "${next}"`, 'tauri.conf.json')
   replaceOnce(cargoTomlPath, `version = "${current}"`, `version = "${next}"`, 'Cargo.toml')
   // cargo rewrites the lockfile's reflect-open entry from the new Cargo.toml.
-  // --offline keeps it a pure version edit with no registry round-trip.
+  // --offline keeps it a pure version edit with no registry round-trip; any
+  // Rust dependencies missing from the local cache were installed up front
+  // (see needsCargoFetch).
   const update = spawnSync('cargo', ['update', '-p', CRATE, '--offline'], { cwd: repoRoot, encoding: 'utf8' })
   if (update.status !== 0) {
     fail(`cargo update -p ${CRATE} failed (is cargo installed?):\n${update.stderr ?? ''}`)
+  }
+}
+
+/**
+ * True when Cargo.lock pins crates that are missing from the local cargo
+ * cache: new Rust dependencies merged on the release branch (Renovate bumps
+ * on `next`, for example) that this machine has not built since. writeVersion
+ * edits the lockfile offline, so every pinned crate must be cached first.
+ */
+function needsCargoFetch() {
+  return run('cargo', ['fetch', '--locked', '--offline']).status !== 0
+}
+
+/** Download the crates pinned in Cargo.lock that are not cached locally. */
+function installRustDependencies() {
+  log('installing new Rust dependencies (cargo fetch --locked)…')
+  const fetch = run('cargo', ['fetch', '--locked'])
+  if (fetch.status !== 0) {
+    fail(`cargo fetch --locked failed (is cargo installed?):\n${fetch.output.trim()}`)
   }
 }
 
@@ -404,10 +425,12 @@ async function main() {
 
   const releaseKind = isPrerelease ? 'pre-release' : 'release'
   if (!direct) ensureGhReady()
+  const cargoFetchNeeded = needsCargoFetch()
   log(`current version: ${current}`)
   log(`next version:    ${next}  (${bump})`)
   log(`branch:          ${branch}  (in sync with origin)`)
   log('plan:')
+  if (cargoFetchNeeded) console.log('  - install new Rust dependencies (cargo fetch --locked)')
   if (!direct) console.log(`  - create ${releaseBranch} from ${branch}`)
   console.log('  - update tauri.conf.json, Cargo.toml, Cargo.lock')
   console.log(`  - commit "Release ${tag}"`)
@@ -437,6 +460,7 @@ async function main() {
     return
   }
 
+  if (cargoFetchNeeded) installRustDependencies()
   if (!direct) git(['switch', '-c', releaseBranch])
   writeVersion(current, next)
   git(['add', tauriConfPath, cargoTomlPath, cargoLockPath])
