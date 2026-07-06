@@ -3,6 +3,7 @@ import { Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { addDaysIso } from '@/lib/dates'
 import { monthLabel, weekAtIndex, weekStartOf } from '@/mobile/calendar'
+import { hapticImpactLight } from '@/mobile/haptics'
 import { useWeekStrip } from '@/mobile/use-week-strip'
 import { WeekRow } from '@/mobile/week-row'
 import { useSettings } from '@/providers/settings-provider'
@@ -49,10 +50,16 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
     displayedWeekStart === selectionWeekStart ? date : addDaysIso(displayedWeekStart, 3)
 
   const jumpToToday = (): void => {
+    hapticImpactLight()
     onSelect(today)
     // Selecting today only moves the strip when `date` changes — re-center
     // explicitly so a browse-away strip snaps back even when already on today.
     showWeekOf(today)
+  }
+
+  const openSettings = (): void => {
+    hapticImpactLight()
+    navigate({ kind: 'settings' })
   }
 
   // An explicit re-arrival doesn't change `date`, so the follow effect won't
@@ -80,7 +87,7 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
             size="icon"
             className="size-9"
             aria-label="Settings"
-            onClick={() => navigate({ kind: 'settings' })}
+            onClick={openSettings}
           >
             <Settings />
           </Button>

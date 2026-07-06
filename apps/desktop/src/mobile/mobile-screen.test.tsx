@@ -51,6 +51,7 @@ const editorProbe = vi.hoisted(() => ({
   focusCalls: 0,
   selectionCalls: [] as Array<'start' | 'end'>,
 }))
+const hapticImpactLight = vi.hoisted(() => vi.fn())
 
 vi.mock('@/editor/note-editor', async () => {
   const { useEffect } = await import('react')
@@ -97,6 +98,9 @@ vi.mock('@/editor/note-editor', async () => {
     },
   }
 })
+vi.mock('@/mobile/haptics', () => ({
+  hapticImpactLight,
+}))
 
 const indexFns = vi.hoisted(() => ({
   getBacklinksWithContext: vi.fn(async () => []),
@@ -146,6 +150,7 @@ beforeEach(() => {
   editorProbe.focusCalls = 0
   editorProbe.selectionCalls = []
   mockInvoke.mockReset()
+  hapticImpactLight.mockClear()
   mockInvoke.mockImplementation(async (command, args) => {
     if (command === 'note_read') {
       const content = files[(args as { path: string }).path]
@@ -299,11 +304,30 @@ describe('MobileShell', () => {
       'date',
     )
 
+    hapticImpactLight.mockClear()
     await user.click(view.getByRole('button', { name: 'Jump to today' }))
+    expect(hapticImpactLight).toHaveBeenCalledTimes(1)
     expect(view.getByRole('button', { name: dayCellLabel(today) }).getAttribute('aria-current')).toBe(
       'date',
     )
     expect(view.queryByRole('button', { name: 'Today' })).toBeNull()
+  })
+
+  it('fires haptics from the Daily header Today and Settings buttons', async () => {
+    const user = userEvent.setup()
+    const today = todayIso()
+    const other = otherDayInWeek(today)
+    const view = mount({ kind: 'today' })
+
+    await user.click(view.getByRole('button', { name: dayCellLabel(other) }))
+    hapticImpactLight.mockClear()
+
+    await user.click(view.getByRole('button', { name: 'Today' }))
+    expect(hapticImpactLight).toHaveBeenCalledTimes(1)
+
+    await user.click(view.getByRole('button', { name: 'Settings' }))
+    expect(hapticImpactLight).toHaveBeenCalledTimes(2)
+    expect(view.getByRole('heading', { name: 'Settings' })).toBeTruthy()
   })
 
   it('re-anchors the carousel when a date link lands outside its window', async () => {
