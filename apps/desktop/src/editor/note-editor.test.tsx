@@ -336,6 +336,39 @@ describe('NoteEditor image lightbox', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
+  it('uses the release position when the final mobile drag move is coalesced', async () => {
+    setPlatformSurface({ mobileApp: true })
+    renderEditor()
+
+    act(() => captured.props?.onImageClick?.(imageClick('assets/cat.png', 'Cat')))
+
+    const preview = await screen.findByRole('button', { name: 'Close image preview' })
+    const image = preview.querySelector('img')
+    expect(image).toBeInstanceOf(HTMLImageElement)
+
+    firePointer(preview, 'pointerdown', {
+      pointerId: 1,
+      isPrimary: true,
+      pointerType: 'touch',
+      clientX: 180,
+      clientY: 120,
+    })
+    firePointer(preview, 'pointermove', {
+      pointerId: 1,
+      clientX: 182,
+      clientY: 180,
+    })
+    firePointer(preview, 'pointerup', {
+      pointerId: 1,
+      clientX: 184,
+      clientY: 360,
+    })
+
+    expect(image?.style.transform).toContain(`translate3d(0, ${window.innerHeight}px, 0)`)
+    fireEvent.transitionEnd(image!)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
   it('snaps the mobile lightbox back after a short drag without tap-closing it', async () => {
     setPlatformSurface({ mobileApp: true })
     renderEditor()

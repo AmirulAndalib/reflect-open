@@ -217,15 +217,22 @@ function useImageDismissDrag({
         return
       }
 
+      const releaseDeltaY = Math.max(0, event.clientY - current.startY)
+      const now = performance.now()
+      const elapsed = now - current.sampleTime
+      const releaseVelocity =
+        elapsed >= VELOCITY_WINDOW_MS
+          ? (releaseDeltaY - current.sampleDeltaY) / elapsed
+          : current.velocity
       const flicked =
-        current.velocity > DISMISS_VELOCITY_PX_PER_MS &&
-        current.deltaY > MIN_FLICK_DY_PX &&
-        performance.now() - current.sampleTime <= VELOCITY_STALE_MS
+        releaseVelocity > DISMISS_VELOCITY_PX_PER_MS &&
+        releaseDeltaY > MIN_FLICK_DY_PX &&
+        elapsed <= VELOCITY_STALE_MS
       const shouldClose =
-        !interrupted && (current.deltaY > current.height * DISMISS_FRACTION || flicked)
+        !interrupted && (releaseDeltaY > current.height * DISMISS_FRACTION || flicked)
       const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       suppressClickUntilRef.current =
-        performance.now() + (reducedMotion ? CLICK_SUPPRESSION_MS : SETTLE_MS + 80)
+        now + (reducedMotion ? CLICK_SUPPRESSION_MS : SETTLE_MS + 80)
 
       if (reducedMotion) {
         commit(IDLE)
