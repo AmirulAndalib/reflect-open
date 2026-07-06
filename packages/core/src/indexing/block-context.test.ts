@@ -70,6 +70,13 @@ describe('blockContextAt', () => {
     )
   })
 
+  it('keeps the section rule for an H1 when frontmatter authors the title', () => {
+    const content = '---\ntitle: Custom\n---\n\n# Heading [[Target]]\n\nsection body\n'
+    expect(blockContextAt(content, posOf(content, '[[Target]]'))).toBe(
+      '# Heading [[Target]]\n\nsection body',
+    )
+  })
+
   it('treats a setext H1 title the same as an ATX title', () => {
     const content = 'With [[Target]]\n====\n\nbody paragraph\n'
     expect(blockContextAt(content, posOf(content, '[[Target]]'))).toBe('With [[Target]]\n====')

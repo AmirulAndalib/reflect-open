@@ -1,5 +1,5 @@
 import type { SyntaxNode, Tree } from '@lezer/common'
-import { splitFrontmatter } from '../markdown/frontmatter'
+import { parseFrontmatter, splitFrontmatter } from '../markdown/frontmatter'
 import { parseBody } from '../markdown/grammar'
 import { unescapeMarkdownText } from '../markdown/plain-text'
 import { normalizeWikiTarget } from '../markdown/resolve'
@@ -18,6 +18,8 @@ import { lineAt } from './snippet'
  *   old Reflect, where titles lived outside the document: in V2 the note's
  *   title *is* its first H1, so the section rule would inline the entire note
  *   into the panel for a mention that just says "this note is about you".
+ *   Follows {@link parseNote}'s derivation exactly: a frontmatter `title:`
+ *   owns the title, and then every H1 is an ordinary section heading.
  * - **Top-level list item** — the entire item including all of its nested
  *   children (sub-bullets, task lists), mentioning or not.
  * - **Nested list item** — the parent item's own text line for context, plus
@@ -160,9 +162,14 @@ function headingHasText(body: string, heading: SyntaxNode): boolean {
 
 /**
  * Is this heading the note's title — the document's first non-empty top-level
- * H1, the same heading {@link parseNote}'s title derivation picks?
+ * H1, the same heading {@link parseNote}'s title derivation picks? When
+ * frontmatter authors a `title:`, that derivation never promotes an H1, so no
+ * heading is the title and every H1 keeps the section rule.
  */
-function isTitleHeading(body: string, heading: SyntaxNode): boolean {
+function isTitleHeading(body: string, heading: SyntaxNode, frontmatterTitled: boolean): boolean {
+  if (frontmatterTitled) {
+    return false
+  }
   if (!H1_NODE_RE.test(heading.name) || heading.parent?.name !== 'Document') {
     return false
   }
@@ -234,12 +241,16 @@ export interface BlockContextSource {
   readonly bodyOffset: number
   /** `body` parsed with the canonical Reflect grammar. */
   readonly tree: Tree
+  /** Frontmatter authors a `title:`, so no H1 is the note's title. */
+  readonly frontmatterTitled: boolean
 }
 
 /** Parse a note's full source once for repeated {@link blockContextAt} calls. */
 export function prepareBlockContext(content: string): BlockContextSource {
-  const { body, bodyOffset } = splitFrontmatter(content)
-  return { body, bodyOffset, tree: parseBody(body) }
+  const { raw, body, bodyOffset } = splitFrontmatter(content)
+  const title = (parseFrontmatter(raw).data as Record<string, unknown>)['title']
+  const frontmatterTitled = typeof title === 'string' && title.trim() !== ''
+  return { body, bodyOffset, tree: parseBody(body), frontmatterTitled }
 }
 
 /**
@@ -262,7 +273,7 @@ export function blockContextAt(
   pos: number,
   targetKeys?: ReadonlySet<string>,
 ): string {
-  const { body, bodyOffset, tree } =
+  const { body, bodyOffset, tree, frontmatterTitled } =
     typeof source === 'string' ? prepareBlockContext(source) : source
   const bodyPos = Math.max(0, Math.min(pos - bodyOffset, body.length))
   const leaf: SyntaxNode = tree.resolveInner(bodyPos, 1)
@@ -276,7 +287,9 @@ export function blockContextAt(
 
   const heading = selfOrAncestor(leaf, (node) => isHeadingName(node.name))
   if (heading) {
-    const end = isTitleHeading(body, heading) ? heading.to : headingSectionEnd(heading)
+    const end = isTitleHeading(body, heading, frontmatterTitled)
+      ? heading.to
+      : headingSectionEnd(heading)
     return dedentedBlockAt(body, heading.from, end)
   }
 
