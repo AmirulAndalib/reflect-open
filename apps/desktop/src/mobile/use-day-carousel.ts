@@ -118,12 +118,18 @@ export interface DayCarousel {
  */
 export function useDayCarousel(date: string, onSelect: (date: string) => void): DayCarousel {
   const [dayWindow, setDayWindow] = useState<DayWindow>(() => createDayWindow(date, CAROUSEL_WINDOW))
-  const [emblaRef, emblaApi] = useEmblaCarousel({
+  // Frozen at mount: `embla-carousel-react` reinitializes whenever the options
+  // object stops comparing equal, and `reInit` snaps to `startIndex` with no
+  // animation — a render-derived `startIndex` would let every swipe's route
+  // echo cancel the settle animation and hard-switch to the landed slide.
+  // After mount, positioning belongs exclusively to the follow effect below.
+  const [emblaOptions] = useState<Parameters<typeof useEmblaCarousel>[0]>(() => ({
     startIndex: indexWithin(dayWindow, date),
     align: 'center',
     skipSnaps: false,
     watchDrag: dragAllowedWithKeyboardClosed,
-  })
+  }))
+  const [emblaRef, emblaApi] = useEmblaCarousel(emblaOptions)
   const [selectedIndex, setSelectedIndex] = useState(() => indexWithin(dayWindow, date))
   // The day we last reported via onSelect — so the route echo it produces
   // doesn't trigger a redundant (animation-cancelling) scrollTo.
