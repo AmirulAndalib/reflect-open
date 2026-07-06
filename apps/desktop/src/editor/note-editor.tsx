@@ -8,7 +8,7 @@ import {
   type Ref,
 } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { errorMessage } from '@reflect/core'
+import { errorMessage, type TimeFormat } from '@reflect/core'
 import {
   type AcceptPendingReplacementOptions,
   type ExitBoundaryHandler,
@@ -101,6 +101,11 @@ interface NoteEditorProps {
   /** Whether the browser underlines misspelled words (default on). */
   spellCheck?: boolean
   /**
+   * Clock format for the time the `/now` slash command inserts (the
+   * `timeFormat` setting). Defaults to `12h`.
+   */
+  timeFormat?: TimeFormat
+  /**
    * Whether Enter at the end of a heading starts a bullet on the next line
    * (the `editorBulletAfterHeading` setting). Off by default.
    */
@@ -187,6 +192,7 @@ export function NoteEditor({
   onChange,
   markMode = 'hide',
   spellCheck = true,
+  timeFormat = '12h',
   bulletAfterHeading = false,
   blockHandle = false,
   resolveImageUrl,
@@ -379,6 +385,9 @@ export function NoteEditor({
         // syntax ([[ wiki links, code spans, --- fences) — Plan 19 gate.
         // Autocorrect is independent and stays on (EditorInputTraits).
         spellCheck={isTouchEditorSurface() ? false : spellCheck}
+        // Reflect's implementation-neutral `12h`/`24h` maps to meowdown's
+        // `12`/`24` here at the boundary, like `markModeFromSyntax`.
+        timeFormat={timeFormat === '24h' ? '24' : '12'}
         bulletAfterHeading={bulletAfterHeading}
         blockHandle={blockHandle}
         editorClassName={cn('reflect-editor', className)}

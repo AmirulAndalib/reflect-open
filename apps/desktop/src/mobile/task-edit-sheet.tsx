@@ -231,6 +231,7 @@ export function MobileTaskEditSheet({
             onChange={handleChange}
             markMode={markModeFromSyntax(settings.editorMarkdownSyntax)}
             spellCheck={settings.editorSpellCheck}
+            timeFormat={settings.timeFormat}
             // A one-line editor has nothing to reorder, so keep the gutter grip off.
             blockHandle={false}
             onWikiLinkClick={openWikiLink}

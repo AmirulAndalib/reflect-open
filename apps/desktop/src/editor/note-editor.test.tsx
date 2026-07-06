@@ -13,6 +13,7 @@ interface CapturedEditorProps {
   mode?: 'hide' | 'focus' | 'show' | 'source'
   editorClassName?: string
   spellCheck?: boolean
+  timeFormat?: '12' | '24'
   children?: ReactNode
   resolveImageUrl?: (src: string) => string | undefined
   onImageClick?: (payload: { src: string; alt: string; event: MouseEvent }) => void
@@ -150,6 +151,18 @@ describe('NoteEditor markdown syntax mode', () => {
   it('passes an explicit markdown syntax mode to meowdown', () => {
     render(<NoteEditor initialContent="" markMode="show" />)
     expect(captured.props?.mode).toBe('show')
+  })
+})
+
+describe('NoteEditor time format', () => {
+  it('passes the 12-hour clock to meowdown by default', () => {
+    renderEditor()
+    expect(captured.props?.timeFormat).toBe('12')
+  })
+
+  it("maps the 24h setting to meowdown's 24-hour clock", () => {
+    render(<NoteEditor initialContent="" timeFormat="24h" />)
+    expect(captured.props?.timeFormat).toBe('24')
   })
 })
 
