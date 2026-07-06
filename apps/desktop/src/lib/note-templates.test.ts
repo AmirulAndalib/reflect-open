@@ -145,6 +145,19 @@ describe('renameTemplate', () => {
     )
   })
 
+  it('rewrites a v1-style aliased H1 instead of adding frontmatter title', async () => {
+    templateSlugPathForTitle.mockResolvedValueOnce('templates/log.md')
+    readNote.mockResolvedValueOnce('# Journal // Daily Review\n\n- Mood:\n')
+
+    await renameTemplate('templates/journal.md', 'Log', 7)
+
+    expect(writeNote).toHaveBeenCalledWith(
+      'templates/log.md',
+      '# Log\n\n- Mood:\n',
+      7,
+    )
+  })
+
   it('updates a frontmatter title when that is what names the template', async () => {
     templateSlugPathForTitle.mockResolvedValueOnce('templates/journal.md')
     readNote.mockResolvedValueOnce('---\ntitle: Journal\n---\nMood:\n')

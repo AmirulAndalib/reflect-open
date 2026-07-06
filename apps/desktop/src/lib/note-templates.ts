@@ -2,6 +2,7 @@ import {
   availableTemplatePath,
   errorMessage,
   hasAuthoredTitle,
+  hasFrontmatterTitle,
   parseNote,
   readNote,
   slugForTitle,
@@ -100,8 +101,8 @@ async function retitleTemplate(path: string, title: string, generation: number):
   const source = await readNote(path)
   const parsed = parseNote({ path, source })
   const h1 = parsed.headings.find((heading) => heading.level === 1 && heading.text)
-  if (h1 !== undefined && h1.text === parsed.title) {
-    if (h1.text === title) {
+  if (h1 !== undefined && !hasFrontmatterTitle(parsed)) {
+    if (parsed.title === title) {
       return
     }
     await writeNote(path, `${source.slice(0, h1.from)}# ${title}${source.slice(h1.to)}`, generation)

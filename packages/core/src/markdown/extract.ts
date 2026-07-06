@@ -324,6 +324,16 @@ export function hasAuthoredTitle(note: Pick<ParsedNote, 'frontmatter' | 'heading
   return authoredTitle(note.frontmatter, note.headings) !== null
 }
 
+/**
+ * Does the note carry an explicit frontmatter `title:`? This is the first title
+ * source in {@link deriveTitle}; callers that rewrite the authored title use it
+ * to distinguish frontmatter-owned titles from H1-owned titles.
+ */
+export function hasFrontmatterTitle(note: Pick<ParsedNote, 'frontmatter'>): boolean {
+  const title = stringField(note.frontmatter, 'title')
+  return title !== undefined && title.trim() !== ''
+}
+
 function deriveTitle(frontmatter: Frontmatter, headings: Heading[], path: string): AuthoredTitle {
   const authored = authoredTitle(frontmatter, headings)
   if (authored !== null) {

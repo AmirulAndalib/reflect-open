@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hasAuthoredTitle, isTagName, parseNote } from './extract'
+import { hasAuthoredTitle, hasFrontmatterTitle, isTagName, parseNote } from './extract'
 
 function parse(source: string, path = 'notes/test.md') {
   return parseNote({ path, source })
@@ -90,6 +90,12 @@ describe('parseNote — headings & title', () => {
     expect(hasAuthoredTitle(parse('## only a section', 'notes/x.md'))).toBe(false)
     expect(hasAuthoredTitle(parse('---\ntitle: "  "\n---\nbody'))).toBe(false)
     expect(hasAuthoredTitle(parse('no heading', 'daily/2026-06-09.md'))).toBe(false)
+  })
+
+  it('hasFrontmatterTitle identifies only the frontmatter-owned title source', () => {
+    expect(hasFrontmatterTitle(parse('---\ntitle: From FM // Alias\n---\n# Ignored'))).toBe(true)
+    expect(hasFrontmatterTitle(parse('# The H1 // Alias\n\nbody'))).toBe(false)
+    expect(hasFrontmatterTitle(parse('---\ntitle: "  "\n---\n# The H1'))).toBe(false)
   })
 })
 

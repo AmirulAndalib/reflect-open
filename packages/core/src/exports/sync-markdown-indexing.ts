@@ -90,6 +90,7 @@ export {
   foldTag,
   isTagName,
   hasAuthoredTitle,
+  hasFrontmatterTitle,
   normalizeWikiTarget,
   slugForTitle,
   type ConflictResolution,
