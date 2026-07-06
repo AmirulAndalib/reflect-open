@@ -372,6 +372,65 @@ describe('NoteEditor image lightbox', () => {
     expect(screen.getByRole('dialog', { name: 'Image preview' })).toBeInTheDocument()
   })
 
+  it('clears mobile drag click suppression when reduced motion skips the snap animation', async () => {
+    const originalMatchMedia = window.matchMedia
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn((query: string): MediaQueryList => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+
+    setPlatformSurface({ mobileApp: true })
+    renderEditor()
+
+    act(() => captured.props?.onImageClick?.(imageClick('assets/cat.png', 'Cat')))
+
+    const preview = await screen.findByRole('button', { name: 'Close image preview' })
+    vi.useFakeTimers()
+    try {
+      firePointer(preview, 'pointerdown', {
+        pointerId: 1,
+        isPrimary: true,
+        pointerType: 'touch',
+        clientX: 180,
+        clientY: 120,
+      })
+      firePointer(preview, 'pointermove', {
+        pointerId: 1,
+        clientX: 182,
+        clientY: 150,
+      })
+      firePointer(preview, 'pointerup', {
+        pointerId: 1,
+        clientX: 182,
+        clientY: 150,
+      })
+
+      fireEvent.click(preview)
+      expect(screen.getByRole('dialog', { name: 'Image preview' })).toBeInTheDocument()
+
+      act(() => vi.advanceTimersByTime(101))
+      fireEvent.click(preview)
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: originalMatchMedia,
+      })
+    }
+  })
+
   it('uses the opener captured when the lightbox opens', async () => {
     const firstOpenImage = vi.fn(async () => {})
     const secondOpenImage = vi.fn(async () => {})

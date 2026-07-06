@@ -26,6 +26,7 @@ const VELOCITY_WINDOW_MS = 30
 const VELOCITY_STALE_MS = 120
 const SETTLE_MS = 220
 const SETTLE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'
+const CLICK_SUPPRESSION_MS = 100
 
 type DragState =
   | { phase: 'idle' }
@@ -85,7 +86,7 @@ function useImageDismissDrag({
 }): ImageDismissDrag {
   const stateRef = useRef<DragState>(IDLE)
   const [state, setState] = useState<DragState>(IDLE)
-  const suppressNextClickRef = useRef(false)
+  const suppressClickUntilRef = useRef(0)
 
   const commit = useCallback((next: DragState): void => {
     stateRef.current = next
@@ -99,7 +100,7 @@ function useImageDismissDrag({
     }
     commit(IDLE)
     if (current.action === 'cancel') {
-      suppressNextClickRef.current = false
+      suppressClickUntilRef.current = 0
     }
     if (current.action === 'close') {
       onClose()
@@ -108,7 +109,7 @@ function useImageDismissDrag({
 
   useEffect(() => {
     if ((!active || !enabled) && stateRef.current.phase !== 'idle') {
-      suppressNextClickRef.current = false
+      suppressClickUntilRef.current = 0
       commit(IDLE)
     }
   }, [active, enabled, commit])
@@ -171,7 +172,6 @@ function useImageDismissDrag({
         }
 
         const height = event.currentTarget.getBoundingClientRect().height || window.innerHeight
-        suppressNextClickRef.current = true
         commit({
           phase: 'dragging',
           pointerId: event.pointerId,
@@ -223,6 +223,8 @@ function useImageDismissDrag({
         performance.now() - current.sampleTime <= VELOCITY_STALE_MS
       const shouldClose =
         !interrupted && (current.deltaY > current.height * DISMISS_FRACTION || flicked)
+      suppressClickUntilRef.current =
+        performance.now() + (shouldClose ? SETTLE_MS + 80 : CLICK_SUPPRESSION_MS)
 
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         commit(IDLE)
@@ -249,8 +251,8 @@ function useImageDismissDrag({
 
   const onClick = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>): void => {
-      if (suppressNextClickRef.current) {
-        suppressNextClickRef.current = false
+      if (suppressClickUntilRef.current > 0 && performance.now() <= suppressClickUntilRef.current) {
+        suppressClickUntilRef.current = 0
         event.preventDefault()
         event.stopPropagation()
         return
