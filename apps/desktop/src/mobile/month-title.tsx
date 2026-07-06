@@ -5,7 +5,7 @@ import { usePrefersReducedMotion } from '@/mobile/use-reduced-motion'
 import './month-title.css'
 
 /** Mirrors the animation durations in month-title.css (the fallback timer). */
-export const MONTH_TITLE_TRANSITION_MS = 320
+export const MONTH_TITLE_TRANSITION_MS = 500
 
 interface OutgoingMonth {
   month: string
@@ -72,6 +72,10 @@ export function MonthTitle({ month }: MonthTitleProps): ReactElement {
       </span>
       {outgoing ? (
         <span
+          // Keyed so back-to-back month changes in the same direction remount
+          // the label — reusing the element would keep the same animation
+          // class and never restart the exit roll.
+          key={outgoing.month}
           ref={outgoingRef}
           aria-hidden
           className={cn(
