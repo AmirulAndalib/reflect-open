@@ -129,6 +129,9 @@ describe('ImageLightbox mobile drag-to-dismiss', () => {
     expect(image.style.transform).toContain(`, ${window.innerHeight}px, 0) scale(0.9)`)
     expect(backdrop!.style.opacity).toBe('0')
     expect(onClose).not.toHaveBeenCalled()
+    onClose.mockImplementation(() => {
+      expect(image.style.transform).toBe('')
+    })
 
     fireEvent.transitionEnd(image)
     expect(onClose).toHaveBeenCalledTimes(1)
