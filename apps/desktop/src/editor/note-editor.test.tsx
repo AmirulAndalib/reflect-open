@@ -294,6 +294,9 @@ describe('NoteEditor image lightbox', () => {
     expect(close.parentElement?.className).toContain(
       'left-[max(env(safe-area-inset-left),1rem)]',
     )
+    expect(screen.getByRole('button', { name: 'Close image preview' }).className).toContain(
+      'bg-black',
+    )
   })
 
   it('dismisses the mobile image lightbox with a downward drag', async () => {

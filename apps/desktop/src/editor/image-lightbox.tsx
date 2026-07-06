@@ -63,7 +63,6 @@ interface ImageLightboxProps {
 }
 
 interface ImageDismissDrag {
-  backdropStyle: CSSProperties | undefined
   previewStyle: CSSProperties | undefined
   handlers: {
     onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
@@ -277,7 +276,6 @@ function useImageDismissDrag({
   )
 
   return {
-    backdropStyle: backdropStyleForState(state),
     previewStyle: previewStyleForState(state),
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onClick },
     finishSettle,
@@ -311,23 +309,6 @@ function previewStyleForState(state: DragState): CSSProperties | undefined {
   return undefined
 }
 
-function backdropStyleForState(state: DragState): CSSProperties | undefined {
-  if (state.phase === 'dragging') {
-    const progress = dragProgress(state.deltaY, state.height)
-    return {
-      opacity: 1 - progress * 0.58,
-      transition: 'none',
-    }
-  }
-  if (state.phase === 'settling') {
-    return {
-      opacity: state.action === 'close' ? 0 : 1,
-      transition: `opacity ${SETTLE_MS}ms ${SETTLE_EASING}`,
-    }
-  }
-  return undefined
-}
-
 export function ImageLightbox({
   image,
   onClose,
@@ -348,11 +329,6 @@ export function ImageLightbox({
 
   return (
     <LightboxDialog open title="Image preview" onClose={onClose}>
-      <div
-        aria-hidden
-        className={cn('absolute inset-0', mobileSurface ? 'bg-black' : 'bg-transparent')}
-        style={mobileSurface ? dismissDrag.backdropStyle : undefined}
-      />
       {mobileSurface ? (
         <div className="absolute top-[max(env(safe-area-inset-top),1rem)] left-[max(env(safe-area-inset-left),1rem)] z-10">
           <Button
@@ -391,7 +367,7 @@ export function ImageLightbox({
         aria-label="Close image preview"
         className={cn(
           'absolute inset-0 flex cursor-zoom-out items-center justify-center overflow-hidden bg-transparent',
-          mobileSurface ? 'touch-none p-0' : 'p-6',
+          mobileSurface ? 'touch-none bg-black p-0' : 'p-6',
         )}
         {...dismissDrag.handlers}
       >
