@@ -246,15 +246,17 @@ describe('ImageLightbox mobile drag-to-dismiss', () => {
 })
 
 describe('ImageLightbox desktop surface', () => {
-  it('ignores touch drags and closes on click without a black backdrop', () => {
+  it('ignores touch drags and closes on click without a drag backdrop', () => {
     const onClose = vi.fn()
     render(<ImageLightbox image={makeImage()} onClose={onClose} onOpenImage={vi.fn()} />)
 
     const dialog = screen.getByRole('dialog', { name: 'Image preview' })
     expect(dialog.querySelector('.bg-black')).toBeNull()
+    expect(dialog.className).toContain('bg-black/80')
 
     const preview = screen.getByRole('button', { name: 'Close image preview' })
     const image = preview.querySelector('img')
+    expect(image?.className).toContain('max-h-full max-w-full')
 
     touchDown(preview, 100, 100)
     firePointer(preview, 'pointermove', { pointerId: 1, clientX: 100, clientY: 200 })

@@ -75,12 +75,7 @@ export function ImageLightbox({
             type="button"
             variant="ghost"
             size="sm"
-            className={cn(
-              'shadow-sm',
-              mobileSurface
-                ? 'h-9 rounded-full bg-white/15 px-3 text-white backdrop-blur-xl hover:bg-white/25 active:bg-white/20'
-                : 'bg-white/70 text-text hover:bg-white',
-            )}
+            className="h-9 rounded-full bg-white/15 px-3 text-white shadow-sm backdrop-blur-xl hover:bg-white/25 active:bg-white/20"
             onClick={() => onOpenImage(image)}
           >
             <ExternalLinkIcon data-icon="inline-start" />
@@ -101,7 +96,7 @@ export function ImageLightbox({
           src={image.src}
           alt={image.alt}
           draggable={false}
-          className="h-full w-full select-none object-contain"
+          className="max-h-full max-w-full select-none"
           onTransitionEnd={dismissDrag.finishSettle}
           style={{ ...dismissDrag.imageStyle, viewTransitionName: image.transitionName }}
         />
