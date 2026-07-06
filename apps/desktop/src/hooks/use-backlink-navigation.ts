@@ -72,7 +72,7 @@ export function useBacklinkNavigation(): BacklinkNavigation {
   )
 
   const navigateWikiLink = useWikiLinkNavigation(graph?.generation ?? null)
-  const { resolveImageUrl } = useAssetPersistence(graph?.root ?? null, graph?.generation ?? null)
+  const { resolveImageUrl } = useAssetPersistence(graph?.generation ?? null)
   const onWikilinkClick = useCallback<WikilinkClickHandler>(
     ({ target, event }) => navigateWikiLink(target, event),
     [navigateWikiLink],

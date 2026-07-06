@@ -6,6 +6,7 @@
 //! (path-traversal guard, [`resolve`]). Writes are atomic (temp file + rename,
 //! [`io`]) and deletes go to the OS trash. Parsing/indexing live in later plans.
 
+pub mod asset_protocol;
 pub mod assets;
 mod import;
 mod io;
@@ -200,28 +201,13 @@ fn ensure_asset_path(path: &str) -> AppResult<()> {
 
 // ---- commands --------------------------------------------------------------
 
-/// Let the asset protocol serve files from the graph (image rendering, Plan 05).
-/// Best-effort: a failure means images don't render, never that the open fails.
-fn allow_asset_scope(app: &tauri::AppHandle, root: &Path) {
-    use tauri::Manager;
-    if let Err(err) = app.asset_protocol_scope().allow_directory(root, true) {
-        tracing::warn!(%err, "failed to extend the asset scope");
-    }
-}
-
 /// Create a new graph at `path` (scaffolds the layout) and open it.
 #[tauri::command]
-pub fn graph_create(
-    path: String,
-    app: tauri::AppHandle,
-    state: State<GraphState>,
-) -> AppResult<GraphInfo> {
+pub fn graph_create(path: String, state: State<GraphState>) -> AppResult<GraphInfo> {
     let root = PathBuf::from(&path);
     fs::create_dir_all(&root)?;
     bootstrap(&root)?;
-    let info = activate(&state, &root)?;
-    allow_asset_scope(&app, &root);
-    Ok(info)
+    activate(&state, &root)
 }
 
 /// Import a user-selected Reflect V1 export `.zip` into the open graph. V1's
@@ -239,19 +225,13 @@ pub fn graph_import_reflect_v1_zip(
 
 /// Open an existing graph at `path`, ensuring the standard layout exists.
 #[tauri::command]
-pub fn graph_open(
-    path: String,
-    app: tauri::AppHandle,
-    state: State<GraphState>,
-) -> AppResult<GraphInfo> {
+pub fn graph_open(path: String, state: State<GraphState>) -> AppResult<GraphInfo> {
     let root = PathBuf::from(&path);
     if !root.is_dir() {
         return Err(AppError::not_found(format!("not a directory: {path}")));
     }
     bootstrap(&root)?;
-    let info = activate(&state, &root)?;
-    allow_asset_scope(&app, &root);
-    Ok(info)
+    activate(&state, &root)
 }
 
 /// Read a note's markdown by graph-relative path. `generation`, when given,

@@ -2,6 +2,13 @@ import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { setBridge } from '@reflect/core'
+
+// jsdom has no Tauri runtime; mirror the macOS/iOS URL shape the injected
+// `convertFileSrc` produces (one percent-encoded path segment).
+vi.mock('@tauri-apps/api/core', () => ({
+  convertFileSrc: (filePath: string, protocol = 'asset') =>
+    `${protocol}://localhost/${encodeURIComponent(filePath)}`,
+}))
 import { resetOperations, useOperations, type Operation } from '@/lib/operations'
 import {
   LARGE_FILE_BYTES,
@@ -25,7 +32,7 @@ function Host({
   generation: number | null
   path?: string
 }): ReactNode {
-  persistence = useAssetPersistence('/graph', generation, path)
+  persistence = useAssetPersistence(generation, path)
   return null
 }
 
@@ -131,6 +138,37 @@ describe('useAssetPersistence saveFile', () => {
     })
     expect(saved).toBeNull()
     expect(invoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('useAssetPersistence resolveImageUrl', () => {
+  it('passes remote URLs through untouched', () => {
+    installUploadBridge()
+    render(<Host generation={3} />)
+
+    expect(persistence!.resolveImageUrl('https://example.com/cat.png')).toBe(
+      'https://example.com/cat.png',
+    )
+  })
+
+  it('maps a safe assets/ path onto the generation-pinned reflect-asset URL', () => {
+    installUploadBridge()
+    render(<Host generation={3} />)
+
+    expect(persistence!.resolveImageUrl('assets/cat.png')).toBe(
+      `reflect-asset://localhost/${encodeURIComponent('3/assets/cat.png')}`,
+    )
+  })
+
+  it('declines unsafe paths and missing sessions', () => {
+    installUploadBridge()
+    render(<Host generation={3} />)
+
+    expect(persistence!.resolveImageUrl('assets/../secrets.env')).toBeNull()
+    expect(persistence!.resolveImageUrl('notes/other.md')).toBeNull()
+
+    render(<Host generation={null} />)
+    expect(persistence!.resolveImageUrl('assets/cat.png')).toBeNull()
   })
 })
 

@@ -118,7 +118,6 @@ export function NotePaneComponent({
 }: NotePaneProps): ReactElement {
   const { graph } = useGraph()
   const { settings } = useSettings()
-  const graphRoot = graph?.root ?? null
   const generation = graph?.generation ?? null
   const dailyNote = isDaily(path)
   // Templates rename via file operations only (settings, or outside the app):
@@ -156,7 +155,7 @@ export function NotePaneComponent({
     saveFile,
     resolveFileInfo,
     saveError,
-  } = useAssetPersistence(graphRoot, generation, path)
+  } = useAssetPersistence(generation, path)
   const onWikiLinkClick = useWikiLinkNavigation(generation)
   const onTagClick = useTagNavigation()
   const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()

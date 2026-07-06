@@ -168,6 +168,16 @@ pub fn run() {
     });
 
     builder
+        // Serves note images (`assets/…`) to the webview. Registered as an
+        // *asynchronous* protocol on purpose: WebKit delivers custom-scheme
+        // requests on the main thread, and a synchronous handler (like the
+        // built-in `asset:` protocol this replaces) freezes the whole app for
+        // the duration of every uncached read — seconds on iOS, where a first
+        // read can wait on an iCloud download.
+        .register_asynchronous_uri_scheme_protocol(
+            fs::asset_protocol::SCHEME,
+            fs::asset_protocol::handle,
+        )
         .manage(fs::GraphState::default())
         .manage(fs::assets::AssetUploads::default())
         .manage(db::IndexState::default())

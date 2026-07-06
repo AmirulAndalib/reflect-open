@@ -52,8 +52,9 @@ plain relative markdown, which fixes v1's export quirk: in v2 the markdown
   (`apps/desktop/src/editor/use-image-persistence.ts`): named
   `pasted-<timestamp>-<random>.<ext>` under `assets/`, written through the
   traversal-guarded `asset_write` command, pinned to the graph generation,
-  resolved for display through the Tauri asset protocol, and openable in
-  the OS viewer. Save failures surface on the pane.
+  resolved for display through the app's `reflect-asset://` protocol
+  (asynchronous — the file read happens off the webview's UI thread), and
+  openable in the OS viewer. Save failures surface on the pane.
 - Plan 20 gives every image (and, notably, **PDF**) under `assets/` an AI
   description file — PDFs are already first-class citizens of the asset
   pipeline everywhere *except* the way in.

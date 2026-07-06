@@ -95,18 +95,18 @@ export interface AssetPersistence {
 
 /**
  * Asset handling for one open graph: resolve `![…](…)` sources to displayable
- * URLs (remote URLs pass through; `assets/` paths map to Tauri asset URLs),
- * open asset links in the OS viewer, and persist pasted/dropped files by
- * streaming them into the graph's `assets/` folder — Rust resolves `-2`-style
- * name collisions at write time. A save over {@link LARGE_FILE_BYTES} gets a
- * non-blocking status-line warning after it lands. `generation` pins every
- * save to the issuing graph session, so a save racing a graph switch is
- * rejected loudly instead of landing in the wrong graph; `path`, when given,
- * scopes the error banner to the note being edited (a pane is reused across
- * note switches).
+ * URLs (remote URLs pass through; `assets/` paths map to `reflect-asset://`
+ * URLs served off the UI thread by the Rust shell), open asset links in the
+ * OS viewer, and persist pasted/dropped files by streaming them into the
+ * graph's `assets/` folder — Rust resolves `-2`-style name collisions at
+ * write time. A save over {@link LARGE_FILE_BYTES} gets a non-blocking
+ * status-line warning after it lands. `generation` pins every save — and
+ * every image URL — to the issuing graph session, so a save or image load
+ * racing a graph switch is rejected loudly instead of landing in (or reading
+ * from) the wrong graph; `path`, when given, scopes the error banner to the
+ * note being edited (a pane is reused across note switches).
  */
 export function useAssetPersistence(
-  graphRoot: string | null,
   generation: number | null,
   path?: string,
 ): AssetPersistence {
@@ -143,22 +143,22 @@ export function useAssetPersistence(
       if (/^https?:\/\//.test(src)) {
         return src
       }
-      if (graphRoot && isSafeAssetSource(src)) {
-        return convertFileSrc(`${graphRoot}/${src}`)
+      if (generation !== null && isSafeAssetSource(src)) {
+        return convertFileSrc(`${generation}/${src}`, 'reflect-asset')
       }
       return null
     },
-    [graphRoot],
+    [generation],
   )
 
   const resolveAssetOpenPath = useCallback(
     (src: string): string | null => {
-      if (graphRoot && generation !== null && isSafeAssetSource(src)) {
+      if (generation !== null && isSafeAssetSource(src)) {
         return src
       }
       return null
     },
-    [graphRoot, generation],
+    [generation],
   )
 
   const openAsset = useCallback(
