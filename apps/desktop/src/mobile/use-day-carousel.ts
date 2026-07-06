@@ -110,13 +110,20 @@ export interface DayCarousel {
  * and the bidirectional `date ↔ slide` sync, leaving {@link DayCarousel} (the
  * component) purely declarative.
  *
- * A settled swipe reports its day via `onSelect` (which the parent turns into a
- * daily-route navigation); the route flows back in as `date` and scrolls the
+ * A swipe's destination is announced twice: `onTarget` fires at pointer-up
+ * with the day the swipe will land on (for lightweight chrome — the calendar
+ * strip and its month title — to follow while the snap animation plays), and
+ * `onSelect` fires once the swipe settles (which the parent turns into a
+ * daily-route navigation). The route flows back in as `date` and scrolls the
  * carousel to match — guarded by {@link reconcileCarousel} so the swipe's own
  * echo doesn't redundantly re-scroll. A `date` beyond the window re-anchors it,
  * and the follow effect then reinitializes Embla onto the new slides.
  */
-export function useDayCarousel(date: string, onSelect: (date: string) => void): DayCarousel {
+export function useDayCarousel(
+  date: string,
+  onSelect: (date: string) => void,
+  onTarget: (date: string) => void,
+): DayCarousel {
   const [dayWindow, setDayWindow] = useState<DayWindow>(() => createDayWindow(date, CAROUSEL_WINDOW))
   // Frozen at mount: `embla-carousel-react` reinitializes whenever the options
   // object stops comparing equal, and `reInit` snaps to `startIndex` with no
@@ -138,18 +145,24 @@ export function useDayCarousel(date: string, onSelect: (date: string) => void): 
   // so Embla must reinitialize rather than scroll.
   const windowStartRef = useRef(dayWindow.start)
 
-  // The swipe's target is known at pointer-up (`select`), and the slide
-  // window follows it from there: the mount radius tracks `selectedIndex`,
-  // and a second swipe started mid-animation must land on a mounted slide,
-  // not a blank spacer (the quick double-swipe). Only the index moves here —
-  // and in a transition, so React fits the incoming neighbor's editor mount
-  // around the snap animation's frames instead of blocking its first ones.
-  const onEmblaSelect = useCallback((api: NonNullable<typeof emblaApi>) => {
-    const index = api.selectedScrollSnap()
-    startTransition(() => {
-      setSelectedIndex(index)
-    })
-  }, [])
+  // The swipe's target is known at pointer-up (`select`), and two light
+  // things follow it from there. The slide window: the mount radius tracks
+  // `selectedIndex`, and a second swipe started mid-animation must land on a
+  // mounted slide, not a blank spacer (the quick double-swipe). And
+  // `onTarget`: the calendar strip — month title included — moves with the
+  // gesture rather than after it. Both inside a transition, so React fits
+  // the work around the snap animation's frames instead of blocking its
+  // first ones.
+  const onEmblaSelect = useCallback(
+    (api: NonNullable<typeof emblaApi>) => {
+      const index = api.selectedScrollSnap()
+      startTransition(() => {
+        setSelectedIndex(index)
+        onTarget(dateAtIndex(dayWindow, index))
+      })
+    },
+    [dayWindow, onTarget],
+  )
 
   // The swipe's heavy consequence — reporting the day, which the parent turns
   // into a route navigation re-rendering the whole surface — waits for

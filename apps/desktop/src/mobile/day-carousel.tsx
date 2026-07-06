@@ -19,6 +19,12 @@ interface DayCarouselProps {
   onFocusConsumed: () => void
   /** Settle on a day — the parent turns this into a daily-route navigation. */
   onSelect: (date: string) => void
+  /**
+   * A swipe's destination day, announced at pointer-up while the snap
+   * animation still plays — for chrome (the calendar strip and its month
+   * title) that should move with the gesture, ahead of the route.
+   */
+  onTarget: (date: string) => void
 }
 
 /** Slides within this many of the selection mount an editor; the rest are
@@ -40,8 +46,9 @@ export function DayCarousel({
   focusDate,
   onFocusConsumed,
   onSelect,
+  onTarget,
 }: DayCarouselProps): ReactElement {
-  const { emblaRef, dayWindow, selectedIndex } = useDayCarousel(date, onSelect)
+  const { emblaRef, dayWindow, selectedIndex } = useDayCarousel(date, onSelect, onTarget)
   // One mutable map for the carousel's life; the identity never changes, so
   // holding it in state (read during render) rather than a ref is safe.
   const [scrollMemory] = useState(() => new Map<string, number>())

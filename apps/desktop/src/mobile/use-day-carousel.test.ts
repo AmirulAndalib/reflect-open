@@ -165,10 +165,11 @@ describe('useDayCarousel', () => {
 
   function mountCarousel() {
     const onSelect = vi.fn()
-    const hook = renderHook(({ date }) => useDayCarousel(date, onSelect), {
+    const onTarget = vi.fn()
+    const hook = renderHook(({ date }) => useDayCarousel(date, onSelect, onTarget), {
       initialProps: { date: DATE },
     })
-    return { ...hook, onSelect }
+    return { ...hook, onSelect, onTarget }
   }
 
   it('follows the swipe target at select, so the next neighbor mounts mid-animation', () => {
@@ -178,6 +179,17 @@ describe('useDayCarousel', () => {
     act(() => embla.selectAt(CENTER + 1))
 
     expect(result.current.selectedIndex).toBe(CENTER + 1)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('announces the target day at select, ahead of the settle-time report', () => {
+    const { onTarget, onSelect } = mountCarousel()
+
+    act(() => embla.selectAt(CENTER + 1))
+
+    // The strip (and its month title) follow this while the snap animates;
+    // the route only moves at settle.
+    expect(onTarget).toHaveBeenCalledExactlyOnceWith('2026-06-13')
     expect(onSelect).not.toHaveBeenCalled()
   })
 

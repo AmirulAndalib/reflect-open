@@ -13,7 +13,11 @@ import { useSettings } from '@/providers/settings-provider'
 import { useRouter } from '@/routing/router'
 
 interface CalendarStripProps {
-  /** The selected day (the centered carousel slide). */
+  /**
+   * The day the strip should highlight — the route's selected day, or the
+   * destination of an in-flight carousel swipe (the parent hands the swipe
+   * target over at pointer-up so the strip and month title lead the route).
+   */
   date: string
   /** Today's live ISO date — owned by the parent so the strip and the
    *  parent's select logic share one value (no midnight-rollover skew). */
