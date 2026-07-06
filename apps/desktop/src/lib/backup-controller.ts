@@ -38,6 +38,10 @@ import { throttledInvalidateIndexQueries } from '@/lib/query-client'
  * remotes (which additionally require the stored GitHub credential) and
  * `null` for hand-wired generic remotes (Plan 16: GitLab/Gitea/self-hosted
  * over SSH, or a bare path repo), whose credentials resolve locally in Rust.
+ *
+ * `disconnected` means no *backup*: on desktop such graphs still run the
+ * local-history commit loop (see `startLocalHistory`), which the UI never
+ * surfaces.
  */
 export type BackupState =
   | { phase: 'loading' }
@@ -177,6 +181,59 @@ export function createBackupController(options: BackupControllerOptions): Backup
     }
   }
 
+  /**
+   * Wire an engine into the watcher (which feeds its debounce) and the
+   * quit-time flusher. Returns false when teardown or a restart won the race
+   * against the subscribe — the engine is already stopped in that case.
+   */
+  async function adoptEngine(next: SyncEngine): Promise<boolean> {
+    engine = next
+    // Spooled capture envelopes (`.reflect/inbox/`) are git-ignored and
+    // drained within seconds — they must not tick the commit debounce. The
+    // drain's own note writes arrive as ordinary changes right after.
+    const subscription = await subscribeFileChanges((changes) => {
+      if (changes.some((change) => !isCaptureSpoolPath(change.path))) {
+        next.noteChanged()
+      }
+    })
+    if (disposed || engine !== next) {
+      subscription()
+      next.stop()
+      return false
+    }
+    unlisten = subscription
+    // Quit-time commit (local only — never a network push on the way out).
+    setBackupFlusher(async () => {
+      await gitCommitAll('Update notes', generation)
+    })
+    return true
+  }
+
+  /**
+   * Local history (desktop only): a graph with no remote still gets a
+   * repository and the debounced commit loop, so every edit lands in Git
+   * history and stays revertable — nothing is ever fetched or pushed, and
+   * the UI stays `disconnected`. Connecting a backup later adopts this
+   * repository, history included.
+   */
+  async function startLocalHistory(initialized: boolean): Promise<void> {
+    if (isMobileSurface()) {
+      return
+    }
+    if (!initialized) {
+      await gitSetup(null, null, generation)
+    }
+    const next = createSyncEngine({
+      generation,
+      localOnly: true,
+      getToken: async () => null,
+    })
+    if (!(await adoptEngine(next))) {
+      return
+    }
+    void next.syncNow() // first snapshot: commit whatever is already pending
+  }
+
   async function start(): Promise<void> {
     teardown()
     if (disposed) {
@@ -190,6 +247,7 @@ export function createBackupController(options: BackupControllerOptions): Backup
       }
       if (!status.initialized || status.remoteUrl === null) {
         setState({ phase: 'disconnected' })
+        await startLocalHistory(status.initialized)
         return
       }
       const remoteUrl = status.remoteUrl
@@ -236,24 +294,10 @@ export function createBackupController(options: BackupControllerOptions): Backup
         },
         onRemoteChanges,
       })
-      engine = next
       setState({ phase: 'connected', remoteUrl, repo, status: { state: 'idle' } })
-
-      // Spooled capture envelopes (`.reflect/inbox/`) are git-ignored and
-      // drained within seconds — they must not tick the commit debounce. The
-      // drain's own note writes arrive as ordinary changes right after.
-      const subscription = await subscribeFileChanges((changes) => {
-        if (changes.some((change) => !isCaptureSpoolPath(change.path))) {
-          next.noteChanged()
-        }
-      })
-      if (disposed || engine !== next) {
-        // Teardown (or a restart) won the race against the subscribe.
-        subscription()
-        next.stop()
+      if (!(await adoptEngine(next))) {
         return
       }
-      unlisten = subscription
 
       // Resume triggers: window focus (desktop refocus) and visibility →
       // visible (mobile app resume; desktop unminimize, which doesn't
@@ -283,10 +327,6 @@ export function createBackupController(options: BackupControllerOptions): Backup
         () => document.removeEventListener('visibilitychange', onVisibilityChange),
         () => window.removeEventListener('online', onOnline),
       )
-      // Quit-time commit (local only — never a network push on the way out).
-      setBackupFlusher(async () => {
-        await gitCommitAll('Update notes', generation)
-      })
 
       void next.syncNow() // launch pull: pick up other devices' changes
     } catch (error) {

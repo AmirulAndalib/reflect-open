@@ -40,8 +40,10 @@ interface FakeOptions {
   failStatus?: boolean
   /** Scripted `git_merge_remote` outcome (defaults to up-to-date). */
   mergeOutcome?: unknown
-  /** The graph's origin (defaults to a GitHub HTTPS remote). */
-  remoteUrl?: string
+  /** The graph's origin (defaults to a GitHub HTTPS remote; null = none). */
+  remoteUrl?: string | null
+  /** Whether the graph already has a repository (defaults to true). */
+  initialized?: boolean
 }
 
 /** Bridge fake with a mutable repo status, recording every command. */
@@ -50,9 +52,12 @@ function fakeBridge(options: FakeOptions = {}) {
   const invocations: Array<{ command: string; args: Record<string, unknown> }> = []
   let auth = options.auth === undefined ? AUTH : options.auth
   const status = {
-    initialized: true,
+    initialized: options.initialized ?? true,
     branch: 'main',
-    remoteUrl: (options.remoteUrl ?? 'https://github.com/alex/notes.git') as string | null,
+    remoteUrl:
+      options.remoteUrl === undefined
+        ? ('https://github.com/alex/notes.git' as string | null)
+        : options.remoteUrl,
     ahead: 0,
     behind: 0,
     inProgress: false,
@@ -69,6 +74,7 @@ function fakeBridge(options: FakeOptions = {}) {
           }
           return status
         case 'git_setup':
+          status.initialized = true
           status.remoteUrl = typeof args['remoteUrl'] === 'string' ? args['remoteUrl'] : null
           return status
         case 'secret_get':
@@ -216,6 +222,65 @@ describe('createBackupController', () => {
 
     expect(calls).not.toContain('git_commit_all')
     expect(calls.filter((command) => command === 'git_status')).toHaveLength(1)
+  })
+
+  it('initializes local history on desktop when no backup is configured', async () => {
+    const { calls, invocations } = fakeBridge({ auth: null, initialized: false, remoteUrl: null })
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+
+    // The UI never learns about local history — the graph reads as disconnected.
+    expect(controller.getState()).toEqual({ phase: 'disconnected' })
+    const setup = invocations.find(({ command }) => command === 'git_setup')
+    expect(setup?.args).toMatchObject({ remoteUrl: null, branch: null, generation: 3 })
+    await vi.waitFor(() => {
+      expect(calls).toContain('git_commit_all') // first snapshot on launch
+    })
+    expect(calls).not.toContain('git_fetch')
+    expect(calls).not.toContain('git_push')
+    controller.dispose()
+  })
+
+  it('local history keeps committing on edits — still with no network', async () => {
+    // A repo without a remote (e.g. after disconnectGraph) needs no git_setup.
+    const commitCount = (calls: string[]): number =>
+      calls.filter((command) => command === 'git_commit_all').length
+    const { calls } = fakeBridge({ auth: null, remoteUrl: null })
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+    await vi.waitFor(() => {
+      expect(commitCount(calls)).toBe(1)
+    })
+    expect(calls).not.toContain('git_setup')
+
+    vi.useFakeTimers()
+    try {
+      emitFileChanges([{ path: 'notes/edited.md', kind: 'upsert', modifiedMs: 1 }])
+      await vi.advanceTimersByTimeAsync(30_000)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(commitCount(calls)).toBe(2)
+    expect(calls).not.toContain('git_fetch')
+    expect(calls).not.toContain('git_push')
+    controller.dispose()
+  })
+
+  it('never starts local history on mobile', async () => {
+    setPlatformSurface({ mobileApp: true })
+    try {
+      const { calls } = fakeBridge({ auth: null, initialized: false, remoteUrl: null })
+      const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+      await controller.start()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      expect(controller.getState()).toEqual({ phase: 'disconnected' })
+      expect(calls).not.toContain('git_setup')
+      expect(calls).not.toContain('git_commit_all')
+      controller.dispose()
+    } finally {
+      setPlatformSurface({ mobileApp: false })
+    }
   })
 
   it('disconnectGraph drops the remote and lands on disconnected', async () => {
