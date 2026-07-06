@@ -101,7 +101,7 @@ fn split_alias_parts(title: &str) -> Vec<&str> {
             break;
         };
         let split_at = search_from + relative_split_at;
-        if title[..split_at].chars().next_back() == Some(':') {
+        if title[..split_at].ends_with(':') {
             search_from = split_at + 2;
             continue;
         }
