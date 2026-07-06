@@ -3,8 +3,8 @@ import { gistBodyHash, parseNote } from '../markdown'
 import { buildIndexedNote, indexedNoteSchema, PROJECTION_VERSION } from './indexed-note'
 
 describe('buildIndexedNote', () => {
-  it('carries the projection version that backfills the note email rows', () => {
-    expect(PROJECTION_VERSION).toBe(13)
+  it('carries the projection version that backfills v1 title aliases', () => {
+    expect(PROJECTION_VERSION).toBe(14)
   })
 
   it('flattens a parsed note into the index payload', () => {
@@ -44,6 +44,24 @@ describe('buildIndexedNote', () => {
       true,
     )
     expect(indexed.assets).toEqual(['assets/p.png'])
+  })
+
+  it('projects v1-style // title aliases beside explicit frontmatter aliases', () => {
+    const source =
+      '---\naliases: [Manual, Mum]\n---\n# Charlotte MacCaw // Mum // Lottie\n\nbody'
+    const indexed = buildIndexedNote(parseNote({ path: 'notes/charlotte.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
+
+    expect(indexed.title).toBe('Charlotte MacCaw')
+    expect(indexed.titleKey).toBe('charlotte maccaw')
+    expect(indexed.aliases).toEqual([
+      { alias: 'Manual', aliasKey: 'manual' },
+      { alias: 'Mum', aliasKey: 'mum' },
+      { alias: 'Lottie', aliasKey: 'lottie' },
+    ])
   })
 
   it('projects Email field bullets with folded keys, ignoring prose mentions', () => {

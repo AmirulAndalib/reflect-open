@@ -202,8 +202,9 @@ export interface ParsedTask extends TaskMarker {
 /** Version of the extraction contract; bump on breaking shape changes.
  * 1 — Plan 03 baseline · 2 — `tasks: ParsedTask[]` (with `dueDate`) added (Plan 18) ·
  * 3 — tasks limited to round Meowdown `+ [ ]` / `+ [x]` syntax; square checklist
- * checkboxes are excluded. */
-export const PARSED_NOTE_VERSION = 3
+ * checkboxes are excluded · 4 — `titleAliases`, derived from v1-style `//`
+ * aliases in authored titles. */
+export const PARSED_NOTE_VERSION = 4
 
 /** The full parse of one note — the stable contract downstream plans depend on. */
 export interface ParsedNote {
@@ -211,8 +212,13 @@ export interface ParsedNote {
   path: string
   /** Stable id from frontmatter, if the note carries one (else identity = path). */
   id?: string | undefined
-  /** `frontmatter.title` → first H1 → filename (or the date for daily notes). */
+  /**
+   * `frontmatter.title` → first H1 → filename (or the date for daily notes);
+   * v1-style `//` suffixes are removed.
+   */
   title: string
+  /** Alternative names derived from v1-style `Title // Alias` authored titles. */
+  titleAliases: string[]
   frontmatter: Frontmatter
   /** Set when YAML frontmatter failed to parse; the note is still usable. */
   frontmatterWarning?: string | undefined

@@ -59,8 +59,11 @@ import { previewSnippet } from './snippet'
  * 13 — `note_emails` projection (`- Email:` contact-field bullets): existing
  * person notes carry no email rows until reprojected, and attendee → note
  * resolution in the calendar flow needs them, so the bump backfills them.
+ * 14 — v1-style `Title // Alias` authored titles project the suffixes into the
+ * aliases table, so old Reflect subjects resolve and autocomplete like
+ * frontmatter aliases.
  */
-export const PROJECTION_VERSION = 13
+export const PROJECTION_VERSION = 14
 
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),
@@ -152,6 +155,30 @@ export const indexedNoteSchema = z.object({
 })
 export type IndexedNote = z.infer<typeof indexedNoteSchema>
 
+function indexedAliases(parsed: ParsedNote): IndexedAlias[] {
+  const frontmatterAliases = parsed.frontmatter.aliases.map((alias) => ({
+    alias,
+    aliasKey: foldKey(alias),
+  }))
+  const seen = new Set([
+    foldKey(parsed.title),
+    ...frontmatterAliases.map((alias) => alias.aliasKey),
+  ])
+  const titleAliases: IndexedAlias[] = []
+
+  for (const alias of parsed.titleAliases) {
+    const trimmed = alias.trim()
+    const aliasKey = foldKey(trimmed)
+    if (aliasKey === '' || seen.has(aliasKey)) {
+      continue
+    }
+    seen.add(aliasKey)
+    titleAliases.push({ alias: trimmed, aliasKey })
+  }
+
+  return [...frontmatterAliases, ...titleAliases]
+}
+
 /**
  * Flatten a parsed note into the index payload. `meta.source` is the raw
  * markdown the note was parsed from — conflict markers are detected on it
@@ -203,10 +230,7 @@ export function buildIndexedNote(
     preview: previewSnippet(parsed.text, parsed.title),
     links: [...wikiLinks, ...mdLinks],
     tags: parsed.tags.map((tag) => ({ tag, tagKey: foldTag(tag) })),
-    aliases: parsed.frontmatter.aliases.map((alias) => ({
-      alias,
-      aliasKey: foldKey(alias),
-    })),
+    aliases: indexedAliases(parsed),
     emails: extractEmailFields(body).map((email) => ({ email, emailKey: foldEmail(email) })),
     assets: parsed.assets.map((asset) => asset.path),
     tasks: parsed.tasks.map((task) => ({

@@ -3,6 +3,7 @@
 //! `packages/core/src/markdown/extract.ts`; the walk mirrors the desktop's
 //! `collect_markdown` (`apps/desktop/src-tauri/src/fs/io.rs`).
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
@@ -11,6 +12,7 @@ use pulldown_cmark::{Event, HeadingLevel, Parser, Tag};
 
 use crate::error::CliError;
 use crate::frontmatter::{parse_frontmatter, split_frontmatter, Frontmatter};
+use crate::keys::fold_key;
 use crate::paths::{date_from_daily_path, NOTE_DIRS};
 
 /// A note's derived metadata, as the TS indexer would compute it.
@@ -35,6 +37,11 @@ pub struct DiskNote {
     pub rel_path: String,
     /// Last-modified time in epoch milliseconds (the `notes.mtime` unit).
     pub mtime_ms: u64,
+}
+
+struct DerivedTitle {
+    title: String,
+    aliases: Vec<String>,
 }
 
 /// Filename without directories or the `.md` extension (the TS `basename`).
@@ -84,22 +91,107 @@ fn first_h1(body: &str) -> Option<String> {
     None
 }
 
+fn split_alias_parts(title: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut search_from = 0;
+
+    while search_from < title.len() {
+        let Some(relative_split_at) = title[search_from..].find("//") else {
+            break;
+        };
+        let split_at = search_from + relative_split_at;
+        if title[..split_at].chars().next_back() == Some(':') {
+            search_from = split_at + 2;
+            continue;
+        }
+        parts.push(&title[start..split_at]);
+        start = split_at + 2;
+        search_from = start;
+    }
+
+    if parts.is_empty() {
+        return vec![title];
+    }
+    parts.push(&title[start..]);
+    parts
+}
+
+fn split_title_aliases(title: &str) -> DerivedTitle {
+    let parts = split_alias_parts(title);
+    let canonical = parts.first().map(|part| part.trim()).unwrap_or(title);
+    if canonical.is_empty() {
+        return DerivedTitle {
+            title: title.to_string(),
+            aliases: Vec::new(),
+        };
+    }
+
+    let mut seen = HashSet::new();
+    seen.insert(fold_key(canonical));
+    let mut aliases = Vec::new();
+    for part in parts.iter().skip(1) {
+        let alias = part.trim();
+        let key = fold_key(alias);
+        if key.is_empty() || seen.contains(&key) {
+            continue;
+        }
+        seen.insert(key);
+        aliases.push(alias.to_string());
+    }
+
+    DerivedTitle {
+        title: canonical.to_string(),
+        aliases,
+    }
+}
+
 /// The TS `deriveTitle` chain: frontmatter `title` → first H1 → daily date →
-/// filename.
-fn derive_title(rel_path: &str, frontmatter: &Frontmatter, body: &str) -> String {
+/// filename. Authored titles also derive v1-style `//` aliases.
+fn derive_title(rel_path: &str, frontmatter: &Frontmatter, body: &str) -> DerivedTitle {
     if let Some(title) = frontmatter.title.as_deref() {
         let title = title.trim();
         if !title.is_empty() {
-            return title.to_string();
+            return split_title_aliases(title);
         }
     }
     if let Some(heading) = first_h1(body) {
-        return heading;
+        return split_title_aliases(&heading);
     }
     if let Some(date) = date_from_daily_path(rel_path) {
-        return date.to_string();
+        return DerivedTitle {
+            title: date.to_string(),
+            aliases: Vec::new(),
+        };
     }
-    basename(rel_path).to_string()
+    DerivedTitle {
+        title: basename(rel_path).to_string(),
+        aliases: Vec::new(),
+    }
+}
+
+fn merge_aliases(
+    title: &str,
+    frontmatter_aliases: Vec<String>,
+    title_aliases: Vec<String>,
+) -> Vec<String> {
+    let mut aliases = frontmatter_aliases;
+    let mut seen = HashSet::new();
+    seen.insert(fold_key(title));
+    for alias in &aliases {
+        seen.insert(fold_key(alias));
+    }
+
+    for alias in title_aliases {
+        let trimmed = alias.trim();
+        let key = fold_key(trimmed);
+        if key.is_empty() || seen.contains(&key) {
+            continue;
+        }
+        seen.insert(key);
+        aliases.push(trimmed.to_string());
+    }
+    aliases
 }
 
 /// Derive a note's metadata from its source, as the TS indexer would.
@@ -107,10 +199,11 @@ pub fn parse_note_meta(rel_path: &str, source: &str) -> NoteMeta {
     let split = split_frontmatter(source);
     let frontmatter = parse_frontmatter(split.raw);
     let title = derive_title(rel_path, &frontmatter, split.body);
+    let aliases = merge_aliases(&title.title, frontmatter.aliases, title.aliases);
     NoteMeta {
         id: frontmatter.id,
-        title,
-        aliases: frontmatter.aliases,
+        title: title.title,
+        aliases,
         private: frontmatter.private,
     }
 }
@@ -214,6 +307,31 @@ mod tests {
 
         let meta = parse_note_meta("notes/Fancy Name.md", "no headings\n");
         assert_eq!(meta.title, "Fancy Name");
+    }
+
+    #[test]
+    fn title_slash_aliases_match_the_ts_extractor() {
+        let meta = parse_note_meta(
+            "notes/charlotte.md",
+            "---\naliases: [Manual, Mum]\n---\n# Charlotte MacCaw // Mum // Lottie\n",
+        );
+        assert_eq!(meta.title, "Charlotte MacCaw");
+        assert_eq!(meta.aliases, vec!["Manual", "Mum", "Lottie"]);
+
+        let meta = parse_note_meta("notes/project.md", "---\ntitle: Project X // PX\n---\n");
+        assert_eq!(meta.title, "Project X");
+        assert_eq!(meta.aliases, vec!["PX"]);
+
+        let meta = parse_note_meta("notes/superman.md", "# Superman//Clark Kent\n");
+        assert_eq!(meta.title, "Superman");
+        assert_eq!(meta.aliases, vec!["Clark Kent"]);
+    }
+
+    #[test]
+    fn protocol_slashes_are_not_title_aliases() {
+        let meta = parse_note_meta("notes/url.md", "# https://example.com/page\n");
+        assert_eq!(meta.title, "https://example.com/page");
+        assert!(meta.aliases.is_empty());
     }
 
     #[test]

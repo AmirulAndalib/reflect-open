@@ -1,7 +1,7 @@
 import { dateFromDailyPath, isDaily } from '../graph/paths'
 import { parseFrontmatter, splitFrontmatter } from './frontmatter'
 import { parseBody } from './grammar'
-import { foldTag } from './keys'
+import { foldKey, foldTag } from './keys'
 import { parseInlineLink } from './link-syntax'
 import { buildPlainText, plainTextOfRange, unescapeMarkdownText } from './plain-text'
 import { normalizeWikiTarget } from './resolve'
@@ -248,6 +248,57 @@ function collectTags(body: string, excluded: Span[], into: Map<string, string>):
   }
 }
 
+interface AuthoredTitle {
+  title: string
+  aliases: string[]
+}
+
+function splitAliasParts(title: string): string[] {
+  const parts: string[] = []
+  let start = 0
+  let searchFrom = 0
+
+  while (searchFrom < title.length) {
+    const splitAt = title.indexOf('//', searchFrom)
+    if (splitAt === -1) {
+      break
+    }
+    if (splitAt > 0 && title[splitAt - 1] === ':') {
+      searchFrom = splitAt + 2
+      continue
+    }
+    parts.push(title.slice(start, splitAt))
+    start = splitAt + 2
+    searchFrom = start
+  }
+
+  if (parts.length === 0) {
+    return [title]
+  }
+  parts.push(title.slice(start))
+  return parts
+}
+
+function splitTitleAliases(title: string): AuthoredTitle {
+  const parts = splitAliasParts(title).map((part) => part.trim())
+  const canonical = parts[0] ?? title
+  if (canonical === '') {
+    return { title, aliases: [] }
+  }
+
+  const seen = new Set([foldKey(canonical)])
+  const aliases: string[] = []
+  for (const alias of parts.slice(1)) {
+    const key = foldKey(alias)
+    if (key === '' || seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    aliases.push(alias)
+  }
+  return { title: canonical, aliases }
+}
+
 /**
  * The title the note's *content* authors — explicit frontmatter `title:`,
  * else the first non-empty H1 — or `null` when {@link deriveTitle} would fall
@@ -255,13 +306,13 @@ function collectTags(body: string, excluded: Span[], into: Map<string, string>):
  * derivation and the {@link hasAuthoredTitle} predicate share, so "is this
  * note titled?" can never drift from how the title is actually derived.
  */
-function authoredTitle(frontmatter: Frontmatter, headings: Heading[]): string | null {
+function authoredTitle(frontmatter: Frontmatter, headings: Heading[]): AuthoredTitle | null {
   const fmTitle = stringField(frontmatter, 'title')
   if (fmTitle && fmTitle.trim()) {
-    return fmTitle.trim()
+    return splitTitleAliases(fmTitle.trim())
   }
   const h1 = headings.find((heading) => heading.level === 1 && heading.text)
-  return h1 ? h1.text : null
+  return h1 ? splitTitleAliases(h1.text) : null
 }
 
 /**
@@ -273,7 +324,7 @@ export function hasAuthoredTitle(note: Pick<ParsedNote, 'frontmatter' | 'heading
   return authoredTitle(note.frontmatter, note.headings) !== null
 }
 
-function deriveTitle(frontmatter: Frontmatter, headings: Heading[], path: string): string {
+function deriveTitle(frontmatter: Frontmatter, headings: Heading[], path: string): AuthoredTitle {
   const authored = authoredTitle(frontmatter, headings)
   if (authored !== null) {
     return authored
@@ -281,10 +332,10 @@ function deriveTitle(frontmatter: Frontmatter, headings: Heading[], path: string
   if (isDaily(path)) {
     const date = dateFromDailyPath(path)
     if (date) {
-      return date
+      return { title: date, aliases: [] }
     }
   }
-  return basename(path)
+  return { title: basename(path), aliases: [] }
 }
 
 /** Parse one note's full source into the stable {@link ParsedNote} contract. */
@@ -362,11 +413,13 @@ export function parseNote(input: { path: string; source: string }): ParsedNote {
       tasks.push(task)
     }
   }
+  const title = deriveTitle(frontmatter, headings, path)
 
   return {
     path,
     id: stringField(frontmatter, 'id'),
-    title: deriveTitle(frontmatter, headings, path),
+    title: title.title,
+    titleAliases: title.aliases,
     frontmatter,
     frontmatterWarning: warning,
     wikiLinks,

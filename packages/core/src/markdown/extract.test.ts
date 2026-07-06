@@ -63,6 +63,26 @@ describe('parseNote — headings & title', () => {
     expect(parse('no heading', 'daily/2026-06-09.md').title).toBe('2026-06-09')
   })
 
+  it('derives v1-style // aliases from authored titles', () => {
+    const fromHeading = parse('# Charlotte MacCaw // Mum // mum\n\nbody')
+    expect(fromHeading.title).toBe('Charlotte MacCaw')
+    expect(fromHeading.titleAliases).toEqual(['Mum'])
+
+    const fromFrontmatter = parse('---\ntitle: Project X // PX\n---\n# Ignored')
+    expect(fromFrontmatter.title).toBe('Project X')
+    expect(fromFrontmatter.titleAliases).toEqual(['PX'])
+
+    const compact = parse('# Superman//Clark Kent\n')
+    expect(compact.title).toBe('Superman')
+    expect(compact.titleAliases).toEqual(['Clark Kent'])
+  })
+
+  it('does not treat URL protocol slashes as title aliases', () => {
+    const note = parse('# https://example.com/page\n\nbody')
+    expect(note.title).toBe('https://example.com/page')
+    expect(note.titleAliases).toEqual([])
+  })
+
   it('hasAuthoredTitle mirrors the derivation: true iff the title is not a path fallback', () => {
     expect(hasAuthoredTitle(parse('---\ntitle: From FM\n---\nbody'))).toBe(true)
     expect(hasAuthoredTitle(parse('# The H1\n\nbody'))).toBe(true)

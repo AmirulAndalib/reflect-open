@@ -425,6 +425,36 @@ fn show_resolves_by_title_and_alias_without_an_index() {
 }
 
 #[test]
+fn show_resolves_slash_title_aliases_with_and_without_an_index() {
+    let fixture = graph();
+    fixture.write_note(
+        "notes/charlotte.md",
+        "# Charlotte MacCaw // Mum\nfamily notes\n",
+    );
+
+    for arg in ["Charlotte MacCaw", "Mum"] {
+        let output = reflect(&fixture, &["show", arg]);
+        assert!(output.status.success(), "show {arg}: {}", stderr(&output));
+        assert!(stdout(&output).contains("family notes"), "show {arg}");
+    }
+
+    fixture.build_index();
+
+    for arg in ["Charlotte MacCaw", "Mum"] {
+        let output = reflect(&fixture, &["show", arg]);
+        assert!(
+            output.status.success(),
+            "indexed show {arg}: {}",
+            stderr(&output)
+        );
+        assert!(
+            stdout(&output).contains("family notes"),
+            "indexed show {arg}"
+        );
+    }
+}
+
+#[test]
 fn show_blocks_a_private_note_even_when_the_index_says_public() {
     let fixture = graph();
     let note = fixture.write_note("notes/a.md", "# Alpha\npublic at index time\n");
