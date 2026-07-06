@@ -487,7 +487,9 @@ pub(super) fn plan_asset_name(
     )))
 }
 
-fn same_file_bytes(existing: &Path, staged: &Path) -> AppResult<bool> {
+/// Whether two files hold identical bytes (length check first, so comparing
+/// large attachments is cheap in the common differing case).
+pub(super) fn same_file_bytes(existing: &Path, staged: &Path) -> AppResult<bool> {
     let existing_meta = std::fs::metadata(existing)?;
     let staged_meta = std::fs::metadata(staged)?;
     if existing_meta.len() != staged_meta.len() {

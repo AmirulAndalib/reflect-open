@@ -105,6 +105,23 @@ fn prepare_zip_import_from(
     })
 }
 
+/// Two distinct URLs can serve the same attachment (V1 stored one upload per
+/// link). When a download matches an already-planned asset's name and bytes,
+/// both links share that one file instead of persisting a `-2` duplicate.
+fn planned_duplicate(
+    planned: &[(import_assets::FetchedAsset, import_assets::PlannedAssetName)],
+    fetched: &import_assets::FetchedAsset,
+) -> AppResult<Option<String>> {
+    for (prior, plan) in planned {
+        if prior.desired_name == fetched.desired_name
+            && import_assets::same_file_bytes(prior.file.path(), fetched.file.path())?
+        {
+            return Ok(Some(plan.name.clone()));
+        }
+    }
+    Ok(None)
+}
+
 fn ensure_has_notes(entries: &[ImportEntry]) -> AppResult<()> {
     if !entries
         .iter()
@@ -135,12 +152,19 @@ pub(super) fn finalize_import(
 
     let assets_dir = root.join("assets");
     let mut replacements = HashMap::new();
-    let mut planned = Vec::new();
+    let mut planned: Vec<(import_assets::FetchedAsset, import_assets::PlannedAssetName)> =
+        Vec::new();
     let mut taken = HashSet::new();
+    let mut downloaded_assets = 0;
     let mut failed_asset_downloads = 0;
     for url in &urls {
         match outcomes.remove(url) {
             Some(DownloadOutcome::Fetched(fetched)) => {
+                downloaded_assets += 1;
+                if let Some(name) = planned_duplicate(&planned, &fetched)? {
+                    replacements.insert(url.clone(), format!("assets/{name}"));
+                    continue;
+                }
                 let plan = import_assets::plan_asset_name(
                     &assets_dir,
                     &fetched.desired_name,
@@ -155,7 +179,6 @@ pub(super) fn finalize_import(
             None => {}
         }
     }
-    let downloaded_assets = planned.len();
 
     if !replacements.is_empty() {
         for entry in &mut entries {
@@ -737,6 +760,41 @@ mod tests {
             note,
             "![](assets/trip-photo.webp)\n\n[memo.m4a](assets/memo.m4a)\n\n![](assets/9c2c28.png)\n"
         );
+    }
+
+    #[test]
+    fn identical_assets_under_one_name_share_one_file() {
+        let root = tempdir().unwrap();
+        let response: (&str, &str, &str, &[u8]) = (
+            "",
+            "200 OK",
+            "Content-Type: image/png\r\nContent-Disposition: inline; filename=\"pic.png\"\r\n",
+            b"png bytes",
+        );
+        let base = serve(
+            vec![
+                ("/a?alt=media&token=t", response.1, response.2, response.3),
+                ("/b?alt=media&token=u", response.1, response.2, response.3),
+            ],
+            2,
+        );
+        let zip_path = root.path().join("export.zip");
+        let markdown =
+            format!("![]({base}a?alt=media\\&token=t)\n\n![]({base}b?alt=media\\&token=u)\n");
+        write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
+
+        let summary = import_zip_downloading_from(root.path(), &zip_path, &base).unwrap();
+
+        assert_eq!(summary.downloaded_assets, 2);
+        let asset_paths: Vec<_> = summary
+            .changed_paths
+            .iter()
+            .filter(|path| path.starts_with("assets/"))
+            .collect();
+        assert_eq!(asset_paths, ["assets/pic.png"]);
+        assert!(!root.path().join("assets/pic-2.png").exists());
+        let note = fs::read_to_string(root.path().join("daily/2026-07-04.md")).unwrap();
+        assert_eq!(note, "![](assets/pic.png)\n\n![](assets/pic.png)\n");
     }
 
     #[test]
