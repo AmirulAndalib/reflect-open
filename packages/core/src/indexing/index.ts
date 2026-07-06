@@ -122,6 +122,7 @@ export {
   type HighlightSegment,
 } from './search'
 export { lineAt, lineSnippet, previewSnippet } from './snippet'
+export { blockContextAt } from './block-context'
 export { parseSearchQuery, type ParsedSearchQuery, type SearchFilters } from './filter-query'
 export {
   searchWithFilters,

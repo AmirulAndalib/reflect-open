@@ -1,8 +1,8 @@
 import type { Database } from '@reflect/db'
 import { sql, type Selectable } from 'kysely'
 import { readNote } from '../graph/commands'
+import { blockContextAt } from './block-context'
 import { db } from './db'
-import { lineAt } from './snippet'
 
 export type Backlink = Pick<
   Selectable<Database['backlinks']>,
@@ -24,18 +24,22 @@ export interface BacklinkContext {
   sourcePath: string
   sourceTitle: string
   /**
-   * The whole source line containing the link, as rich-text-renderable Markdown
-   * (empty when the file is unreadable). Not windowed: a half-cut Markdown token
-   * would garble the rendered snippet, so the panel clamps the line visually.
+   * The Markdown block context around the link (old Reflect's rules — see
+   * {@link blockContextAt}): the whole paragraph, the containing list item with
+   * its children, or the heading's section. Empty when the file is unreadable.
+   * Never windowed: a half-cut Markdown token would garble the rendered snippet.
    */
   snippet: string
   posFrom: number
 }
 
 /**
- * Backlinks of `path` with source titles and line snippets. One read per
- * distinct source; a source that vanished between query and read keeps its row
- * with an empty snippet (the index lags deletes only briefly).
+ * Backlinks of `path` with source titles and block-context snippets. One read
+ * per distinct source; a source that vanished between query and read keeps its
+ * row with an empty snippet (the index lags deletes only briefly). Mentions of
+ * one source that produce an identical context collapse into one row — two
+ * links to `path` in the same paragraph read as a single reference, exactly as
+ * old Reflect deduplicated on `[target, contextHtml]`.
  */
 export async function getBacklinksWithContext(path: string): Promise<BacklinkContext[]> {
   const rows = await db
@@ -63,13 +67,24 @@ export async function getBacklinksWithContext(path: string): Promise<BacklinkCon
     }),
   )
 
-  return rows.map((row) => {
+  const seen = new Set<string>()
+  const results: BacklinkContext[] = []
+  for (const row of rows) {
     const content = contents.get(row.sourcePath)
-    return {
+    const snippet = content == null ? '' : blockContextAt(content, row.posFrom)
+    if (snippet !== '') {
+      const key = `${row.sourcePath}\u0000${snippet}`
+      if (seen.has(key)) {
+        continue
+      }
+      seen.add(key)
+    }
+    results.push({
       sourcePath: row.sourcePath,
       sourceTitle: row.sourceTitle,
-      snippet: content == null ? '' : lineAt(content, row.posFrom),
+      snippet,
       posFrom: row.posFrom,
-    }
-  })
+    })
+  }
+  return results
 }
