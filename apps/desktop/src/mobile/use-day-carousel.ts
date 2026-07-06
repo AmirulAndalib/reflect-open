@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import useEmblaCarousel from 'embla-carousel-react'
 import { createDayWindow, dateAtIndex, indexWithin, type DayWindow } from '@/lib/day-window'
 import { getKeyboardHeight } from '@/mobile/use-keyboard'
@@ -138,14 +138,25 @@ export function useDayCarousel(date: string, onSelect: (date: string) => void): 
   // so Embla must reinitialize rather than scroll.
   const windowStartRef = useRef(dayWindow.start)
 
-  // Everything a swipe triggers waits for `settle` (snap animation done) —
-  // never `select`, which fires at pointer-up, exactly when the animation
-  // starts. Reporting there mounts a fresh editor slide and re-renders the
-  // whole route in the release frame, and Embla's fixed-timestep animation
-  // loop has no lag cap: the stall fast-forwards the physics to the target,
-  // so the note switches instantly instead of sliding over. The incoming
-  // slide is already mounted (it was a neighbor within the mount radius), so
-  // deferring costs nothing visually.
+  // The swipe's target is known at pointer-up (`select`), and the slide
+  // window follows it from there: the mount radius tracks `selectedIndex`,
+  // and a second swipe started mid-animation must land on a mounted slide,
+  // not a blank spacer (the quick double-swipe). Only the index moves here —
+  // and in a transition, so React fits the incoming neighbor's editor mount
+  // around the snap animation's frames instead of blocking its first ones.
+  const onEmblaSelect = useCallback((api: NonNullable<typeof emblaApi>) => {
+    const index = api.selectedScrollSnap()
+    startTransition(() => {
+      setSelectedIndex(index)
+    })
+  }, [])
+
+  // The swipe's heavy consequence — reporting the day, which the parent turns
+  // into a route navigation re-rendering the whole surface — waits for
+  // `settle` (snap animation done). Embla's fixed-timestep animation loop has
+  // no lag cap, so paying that cost in the release frame would fast-forward
+  // the physics to the target: the note would switch instantly instead of
+  // sliding over.
   //
   // Settling near a window edge also rebuilds the window around the current
   // day, keeping swiping effectively infinite in both directions. The report
@@ -172,11 +183,13 @@ export function useDayCarousel(date: string, onSelect: (date: string) => void): 
     if (!emblaApi) {
       return
     }
+    emblaApi.on('select', onEmblaSelect)
     emblaApi.on('settle', onEmblaSettle)
     return () => {
+      emblaApi.off('select', onEmblaSelect)
       emblaApi.off('settle', onEmblaSettle)
     }
-  }, [emblaApi, onEmblaSettle])
+  }, [emblaApi, onEmblaSelect, onEmblaSettle])
 
   // Re-anchor only when the requested day falls outside the window (a far date
   // link): rebuild the window centered on it. The follow effect below then
