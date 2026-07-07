@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, type ReactElement } from 'react'
+import { useDeferredValue, useMemo, useRef, type ReactElement } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ChevronLeft, FileText, SearchX } from 'lucide-react'
 import {
@@ -11,7 +11,6 @@ import {
   type NoteTagFacet,
 } from '@reflect/core'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { FilterBar } from '@/mobile/search-filters/filter-bar'
@@ -22,6 +21,8 @@ import {
   type AllNotesFilters,
 } from '@/mobile/search-filters/filter-state'
 import { NoteRowList, type NoteRowModel } from '@/mobile/note-row-list'
+import { SearchInput } from '@/mobile/search-input'
+import { useArrivalFocus } from '@/mobile/use-arrival-focus'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
@@ -78,8 +79,13 @@ export function MobileAllNotes({
   onFiltersChange,
 }: MobileAllNotesProps): ReactElement {
   const { graph } = useGraph()
-  const { navigate, back } = useRouter()
+  const { navigate, back, arrivalSeq, arrivalFocusEditor } = useRouter()
   const enabled = hasBridge() && graph !== null
+
+  // The All-tab double-tap (`focusEditor` arrivals) lands in the search bar,
+  // the tab's capture surface — the daily double-tap's All-flavored twin.
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  useArrivalFocus({ arrivalSeq, arrivalFocusEditor, target: searchInputRef })
 
   // Defer the query the index sees (desktop's search debounce): fast typing
   // coalesces while the input stays live, and a seeded query (a `search`
@@ -134,14 +140,12 @@ export function MobileAllNotes({
               <ChevronLeft />
             </Button>
           )}
-          <Input
-            type="search"
-            inputMode="search"
+          <SearchInput
+            ref={searchInputRef}
             placeholder="Search anything…"
             aria-label="Search notes"
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            className="text-base"
           />
         </div>
         {pending !== null ? (

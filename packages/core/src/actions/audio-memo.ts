@@ -23,9 +23,8 @@ import type { AiProviderConfig } from '../settings/schema'
 /**
  * Capture actions for audio memos (the first of the `actions/` capture
  * family — Plan 11's link capture will sit alongside). The pipeline is
- * raw-first, like the capture-inbox spool (see
- * `docs/spikes/link-capture-bridge.md`): the recording itself is the durable
- * artifact, transcription is async enrichment that can fail and retry freely.
+ * raw-first, like the capture-inbox spool: the recording itself is the durable
+ * artifact, and transcription is async enrichment that can fail and retry freely.
  *
  * 1. **Capture** ({@link captureAudioMemo}): the recording is written to
  *    `audio-memos/audio-memo-<date>-<time>.<ext>` — local, instant, no

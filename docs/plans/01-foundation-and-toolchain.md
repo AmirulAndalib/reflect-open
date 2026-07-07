@@ -104,7 +104,7 @@ skeleton, a Tauri shell sanity check.
      meowdown has none; if this can't be made to feel good, the editor decision changes
      *now* (fallback: CodeMirror-6 live-preview) — before Plans 06–10 depend on it.
    - **SQLite extensions load in the bundled Rust SQLite** (FTS5 now, `sqlite-vec` later).
-   Capture findings in `docs/spikes/`. If a gate fails, surface it before Plan 02/05.
+   Capture findings in the relevant plan. If a gate fails, surface it before Plan 02/05.
 
 9. **Testing + lint.** Add `vitest` + `@testing-library/react` + `jsdom` for unit/UI logic.
    **Editor tests need a real browser** (ProseMirror/contenteditable doesn't work under
@@ -134,7 +134,7 @@ skeleton, a Tauri shell sanity check.
 - A trivial round-trip command (e.g. `app_version`) is called through the `call()`
   wrapper, zod-validated, and rendered.
 - `pnpm typecheck` and `pnpm test` pass; no `any` in the codebase.
-- Spike note committed under `docs/spikes/`.
+- Spike findings recorded in the relevant plan.
 
 ## Risks
 

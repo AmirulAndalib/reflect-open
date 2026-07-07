@@ -83,6 +83,12 @@ export interface SyncEngineOptions {
   idleMs?: number
   /** Ceiling on deferral while the user keeps typing. */
   maxWaitMs?: number
+  /**
+   * Commit-only mode, for a graph with no remote (local history): every
+   * cycle ends after the commit — no credential resolved, no fetch/merge,
+   * no push. Edits still land in Git history and stay revertable.
+   */
+  localOnly?: boolean
 }
 
 export interface SyncEngine {
@@ -211,10 +217,13 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   async function cycle(mode: 'push' | 'full'): Promise<void> {
-    const token = await step(options.getToken())
+    const token = options.localOnly === true ? null : await step(options.getToken())
     const commit = await step(gitCommitAll('Update notes', options.generation))
     if (commit.skippedLargeFiles.length > 0) {
       options.onLargeFilesSkipped?.(commit.skippedLargeFiles)
+    }
+    if (options.localOnly === true) {
+      return // the commit is the whole cycle — the repo has no remote
     }
     if (mode === 'push') {
       // The debounce path often fires for changes that are already committed

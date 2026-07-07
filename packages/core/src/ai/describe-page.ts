@@ -1,14 +1,17 @@
-import { APICallError, generateText, type UserContent } from 'ai'
+import { APICallError, generateObject, NoObjectGeneratedError, type UserContent } from 'ai'
+import { z } from 'zod'
 import { ReflectError } from '../errors'
+import { wikiLinkSafe } from '../markdown/edit'
 import type { AiProviderConfig } from '../settings/schema'
 import { languageModel } from './language-model'
+import { clipAtWordBoundary } from './text'
 
 /**
- * BYOK page description for link capture (Plan 11): one short multimodal call
- * — the capture's screenshot plus its scraped context — returning a one-to-two
- * sentence description of the page. Runs on the user's default configured
- * entry (every curated model accepts image input); the caller gates privacy
- * before this module is ever reached.
+ * BYOK page enrichment for link capture (Plan 11): one short multimodal call
+ * — the capture's screenshot plus its scraped context — returning a cleaned-up
+ * display title and a one-to-two sentence description of the page. Runs on the
+ * user's default configured entry (every curated model accepts image input);
+ * the caller gates privacy before this module is ever reached.
  */
 
 const DESCRIBE_TIMEOUT_MS = 60_000
@@ -16,6 +19,9 @@ const DESCRIBE_TIMEOUT_MS = 60_000
 /** Caps the prompt's selection excerpt; the model needs gist, not the article. */
 const MAX_SELECTION_CHARS = 1_000
 const MAX_CONTENT_TEXT_CHARS = 6_000
+
+/** Caps the returned title — it renders as an H1 and a wiki-link display text. */
+const MAX_TITLE_CHARS = 100
 
 export interface DescribePageRequest {
   /** The provider entry to call (the app default). */
@@ -27,6 +33,10 @@ export interface DescribePageRequest {
   /** The captured page. */
   url: string
   title: string
+  /** Scraped `og:title`, when the scrape produced one. */
+  metaTitle?: string | undefined
+  /** Scraped `og:site_name` — lets the model strip site suffixes from the title. */
+  siteName?: string | undefined
   /** Text the user had selected, if any. */
   selection?: string | undefined
   /** Extracted full-page text, capped before it enters the provider prompt. */
@@ -37,10 +47,27 @@ export interface DescribePageRequest {
   screenshotBase64?: string | undefined
 }
 
+/** What one enrichment call produces for a captured page. */
+export interface PageEnrichment {
+  /**
+   * The cleaned-up display title, wiki-link safe and capped, or `null` when
+   * the model produced nothing usable — the caller keeps the captured title.
+   */
+  title: string | null
+  /** One-to-two plain sentences describing the page. */
+  description: string
+}
+
+const pageDescriptionSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+})
+
 /**
  * The provider refused this capture itself (an input too large, an unsupported
- * image…) — retrying the same payload can't help, so the caller falls back to
- * the scraped description instead of blocking the queue behind it.
+ * image, an answer that never parsed…) — retrying the same payload can't help,
+ * so the caller falls back to the scraped description instead of blocking the
+ * queue behind it.
  */
 export class DescriptionRejectedError extends Error {
   constructor(message: string) {
@@ -67,6 +94,9 @@ function classify(cause: unknown): Error {
       return new DescriptionRejectedError(cause.message)
     }
   }
+  if (NoObjectGeneratedError.isInstance(cause)) {
+    return new DescriptionRejectedError(cause.message)
+  }
   if (cause instanceof DOMException && cause.name === 'TimeoutError') {
     return new ReflectError('network', 'the description request timed out')
   }
@@ -75,11 +105,17 @@ function classify(cause: unknown): Error {
 
 function describePrompt(request: DescribePageRequest): string {
   const lines = [
-    'Describe this web page in one or two plain sentences for a bookmark note:',
+    'Enrich this web page capture for a bookmark note:',
     `URL: ${request.url}`,
   ]
   if (request.title.trim() !== '') {
-    lines.push(`Title: ${request.title.trim()}`)
+    lines.push(`Captured title: ${request.title.trim()}`)
+  }
+  if (request.metaTitle) {
+    lines.push(`Meta title: ${request.metaTitle}`)
+  }
+  if (request.siteName) {
+    lines.push(`Site name: ${request.siteName}`)
   }
   if (request.metaDescription) {
     lines.push(`Meta description: ${request.metaDescription}`)
@@ -91,19 +127,25 @@ function describePrompt(request: DescribePageRequest): string {
     lines.push(`Extracted page text: ${request.contentText.slice(0, MAX_CONTENT_TEXT_CHARS)}`)
   }
   lines.push(
-    'Base the description on the extracted page text when present, and the screenshot when one is attached.',
-    'Answer with the description only — no preamble, no markdown.',
+    'Ground both fields in the extracted page text when present, and the screenshot when one is attached.',
+    "title: the page's own title cleaned up for display — drop the site name, separators, and SEO clutter; keep the page's language and its plain wording. Never invent an editorial retitle; when the captured title is already clean, return it unchanged.",
+    'description: one or two plain sentences describing the page — no preamble, no markdown.',
   )
   return lines.join('\n')
 }
 
+function normalizedTitle(candidate: string): string | null {
+  const safe = clipAtWordBoundary(wikiLinkSafe(candidate), MAX_TITLE_CHARS)
+  return safe === '' ? null : safe
+}
+
 /**
- * Generate the description. Throws {@link ReflectError} (`auth`, `network`)
- * for transient/credential failures the caller should retry later, and
- * {@link DescriptionRejectedError} when the provider refuses this capture
+ * Generate the title and description. Throws {@link ReflectError} (`auth`,
+ * `network`) for transient/credential failures the caller should retry later,
+ * and {@link DescriptionRejectedError} when the provider refuses this capture
  * itself.
  */
-export async function describePage(request: DescribePageRequest): Promise<string> {
+export async function describePage(request: DescribePageRequest): Promise<PageEnrichment> {
   const content: UserContent = [{ type: 'text', text: describePrompt(request) }]
   if (request.screenshotBase64) {
     content.push({
@@ -113,15 +155,19 @@ export async function describePage(request: DescribePageRequest): Promise<string
     })
   }
   try {
-    const result = await generateText({
+    const result = await generateObject({
       model: languageModel(request.config, request.apiKey, request.fetchFn ?? fetch),
+      schema: pageDescriptionSchema,
       messages: [{ role: 'user', content }],
       abortSignal: AbortSignal.timeout(DESCRIBE_TIMEOUT_MS),
       // The enrichment pass is the retry layer (next trigger re-runs pending
       // captures); the SDK's own backoff would only delay that.
       maxRetries: 0,
     })
-    return result.text.trim()
+    return {
+      title: normalizedTitle(result.object.title),
+      description: result.object.description.trim(),
+    }
   } catch (cause) {
     throw classify(cause)
   }

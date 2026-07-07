@@ -463,6 +463,23 @@ describe('createSyncEngine', () => {
     engine.stop()
   })
 
+  it('localOnly commits and never touches the network — even for a full sync', async () => {
+    const calls = fakeGit(defaultResponses)
+    const engine = createSyncEngine({
+      generation: 1,
+      getToken: async () => null,
+      localOnly: true,
+      idleMs: 10,
+    })
+
+    engine.noteChanged()
+    await vi.runAllTimersAsync()
+    await engine.syncNow()
+
+    expect(commandsOf(calls)).toEqual(['git_commit_all', 'git_commit_all'])
+    engine.stop()
+  })
+
   it('stop() cancels pending work', async () => {
     const calls = fakeGit(defaultResponses)
     const engine = createSyncEngine({ generation: 1, getToken: async () => 'tok', idleMs: 10 })

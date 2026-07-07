@@ -94,6 +94,19 @@ describe('describeAsset', () => {
     expect(text).toContain('image')
   })
 
+  it('instructs OCR to preserve visible sensitive text without redaction', async () => {
+    const calls = modelAnswering('A driving license.\n\n## Text\nDLN D1234567')
+
+    await request({ filename: 'license.png' })
+
+    const text = partsOf(calls).find((part) => part.type === 'text')?.text ?? ''
+    expect(text).toContain('Transcribe visible text exactly as shown.')
+    expect(text).toContain('Do not redact')
+    expect(text).toContain('driving license')
+    expect(text).toContain("driver's license numbers")
+    expect(text).toContain('If a character is unreadable, use [?]')
+  })
+
   it('sends a PDF as a file part with its media type', async () => {
     const calls = modelAnswering('A report.')
 

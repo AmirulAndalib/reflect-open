@@ -397,6 +397,9 @@ note(s) that reference that asset, as ordinary hits.
   alone** — so descriptions are locally searchable but never widen the All-Notes
   preview or what is sent to a provider (those read the note body / live
   markdown). That falls out of enriching only the FTS column.
+  > **Addendum (PR #630):** AI chat can now read description text explicitly via
+  > the `read_assets` tool (`ai/chat/read-assets.ts`), behind its own live
+  > privacy verdict. Note text and previews are still never widened.
 - `PROJECTION_VERSION` 8 → 9, so existing graphs rebuild and fold descriptions.
 
 **Async re-index seam.** Descriptions are written *after* a note is indexed and
@@ -413,8 +416,11 @@ and enriching only `search_fts.body` keeps descriptions out of AI/cloud and the
 preview. (`descriptionPathFor`/`DESCRIPTION_SUFFIX` moved to `graph/paths.ts` so
 `indexing/` need not import `actions/`.)
 
-**Deferred:** semantic embedding of descriptions (Plan 09 is opt-in/off by
-default); attributed "matched in image: X" result UI (transparent chosen).
+**Deferred:** ~~semantic embedding of descriptions~~ (shipped later: description
+bodies chunk into the referencing note's embedding set, mirroring the FTS fold —
+see `embeddings/pipeline.ts`); attributed "matched in image: X" result UI
+(transparent chosen — though asset chunks carry the asset filename as their
+chunk heading).
 
 ## Conventions
 

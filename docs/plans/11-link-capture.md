@@ -31,8 +31,8 @@ spooled immediately and enriched asynchronously later.
 **Depends on:** Plan 02 (writes/assets), Plan 06 (append-to-today), Plan 10 (BYOK AI +
 keychain + privacy).
 **Unlocks:** the capture half of Reflect's daily-first spine.
-**Research:** bridge options, app-closed behavior, and the mobile story are mapped in
-[the bridge spike](../spikes/link-capture-bridge.md).
+**Research:** bridge options, app-closed behavior, and the mobile story are captured in
+this plan.
 
 **Architecture:** the extension lives in `apps/extension`; all durable writes, AI
 enrichment, and privacy checks go through `apps/desktop` + `@reflect/core`
@@ -48,7 +48,7 @@ the native-messaging host + capture inbox, desktop write path (daily-note `[[Lin
 entry + optional dedicated note), screenshot assets, async enrichment (meta-tag scrape +
 BYOK AI description), provenance frontmatter, privacy enforcement.
 **Out:** Safari/iOS/Android share (later — but the capture envelope + inbox drain are
-deliberately platform-agnostic so mobile reuses them; see the spike doc), full article
+deliberately platform-agnostic so mobile reuses them), full article
 extraction / read-later (deferred), dedup-heavy clipping (basic dedup only).
 
 ## Architecture (inverted from V1: desktop owns writes)

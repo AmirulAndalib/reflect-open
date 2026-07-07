@@ -43,6 +43,11 @@ function modelAnswering(text: string): LanguageModelV3CallOptions[] {
   return calls
 }
 
+/** {@link modelAnswering}, for the well-formed `{title, description}` shape. */
+function modelAnsweringObject(title: string, description: string): LanguageModelV3CallOptions[] {
+  return modelAnswering(JSON.stringify({ title, description }))
+}
+
 function modelThrowing(error: unknown): void {
   languageModelMock.mockReturnValue(
     new MockLanguageModelV3({
@@ -72,56 +77,89 @@ function request(overrides: Partial<Parameters<typeof describePage>[0]> = {}) {
   })
 }
 
-describe('describePage', () => {
-  it('returns the trimmed description and grounds the call in the screenshot', async () => {
-    const calls = modelAnswering('  A concise description.  ')
+function userText(calls: LanguageModelV3CallOptions[]): string {
+  const message = calls[0]!.prompt.find((candidate) => candidate.role === 'user')
+  const parts = message?.content as Array<{ type: string; text?: string }>
+  return parts.find((part) => part.type === 'text')?.text ?? ''
+}
 
-    const description = await request({
+describe('describePage', () => {
+  it('returns the trimmed title and description, grounding the call in the screenshot', async () => {
+    const calls = modelAnsweringObject('  A cleaned title  ', '  A concise description.  ')
+
+    const result = await request({
       selection: 'highlighted words',
+      metaTitle: 'A meta title',
+      siteName: 'Example',
       metaDescription: 'A scraped description.',
       screenshotBase64: 'aGVsbG8=',
     })
 
-    expect(description).toBe('A concise description.')
+    expect(result).toEqual({ title: 'A cleaned title', description: 'A concise description.' })
     expect(calls).toHaveLength(1)
-    const [message] = calls[0]!.prompt
-    expect(message!.role).toBe('user')
-    const parts = message!.content as Array<{ type: string; mediaType?: string; text?: string }>
-    const text = parts.find((part) => part.type === 'text')?.text ?? ''
+    const text = userText(calls)
     expect(text).toContain('https://example.com/article')
     expect(text).toContain('An article')
+    expect(text).toContain('A meta title')
+    expect(text).toContain('Site name: Example')
     expect(text).toContain('A scraped description.')
     expect(text).toContain('highlighted words')
+    const message = calls[0]!.prompt.find((candidate) => candidate.role === 'user')
+    const parts = message!.content as Array<{ type: string; mediaType?: string }>
     const image = parts.find((part) => part.type === 'file')
     expect(image?.mediaType).toBe('image/jpeg')
   })
 
   it('sends a text-only prompt when no screenshot was captured', async () => {
-    const calls = modelAnswering('A description.')
+    const calls = modelAnsweringObject('A title', 'A description.')
 
     await request()
 
-    const parts = calls[0]!.prompt[0]!.content as Array<{ type: string }>
+    const message = calls[0]!.prompt.find((candidate) => candidate.role === 'user')
+    const parts = message!.content as Array<{ type: string }>
     expect(parts.map((part) => part.type)).toEqual(['text'])
   })
 
+  it('sanitizes the returned title for wiki-link display', async () => {
+    modelAnsweringObject(' An [article] | Site\nName ', 'A description.')
+
+    const result = await request()
+
+    expect(result.title).toBe('An article Site Name')
+  })
+
+  it('clips a runaway title at a word boundary', async () => {
+    modelAnsweringObject(`${'word '.repeat(30)}end`, 'A description.')
+
+    const result = await request()
+
+    expect(result.title!.length).toBeLessThanOrEqual(100)
+    expect(result.title).toMatch(/word$/)
+  })
+
+  it('a blank title reads as null — the caller keeps the captured title', async () => {
+    modelAnsweringObject('  [|]  ', 'A description.')
+
+    const result = await request()
+
+    expect(result.title).toBeNull()
+    expect(result.description).toBe('A description.')
+  })
+
   it('caps a runaway selection in the prompt', async () => {
-    const calls = modelAnswering('A description.')
+    const calls = modelAnsweringObject('A title', 'A description.')
 
     await request({ selection: 'x'.repeat(5_000) })
 
-    const parts = calls[0]!.prompt[0]!.content as Array<{ type: string; text?: string }>
-    const text = parts.find((part) => part.type === 'text')?.text ?? ''
-    expect(text).not.toContain('x'.repeat(1_001))
+    expect(userText(calls)).not.toContain('x'.repeat(1_001))
   })
 
   it('adds extracted page text to the prompt and caps long pages', async () => {
-    const calls = modelAnswering('A description.')
+    const calls = modelAnsweringObject('A title', 'A description.')
 
     await request({ contentText: `Important opening paragraph.\n\n${'x'.repeat(7_000)}` })
 
-    const parts = calls[0]!.prompt[0]!.content as Array<{ type: string; text?: string }>
-    const text = parts.find((part) => part.type === 'text')?.text ?? ''
+    const text = userText(calls)
     expect(text).toContain('Extracted page text: Important opening paragraph.')
     expect(text).not.toContain('x'.repeat(6_001))
   })
@@ -145,6 +183,12 @@ describe('describePage', () => {
 
   it('a 4xx refusal becomes DescriptionRejectedError — the caller falls back to meta', async () => {
     modelThrowing(apiError(413))
+    const failure = await request().catch((cause: unknown) => cause)
+    expect(isDescriptionRejected(failure)).toBe(true)
+  })
+
+  it('an unparseable answer becomes DescriptionRejectedError, never a crash', async () => {
+    modelAnswering('not an object at all')
     const failure = await request().catch((cause: unknown) => cause)
     expect(isDescriptionRejected(failure)).toBe(true)
   })

@@ -13,6 +13,7 @@
 //! [`finalize_import`] (rewrite, collision-check, atomic writes).
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -39,6 +40,14 @@ pub struct ImportSummary {
     /// Remote attachments that are permanently gone (4xx); their notes keep
     /// the remote link.
     pub failed_asset_downloads: usize,
+    /// Zip notes written under a `-2`-style suffixed name because their own
+    /// name is occupied by a differing file the filesystem treats as the same
+    /// path (case-insensitive APFS folds `Füße.md`/`füsse.md`/`füße.md`
+    /// together; the V1 export keeps them distinct notes). Only note
+    /// markdown is renamed — a note's links resolve by title, so the
+    /// filename is free to move; asset links are literal paths, so an
+    /// aliased asset stays a fatal conflict.
+    pub renamed_files: usize,
     /// Graph-relative paths newly written to the open graph.
     pub changed_paths: Vec<String>,
 }
@@ -114,7 +123,7 @@ fn planned_duplicate(
 ) -> AppResult<Option<String>> {
     for (prior, plan) in planned {
         if prior.desired_name == fetched.desired_name
-            && import_assets::same_file_bytes(prior.file.path(), fetched.file.path())?
+            && import_assets::same_file_bytes(prior.file.as_ref(), fetched.file.as_ref())?
         {
             return Ok(Some(plan.name.clone()));
         }
@@ -137,7 +146,10 @@ fn ensure_has_notes(entries: &[ImportEntry]) -> AppResult<()> {
 /// Localize the downloaded attachments, rewrite the notes' remote links to
 /// `assets/…` paths, then write everything into the graph with the same
 /// collision policy as before: never overwrite a differing existing file,
-/// skip identical ones.
+/// skip identical ones. Note entries whose name is only *aliased* to an
+/// existing file by the filesystem (case-insensitive APFS folds `füße.md`
+/// and `füsse.md` to the same path) are distinct notes and land under a
+/// suffixed name instead of failing the import.
 pub(super) fn finalize_import(
     root: &Path,
     prepared: PreparedImport,
@@ -168,7 +180,7 @@ pub(super) fn finalize_import(
                 let plan = import_assets::plan_asset_name(
                     &assets_dir,
                     &fetched.desired_name,
-                    fetched.file.path(),
+                    fetched.file.as_ref(),
                     &taken,
                 )?;
                 taken.insert(plan.name.clone());
@@ -195,12 +207,20 @@ pub(super) fn finalize_import(
         }
     }
 
+    let claimed = entries
+        .iter()
+        .map(|entry| entry.relative.clone())
+        .collect::<HashSet<_>>();
+    let mut names = DirNames::default();
     let collisions = entries
         .iter()
-        .map(|entry| collision(root, entry))
+        .map(|entry| plan_entry(root, entry, &mut names, &claimed))
         .collect::<AppResult<Vec<_>>>()?
         .into_iter()
-        .flatten()
+        .filter_map(|plan| match plan {
+            WritePlan::Conflict(path) => Some(path),
+            WritePlan::Write { .. } | WritePlan::SkipIdentical => None,
+        })
         .collect::<Vec<_>>();
     if !collisions.is_empty() {
         return Err(AppError::io(format!(
@@ -216,6 +236,7 @@ pub(super) fn finalize_import(
 
     let mut imported_files = 0;
     let mut skipped_files = 0;
+    let mut renamed_files = 0;
     let mut changed_paths = Vec::new();
     for (fetched, plan) in planned {
         if plan.reuse {
@@ -224,20 +245,28 @@ pub(super) fn finalize_import(
         import_assets::persist_planned(fetched, &assets_dir, &plan.name)?;
         changed_paths.push(format!("assets/{}", plan.name));
     }
+    // Fresh cache: the asset writes above happened after the pre-check's
+    // directory listings were taken.
+    let mut names = DirNames::default();
     for entry in entries {
-        let target = resolve(root, &entry.relative)?;
-        if let Some(path) = collision(root, &entry)? {
-            return Err(AppError::io(format!(
-                "import would overwrite existing files: {path}"
-            )));
+        match plan_entry(root, &entry, &mut names, &claimed)? {
+            WritePlan::Conflict(path) => {
+                return Err(AppError::io(format!(
+                    "import would overwrite existing files: {path}"
+                )));
+            }
+            WritePlan::SkipIdentical => skipped_files += 1,
+            WritePlan::Write { relative, renamed } => {
+                let target = resolve(root, &relative)?;
+                atomic_write_bytes(root, &target, &entry.bytes)?;
+                names.record(&target);
+                imported_files += 1;
+                if renamed {
+                    renamed_files += 1;
+                }
+                changed_paths.push(relative);
+            }
         }
-        if target.is_file() && fs::read(&target)? == entry.bytes {
-            skipped_files += 1;
-            continue;
-        }
-        atomic_write_bytes(root, &target, &entry.bytes)?;
-        imported_files += 1;
-        changed_paths.push(entry.relative);
     }
 
     Ok(ImportSummary {
@@ -245,6 +274,7 @@ pub(super) fn finalize_import(
         skipped_files,
         downloaded_assets,
         failed_asset_downloads,
+        renamed_files,
         changed_paths,
     })
 }
@@ -268,15 +298,136 @@ fn dedupe_entries(entries: Vec<ImportEntry>) -> AppResult<Vec<ImportEntry>> {
     Ok(unique)
 }
 
-fn collision(root: &Path, entry: &ImportEntry) -> AppResult<Option<String>> {
+enum WritePlan {
+    /// Write the entry at `relative` — its own name, or a suffixed one when
+    /// the filesystem aliases its name to a differing existing file.
+    Write { relative: String, renamed: bool },
+    /// The entry's bytes are already in the graph; leave the file untouched.
+    SkipIdentical,
+    /// A file that is genuinely named like the entry differs in content (or
+    /// is an evicted iCloud placeholder whose content is unknowable) — the
+    /// never-overwrite policy makes this fatal.
+    Conflict(String),
+}
+
+/// Directory listings cached per parent, to tell a true same-name file from
+/// a filesystem alias: on case-insensitive volumes `Path::exists` also
+/// matches names that differ only by case folding (macOS APFS folds `ß` to
+/// `ss`, so `füße.md` and `füsse.md` are one path), which Reflect treats as
+/// distinct notes. Listings are cached lazily per directory; writes must be
+/// recorded via [`DirNames::record`] to keep a loaded listing current.
+#[derive(Default)]
+struct DirNames(HashMap<PathBuf, HashSet<OsString>>);
+
+impl DirNames {
+    /// Does `target`'s parent directory contain an entry with exactly this
+    /// name (byte-for-byte, not just filesystem-equal)?
+    fn contains(&mut self, target: &Path) -> AppResult<bool> {
+        let (Some(parent), Some(name)) = (target.parent(), target.file_name()) else {
+            return Ok(false);
+        };
+        if let Some(names) = self.0.get(parent) {
+            return Ok(names.contains(name));
+        }
+        let mut names = HashSet::new();
+        if parent.is_dir() {
+            for entry in fs::read_dir(parent)? {
+                names.insert(entry?.file_name());
+            }
+        }
+        let found = names.contains(name);
+        self.0.insert(parent.to_path_buf(), names);
+        Ok(found)
+    }
+
+    fn record(&mut self, target: &Path) {
+        let (Some(parent), Some(name)) = (target.parent(), target.file_name()) else {
+            return;
+        };
+        if let Some(names) = self.0.get_mut(parent) {
+            names.insert(name.to_os_string());
+        }
+    }
+}
+
+/// Far beyond any real graph's same-name population; hitting it means the
+/// probe is lying, and failing loud beats spinning.
+const MAX_RENAME_PROBES: usize = 1000;
+
+/// Decide what writing `entry` should do given the current disk state.
+/// `claimed` holds every relative path the import will write under its own
+/// name, so a rename never takes a name a later entry owns.
+fn plan_entry(
+    root: &Path,
+    entry: &ImportEntry,
+    names: &mut DirNames,
+    claimed: &HashSet<String>,
+) -> AppResult<WritePlan> {
     let target = resolve(root, &entry.relative)?;
-    if !target.exists() && !file_occupied(&target) {
-        return Ok(None);
+    if !target.exists() {
+        return Ok(if file_occupied(&target) {
+            WritePlan::Conflict(entry.relative.clone())
+        } else {
+            WritePlan::Write {
+                relative: entry.relative.clone(),
+                renamed: false,
+            }
+        });
     }
     if target.is_file() && fs::read(&target)? == entry.bytes {
-        return Ok(None);
+        return Ok(WritePlan::SkipIdentical);
     }
-    Ok(Some(entry.relative.clone()))
+    if names.contains(&target)? {
+        return Ok(WritePlan::Conflict(entry.relative.clone()));
+    }
+    // Only note markdown is safe to land under another filename: note links
+    // resolve by title, so the file can move. Asset links are literal
+    // `assets/…` paths that are not rewritten, so a renamed aliased asset
+    // would leave its notes pointing at the aliasing file — fail instead.
+    if !is_note_markdown(&entry.relative) {
+        return Ok(WritePlan::Conflict(entry.relative.clone()));
+    }
+    for suffix in 2..MAX_RENAME_PROBES {
+        let candidate = suffixed_relative(&entry.relative, suffix);
+        if claimed.contains(&candidate) {
+            continue;
+        }
+        let candidate_target = resolve(root, &candidate)?;
+        if candidate_target.exists() {
+            if candidate_target.is_file() && fs::read(&candidate_target)? == entry.bytes {
+                return Ok(WritePlan::SkipIdentical);
+            }
+            continue;
+        }
+        if file_occupied(&candidate_target) {
+            continue;
+        }
+        return Ok(WritePlan::Write {
+            relative: candidate,
+            renamed: true,
+        });
+    }
+    Err(AppError::io(format!(
+        "import could not find a collision-free name for {}",
+        entry.relative
+    )))
+}
+
+/// `notes/füße.md` + 2 → `notes/füße-2.md` — the `-2` collision suffix the
+/// rest of the app uses for note filenames (`availableNotePath`).
+fn suffixed_relative(relative: &str, suffix: usize) -> String {
+    let (dir, name) = match relative.rsplit_once('/') {
+        Some((dir, name)) => (Some(dir), name),
+        None => (None, relative),
+    };
+    let renamed = match name.rsplit_once('.') {
+        Some((stem, extension)) if !stem.is_empty() => format!("{stem}-{suffix}.{extension}"),
+        _ => format!("{name}-{suffix}"),
+    };
+    match dir {
+        Some(dir) => format!("{dir}/{renamed}"),
+        None => renamed,
+    }
 }
 
 fn read_zip_entries(path: &Path) -> AppResult<Vec<ImportEntry>> {
@@ -516,6 +667,46 @@ mod tests {
         base
     }
 
+    fn serve_generated_assets(expected_requests: usize) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}/", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for _ in 0..expected_requests {
+                let Ok((stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut reader = BufReader::new(stream);
+                let mut request_line = String::new();
+                if reader.read_line(&mut request_line).is_err() {
+                    continue;
+                }
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).is_err() || header.trim().is_empty() {
+                        break;
+                    }
+                }
+                let requested = request_line.split_whitespace().nth(1).unwrap_or("");
+                let body = requested.as_bytes();
+                let mut stream = reader.into_inner();
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: image/png\r\nContent-Length: {}\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(body);
+            }
+        });
+        base
+    }
+
+    #[cfg(unix)]
+    fn open_fd_count() -> Option<usize> {
+        ["/proc/self/fd", "/dev/fd"]
+            .into_iter()
+            .find_map(|path| fs::read_dir(path).ok().map(|entries| entries.count()))
+    }
+
     #[test]
     fn imports_notes_into_the_open_graph() {
         let root = tempdir().unwrap();
@@ -538,6 +729,7 @@ mod tests {
                 skipped_files: 0,
                 downloaded_assets: 0,
                 failed_asset_downloads: 0,
+                renamed_files: 0,
                 changed_paths: vec![
                     "notes/a.md".to_string(),
                     "daily/2026-07-04.md".to_string(),
@@ -601,6 +793,201 @@ mod tests {
         );
     }
 
+    /// Does the filesystem under `dir` treat `probe` as the same path as
+    /// `existing`? True on macOS's case-insensitive APFS for case-only
+    /// variants and for `ß`/`ss` (its case folding maps one to the other);
+    /// false on case-sensitive filesystems, where the alias tests below
+    /// have nothing to exercise and bow out.
+    fn filesystem_folds(dir: &Path, existing: &str, probe: &str) -> bool {
+        fs::write(dir.join(existing), b"probe").unwrap();
+        let folded = dir.join(probe).exists();
+        fs::remove_file(dir.join(existing)).unwrap();
+        folded
+    }
+
+    fn note_file_names(root: &Path) -> Vec<String> {
+        let mut names = fs::read_dir(root.join("notes"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    }
+
+    /// The reported German/Swiss bug: a V1 export holding both `füsse.md`
+    /// and `füße.md` — distinct notes that macOS folds to one path — must
+    /// import both, the aliased one under a `-2` suffix, instead of failing
+    /// with "import would overwrite existing files".
+    #[test]
+    fn filesystem_aliased_names_import_under_suffixed_names() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("notes")).unwrap();
+        if !filesystem_folds(&root.path().join("notes"), "füsse.md", "füße.md") {
+            return;
+        }
+
+        let summary = import_entries_into_graph(
+            root.path(),
+            entries(&[
+                ("notes/füsse.md", "# Swiss\n"),
+                ("notes/füße.md", "# German\n"),
+            ]),
+        )
+        .unwrap();
+
+        assert_eq!(summary.imported_files, 2);
+        assert_eq!(summary.renamed_files, 1);
+        assert_eq!(
+            summary.changed_paths,
+            vec!["notes/füsse.md".to_string(), "notes/füße-2.md".to_string()]
+        );
+        assert_eq!(
+            note_file_names(root.path()),
+            vec!["füsse.md".to_string(), "füße-2.md".to_string()]
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/füsse.md")).unwrap(),
+            "# Swiss\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/füße-2.md")).unwrap(),
+            "# German\n"
+        );
+    }
+
+    #[test]
+    fn reimporting_after_an_alias_rename_is_idempotent() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("notes")).unwrap();
+        if !filesystem_folds(&root.path().join("notes"), "füsse.md", "füße.md") {
+            return;
+        }
+        let pairs = [
+            ("notes/füsse.md", "# Swiss\n"),
+            ("notes/füße.md", "# German\n"),
+        ];
+        import_entries_into_graph(root.path(), entries(&pairs)).unwrap();
+
+        let second = import_entries_into_graph(root.path(), entries(&pairs)).unwrap();
+
+        assert_eq!(second.imported_files, 0);
+        assert_eq!(second.skipped_files, 2);
+        assert_eq!(second.renamed_files, 0);
+        assert_eq!(
+            note_file_names(root.path()),
+            vec!["füsse.md".to_string(), "füße-2.md".to_string()]
+        );
+    }
+
+    /// A rename must not take a name a later zip entry owns: with
+    /// `füße-2.md` in the export, the aliased `füße.md` skips to `-3`.
+    #[test]
+    fn alias_rename_never_takes_a_name_the_export_owns() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("notes")).unwrap();
+        if !filesystem_folds(&root.path().join("notes"), "füsse.md", "füße.md") {
+            return;
+        }
+
+        let summary = import_entries_into_graph(
+            root.path(),
+            entries(&[
+                ("notes/füsse.md", "# Swiss\n"),
+                ("notes/füße.md", "# German\n"),
+                ("notes/füße-2.md", "# Other\n"),
+            ]),
+        )
+        .unwrap();
+
+        assert_eq!(summary.imported_files, 3);
+        assert_eq!(summary.renamed_files, 1);
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/füße-3.md")).unwrap(),
+            "# German\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/füße-2.md")).unwrap(),
+            "# Other\n"
+        );
+    }
+
+    /// An existing graph note whose name merely case-aliases an entry is not
+    /// an overwrite: the entry is a distinct note and lands suffixed.
+    #[test]
+    fn case_aliased_existing_note_gets_a_suffix_instead_of_a_refusal() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("notes")).unwrap();
+        if !filesystem_folds(&root.path().join("notes"), "API.md", "api.md") {
+            return;
+        }
+        fs::write(root.path().join("notes/API.md"), "# Theirs\n").unwrap();
+
+        let summary =
+            import_entries_into_graph(root.path(), entries(&[("notes/api.md", "# Mine\n")]))
+                .unwrap();
+
+        assert_eq!(summary.imported_files, 1);
+        assert_eq!(summary.renamed_files, 1);
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/API.md")).unwrap(),
+            "# Theirs\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("notes/api-2.md")).unwrap(),
+            "# Mine\n"
+        );
+    }
+
+    /// Aliased assets are never renamed: unlike note links (which resolve
+    /// by title), asset links are literal paths that are not rewritten, so
+    /// a suffixed copy would leave its notes pointing at the aliasing file.
+    /// The never-overwrite refusal stands.
+    #[test]
+    fn aliased_assets_stay_fatal_conflicts() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("assets")).unwrap();
+        if !filesystem_folds(&root.path().join("assets"), "PIC.bin", "pic.bin") {
+            return;
+        }
+        fs::write(root.path().join("assets/PIC.bin"), b"theirs").unwrap();
+
+        let result = import_entries_into_graph(
+            root.path(),
+            entries(&[("notes/a.md", "# A\n"), ("assets/pic.bin", "mine")]),
+        );
+
+        match result.unwrap_err() {
+            AppError::Io { message } => assert!(message.contains("assets/pic.bin")),
+            other => panic!("expected an IO collision error, got {other:?}"),
+        }
+        assert!(!root.path().join("notes/a.md").exists());
+        assert_eq!(
+            fs::read(root.path().join("assets/PIC.bin")).unwrap(),
+            b"theirs"
+        );
+    }
+
+    /// Identical bytes under an aliased name are already in the graph — skip
+    /// them rather than minting a suffixed duplicate.
+    #[test]
+    fn identical_content_under_an_aliased_name_is_skipped() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("notes")).unwrap();
+        if !filesystem_folds(&root.path().join("notes"), "API.md", "api.md") {
+            return;
+        }
+        fs::write(root.path().join("notes/API.md"), "# Same\n").unwrap();
+
+        let summary =
+            import_entries_into_graph(root.path(), entries(&[("notes/api.md", "# Same\n")]))
+                .unwrap();
+
+        assert_eq!(summary.imported_files, 0);
+        assert_eq!(summary.skipped_files, 1);
+        assert_eq!(summary.renamed_files, 0);
+        assert_eq!(note_file_names(root.path()), vec!["API.md".to_string()]);
+    }
+
     #[test]
     fn identical_existing_files_are_skipped() {
         let root = tempdir().unwrap();
@@ -617,6 +1004,7 @@ mod tests {
                 skipped_files: 1,
                 downloaded_assets: 0,
                 failed_asset_downloads: 0,
+                renamed_files: 0,
                 changed_paths: Vec::new(),
             }
         );
@@ -639,6 +1027,7 @@ mod tests {
                 skipped_files: 0,
                 downloaded_assets: 0,
                 failed_asset_downloads: 0,
+                renamed_files: 0,
                 changed_paths: vec!["notes/a.md".to_string()],
             }
         );
@@ -759,6 +1148,48 @@ mod tests {
         assert_eq!(
             note,
             "![](assets/trip-photo.webp)\n\n[memo.m4a](assets/memo.m4a)\n\n![](assets/9c2c28.png)\n"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn downloaded_assets_do_not_hold_file_descriptors_until_finalize() {
+        const ASSET_COUNT: usize = 80;
+
+        let root = tempdir().unwrap();
+        let base = serve_generated_assets(ASSET_COUNT);
+        let zip_path = root.path().join("export.zip");
+        let markdown = (0..ASSET_COUNT)
+            .map(|index| format!("![]({base}asset-{index}?alt=media\\&token={index})\n"))
+            .collect::<String>();
+        write_zip(&zip_path, &[("daily/2026-07-04.md", markdown.as_str())]);
+
+        let prepared = prepare_zip_import_from(root.path(), &zip_path, &base).unwrap();
+        let Some(before) = open_fd_count() else {
+            return;
+        };
+        let downloads = tauri::async_runtime::block_on(prepared.download_assets()).unwrap();
+        let Some(after) = open_fd_count() else {
+            return;
+        };
+
+        assert_eq!(downloads.len(), ASSET_COUNT);
+        assert!(
+            after.saturating_sub(before) < ASSET_COUNT / 4,
+            "asset downloads kept too many file descriptors open: before {before}, after {after}"
+        );
+
+        let summary = finalize_import(root.path(), prepared, downloads).unwrap();
+        assert_eq!(summary.imported_files, 1);
+        assert_eq!(summary.downloaded_assets, ASSET_COUNT);
+        assert_eq!(summary.failed_asset_downloads, 0);
+        assert_eq!(
+            summary
+                .changed_paths
+                .iter()
+                .filter(|path| path.starts_with("assets/"))
+                .count(),
+            ASSET_COUNT
         );
     }
 

@@ -14,6 +14,7 @@ import {
 } from './commands'
 import { assetReferencingNotePaths } from './asset-refs'
 import { gatherAssetDescriptionText } from './asset-description-text'
+import { emitIndexApplied } from './index-applied'
 import { hashContent } from './hash'
 import { buildIndexedNote, PROJECTION_VERSION, type IndexedNote } from './indexed-note'
 import { detectExternalMoves } from './move-healing'
@@ -96,6 +97,13 @@ export async function buildNoteProjection(
  * this folds the new description text into their FTS documents. `indexNote` is
  * not hash-gated, so the unchanged note files re-index unconditionally. A note
  * removed since it referenced the asset is skipped. Pinned to `generation`.
+ *
+ * The re-applied notes broadcast through {@link emitIndexApplied} — the same
+ * post-apply signal the live indexer emits — because these writes bypass the
+ * watcher pipeline entirely (`.reflect.md` files are untracked by design).
+ * Without it, subscribers that follow the index (the embedding sync above
+ * all, which must re-embed the notes so the new description text reaches the
+ * semantic leg too) would never hear about description-driven changes.
  */
 export async function reindexNotesReferencing(
   assetPaths: readonly string[],
@@ -107,14 +115,28 @@ export async function reindexNotesReferencing(
       notePaths.add(notePath)
     }
   }
-  for (const notePath of notePaths) {
-    try {
-      await indexNote(notePath, { generation })
-    } catch (cause) {
-      if (isAppError(cause) && cause.kind === 'notFound') {
-        continue // the note was removed since it referenced the asset
+  const applied: string[] = []
+  try {
+    for (const notePath of notePaths) {
+      try {
+        await indexNote(notePath, { generation })
+        applied.push(notePath)
+      } catch (cause) {
+        if (isAppError(cause) && cause.kind === 'notFound') {
+          continue // the note was removed since it referenced the asset
+        }
+        throw cause
       }
-      throw cause
+    }
+  } finally {
+    // Emit even when a later note's re-index threw: whatever was applied is
+    // real, and unnotified followers would serve stale vectors until the
+    // next backfill.
+    if (applied.length > 0) {
+      emitIndexApplied(
+        applied.map((path) => ({ path, kind: 'upsert' as const })),
+        generation,
+      )
     }
   }
 }

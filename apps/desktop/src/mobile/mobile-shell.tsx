@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useDoubleTap } from '@/hooks/use-double-tap'
 import { MobileFormattingToolbar } from '@/mobile/formatting-toolbar'
 import { MobileStack } from '@/mobile/mobile-stack'
-import { MobileTabBar, type MobileTab } from '@/mobile/mobile-tab-bar'
+import { MobileTabBar, tabRootFor, type MobileTab } from '@/mobile/mobile-tab-bar'
 import {
   EMPTY_ALL_NOTES_FILTERS,
   type AllNotesFilters,
@@ -10,8 +11,6 @@ import { useKeyboardVisible } from '@/mobile/use-keyboard'
 import { useWakeToToday } from '@/mobile/use-wake-to-today'
 import { routesEqual, type Route } from '@/routing/route'
 import { useRouter } from '@/routing/router'
-
-const DAILY_DOUBLE_TAP_MS = 450
 
 type DailyRoute = Extract<Route, { kind: 'today' }> | Extract<Route, { kind: 'daily' }>
 
@@ -32,7 +31,10 @@ export function MobileShell(): ReactElement {
   const [allFilters, setAllFilters] = useState<AllNotesFilters>(EMPTY_ALL_NOTES_FILTERS)
   const [lastTab, setLastTab] = useState<MobileTab>('daily')
   const [lastDailyRoute, setLastDailyRoute] = useState<DailyRoute>({ kind: 'today' })
-  const lastDailyTapAt = useRef<number | null>(null)
+  // A tab double-tap is a capture gesture (Daily focuses today's editor, All
+  // its search input); a pending tap expires if the route leaves the tab's
+  // root between taps — that second tap is a return, not a double-tap.
+  const isDoubleTap = useDoubleTap<MobileTab>(tabRootFor(route))
   const keyboardVisible = useKeyboardVisible()
   // V1's wake-to-today: foregrounding on a new calendar date lands on today.
   useWakeToToday()
@@ -50,16 +52,7 @@ export function MobileShell(): ReactElement {
   // A note keeps whichever tab it was opened from: routes that don't map to a
   // tab fall back to the last one, remembered across renders. Tracking that in
   // state (adjusted during render) avoids reading/writing a ref in render.
-  const tab: MobileTab =
-    route.kind === 'allNotes' || route.kind === 'search'
-      ? 'all'
-      : route.kind === 'tasks'
-        ? 'tasks'
-        : route.kind === 'chat'
-          ? 'chat'
-          : route.kind === 'today' || route.kind === 'daily'
-            ? 'daily'
-            : lastTab
+  const tab: MobileTab = tabRootFor(route) ?? lastTab
   const currentDailyRoute = dailyRouteFrom(route)
   if (tab !== lastTab) {
     setLastTab(tab)
@@ -68,29 +61,20 @@ export function MobileShell(): ReactElement {
     setLastDailyRoute(currentDailyRoute)
   }
 
-  useLayoutEffect(() => {
-    if (currentDailyRoute === null) {
-      lastDailyTapAt.current = null
-    }
-  }, [currentDailyRoute])
-
   const handleTabSelect = (next: MobileTab): void => {
-    if (next !== 'daily') {
-      lastDailyTapAt.current = null
-      navigate(
-        next === 'tasks'
-          ? { kind: 'tasks' }
-          : next === 'chat'
-            ? { kind: 'chat' }
-            : { kind: 'allNotes', tag: null },
-      )
+    const doubleTap = isDoubleTap(next)
+
+    if (next === 'all') {
+      // The double-tap is a search gesture: land on the tab with its search
+      // input focused (the Daily tab's capture double-tap, All-flavored).
+      navigate({ kind: 'allNotes', tag: null }, doubleTap ? { focusEditor: true } : undefined)
       return
     }
 
-    const now = Date.now()
-    const doubleTap =
-      lastDailyTapAt.current !== null && now - lastDailyTapAt.current <= DAILY_DOUBLE_TAP_MS
-    lastDailyTapAt.current = now
+    if (next !== 'daily') {
+      navigate(next === 'tasks' ? { kind: 'tasks' } : { kind: 'chat' })
+      return
+    }
 
     if (doubleTap) {
       navigate({ kind: 'today' }, { focusEditor: true })

@@ -123,10 +123,10 @@ The highest-severity risks surfaced reviewing this plan, with where they're hand
 
 1. **meowdown is the core bet and is early (v0.2.0, no wiki-links).** The whole product
    rides a pre-1.0 editor we must extend with `[[ ]]`. **Gate passed:** the Plan 01
-   wiki-link spike confirmed lossless `[[ ]]` round-trips + a clean extension path
-   ([docs/spikes/meowdown-wiki-links.md](../spikes/meowdown-wiki-links.md)). Residual: it's
-   pre-1.0 (we own the extension code, pin versions); CodeMirror-6 live-preview stays the
-   documented fallback. *Licensing is resolved — meowdown is first-party MIT.*
+   wiki-link spike confirmed lossless `[[ ]]` round-trips + a clean extension path.
+   Residual: it's pre-1.0 (we own the extension code, pin versions); CodeMirror-6
+   live-preview stays the documented fallback. *Licensing is resolved — meowdown is
+   first-party MIT.*
 2. **A cloud-sync folder can corrupt the index or fight a Git remote.** Originally
    mitigated by refusing file-sync providers outright; since Plan 21 shipped, iCloud
    Drive is the *supported primary* path and the risk is managed instead of avoided:

@@ -4,6 +4,7 @@ import type { AiProvidersState } from './provider-config'
 import type { AiProviderConfig } from '../settings/schema'
 import { wikiLinkSafe } from '../markdown/edit'
 import { languageModel } from './language-model'
+import { clipAtWordBoundary } from './text'
 
 const TITLE_TIMEOUT_MS = 30_000
 const MAX_TRANSCRIPT_CHARS = 4_000
@@ -69,14 +70,6 @@ export function pickAudioMemoTitleConfig(state: AiProvidersState): AiProviderCon
   return null
 }
 
-function clipTitle(title: string): string {
-  if (title.length <= MAX_TITLE_CHARS) {
-    return title
-  }
-  const clipped = title.slice(0, MAX_TITLE_CHARS).replace(/\s+\S*$/, '').trim()
-  return clipped === '' ? title.slice(0, MAX_TITLE_CHARS).trim() : clipped
-}
-
 function firstContentLine(text: string): string {
   return text
     .split(/\r?\n/)
@@ -86,7 +79,7 @@ function firstContentLine(text: string): string {
 
 function normalizedTitle(candidate: string): string | null {
   const safe = wikiLinkSafe(firstContentLine(candidate)).replace(/[.!?]+$/u, '').trim()
-  const clipped = clipTitle(safe)
+  const clipped = clipAtWordBoundary(safe, MAX_TITLE_CHARS)
   return clipped === '' ? null : clipped
 }
 

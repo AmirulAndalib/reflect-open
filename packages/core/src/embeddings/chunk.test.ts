@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { chunkNote } from './chunk'
+import { MAX_ASSET_TEXT_CHARS } from '../indexing/asset-description-text'
+import { chunkAssetDescriptions, chunkNote } from './chunk'
 
 const PATH = 'notes/a.md'
 
@@ -65,5 +66,86 @@ describe('chunkNote', () => {
     const last = chunks[chunks.length - 1]!
     expect(last.text.length).toBeGreaterThanOrEqual(200)
     expect(last.text.endsWith('Tiny tail.')).toBe(true)
+  })
+})
+
+describe('chunkAssetDescriptions', () => {
+  const BASE = 500 // as if the note source were 499 chars long
+
+  it('chunks each body under the asset filename with positions past the note', async () => {
+    const chunks = await chunkAssetDescriptions(
+      [
+        { assetPath: 'assets/graphs/q4.png', body: 'Quarterly revenue bar chart.' },
+        { assetPath: 'assets/scan.pdf', body: 'A signed lease agreement.' },
+      ],
+      BASE,
+    )
+    expect(chunks).toHaveLength(2)
+    expect(chunks[0]!.heading).toBe('q4.png')
+    expect(chunks[1]!.heading).toBe('scan.pdf')
+    expect(chunks[0]!.text).toBe('Quarterly revenue bar chart.')
+    expect(chunks[0]!.posFrom).toBe(BASE)
+    // The second body starts after the first, so positions stay ordered.
+    expect(chunks[1]!.posFrom).toBeGreaterThan(chunks[0]!.posTo)
+  })
+
+  it('hashes are stable across runs and change with the body', async () => {
+    const bodies = [{ assetPath: 'assets/a.png', body: 'A red bridge at dawn.' }]
+    const first = await chunkAssetDescriptions(bodies, BASE)
+    const again = await chunkAssetDescriptions(bodies, BASE)
+    expect(again[0]!.contentHash).toBe(first[0]!.contentHash)
+
+    const changed = await chunkAssetDescriptions(
+      [{ assetPath: 'assets/a.png', body: 'A snowy mountain pass.' }],
+      BASE,
+    )
+    expect(changed[0]!.contentHash).not.toBe(first[0]!.contentHash)
+  })
+
+  it('splits a long body into sentence-aligned chunks and merges the runt tail', async () => {
+    const sentence = 'The scanned page describes the quarterly figures in detail. '
+    const chunks = await chunkAssetDescriptions(
+      [{ assetPath: 'assets/report.pdf', body: `${sentence.repeat(40)}End.` }],
+      BASE,
+    )
+    expect(chunks.length).toBeGreaterThan(1)
+    for (const chunk of chunks) {
+      expect(chunk.heading).toBe('report.pdf')
+    }
+    const last = chunks[chunks.length - 1]!
+    expect(last.text.length).toBeGreaterThanOrEqual(200) // runt merged
+    expect(last.text.endsWith('End.')).toBe(true)
+  })
+
+  it('caps the combined description text, mirroring the FTS fold', async () => {
+    const chunks = await chunkAssetDescriptions(
+      [
+        { assetPath: 'assets/a.png', body: 'x'.repeat(MAX_ASSET_TEXT_CHARS) },
+        { assetPath: 'assets/b.png', body: 'never reached' },
+      ],
+      BASE,
+    )
+    expect(chunks.every((chunk) => chunk.heading === 'a.png')).toBe(true)
+    const total = chunks.reduce((sum, chunk) => sum + chunk.text.length, 0)
+    expect(total).toBe(MAX_ASSET_TEXT_CHARS)
+  })
+
+  it('counts the body joiner against the cap, like the FTS join-then-slice', async () => {
+    // FTS keeps `first + '\n\n' + second` sliced to the cap, so a later body
+    // only gets what the cap leaves after the two joiner chars.
+    const chunks = await chunkAssetDescriptions(
+      [
+        { assetPath: 'assets/a.png', body: 'x'.repeat(MAX_ASSET_TEXT_CHARS - 6) },
+        { assetPath: 'assets/b.png', body: 'yyyyyyyy' },
+      ],
+      BASE,
+    )
+    const second = chunks.filter((chunk) => chunk.heading === 'b.png')
+    expect(second).toHaveLength(1)
+    expect(second[0]!.text).toBe('yyyy') // cap − body − joiner = 4 chars left
+  })
+
+  it('returns nothing for no bodies', async () => {
+    expect(await chunkAssetDescriptions([], BASE)).toEqual([])
   })
 })

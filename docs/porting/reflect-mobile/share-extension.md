@@ -13,9 +13,9 @@ and the meta description in-page (`ExtensionClass.js` →
 `metaDescription`), so an offline save still reads complete; enrichment
 replaces the description later when online. Non-URL text saves as a
 daily-note bullet (`kind: append`, `source: ios-share`). Remaining
-release-gate work: a device pass, and confirming automatic signing
-provisions the new `app.reflect.ios.share` App ID + App Group for
-TestFlight.
+release-gate work: a device pass on a TestFlight build (earlier TestFlight
+builds failed every share because CI's export dropped the appex App Group
+entitlement — see the CI-signing note under Resolved decisions).
 
 ## What V1 mobile does
 
@@ -96,5 +96,18 @@ There is no API to POST to — the design inverts from *send to server* to
 - **Ingest is foreground-only** (v1 posture, like sync): graph open, window
   focus/online, and `visibilitychange` → visible all schedule the
   relay+drain pass; no background refresh task.
-- **Regen caution**: `tauri ios init` rewrites both `.entitlements` files to
-  empty dicts — restore the iCloud + App Group entries before committing.
+- **Entitlements are spec-driven**: the entitlement contents live in
+  `ios.project.yml`/`gen/apple/project.yml` (`entitlements.properties`), and
+  xcodegen writes the `.entitlements` files from them — regens (including
+  `tauri ios init`) are idempotent instead of wiping the files to empty
+  dicts, which is what they used to do.
+- **CI signing must preserve the App Group.** Tauri's App Store Connect
+  API-key flow (the TestFlight workflow) archives with signing disabled and
+  dummy-signs only the app binary before export; `xcodebuild -exportArchive`
+  preserves only entitlements already present in a signature, so the appex
+  used to ship without the App Group — the container lookup returned nil
+  and every share failed with "Couldn't save" (local builds were fine
+  because Xcode signs during archive). A post-build phase on the
+  ShareExtension target ad-hoc signs the appex with its entitlements when
+  `CODE_SIGNING_ALLOWED=NO`, and `release-ios.mjs` refuses to accept or
+  upload an IPA whose appex lacks `group.app.reflect`.

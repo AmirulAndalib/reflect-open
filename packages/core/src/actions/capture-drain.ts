@@ -32,6 +32,7 @@ import {
   displayTitle,
   notePrivate,
   noteSource,
+  retitleDailyEntry,
   type CaptureStatus,
 } from './capture-note'
 
@@ -66,12 +67,18 @@ export interface DrainCaptureInboxOutcome {
   stopped: ReconcileStop | null
 }
 
+interface SameDayCapture {
+  identity: CaptureIdentity
+  /** The existing note's display title — what the daily's link text mirrors. */
+  title: string
+}
+
 async function findSameDayCapture(
   dailySource: string,
   url: string,
   selectionHash: string | undefined,
   generation: number,
-): Promise<CaptureIdentity | null> {
+): Promise<SameDayCapture | null> {
   const { headings, wikiLinks } = parseNote({ path: '', source: dailySource })
   const links = headings.find((heading) => heading.text.toLowerCase() === LINKS_HEADING.toLowerCase())
   if (!links) {
@@ -99,7 +106,7 @@ async function findSameDayCapture(
     }
     const meta = captureNoteMeta(parseFrontmatter(splitFrontmatter(source).raw).data)
     if (meta && meta.captureUrl === url && meta.captureSelectionHash === selectionHash) {
-      return identity
+      return { identity, title: parseNote({ path: identity.notePath, source }).title }
     }
   }
   return null
@@ -173,7 +180,7 @@ export async function drainCaptureInbox(
         selectionHash,
         input.generation,
       )
-      const identity = existing ?? fresh
+      const identity = existing?.identity ?? fresh
       const status: CaptureStatus = notePrivate(dailySource) ? 'skipped' : 'pending'
 
       let hasScreenshot = false
@@ -203,16 +210,22 @@ export async function drainCaptureInbox(
         }),
         input.generation,
       )
-      if (!dailySource.includes(`[[${identity.base}`)) {
-        await writeNote(
-          daily,
-          appendUnderHeading(
-            dailySource,
-            LINKS_HEADING,
-            `- [[${identity.base}|${displayTitle(envelope)}]]`,
-          ),
-          input.generation,
+      const freshTitle = displayTitle(envelope)
+      let updatedDaily = dailySource
+      if (existing !== null) {
+        // The refresh reset the note's H1 to the fresh tab title; keep the
+        // daily's link text in step.
+        updatedDaily = retitleDailyEntry(updatedDaily, identity.base, existing.title, freshTitle)
+      }
+      if (!updatedDaily.includes(`[[${identity.base}`)) {
+        updatedDaily = appendUnderHeading(
+          updatedDaily,
+          LINKS_HEADING,
+          `- [[${identity.base}|${freshTitle}]]`,
         )
+      }
+      if (updatedDaily !== dailySource) {
+        await writeNote(daily, updatedDaily, input.generation)
       }
       await captureInboxRemove(name, input.generation)
       if (envelope.screenshotRef) {
