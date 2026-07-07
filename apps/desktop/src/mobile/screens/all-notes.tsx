@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, type ReactElement } from 'react'
+import { useDeferredValue, useMemo, useRef, type ReactElement } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ChevronLeft, FileText, SearchX } from 'lucide-react'
 import {
@@ -22,6 +22,7 @@ import {
   type AllNotesFilters,
 } from '@/mobile/search-filters/filter-state'
 import { NoteRowList, type NoteRowModel } from '@/mobile/note-row-list'
+import { useArrivalFocus } from '@/mobile/use-arrival-focus'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
@@ -78,8 +79,13 @@ export function MobileAllNotes({
   onFiltersChange,
 }: MobileAllNotesProps): ReactElement {
   const { graph } = useGraph()
-  const { navigate, back } = useRouter()
+  const { navigate, back, arrivalSeq, arrivalFocusEditor } = useRouter()
   const enabled = hasBridge() && graph !== null
+
+  // The All-tab double-tap (`focusEditor` arrivals) lands in the search bar,
+  // the tab's capture surface — the daily double-tap's All-flavored twin.
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  useArrivalFocus({ arrivalSeq, arrivalFocusEditor, target: searchInputRef })
 
   // Defer the query the index sees (desktop's search debounce): fast typing
   // coalesces while the input stays live, and a seeded query (a `search`
@@ -135,12 +141,20 @@ export function MobileAllNotes({
             </Button>
           )}
           <Input
+            ref={searchInputRef}
             type="search"
             inputMode="search"
             placeholder="Search anything…"
             aria-label="Search notes"
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
+            onKeyDown={(event) => {
+              // Results filter live, so the keyboard's search key has nothing
+              // to submit — it dismisses the keyboard to reveal the list.
+              if (event.key === 'Enter') {
+                event.currentTarget.blur()
+              }
+            }}
             className="text-base"
           />
         </div>
