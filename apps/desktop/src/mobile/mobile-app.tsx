@@ -1,9 +1,11 @@
 import { useEffect, type ReactElement } from 'react'
 import { installBackgroundFlush } from '@/lib/background-flush'
+import { MobileAudioMemoProvider } from '@/mobile/audio-memo-provider'
 import { MobileErrorBoundary } from '@/mobile/mobile-error-boundary'
 import { MobileOnboardingScreen } from '@/mobile/onboarding-screen'
 import { MobileShell } from '@/mobile/mobile-shell'
 import { MobileStatusLayer } from '@/mobile/status-layer'
+import { RecordingDrawer } from '@/mobile/recording-drawer'
 import { useICloudRefresh } from '@/mobile/use-icloud-refresh'
 import { useKeyboardHeightVar } from '@/mobile/use-keyboard'
 import { useTaskCheckboxHaptics } from '@/mobile/use-task-haptics'
@@ -58,8 +60,17 @@ export function MobileApp(): ReactElement {
                   survives tab switches; semantic search is forced off on
                   this surface inside the provider. */}
               <ChatProvider graph={graph}>
-                <MobileShell />
-                <MobileStatusLayer />
+                {/* Native recording over the shared capture pipeline — the
+                    mobile leg of desktop's audio memos. Mounted here so the
+                    queue, the reconciler, and the orphan scan survive tab
+                    switches. */}
+                <MobileAudioMemoProvider graph={graph}>
+                  <MobileShell />
+                  <MobileStatusLayer />
+                  {/* Mounted beside the shell (not inside the daily screen)
+                      so a live recording's sheet survives tab switches. */}
+                  <RecordingDrawer />
+                </MobileAudioMemoProvider>
               </ChatProvider>
             </CaptureProvider>
           </SyncProvider>

@@ -129,6 +129,22 @@ describe('createBackgroundReconciler', () => {
     expect(calls).toBe(2) // listener removed on dispose
   })
 
+  it('retries when the document becomes visible (the mobile foreground signal)', async () => {
+    let calls = 0
+    const reconciler = createBackgroundReconciler({ pass: async () => { calls += 1 } })
+    reconciler.retryOnWake()
+
+    // jsdom's visibilityState is 'visible' — the event alone must schedule.
+    document.dispatchEvent(new Event('visibilitychange'))
+    await tick()
+    expect(calls).toBe(1)
+
+    reconciler.dispose()
+    document.dispatchEvent(new Event('visibilitychange'))
+    await tick()
+    expect(calls).toBe(1) // listener removed on dispose
+  })
+
   it('runs onDispose teardowns once, and immediately when already disposed', () => {
     const before = vi.fn()
     const after = vi.fn()

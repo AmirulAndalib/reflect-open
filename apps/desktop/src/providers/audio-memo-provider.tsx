@@ -6,41 +6,23 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ReactElement,
   type ReactNode,
 } from 'react'
-import {
-  captureAudioMemo,
-  errorMessage,
-  pickTranscriptionConfig,
-  type AiProvidersState,
-  type GraphInfo,
-} from '@reflect/core'
+import { errorMessage, type GraphInfo } from '@reflect/core'
 import { isRecordingSupported, useAudioRecorder } from '@/hooks/use-audio-recorder'
-import { startOperation } from '@/lib/operations'
-import { useMainWindowEffect } from '@/hooks/use-main-window-effect'
-import {
-  createTranscriptionReconciler,
-  type TranscriptionReconciler,
-} from '@/lib/transcription-reconciler'
+import { useAudioMemoPipeline } from '@/hooks/use-audio-memo-pipeline'
 import { useSettings } from '@/providers/settings-provider'
 import { useSidebar } from '@/providers/sidebar-provider'
 
 /**
- * The React surface for audio memos: recording state + the bridge to the
- * core capture pipeline. State lives here — above the sidebar — because the
- * mic button unmounts with the sidebar (`Mod-\`), and a recording must never
- * outlive its UI invisibly: collapsing mid-recording stops and saves instead
- * of leaving a hidden hot microphone.
- *
- * The pipeline is raw-first (see `actions/audio-memo` in core): stopping a
- * recording writes the audio into the graph's `audio-memos/` — local,
- * instant — and transcription belongs to the per-graph
- * {@link createTranscriptionReconciler} lifecycle this provider mounts,
- * which owns every trigger and retry rule. Captures drain through a serial
- * queue so memos can be recorded back-to-back; a failed *capture* (the one
- * step that can lose audio) parks the queue behind a Retry/Discard error.
+ * The desktop React surface for audio memos: MediaRecorder recording state +
+ * the bridge to the shared capture pipeline (`useAudioMemoPipeline`, which
+ * owns the serial capture queue and the transcription reconciler). State
+ * lives here — above the sidebar — because the mic button unmounts with the
+ * sidebar (`Mod-\`), and a recording must never outlive its UI invisibly:
+ * collapsing mid-recording stops and saves instead of leaving a hidden hot
+ * microphone.
  */
 
 /**
@@ -49,13 +31,6 @@ import { useSidebar } from '@/providers/sidebar-provider'
  * recording can start immediately.
  */
 export type AudioMemoPhase = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'error'
-
-/** A stopped recording waiting its turn through the capture queue. */
-interface PendingCapture {
-  audio: Blob
-  mimeType: string
-  recordedAt: Date
-}
 
 interface AudioMemoContextValue {
   phase: AudioMemoPhase
@@ -105,14 +80,13 @@ interface AudioMemoProviderProps {
 }
 
 export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): ReactElement {
-  const { settings } = useSettings()
+  // Keep the settings subscription alive at the provider (matches the
+  // pipeline hook's own read), so the mic enables the moment a key is added.
+  useSettings()
   const { collapsed, toggleSidebar } = useSidebar()
 
-  const [pendingCount, setPendingCount] = useState(0)
   /** True from the stop click until the recorder hands over the blob. */
   const [stopping, setStopping] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [resume, setResume] = useState<PendingCapture | null>(null)
 
   const stopAndSaveRef = useRef<() => void>(() => {})
   const recorder = useAudioRecorder({
@@ -127,136 +101,26 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
   const cancelRecorder = recorder.cancel
 
   const supported = isRecordingSupported()
-  const transcriptionConfig = useMemo(
-    () =>
-      pickTranscriptionConfig({
-        providers: settings.aiProviders,
-        defaultProviderId: settings.defaultAiProviderId,
-      }),
-    [settings.aiProviders, settings.defaultAiProviderId],
-  )
 
   const collapsedRef = useRef(collapsed)
   useEffect(() => {
     collapsedRef.current = collapsed
   })
 
-  /** Committed recordings waiting their turn; the pump owns the head. */
-  const queueRef = useRef<PendingCapture[]>([])
-  /** Single-drainer guard: one pump loop at a time, one capture at a time. */
-  const pumpingRef = useRef(false)
-  /**
-   * The failed capture a retry should re-run. While parked, the queue holds —
-   * memo order in the graph must survive the failure. A ref, not state: rapid
-   * double Retry must see the first click's take synchronously, or two
-   * pipelines write the recording twice.
-   */
-  const parkedRef = useRef<PendingCapture | null>(null)
+  // The mic button (and its popover) unmount with the sidebar — while
+  // collapsed, a capture failure must surface as a toast instead.
+  const pipeline = useAudioMemoPipeline({
+    graph,
+    isErrorSurfaceVisible: () => !collapsedRef.current,
+  })
+
   /** Re-entry guard for the stop click's await gap. */
   const stoppingRef = useRef(false)
   /** The in-flight stop, so a mic click in the gap can chain the next memo. */
   const stopSettledRef = useRef<Promise<void>>(Promise.resolve())
 
-  // The configured-models state, by ref: the reconciler reads it lazily at
-  // the start of every pass, so a key added mid-session is seen without
-  // rebuilding the lifecycle on every settings change.
-  const providersRef = useRef<AiProvidersState>({
-    providers: settings.aiProviders,
-    defaultProviderId: settings.defaultAiProviderId,
-  })
-  useEffect(() => {
-    providersRef.current = { providers: settings.aiProviders, defaultProviderId: settings.defaultAiProviderId }
-  })
-
-  // One reconciler per graph session (this provider remounts per graph). It
-  // owns the launch pass and all retry triggers; the pump only schedules.
-  const [reconciler, setReconciler] = useState<TranscriptionReconciler | null>(null)
-  const reconcilerRef = useRef<TranscriptionReconciler | null>(null)
-  // Main window only: two reconcilers would double-transcribe (and
-  // double-bill) the same memos. Recording still works in a note window —
-  // the saved memo is transcribed by the main window's reconciler, which
-  // sees it arrive on the watcher stream.
-  useMainWindowEffect(() => {
-    const next = createTranscriptionReconciler({
-      generation: graph.generation,
-      getProviders: () => providersRef.current,
-    })
-    setReconciler(next)
-    reconcilerRef.current = next
-    next.start()
-    return () => {
-      next.dispose()
-      reconcilerRef.current = null
-      setReconciler((current) => (current === next ? null : current))
-    }
-  }, [graph.generation])
-
-  // Passes gate on a configured model before any IO — when the user adds the
-  // first key mid-session, kick the pass that gate was suppressing.
-  const hadConfigRef = useRef(transcriptionConfig !== null)
-  useEffect(() => {
-    const hasConfig = transcriptionConfig !== null
-    if (hasConfig && !hadConfigRef.current) {
-      reconciler?.schedule()
-    }
-    hadConfigRef.current = hasConfig
-  }, [transcriptionConfig, reconciler])
-
-  /** True while a reconcile pass has memos to transcribe. */
-  const transcribing = useSyncExternalStore(
-    reconciler?.subscribe ?? (() => () => {}),
-    reconciler?.getTranscribing ?? (() => false),
-  )
-
-  const pump = useCallback(async (): Promise<void> => {
-    if (pumpingRef.current) {
-      return
-    }
-    pumpingRef.current = true
-    let captured = false
-    try {
-      while (parkedRef.current === null) {
-        const capture = queueRef.current.shift()
-        if (capture === undefined) {
-          break
-        }
-        let outcome: Awaited<ReturnType<typeof captureAudioMemo>>
-        try {
-          outcome = await captureAudioMemo({ ...capture, generation: graph.generation })
-        } catch (cause) {
-          outcome = { ok: false, message: errorMessage(cause) }
-        } finally {
-          setPendingCount((count) => count - 1)
-        }
-        if (outcome.ok) {
-          captured = true
-        } else {
-          // Park the queue behind the failure: the capture is the one step
-          // that can lose audio, and memo order in the graph must survive.
-          parkedRef.current = capture
-          setResume(capture)
-          setError(outcome.message)
-          if (collapsedRef.current) {
-            // The mic button (and its popover) unmounted with the sidebar —
-            // the failure must still surface somewhere.
-            startOperation('Saving audio memo').fail(outcome.message)
-          }
-        }
-      }
-    } finally {
-      pumpingRef.current = false
-    }
-    if (captured) {
-      // The watcher reports the recording write (it tracks `audio-memos/`),
-      // which feeds the sync engine's commit debounce like any note edit.
-      // Transcription is kicked directly rather than waiting on the
-      // watcher's own debounce to echo our write back.
-      reconcilerRef.current?.schedule()
-    }
-  }, [graph.generation])
-
   const start = useCallback(async (): Promise<void> => {
-    if (!supported || transcriptionConfig === null) {
+    if (!supported || !pipeline.hasTranscriptionConfig) {
       return
     }
     if (collapsedRef.current) {
@@ -266,13 +130,13 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
     try {
       await startRecorder()
     } catch (cause) {
-      setError(
+      pipeline.reportError(
         cause instanceof DOMException && cause.name === 'NotAllowedError'
           ? micDeniedMessage()
           : errorMessage(cause),
       )
     }
-  }, [supported, transcriptionConfig, toggleSidebar, startRecorder])
+  }, [supported, pipeline, toggleSidebar, startRecorder])
 
   const stopAndSave = useCallback(async (): Promise<void> => {
     if (stoppingRef.current) {
@@ -287,13 +151,11 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       try {
         const recording = await stopRecorder()
         if (recording !== null) {
-          queueRef.current.push({
+          pipeline.enqueue({
             audio: recording.blob,
             mimeType: recording.mimeType,
             recordedAt: new Date(),
           })
-          setPendingCount((count) => count + 1)
-          void pump()
         }
       } finally {
         stoppingRef.current = false
@@ -302,17 +164,10 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
     })()
     stopSettledRef.current = settled
     return settled
-  }, [stopRecorder, pump])
+  }, [stopRecorder, pipeline])
   useEffect(() => {
     stopAndSaveRef.current = () => void stopAndSave()
   })
-
-  const discard = useCallback((): void => {
-    parkedRef.current = null
-    setError(null)
-    setResume(null)
-    void pump()
-  }, [pump])
 
   const toggle = useCallback((): void => {
     if (recorder.status === 'recording') {
@@ -328,7 +183,7 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       // A second press while the OS prompt is up aborts the request — the
       // alternative is a click that visibly does nothing.
       cancelRecorder()
-    } else if (error !== null) {
+    } else if (pipeline.error !== null) {
       // A parked error must never invisibly block recording. Collapsed, the
       // error UI doesn't exist — surface it; visible, it was on screen and a
       // fresh record request acknowledges it (the same click the red mic
@@ -336,29 +191,16 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       if (collapsedRef.current) {
         toggleSidebar()
       } else {
-        discard()
+        pipeline.discard()
       }
     } else if (recorder.status === 'idle') {
       void start()
     }
-  }, [recorder.status, error, stopAndSave, cancelRecorder, start, toggleSidebar, discard])
+  }, [recorder.status, pipeline, stopAndSave, cancelRecorder, start, toggleSidebar])
 
   const cancel = useCallback((): void => {
     cancelRecorder()
   }, [cancelRecorder])
-
-  const retry = useCallback((): void => {
-    const parked = parkedRef.current
-    if (parked === null) {
-      return
-    }
-    parkedRef.current = null
-    setError(null)
-    setResume(null)
-    queueRef.current.unshift(parked)
-    setPendingCount((count) => count + 1)
-    void pump()
-  }, [pump])
 
   // Collapsing the sidebar mid-flow: stop-and-save a live recording, and
   // abandon a pending permission request — a grant arriving after the
@@ -381,15 +223,15 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       ? 'recording'
       : recorder.status === 'requesting'
         ? 'requesting'
-        : error !== null
+        : pipeline.error !== null
           ? 'error'
-          : stopping || pendingCount > 0 || transcribing
+          : stopping || pipeline.pendingCount > 0 || pipeline.transcribing
             ? 'transcribing'
             : 'idle'
 
   const unavailableReason = !supported
     ? UNSUPPORTED_REASON
-    : transcriptionConfig === null
+    : !pipeline.hasTranscriptionConfig
       ? NO_PROVIDER_REASON
       : null
 
@@ -398,28 +240,28 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
       phase,
       elapsedMs: recorder.elapsedMs,
       stream: recorder.stream,
-      pendingCount,
+      pendingCount: pipeline.pendingCount,
       available: unavailableReason === null,
       unavailableReason,
-      error,
-      canRetry: resume !== null,
+      error: pipeline.error,
+      canRetry: pipeline.canRetry,
       toggle,
       cancel,
-      retry,
-      discard,
+      retry: pipeline.retry,
+      discard: pipeline.discard,
     }),
     [
       phase,
       recorder.elapsedMs,
       recorder.stream,
-      pendingCount,
+      pipeline.pendingCount,
       unavailableReason,
-      error,
-      resume,
+      pipeline.error,
+      pipeline.canRetry,
+      pipeline.retry,
+      pipeline.discard,
       toggle,
       cancel,
-      retry,
-      discard,
     ],
   )
 

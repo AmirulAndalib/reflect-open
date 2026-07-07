@@ -92,11 +92,20 @@ export function createBackgroundReconciler(
     schedule,
     isStale: () => disposed,
     retryOnWake() {
+      // Foregrounding on iOS doesn't reliably fire `focus` or `online` on
+      // the webview — `visibilitychange` → visible is the signal that does.
+      const onVisibilityChange = (): void => {
+        if (document.visibilityState === 'visible') {
+          schedule()
+        }
+      }
       window.addEventListener('focus', schedule)
       window.addEventListener('online', schedule)
+      document.addEventListener('visibilitychange', onVisibilityChange)
       disposers.push(
         () => window.removeEventListener('focus', schedule),
         () => window.removeEventListener('online', schedule),
+        () => document.removeEventListener('visibilitychange', onVisibilityChange),
       )
     },
     onDispose(teardown) {

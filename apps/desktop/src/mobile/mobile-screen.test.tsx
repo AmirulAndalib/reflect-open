@@ -143,6 +143,26 @@ vi.mock('@/providers/settings-provider', () => ({
     updateSettingsWith: () => {},
   }),
 }))
+// The daily spine renders the audio-memo FAB; this suite is about screens,
+// not recording — an unavailable memo surface keeps the FAB out of the tree.
+vi.mock('@/mobile/audio-memo-provider', () => ({
+  useMobileAudioMemo: () => ({
+    phase: 'idle',
+    elapsedMs: 0,
+    level: 0,
+    pendingCount: 0,
+    available: false,
+    error: null,
+    canRetry: false,
+    drawerOpen: false,
+    toggle: () => {},
+    stopAndSave: () => {},
+    cancelRecording: () => {},
+    onDrawerOpenChange: () => {},
+    retry: () => {},
+    discard: () => {},
+  }),
+}))
 
 /** The fake graph: files behind the IPC bridge. */
 let files: Record<string, string>

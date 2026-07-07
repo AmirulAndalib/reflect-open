@@ -117,6 +117,7 @@ export {
 } from '../ai/chat/context-window'
 export type { ModelMessage as ChatModelMessage } from 'ai'
 export {
+  base64ToBytes,
   isTranscriptionRejected,
   transcribeAudio,
   TranscriptionRejectedError,

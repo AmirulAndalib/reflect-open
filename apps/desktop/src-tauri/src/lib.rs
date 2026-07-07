@@ -152,6 +152,13 @@ pub fn run() {
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_keyboard::init());
 
+    // The native audio-memo recorder is mobile-only too: desktop records
+    // through the webview's MediaRecorder (`use-audio-recorder.ts`), while
+    // mobile capture must survive the webview (interruptions, backgrounding),
+    // so it runs on AVAudioRecorder behind this plugin.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_recording::init());
+
     // The main window starts hidden (`visible: false`); on desktop the
     // window-state plugin reveals it after restoring geometry, but mobile has
     // no such plugin, so show it here or the UI would never appear.

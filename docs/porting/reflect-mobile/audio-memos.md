@@ -1,13 +1,21 @@
 # Porting audio memos (mobile)
 
-**v2 status: later wave — the first post-release wave per the product
-owner.** Desktop v2 audio memos have shipped (raw-first recording into the
-graph + async BYOK transcription — see the desktop
-[audio-memos porting doc](../audio-memos.md)); the mobile wave reuses that
-pipeline. V1's server-upload design is forbidden in v2, but V1's
-*reliability engineering* is the bar to meet. This is the most engineered
-feature in V1 mobile and the clearest expression of its design philosophy:
-**critical capture must not depend on the webview being alive.**
+**v2 status: in-app wave shipped; OS entry points pending.** Desktop v2
+audio memos shipped first (raw-first recording into the graph + async BYOK
+transcription — see the desktop [audio-memos porting doc](../audio-memos.md)).
+The mobile in-app wave reuses that pipeline over a native recorder:
+`plugins/tauri-plugin-recording` (AVAudioRecorder → a native staging
+directory, interruption/route-change/backgrounding/cap stops, 10 Hz metering
+events), the shared capture queue extracted to
+`apps/desktop/src/hooks/use-audio-memo-pipeline.ts`, and a mobile provider
+(`apps/desktop/src/mobile/audio-memo-provider.tsx`) that ingests staged
+files — including an orphan scan on launch/foreground for stops the webview
+never saw. Still open from this doc: the OS entry points (widget, Siri,
+Live Activity, quick action), background-audio continuation, and the App
+Group staging move they imply. V1's server-upload design is forbidden in
+v2, but V1's *reliability engineering* is the bar to meet. This is the most
+engineered feature in V1 mobile and the clearest expression of its design
+philosophy: **critical capture must not depend on the webview being alive.**
 
 ## What V1 mobile does
 
