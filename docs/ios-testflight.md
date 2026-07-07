@@ -145,6 +145,24 @@ workflow.
   bundle id exists for signing, but no App Store Connect app record exists yet.
   Create a new iOS app in App Store Connect for `app.reflect.ios`; do not reuse
   the old Capacitor app record (`app.reflect.ReflectMobile`).
+- **`Automatic signing cannot register bundle identifier "app.reflect.ios.<ext>"`**
+  (with **`No profiles for 'app.reflect.ios.<ext>' were found`**): a NEW app
+  extension target (ShareExtension, RecordingWidget, …) is shipping for the
+  first time and its bundle identifier does not exist on the developer portal
+  yet. The CI App Store Connect key can create provisioning profiles for
+  *existing* identifiers but cannot *register* new ones. Register it once from
+  a machine whose Xcode is signed into the team — a signed build of just that
+  target auto-registers the identifier and its capabilities (App Group
+  included):
+
+  ```bash
+  cd apps/desktop/src-tauri/gen/apple
+  xcodebuild -project reflect-open.xcodeproj -target <NewExtension> \
+    -sdk iphoneos -configuration release -allowProvisioningUpdates build
+  ```
+
+  Then rerun the TestFlight workflow. (Registering the identifier by hand in
+  the developer portal — with its App Groups capability — works too.)
 - **Duplicate build number**: rerun the GitHub Action so it stamps a fresh
   timestamp. For local debugging commands, pass a larger `--build-number`.
   TestFlight build numbers are per marketing version; `0.4.0` build `123` can
