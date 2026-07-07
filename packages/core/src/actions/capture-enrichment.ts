@@ -18,6 +18,7 @@ import {
   notePrivate,
   noteSource,
   withDescription,
+  withTitle,
   type CaptureStatus,
 } from './capture-note'
 import { scrapePageMeta, type PageMeta } from './meta-scrape'
@@ -77,8 +78,9 @@ export interface ReconcileCaptureEnrichmentOutcome {
 
 /**
  * Enrich every pending capture: scrape the page's meta tags, generate the AI
- * description when a provider is configured, and stamp `captureStatus: done`.
- * Never throws.
+ * description and cleaned-up display title when a provider is configured
+ * (retitling the note's H1 and the daily entry's link text), and stamp
+ * `captureStatus: done`. Never throws.
  */
 export async function reconcileCaptureEnrichment(
   input: ReconcileCaptureEnrichmentInput,
@@ -179,6 +181,8 @@ export async function reconcileCaptureEnrichment(
         return outcome({ reason: 'stale', message: 'the graph session ended mid-pass' })
       }
 
+      const title = parseNote({ path: identity.notePath, source }).title
+      let aiTitle: string | null = null
       let description: string | null = null
       if (config !== null && apiKey !== null) {
         let screenshotBase64: string | undefined
@@ -192,35 +196,41 @@ export async function reconcileCaptureEnrichment(
           }
         }
         try {
-          description = await describePage({
+          const generated = await describePage({
             config,
             apiKey,
             fetchFn: input.fetchFn,
             url: meta.captureUrl,
-            title: parseNote({ path: identity.notePath, source }).title,
+            title,
+            metaTitle: pageMeta?.title ?? undefined,
+            siteName: pageMeta?.siteName ?? undefined,
             metaDescription: pageMeta?.description ?? undefined,
             contentText: capturePageTextFromBody(split.body),
             screenshotBase64,
           })
+          aiTitle = generated.title
+          description = generated.description
         } catch (cause) {
           if (!isDescriptionRejected(cause)) {
             throw cause
           }
-          description = null
         }
         if (stale()) {
           return outcome({ reason: 'stale', message: 'the graph session ended mid-pass' })
         }
       }
 
-      const usedAi =
-        description !== null && metadataValue(description) !== '' && config !== null
-      const text = usedAi
+      const usedAiDescription = description !== null && metadataValue(description) !== ''
+      const usedAi = (usedAiDescription || aiTitle !== null) && config !== null
+      const text = usedAiDescription
         ? description
         : hasDescription(split.body)
           ? null
           : pageMeta?.description ?? null
-      const newBody = text !== null ? withDescription(split.body, text) : split.body
+      let newBody = text !== null ? withDescription(split.body, text) : split.body
+      if (aiTitle !== null) {
+        newBody = withTitle(newBody, aiTitle)
+      }
       const reassembled = source.slice(0, split.bodyOffset) + newBody
       await writeNote(
         identity.notePath,
@@ -232,6 +242,16 @@ export async function reconcileCaptureEnrichment(
         }),
         input.generation,
       )
+      if (aiTitle !== null && aiTitle !== title) {
+        const entry = `[[${identity.base}|${title}]]`
+        if (dailySource.includes(entry)) {
+          await writeNote(
+            dailyPath(identity.date),
+            dailySource.replace(entry, () => `[[${identity.base}|${aiTitle}]]`),
+            input.generation,
+          )
+        }
+      }
       enriched += 1
     } catch (cause) {
       return outcome({ reason: toAppError(cause).kind, message: errorMessage(cause) })

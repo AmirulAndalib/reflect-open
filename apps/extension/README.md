@@ -18,8 +18,8 @@ Install the published extension from the
 popup → `chrome.storage` queue → background `sendNativeMessage` →
 `reflect-capture-host` (Tauri sidecar, registered by the desktop app on every
 launch) → capture inbox → desktop drain (`@reflect/core` `actions/capture`):
-raw note + daily `## Links` entry now, meta-scrape + BYOK AI description
-async. The extension stores no keys and makes no AI or network calls; its
+raw note + daily `## Links` entry now, meta-scrape + BYOK AI title +
+description async. The extension stores no keys and makes no AI or network calls; its
 only honest status is **queued** — it cannot observe the desktop drain.
 
 ## Develop

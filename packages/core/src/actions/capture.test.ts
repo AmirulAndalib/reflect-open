@@ -167,7 +167,7 @@ beforeEach(() => {
   readAssetMock.mockResolvedValue(btoa('jpeg-bytes'))
   getSecretMock.mockResolvedValue('sk-live-key')
   scrapeMock.mockResolvedValue({ title: 'An article', description: null, siteName: null })
-  describeMock.mockResolvedValue('An AI description of the page.')
+  describeMock.mockResolvedValue({ title: null, description: 'An AI description of the page.' })
 })
 
 describe('captureIdentity', () => {
@@ -628,6 +628,8 @@ describe('reconcileCaptureEnrichment', () => {
       expect.objectContaining({
         url: URL,
         title: 'An article',
+        metaTitle: 'An article',
+        siteName: 'Example',
         metaDescription: 'A scraped description.',
         contentText,
         screenshotBase64: btoa('jpeg-bytes'),
@@ -813,6 +815,85 @@ describe('reconcileCaptureEnrichment', () => {
 
     expect(outcome.stopped?.reason).toBe('auth')
     expect(files.get(IDENTITY.notePath)).toContain('captureStatus: pending')
+  })
+
+  it('retitles the note H1, screenshot alt, and daily link text from the AI title', async () => {
+    await drainOne()
+    describeMock.mockResolvedValue({
+      title: 'A Cleaned Up Article',
+      description: 'An AI description of the page.',
+    })
+
+    const outcome = await reconcile()
+
+    expect(outcome).toEqual({ pending: 1, enriched: 1, skipped: 0, stopped: null })
+    const note = files.get(IDENTITY.notePath) ?? ''
+    expect(note).toContain('# A Cleaned Up Article')
+    expect(note).not.toContain('# An article')
+    expect(note).toContain(`![A Cleaned Up Article](${IDENTITY.assetPath})`)
+    expect(note).toContain('captureStatus: done')
+    expect(note).toContain('captureProvider: openai')
+    const daily = files.get(DAILY) ?? ''
+    expect(daily).toContain('- [[capture-2026-06-11-153022-845-7c9e|A Cleaned Up Article]]')
+    expect(daily).not.toContain('|An article]]')
+  })
+
+  it('keeps the captured title when the AI answer matches it — the daily is never rewritten', async () => {
+    await drainOne()
+    describeMock.mockResolvedValue({
+      title: 'An article',
+      description: 'An AI description of the page.',
+    })
+
+    const outcome = await reconcile()
+
+    expect(outcome.enriched).toBe(1)
+    expect(files.get(IDENTITY.notePath)).toContain('# An article')
+    expect(writeNoteMock.mock.calls.filter(([path]) => path === DAILY)).toHaveLength(0)
+  })
+
+  it('keeps the captured title when the model produced no usable one', async () => {
+    await drainOne()
+
+    await reconcile()
+
+    expect(files.get(IDENTITY.notePath)).toContain('# An article')
+    expect(files.get(DAILY)).toContain('|An article]]')
+    expect(writeNoteMock.mock.calls.filter(([path]) => path === DAILY)).toHaveLength(0)
+  })
+
+  it('leaves a user-edited daily link text alone while still retitling the note', async () => {
+    await drainOne()
+    files.set(DAILY, (files.get(DAILY) ?? '').replace('|An article]]', '|my own link text]]'))
+    describeMock.mockResolvedValue({
+      title: 'A Cleaned Up Article',
+      description: 'An AI description of the page.',
+    })
+
+    const outcome = await reconcile()
+
+    expect(outcome.enriched).toBe(1)
+    expect(files.get(IDENTITY.notePath)).toContain('# A Cleaned Up Article')
+    expect(files.get(DAILY)).toContain('|my own link text]]')
+  })
+
+  it('an AI title with a blank description retitles, stamps provenance, and keeps the scraped description', async () => {
+    await drainOne()
+    scrapeMock.mockResolvedValue({
+      title: 'An article',
+      description: 'A scraped description.',
+      siteName: null,
+    })
+    describeMock.mockResolvedValue({ title: 'A Cleaned Up Article', description: '' })
+
+    const outcome = await reconcile()
+
+    expect(outcome.enriched).toBe(1)
+    const note = files.get(IDENTITY.notePath) ?? ''
+    expect(note).toContain('# A Cleaned Up Article')
+    expect(note).toContain('- Description: A scraped description.')
+    expect(note).toContain('captureProvider: openai')
+    expect(note).toContain('captureModel: gpt-5.5')
   })
 
   it('never re-enriches done or skipped captures', async () => {

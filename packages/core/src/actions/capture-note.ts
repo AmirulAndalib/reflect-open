@@ -148,8 +148,37 @@ export function hasDescription(body: string): boolean {
 }
 
 /**
- * Insert or replace the single visible generated-text surface for link
- * captures. The raw body has a `- Type: #link` anchor.
+ * Rewrite the capture note's display title — the leading H1 the drain wrote,
+ * plus the screenshot alt text that mirrors it. The caller has already
+ * verified the body is the unedited drain-written shape (hash check), so a
+ * missing heading is a bug, not user data.
+ */
+export function withTitle(body: string, title: string): string {
+  const newlineAt = body.indexOf('\n')
+  const firstLine = newlineAt === -1 ? body : body.slice(0, newlineAt)
+  if (!firstLine.startsWith('# ')) {
+    throw new Error('capture note is missing its title heading')
+  }
+  const oldTitle = firstLine.slice(2)
+  if (oldTitle === title) {
+    return body
+  }
+  const retitled = `# ${title}${newlineAt === -1 ? '' : body.slice(newlineAt)}`
+  const screenshot = `## Screenshot\n\n![${oldTitle}](`
+  const screenshotAt = retitled.lastIndexOf(screenshot)
+  if (screenshotAt === -1) {
+    return retitled
+  }
+  return (
+    retitled.slice(0, screenshotAt) +
+    `## Screenshot\n\n![${title}](` +
+    retitled.slice(screenshotAt + screenshot.length)
+  )
+}
+
+/**
+ * Insert or replace the description metadata bullet for link captures. The
+ * raw body has a `- Type: #link` anchor.
  */
 export function withDescription(body: string, description: string): string {
   const line = `- Description: ${metadataValue(description)}`
