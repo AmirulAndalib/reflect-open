@@ -98,6 +98,35 @@ describe('reindexNotesReferencing', () => {
     expect(emitted).toEqual([[[{ path: 'notes/a.md', kind: 'upsert' }], 7]])
   })
 
+  it('still emits the applied prefix when a later note’s re-index throws', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      const sql = String(args['sql'] ?? '')
+      if (command === 'db_query' && sql.includes('from "assets"')) {
+        return [{ note_path: 'notes/a.md' }, { note_path: 'notes/b.md' }]
+      }
+      if (command === 'note_read') {
+        if ((args as { path: string }).path === 'notes/b.md') {
+          throw { kind: 'io', message: 'disk error' }
+        }
+        return '# Hello'
+      }
+      return null
+    })
+    const emitted: Array<readonly { path: string }[]> = []
+    const unsubscribe = subscribeIndexApplied((changes) => {
+      emitted.push(changes)
+    })
+    try {
+      await expect(reindexNotesReferencing(['assets/pic.png'], 7)).rejects.toMatchObject({
+        kind: 'io',
+      })
+    } finally {
+      unsubscribe()
+    }
+    // notes/a.md was applied before the failure — followers must hear it.
+    expect(emitted).toEqual([[{ path: 'notes/a.md', kind: 'upsert' }]])
+  })
+
   it('emits nothing when no note references the assets', async () => {
     mockInvoke.mockImplementation(async (command, args) => {
       const sql = String(args['sql'] ?? '')

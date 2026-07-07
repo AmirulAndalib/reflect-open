@@ -116,22 +116,28 @@ export async function reindexNotesReferencing(
     }
   }
   const applied: string[] = []
-  for (const notePath of notePaths) {
-    try {
-      await indexNote(notePath, { generation })
-      applied.push(notePath)
-    } catch (cause) {
-      if (isAppError(cause) && cause.kind === 'notFound') {
-        continue // the note was removed since it referenced the asset
+  try {
+    for (const notePath of notePaths) {
+      try {
+        await indexNote(notePath, { generation })
+        applied.push(notePath)
+      } catch (cause) {
+        if (isAppError(cause) && cause.kind === 'notFound') {
+          continue // the note was removed since it referenced the asset
+        }
+        throw cause
       }
-      throw cause
     }
-  }
-  if (applied.length > 0) {
-    emitIndexApplied(
-      applied.map((path) => ({ path, kind: 'upsert' as const })),
-      generation,
-    )
+  } finally {
+    // Emit even when a later note's re-index threw: whatever was applied is
+    // real, and unnotified followers would serve stale vectors until the
+    // next backfill.
+    if (applied.length > 0) {
+      emitIndexApplied(
+        applied.map((path) => ({ path, kind: 'upsert' as const })),
+        generation,
+      )
+    }
   }
 }
 
