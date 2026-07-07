@@ -11,7 +11,7 @@ import { useWakeToToday } from '@/mobile/use-wake-to-today'
 import { routesEqual, type Route } from '@/routing/route'
 import { useRouter } from '@/routing/router'
 
-const DAILY_DOUBLE_TAP_MS = 450
+const TAB_DOUBLE_TAP_MS = 450
 
 type DailyRoute = Extract<Route, { kind: 'today' }> | Extract<Route, { kind: 'daily' }>
 
@@ -32,7 +32,7 @@ export function MobileShell(): ReactElement {
   const [allFilters, setAllFilters] = useState<AllNotesFilters>(EMPTY_ALL_NOTES_FILTERS)
   const [lastTab, setLastTab] = useState<MobileTab>('daily')
   const [lastDailyRoute, setLastDailyRoute] = useState<DailyRoute>({ kind: 'today' })
-  const lastDailyTapAt = useRef<number | null>(null)
+  const lastTabTap = useRef<{ tab: MobileTab; at: number } | null>(null)
   const keyboardVisible = useKeyboardVisible()
   // V1's wake-to-today: foregrounding on a new calendar date lands on today.
   useWakeToToday()
@@ -68,29 +68,44 @@ export function MobileShell(): ReactElement {
     setLastDailyRoute(currentDailyRoute)
   }
 
+  // A pending tap only pairs into a double-tap while its tab's root stays
+  // current: a navigation off the root (a deep link, an opened note) between
+  // two taps means the second one is a return, not a capture gesture.
+  const onAllRoot = route.kind === 'allNotes' || route.kind === 'search'
   useLayoutEffect(() => {
-    if (currentDailyRoute === null) {
-      lastDailyTapAt.current = null
+    const pending = lastTabTap.current
+    if (pending === null) {
+      return
     }
-  }, [currentDailyRoute])
+    if (
+      (pending.tab === 'daily' && currentDailyRoute === null) ||
+      (pending.tab === 'all' && !onAllRoot)
+    ) {
+      lastTabTap.current = null
+    }
+  }, [currentDailyRoute, onAllRoot])
+
+  const isDoubleTap = (next: MobileTab): boolean => {
+    const previous = lastTabTap.current
+    const now = Date.now()
+    lastTabTap.current = { tab: next, at: now }
+    return previous !== null && previous.tab === next && now - previous.at <= TAB_DOUBLE_TAP_MS
+  }
 
   const handleTabSelect = (next: MobileTab): void => {
-    if (next !== 'daily') {
-      lastDailyTapAt.current = null
-      navigate(
-        next === 'tasks'
-          ? { kind: 'tasks' }
-          : next === 'chat'
-            ? { kind: 'chat' }
-            : { kind: 'allNotes', tag: null },
-      )
+    const doubleTap = isDoubleTap(next)
+
+    if (next === 'all') {
+      // The double-tap is a search gesture: land on the tab with its search
+      // input focused (the Daily tab's capture double-tap, All-flavored).
+      navigate({ kind: 'allNotes', tag: null }, doubleTap ? { focusEditor: true } : undefined)
       return
     }
 
-    const now = Date.now()
-    const doubleTap =
-      lastDailyTapAt.current !== null && now - lastDailyTapAt.current <= DAILY_DOUBLE_TAP_MS
-    lastDailyTapAt.current = now
+    if (next !== 'daily') {
+      navigate(next === 'tasks' ? { kind: 'tasks' } : { kind: 'chat' })
+      return
+    }
 
     if (doubleTap) {
       navigate({ kind: 'today' }, { focusEditor: true })
