@@ -9,12 +9,12 @@ and optional AI over your own Markdown.
 
 Reflect is an open-source note-taking app built around a folder of Markdown
 files. It opens to today's note, lets `[[wiki links]]` connect people,
-projects, and ideas, and builds a local index for search, backlinks, and graph
-queries.
+projects, and ideas, and keeps search and backlinks fast without turning your
+notes into an app-only database.
 
-The app does not require a Reflect account or hosted Reflect API. Notes live in
-a folder you choose. Optional services such as LLM providers, transcription,
-iCloud, GitHub, or another git remote are connected directly by the user.
+The app does not require a Reflect account. Notes live in a folder you choose,
+and optional services such as AI providers, transcription, iCloud, GitHub, or
+another git remote are connected directly by the user.
 
 <img width="2926" height="1800" alt="Reflect" src="https://github.com/user-attachments/assets/6da0e0d2-3f25-4fc4-850c-b764548c3abe" />
 
@@ -23,8 +23,8 @@ iCloud, GitHub, or another git remote are connected directly by the user.
 - **Daily notes:** the app opens to today's note, and capture defaults there.
 - **Wiki links and backlinks:** type `[[` to link notes; each note shows what
   links back to it.
-- **Local search:** `⌘K` searches notes, backlinks, tags, and the local index.
-  Optional semantic search uses local embeddings.
+- **Local search:** `⌘K` searches notes, backlinks, and tags. Optional semantic
+  search can be enabled locally.
 - **Ask your notes:** `⌘J` can query notes through user-provided OpenAI,
   Anthropic, Google, or OpenRouter keys. Answers cite source notes.
 - **Private notes:** `private: true` excludes a note's content from AI and
@@ -32,7 +32,7 @@ iCloud, GitHub, or another git remote are connected directly by the user.
 - **Audio memos:** record audio and transcribe it into the daily note with a
   configured transcription provider.
 - **Browser capture:** save links, selected text, screenshots, and page text
-  from Chrome through the local native-messaging host.
+  from Chrome.
 - **Sync choices:** use iCloud Drive for file sync, or git/GitHub for
   versioned backup.
 - **CLI:** `reflect today`, `reflect search`, and `reflect show` are available
@@ -54,33 +54,24 @@ You can also [build from source](#building-from-source).
 
 Install
 [Reflect Capture from the Chrome Web Store](https://chromewebstore.google.com/detail/reflect-capture/ccabifmooehighoonjeiololjfofkhkd)
-to capture the current page into Reflect from Chrome.
+to save the current page, selected text, screenshots, and optional page text
+from Chrome.
 
-The extension sends captures to the installed Mac app through a local
-native-messaging host. If Reflect is closed, the host queues captures in the
-graph's local `.reflect/inbox/` folder, and the app imports them on the next
-launch.
+## Your Notes Are Files
 
-## Data Model
-
-Reflect calls a notes folder a **graph**. A new graph looks like this:
+Reflect calls a notes folder a **graph**. A graph is a folder you can inspect,
+back up, sync, or edit with other tools:
 
 ```text
 my-graph/
 ├── daily/2026-06-12.md     # Daily notes, named by date
 ├── notes/some-title.md     # Other notes, named from their titles
 ├── assets/                 # Images and attachments
-├── audio-memos/            # Audio recordings and transcripts
-└── .reflect/               # Local SQLite index, git-ignored
+└── audio-memos/            # Audio recordings and transcripts
 ```
 
-Markdown files are the source of truth. Search data, backlinks, tags,
-embeddings, and other derived data live in `.reflect/index.sqlite` and can be
-rebuilt from the Markdown files.
-
-Frontmatter is intentionally small: a stable `id`, optional `aliases`, and the
-`private` / `pinned` flags. External edits are picked up by the file watcher and
-re-indexed.
+Markdown files are the source of truth. Reflect adds search, backlinks, tags,
+and related notes on top, but the files remain usable in any Markdown editor.
 
 ## Sync and Privacy
 
@@ -88,19 +79,12 @@ For simple file sync across Apple devices, create your graph inside an
 iCloud-synced folder such as `iCloud Drive/ReflectGraph`.
 
 For versioned backup or non-iCloud sync, connect GitHub in the app or add
-[any SSH git remote](docs/generic-git-remotes.md) as the graph's `origin`.
-Git sync stores the Markdown graph in a repository you control and leaves the
-rebuildable `.reflect/` index out of the backup.
+[any SSH git remote](docs/generic-git-remotes.md). Git sync stores the Markdown
+graph in a repository you control.
 
-Every network call is documented in
-[docs/privacy.md](docs/privacy.md). By default, note content stays on the
-device. External calls only happen after you configure a provider, connect a git
-remote, or use a platform sync service. Secrets are stored in the OS keychain.
-
-iCloud Drive encryption depends on the user's iCloud settings. Apple's
-[Advanced Data Protection](https://support.apple.com/en-us/108756) enables
-end-to-end encryption for iCloud Drive content, with some Apple service
-metadata outside that protection.
+By default, note content stays on the device. External calls only happen after
+you configure a provider, connect a git remote, or use a platform sync service.
+See [docs/privacy.md](docs/privacy.md) for the full privacy model.
 
 ## Building from Source
 
@@ -119,39 +103,25 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-## Architecture
+## Project Layout
 
-Reflect is a pnpm/Turborepo monorepo with a React + TypeScript frontend and a
-Tauri 2 native shell.
+Reflect is a pnpm/Turborepo monorepo:
 
 ```text
 reflect-open/
-├── apps/desktop/          # Tauri app
-│   ├── src/               # React UI, providers, components, editor
-│   └── src-tauri/         # Rust shell: file IO, SQLite, git, embeddings
-├── apps/cli/              # `reflect` CLI, bundled as a sidecar
+├── apps/desktop/          # Mac and iOS app
+├── apps/cli/              # `reflect` CLI
 ├── apps/extension/        # Chrome capture extension
-├── apps/native-host/      # Native-messaging capture host
-├── packages/core/         # Platform-agnostic TypeScript business logic
-├── packages/db/           # Kysely schema and IPC dialect
-├── crates/index-schema/   # Shared SQLite migrations
+├── apps/native-host/      # Browser capture helper
+├── packages/core/         # Shared TypeScript logic
+├── packages/db/           # Database types and helpers
+├── crates/index-schema/   # Shared index schema
 ├── design-system/         # Tokens and UI primitives
-└── docs/                  # Product, architecture, and implementation docs
+└── docs/                  # Product, architecture, and contributor docs
 ```
 
-The editor writes Markdown through the Rust shell. The file watcher reports
-changes, `@reflect/core` parses the note, and the SQLite projection is updated
-for search and backlinks. Saves made by Reflect and edits made by other tools
-use the same indexing path.
-
-`@reflect/core` does not import Tauri. Platform capabilities are provided
-through an injected bridge, installed by the desktop app at startup in
-[apps/desktop/src/lib/tauri-bridge.ts](apps/desktop/src/lib/tauri-bridge.ts).
-
-The editor is [meowdown](https://github.com/prosekit/meowdown), a
-ProseMirror/Lezer Markdown editor that renders Markdown in place while
-preserving round trips. Notes that cannot be round-tripped safely open
-read-only.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/contributing/](docs/contributing/),
+and [AGENTS.md](AGENTS.md) for conventions and development guides.
 
 ## Development
 
@@ -181,9 +151,6 @@ For TestFlight builds:
 pnpm release:ios preflight --build-number=123
 pnpm release:ios testflight --build-number=123 --wait
 ```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/contributing/](docs/contributing/),
-and [AGENTS.md](AGENTS.md) for conventions and development guides.
 
 ## Status
 
