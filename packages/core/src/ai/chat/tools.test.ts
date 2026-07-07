@@ -357,6 +357,29 @@ describe('read_assets', () => {
     expect(output.asset.truncated).toBe(false)
   })
 
+  it('canonicalizes markdown-spelled paths to the indexed assets/… form', async () => {
+    const spacedSidecar = 'assets/chart one.png.reflect.md'
+    const tools = assetTools(
+      {
+        [SIDECAR]: `---\nreflectAsset: true\n---\n${DESCRIPTION_BODY}\n`,
+        [spacedSidecar]: `---\nreflectAsset: true\n---\n${DESCRIPTION_BODY}\n`,
+        'notes/deck.md': '# Deck\n\n![a](./assets/chart.png)\n\n![b](assets/chart%20one.png)\n',
+      },
+      ['notes/deck.md'],
+    )
+    for (const [spelled, canonical] of [
+      ['./assets/chart.png', ASSET],
+      ['assets/chart%20one.png', 'assets/chart one.png'],
+    ] as const) {
+      const output = await runReadAsset(tools, spelled)
+      if (!output.ok) {
+        expect.unreachable(`expected a successful read for ${spelled}`)
+      }
+      expect(output.asset.path).toBe(canonical)
+      expect(output.asset.description).toBe(DESCRIPTION_BODY)
+    }
+  })
+
   it('reads several assets in one call, isolating a per-asset miss', async () => {
     const tools = assetTools(
       {

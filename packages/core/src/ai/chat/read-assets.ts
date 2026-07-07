@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { classifyAssetFromNotes } from '../../actions/asset-privacy'
 import { isAppError } from '../../errors'
 import { descriptionPathFor, isAssetPath } from '../../graph/paths'
+import { canonicalAssetPath } from '../../markdown/extract'
 import { splitFrontmatter } from '../../markdown/frontmatter'
 import {
   cloudSafeAssetDescription,
@@ -71,19 +72,23 @@ export interface ReadAssetDeps {
 
 /**
  * Build the per-asset reader for read_assets: the sidecar body (frontmatter
- * stripped, capped), or a structured per-asset miss/refusal. Existence is
- * checked first — a missing sidecar reveals nothing — then the live privacy
- * verdict over the referencing notes (the sidecar on disk can predate a note
- * turning private) gates the mint, failing closed.
+ * stripped, capped), or a structured per-asset miss/refusal. The model copies
+ * paths verbatim from note markdown, so the href is first collapsed to the
+ * canonical `assets/…` form the sidecar, index, and privacy gate all key off
+ * (`./`-prefixes, percent-escapes). Existence is checked next — a missing
+ * sidecar reveals nothing — then the live privacy verdict over the
+ * referencing notes (the sidecar on disk can predate a note turning private)
+ * gates the mint, failing closed.
  */
 export function buildReadOneAsset(deps: ReadAssetDeps) {
   return async function readOneAsset(path: string): Promise<ReadAssetResult> {
-    if (!isAssetPath(path)) {
+    const canonical = canonicalAssetPath(path)
+    if (canonical === null || !isAssetPath(canonical)) {
       return { ok: false, path, error: NOT_AN_ASSET_ERROR }
     }
     let source: string
     try {
-      source = await deps.readNoteFn(descriptionPathFor(path))
+      source = await deps.readNoteFn(descriptionPathFor(canonical))
     } catch (cause) {
       if (isAppError(cause) && cause.kind === 'notFound') {
         return { ok: false, path, error: NO_ASSET_DESCRIPTION_ERROR }
@@ -94,14 +99,14 @@ export function buildReadOneAsset(deps: ReadAssetDeps) {
     if (body === '') {
       return { ok: false, path, error: NO_ASSET_DESCRIPTION_ERROR }
     }
-    const candidates = await deps.assetReferencingNotePathsFn(path)
-    const verdict = await classifyAssetFromNotes(path, candidates, deps.readNoteFn)
+    const candidates = await deps.assetReferencingNotePathsFn(canonical)
+    const verdict = await classifyAssetFromNotes(canonical, candidates, deps.readNoteFn)
     const truncated = body.length > MAX_ASSET_DESCRIPTION_CHARS
     try {
       return {
         ok: true,
         asset: cloudSafeAssetDescription({
-          path,
+          path: canonical,
           isPrivate: verdict !== 'send',
           description: truncated ? body.slice(0, MAX_ASSET_DESCRIPTION_CHARS) : body,
           truncated,
