@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { MobileFormattingToolbar } from '@/mobile/formatting-toolbar'
 import { MobileStack } from '@/mobile/mobile-stack'
 import { MobileTabBar, type MobileTab } from '@/mobile/mobile-tab-bar'
@@ -7,11 +7,10 @@ import {
   type AllNotesFilters,
 } from '@/mobile/search-filters/filter-state'
 import { useKeyboardVisible } from '@/mobile/use-keyboard'
+import { tabRootFor, useTabDoubleTap } from '@/mobile/use-tab-double-tap'
 import { useWakeToToday } from '@/mobile/use-wake-to-today'
 import { routesEqual, type Route } from '@/routing/route'
 import { useRouter } from '@/routing/router'
-
-const TAB_DOUBLE_TAP_MS = 450
 
 type DailyRoute = Extract<Route, { kind: 'today' }> | Extract<Route, { kind: 'daily' }>
 
@@ -32,7 +31,7 @@ export function MobileShell(): ReactElement {
   const [allFilters, setAllFilters] = useState<AllNotesFilters>(EMPTY_ALL_NOTES_FILTERS)
   const [lastTab, setLastTab] = useState<MobileTab>('daily')
   const [lastDailyRoute, setLastDailyRoute] = useState<DailyRoute>({ kind: 'today' })
-  const lastTabTap = useRef<{ tab: MobileTab; at: number } | null>(null)
+  const isDoubleTap = useTabDoubleTap(route)
   const keyboardVisible = useKeyboardVisible()
   // V1's wake-to-today: foregrounding on a new calendar date lands on today.
   useWakeToToday()
@@ -50,46 +49,13 @@ export function MobileShell(): ReactElement {
   // A note keeps whichever tab it was opened from: routes that don't map to a
   // tab fall back to the last one, remembered across renders. Tracking that in
   // state (adjusted during render) avoids reading/writing a ref in render.
-  const tab: MobileTab =
-    route.kind === 'allNotes' || route.kind === 'search'
-      ? 'all'
-      : route.kind === 'tasks'
-        ? 'tasks'
-        : route.kind === 'chat'
-          ? 'chat'
-          : route.kind === 'today' || route.kind === 'daily'
-            ? 'daily'
-            : lastTab
+  const tab: MobileTab = tabRootFor(route) ?? lastTab
   const currentDailyRoute = dailyRouteFrom(route)
   if (tab !== lastTab) {
     setLastTab(tab)
   }
   if (currentDailyRoute !== null && !routesEqual(currentDailyRoute, lastDailyRoute)) {
     setLastDailyRoute(currentDailyRoute)
-  }
-
-  // A pending tap only pairs into a double-tap while its tab's root stays
-  // current: a navigation off the root (a deep link, an opened note) between
-  // two taps means the second one is a return, not a capture gesture.
-  const onAllRoot = route.kind === 'allNotes' || route.kind === 'search'
-  useLayoutEffect(() => {
-    const pending = lastTabTap.current
-    if (pending === null) {
-      return
-    }
-    if (
-      (pending.tab === 'daily' && currentDailyRoute === null) ||
-      (pending.tab === 'all' && !onAllRoot)
-    ) {
-      lastTabTap.current = null
-    }
-  }, [currentDailyRoute, onAllRoot])
-
-  const isDoubleTap = (next: MobileTab): boolean => {
-    const previous = lastTabTap.current
-    const now = Date.now()
-    lastTabTap.current = { tab: next, at: now }
-    return previous !== null && previous.tab === next && now - previous.at <= TAB_DOUBLE_TAP_MS
   }
 
   const handleTabSelect = (next: MobileTab): void => {
