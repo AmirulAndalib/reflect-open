@@ -1,5 +1,5 @@
-import type { ReactElement } from 'react'
-import { Square } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { Square, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { useMobileAudioMemo } from '@/mobile/audio-memo-provider'
@@ -10,8 +10,8 @@ import { RecordingLevelWaveform } from '@/mobile/recording-level-waveform'
  * elapsed time with a stop control while recording, and the capture-failure
  * state with Retry/Discard. Dragging the sheet down mid-recording
  * stops-and-saves — dismissal must never silently drop audio; discarding is
- * the explicit Cancel control. The provider owns open state and the
- * stop/cancel semantics behind `onDrawerOpenChange`.
+ * explicit and requires a second tap. The provider owns open state and the
+ * stop/discard semantics behind `onDrawerOpenChange`.
  */
 export function RecordingDrawer(): ReactElement {
   const memo = useMobileAudioMemo()
@@ -35,36 +35,86 @@ export function RecordingDrawer(): ReactElement {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-4 pb-2">
-            <div className="flex h-7 items-center justify-center">
-              {memo.phase === 'recording' ? (
-                <RecordingLevelWaveform level={memo.level} />
-              ) : (
-                <p className="text-sm text-text-muted">Waiting for the microphone…</p>
-              )}
-            </div>
-            <span className="text-lg font-medium tabular-nums">
-              {formatElapsed(memo.elapsedMs)}
-            </span>
-            <div className="flex w-full flex-col items-center gap-2">
-              <Button
-                variant="destructive"
-                size="icon"
-                aria-label="Stop recording"
-                className="size-14 rounded-full"
-                disabled={memo.phase !== 'recording'}
-                onClick={() => memo.stopAndSave()}
-              >
-                <Square aria-hidden fill="currentColor" className="size-5" />
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => memo.cancelRecording()}>
-                Cancel
-              </Button>
-            </div>
-          </div>
+          <LiveRecordingControls key={memo.drawerOpen ? 'open' : 'closed'} memo={memo} />
         )}
       </DrawerContent>
     </Drawer>
+  )
+}
+
+type MobileAudioMemo = ReturnType<typeof useMobileAudioMemo>
+
+interface LiveRecordingControlsProps {
+  memo: MobileAudioMemo
+}
+
+function LiveRecordingControls({ memo }: LiveRecordingControlsProps): ReactElement {
+  const [discardArmed, setDiscardArmed] = useState(false)
+  const discardResetTimer = useRef<number | null>(null)
+
+  const clearDiscardReset = (): void => {
+    if (discardResetTimer.current !== null) {
+      window.clearTimeout(discardResetTimer.current)
+      discardResetTimer.current = null
+    }
+  }
+
+  useEffect(
+    () => () => {
+      if (discardResetTimer.current !== null) {
+        window.clearTimeout(discardResetTimer.current)
+      }
+    },
+    [],
+  )
+
+  const confirmDiscard = (): void => {
+    if (!discardArmed) {
+      setDiscardArmed(true)
+      clearDiscardReset()
+      discardResetTimer.current = window.setTimeout(() => {
+        setDiscardArmed(false)
+        discardResetTimer.current = null
+      }, 3000)
+      return
+    }
+    clearDiscardReset()
+    memo.cancelRecording()
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-4 pb-2">
+      <div className="flex h-7 items-center justify-center">
+        {memo.phase === 'recording' ? (
+          <RecordingLevelWaveform level={memo.level} />
+        ) : (
+          <p className="text-sm text-text-muted">Waiting for the microphone…</p>
+        )}
+      </div>
+      <span className="text-lg font-medium tabular-nums">{formatElapsed(memo.elapsedMs)}</span>
+      <div className="flex w-full flex-col items-center gap-3">
+        <Button
+          variant="destructive"
+          size="icon"
+          aria-label="Stop recording"
+          className="size-14 rounded-full"
+          disabled={memo.phase !== 'recording'}
+          onClick={() => memo.stopAndSave()}
+        >
+          <Square aria-hidden fill="currentColor" className="size-5" />
+        </Button>
+        <Button
+          variant={discardArmed ? 'destructive' : 'ghost'}
+          size="sm"
+          className={discardArmed ? undefined : 'text-text-muted'}
+          aria-label={discardArmed ? 'Confirm discard recording' : 'Discard recording'}
+          onClick={confirmDiscard}
+        >
+          <Trash2 aria-hidden className="size-3.5" />
+          {discardArmed ? 'Tap again to discard' : 'Discard'}
+        </Button>
+      </div>
+    </div>
   )
 }
 
