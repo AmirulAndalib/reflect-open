@@ -49,7 +49,11 @@ export function ImageLightbox({
         <div
           className="absolute inset-0"
           style={dismissDrag.lightboxStyle}
-          onTransitionEnd={dismissDrag.finishSettle}
+          onTransitionEnd={(event) => {
+            if (event.target === event.currentTarget) {
+              dismissDrag.finishSettle()
+            }
+          }}
         >
           <div
             aria-hidden

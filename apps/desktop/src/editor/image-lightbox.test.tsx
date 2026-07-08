@@ -185,7 +185,7 @@ describe('ImageLightbox mobile drag-to-dismiss', () => {
   })
 
   it('springs back after a short drag and suppresses the trailing tap', () => {
-    const { preview, image, backdrop, onClose } = renderMobileLightbox()
+    const { preview, image, backdrop, closeChrome, onClose } = renderMobileLightbox()
 
     touchDown(preview, 100, 100)
     firePointer(preview, 'pointermove', { pointerId: 1, clientX: 102, clientY: 130 })
@@ -195,6 +195,7 @@ describe('ImageLightbox mobile drag-to-dismiss', () => {
     expect(image.style.transform).toBe('translate3d(0, 0, 0) scale(1)')
     expect(backdrop!.style.opacity).toBe('1')
 
+    fireEvent.transitionEnd(closeChrome)
     fireEvent.click(preview)
     fireEvent.click(preview)
     expect(onClose).not.toHaveBeenCalled()
