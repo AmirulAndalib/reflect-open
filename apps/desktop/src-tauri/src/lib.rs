@@ -294,14 +294,21 @@ pub fn run() {
             #[cfg(any(target_os = "macos", target_os = "ios"))]
             tauri::RunEvent::Opened { urls } => {
                 #[cfg(mobile)]
-                {
-                    use tauri_plugin_recording::RecordingExt;
-                    for url in urls {
-                        if url.scheme() == "reflect" && url.host_str() == Some("record-audio") {
+                for url in urls {
+                    if url.scheme() == "reflect" && url.host_str() == Some("record-audio") {
+                        // This callback runs on the main thread, and
+                        // `run_mobile_plugin` blocks its caller until the
+                        // Swift command resolves — which `queueAction` does
+                        // from the main queue. Calling it inline deadlocks
+                        // the main thread (the watchdog then kills the app),
+                        // so queue from a worker thread instead.
+                        let app = app.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            use tauri_plugin_recording::RecordingExt;
                             if let Err(err) = app.recording().queue_action("recordAudio") {
                                 tracing::warn!(error = %err, "queueing the record-audio action failed");
                             }
-                        }
+                        });
                     }
                 }
                 #[cfg(not(mobile))]
