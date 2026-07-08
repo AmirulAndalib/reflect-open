@@ -10,7 +10,9 @@ import {
 } from '@/components/ui/attachment'
 import { Button } from '@/components/ui/button'
 import { ChatModelDrawer } from '@/mobile/chat-model-drawer'
+import { useArrivalFocus } from '@/mobile/use-arrival-focus'
 import { useChatSession } from '@/providers/chat-provider'
+import { useRouter } from '@/routing/router'
 
 /**
  * The mobile chat composer (Plan 23): a plain textarea bound to the
@@ -22,6 +24,7 @@ import { useChatSession } from '@/providers/chat-provider'
  * empty and the composer lands on the keyboard's top edge (contract 6).
  */
 export function MobileChatComposer(): ReactElement {
+  const { arrivalSeq, arrivalFocusEditor } = useRouter()
   const {
     status,
     activeModel,
@@ -34,9 +37,12 @@ export function MobileChatComposer(): ReactElement {
     stop,
   } = useChatSession()
   const [modelOpen, setModelOpen] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const streaming = status === 'streaming'
   const empty = draft.trim() === '' && attachments.length === 0
+
+  useArrivalFocus({ arrivalSeq, arrivalFocusEditor, target: textareaRef })
 
   const submit = (): void => {
     if (streaming || empty) {
@@ -73,6 +79,7 @@ export function MobileChatComposer(): ReactElement {
         </AttachmentGroup>
       ) : null}
       <textarea
+        ref={textareaRef}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         placeholder="Ask about your notes…"

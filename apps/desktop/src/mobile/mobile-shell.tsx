@@ -31,9 +31,10 @@ export function MobileShell(): ReactElement {
   const [allFilters, setAllFilters] = useState<AllNotesFilters>(EMPTY_ALL_NOTES_FILTERS)
   const [lastTab, setLastTab] = useState<MobileTab>('daily')
   const [lastDailyRoute, setLastDailyRoute] = useState<DailyRoute>({ kind: 'today' })
-  // A tab double-tap is a capture gesture (Daily focuses today's editor, All
-  // its search input); a pending tap expires if the route leaves the tab's
-  // root between taps — that second tap is a return, not a double-tap.
+  // A tab double-tap is a capture gesture (Daily focuses today's editor; list
+  // and chat tabs focus their primary inputs); a pending tap expires if the
+  // route leaves the tab's root between taps — that second tap is a return,
+  // not a double-tap.
   const isDoubleTap = useDoubleTap<MobileTab>(tabRootFor(route))
   const keyboardVisible = useKeyboardVisible()
   // V1's wake-to-today: foregrounding on a new calendar date lands on today.
@@ -71,8 +72,13 @@ export function MobileShell(): ReactElement {
       return
     }
 
-    if (next !== 'daily') {
-      navigate(next === 'tasks' ? { kind: 'tasks' } : { kind: 'chat' })
+    if (next === 'tasks') {
+      navigate({ kind: 'tasks' }, doubleTap ? { focusEditor: true } : undefined)
+      return
+    }
+
+    if (next === 'chat') {
+      navigate({ kind: 'chat' }, doubleTap ? { focusEditor: true } : undefined)
       return
     }
 

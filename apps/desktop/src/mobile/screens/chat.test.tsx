@@ -107,12 +107,22 @@ function RouteProbe(): null {
   return null
 }
 
+function FocusChatProbe(): ReactElement {
+  const { navigate } = useRouter()
+  return (
+    <button type="button" onClick={() => navigate({ kind: 'chat' }, { focusEditor: true })}>
+      focus chat input
+    </button>
+  )
+}
+
 /** The screen inside the real provider stack, unmountable like a tab switch. */
 function Harness({ showScreen }: { showScreen: boolean }): ReactElement {
   return (
     <QueryClientProvider client={new QueryClient()}>
       <RouterProvider>
         <RouteProbe />
+        <FocusChatProbe />
         <ChatProvider graph={{ root: '/graphs/test', name: 'test-graph', generation: 1 }}>
           {showScreen ? <MobileChat /> : null}
         </ChatProvider>
@@ -174,5 +184,15 @@ describe('MobileChat', () => {
       'half-typed follow-up',
     )
     expect(screen.getByText('sent question')).toBeDefined()
+  })
+
+  it('focuses the composer when a chat tab capture arrival requests it', async () => {
+    configureModel()
+    render(<Harness showScreen />)
+
+    const composer = screen.getByLabelText('Chat message')
+    fireEvent.click(screen.getByRole('button', { name: 'focus chat input' }))
+
+    await waitFor(() => expect(document.activeElement).toBe(composer))
   })
 })

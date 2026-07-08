@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState, type ReactElement } from 'react'
+import { useDeferredValue, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Archive, CircleCheck, Plus, SlidersHorizontal } from 'lucide-react'
 import {
@@ -23,6 +23,7 @@ import { SearchInput } from '@/mobile/search-input'
 import { MobileTaskEditSheet } from '@/mobile/task-edit-sheet'
 import { TaskFiltersDrawer } from '@/mobile/task-filters-drawer'
 import { MobileTaskGroup } from '@/mobile/task-group'
+import { useArrivalFocus } from '@/mobile/use-arrival-focus'
 import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
@@ -42,10 +43,11 @@ import { useRouter } from '@/routing/router'
  */
 export function MobileTasks(): ReactElement {
   const { graph } = useGraph()
-  const { navigate } = useRouter()
+  const { navigate, arrivalSeq, arrivalFocusEditor } = useRouter()
   const today = useToday()
   const { filters, toggle } = useTaskFilters()
   const [query, setQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   // The sheet's task sticks around after close so the exit animation has
   // content; `sheetOpen` alone drives visibility.
@@ -55,6 +57,15 @@ export function MobileTasks(): ReactElement {
   // (keyboard up) — set per visit: true for "+"-added tasks, false for row taps.
   const [autoFocusEditor, setAutoFocusEditor] = useState(false)
   const enabled = hasBridge() && graph !== null
+
+  // The Tasks-tab double-tap lands in the tab's capture surface: its live
+  // search filter, selected so a replacement query can start immediately.
+  useArrivalFocus({
+    arrivalSeq,
+    arrivalFocusEditor,
+    target: searchInputRef,
+    selectText: true,
+  })
 
   const { data: open, isError: openFailed } = useQuery({
     queryKey: tasksQueryKey(graph?.root),
@@ -134,6 +145,7 @@ export function MobileTasks(): ReactElement {
     >
       <header className="flex shrink-0 items-center gap-1 border-b border-border px-4 pb-2 pt-1">
         <SearchInput
+          ref={searchInputRef}
           placeholder="Search tasks…"
           aria-label="Search tasks"
           value={query}

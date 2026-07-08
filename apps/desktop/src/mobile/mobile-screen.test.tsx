@@ -553,6 +553,34 @@ describe('MobileShell', () => {
     expect((await view.findByText('No tasks to show')).textContent).toBe('No tasks to show')
   })
 
+  it('double-tapping Tasks selects the task search filter', async () => {
+    const user = userEvent.setup()
+    let fakeNow = 1_000
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => fakeNow)
+    const view = mount({ kind: 'today' })
+    let box: HTMLInputElement | null = null
+
+    try {
+      fireEvent.click(view.getByRole('button', { name: 'Tasks' }))
+      box = (await view.findByRole('searchbox', { name: 'Search tasks' })) as HTMLInputElement
+      await user.type(box, 'milk')
+
+      fakeNow = 2_000
+      fireEvent.click(view.getByRole('button', { name: 'Tasks' }))
+      fakeNow = 2_100
+      fireEvent.click(view.getByRole('button', { name: 'Tasks' }))
+    } finally {
+      now.mockRestore()
+    }
+
+    if (box === null) {
+      throw new Error('task search box did not render')
+    }
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    expect(box.selectionStart).toBe(0)
+    expect(box.selectionEnd).toBe(box.value.length)
+  })
+
   it('hides the tab bar while the software keyboard is up (V1: the keyboard covered it)', () => {
     const view = mount({ kind: 'today' })
     expect(view.getByRole('navigation', { name: 'Sections' })).toBeTruthy()

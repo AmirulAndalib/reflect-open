@@ -42,10 +42,10 @@ interface RouterValue {
   /**
    * True when the latest arrival asked the destination to focus its primary
    * input (`navigate(route, { focusEditor: true })`). Only explicit capture
-   * gestures request it — the mobile Daily- and All-tab double-taps,
-   * desktop's ⌘D and sidebar Daily notes row — while note navigations (wiki
-   * links, backlinks, back/forward) stay calm so the keyboard never rises
-   * mid-arrival.
+   * gestures request it — the mobile Daily-, All-, Tasks-, and Chat-tab
+   * double-taps, desktop's ⌘D and sidebar Daily notes row — while note
+   * navigations (wiki links, backlinks, back/forward) stay calm so the
+   * keyboard never rises mid-arrival.
    * One-shot by construction: the next navigate overwrites it and history
    * moves clear it, so it can never leak onto a later, unrelated arrival.
    */
@@ -91,9 +91,9 @@ export interface NavigateOptions {
    * {@link RouterValue.arrivalFocusEditor}. Consumed by the daily surfaces —
    * the mobile Daily-tab double-tap and desktop's stream (⌘D, the sidebar's
    * Daily notes row), which land the caret at the end of the day's content
-   * (append-style capture) — and by the mobile All tab, whose double-tap
-   * focuses the search input; desktop's note route autofocuses every arrival
-   * and ignores it.
+   * (append-style capture) — and by the mobile All, Tasks, and Chat tabs,
+   * whose double-taps focus their primary inputs; desktop's note route
+   * autofocuses every arrival and ignores it.
    */
   focusEditor?: boolean
 }

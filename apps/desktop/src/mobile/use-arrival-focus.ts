@@ -7,13 +7,15 @@ export interface ArrivalFocusOptions {
   arrivalFocusEditor: boolean
   /** The element a focus arrival should focus. */
   target: RefObject<HTMLElement | null>
+  /** Select existing text after focusing text controls. */
+  selectText?: boolean
 }
 
 /**
  * Focus `target` on capture arrivals (`navigate(..., { focusEditor: true })`
- * — the All-tab double-tap landing on the search input). Mirrors
+ * — e.g. tab double-taps landing on search/composer inputs). Mirrors
  * `useDailyArrivals`' bookkeeping: each arrival is consumed once, and the
- * arrival that mounts the screen still counts — the double-tap's second
+ * arrival that mounts the screen still counts — a double-tap's second
  * navigate can land before the remounting screen first commits, so waiting
  * for a seq *change* would silently swallow the gesture.
  */
@@ -21,13 +23,21 @@ export function useArrivalFocus({
   arrivalSeq,
   arrivalFocusEditor,
   target,
+  selectText = false,
 }: ArrivalFocusOptions): void {
   const seenSeq = useRef<number | null>(null)
   useEffect(() => {
     const newArrival = seenSeq.current !== arrivalSeq
     seenSeq.current = arrivalSeq
     if (newArrival && arrivalFocusEditor) {
-      target.current?.focus()
+      const element = target.current
+      element?.focus()
+      if (
+        selectText &&
+        (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)
+      ) {
+        element.select()
+      }
     }
-  }, [arrivalSeq, arrivalFocusEditor, target])
+  }, [arrivalSeq, arrivalFocusEditor, selectText, target])
 }
