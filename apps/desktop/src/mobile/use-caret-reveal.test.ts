@@ -4,11 +4,12 @@ import { REVEAL_WINDOW_MS, useCaretReveal } from './use-caret-reveal'
 
 /**
  * The end-of-note reveal in isolation (extracted from DaySlide). jsdom has no
- * layout, so the container is faked with a controllable scroll range and a
- * hand-fired ResizeObserver — the same harness as use-scroll-restore. The
- * contract under test: the double-tap's caret lands at the note's end before
- * the iOS keyboard reports its height, so the reveal must re-pin the
- * container to its end as it shrinks, then get out of the user's way.
+ * layout, so the caret scroll is a recording spy and the ResizeObserver is
+ * hand-fired — the same harness as use-scroll-restore. The contract under
+ * test: the double-tap's caret lands at the note's end before the iOS
+ * keyboard reports its height (and before a long note's images size in), so
+ * the reveal must keep asking the editor to scroll the caret back into view
+ * as the layout churns, then get out of the user's way.
  */
 
 class FakeResizeObserver {
@@ -48,44 +49,17 @@ function observer(): FakeResizeObserver | undefined {
   return FakeResizeObserver.instances[0]
 }
 
-interface FakeScrollable {
-  element: HTMLDivElement
-  /** Change the scrollable range, as a keyboard raise (shrink) would. */
-  setScrollRange: (options: { scrollHeight: number; maxScrollTop: number }) => void
-}
-
-function createScrollable(scrollHeight: number, maxScrollTop: number): FakeScrollable {
-  const element = document.createElement('div')
-  let height = scrollHeight
-  let max = maxScrollTop
-  let top = 0
-  Object.defineProperty(element, 'scrollHeight', {
-    get: () => height,
-  })
-  Object.defineProperty(element, 'scrollTop', {
-    get: () => top,
-    set: (value: number) => {
-      top = Math.min(Math.max(value, 0), max)
-    },
-  })
-  return {
-    element,
-    setScrollRange: (options) => {
-      height = options.scrollHeight
-      max = options.maxScrollTop
-      top = Math.min(top, max)
-    },
-  }
-}
-
-function mountReveal(options: { scrollHeight: number; maxScrollTop: number }) {
-  const scrollable = createScrollable(options.scrollHeight, options.maxScrollTop)
+function mountReveal() {
+  const container = document.createElement('div')
   const content = document.createElement('div')
-  scrollable.element.appendChild(content)
-  const containerRef = { current: scrollable.element }
+  container.appendChild(content)
+  const containerRef = { current: container }
   const contentRef = { current: content }
-  const hook = renderHook(() => useCaretReveal({ containerRef, contentRef }))
-  return { scrollable, content, hook }
+  const scrollCaretIntoView = vi.fn()
+  const hook = renderHook(() =>
+    useCaretReveal({ containerRef, contentRef, scrollCaretIntoView }),
+  )
+  return { container, content, scrollCaretIntoView, hook }
 }
 
 beforeEach(() => {
@@ -101,81 +75,84 @@ afterEach(() => {
 })
 
 describe('useCaretReveal', () => {
-  it('pins the container to its end immediately and re-pins as it shrinks', () => {
-    const { scrollable, content, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
+  it('reveals the caret immediately and re-reveals as the layout changes', () => {
+    const { container, content, scrollCaretIntoView, hook } = mountReveal()
 
     hook.result.current.revealEnd()
-    expect(scrollable.element.scrollTop).toBe(400)
-    expect(observer()?.observed).toContain(scrollable.element)
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(1)
+    expect(observer()?.observed).toContain(container)
     expect(observer()?.observed).toContain(content)
 
     // The keyboard raises: the shell (and the container) shrink by its
-    // height, so the reachable range grows and the end drops out of view.
-    scrollable.setScrollRange({ scrollHeight: 900, maxScrollTop: 716 })
+    // height, dropping an end-of-note caret under the keyboard. Late content
+    // growth (images sizing in) fires the same observer.
     observer()?.resize()
-    expect(scrollable.element.scrollTop).toBe(716)
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(2)
   })
 
-  it('re-pins on late content growth (images sizing in)', () => {
-    const { scrollable, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
-
-    hook.result.current.revealEnd()
-    scrollable.setScrollRange({ scrollHeight: 1300, maxScrollTop: 800 })
-    observer()?.resize()
-    expect(scrollable.element.scrollTop).toBe(800)
-  })
-
-  it('re-pins when something scrolls the container away without a resize', () => {
-    const { scrollable, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
+  it('re-reveals when something scrolls the container without a resize', () => {
+    const { container, scrollCaretIntoView, hook } = mountReveal()
 
     hook.result.current.revealEnd()
     // iOS WebKit scrolls the container directly to reveal the newly focused
     // editor — no size change, so the observer never fires. The user's own
     // take-over always leads with a pointerdown, so a bare scroll is never
     // the user's.
-    scrollable.element.scrollTop = 120
-    scrollable.element.dispatchEvent(new Event('scroll'))
-    expect(scrollable.element.scrollTop).toBe(400)
+    container.dispatchEvent(new Event('scroll'))
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(2)
   })
 
   it('stops chasing scrolls once the reveal ends', () => {
-    const { scrollable, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
+    const { container, scrollCaretIntoView, hook } = mountReveal()
 
     hook.result.current.revealEnd()
-    scrollable.element.dispatchEvent(new Event('pointerdown'))
-    scrollable.element.scrollTop = 120
-    scrollable.element.dispatchEvent(new Event('scroll'))
-    expect(scrollable.element.scrollTop).toBe(120)
+    container.dispatchEvent(new Event('pointerdown'))
+    container.dispatchEvent(new Event('scroll'))
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(1)
   })
 
-  it('ends the reveal at the deadline — later resizes leave the user alone', () => {
-    const { scrollable, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
+  it('ends the reveal after a quiet window — later churn leaves the user alone', () => {
+    const { scrollCaretIntoView, hook } = mountReveal()
 
     hook.result.current.revealEnd()
     vi.advanceTimersByTime(REVEAL_WINDOW_MS)
     expect(observer()?.disconnected).toBe(true)
 
-    scrollable.element.scrollTop = 100
-    scrollable.setScrollRange({ scrollHeight: 900, maxScrollTop: 716 })
     observer()?.resize()
-    expect(scrollable.element.scrollTop).toBe(100)
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-arms the quiet window on each disturbance, covering churn past one window', () => {
+    const { scrollCaretIntoView, hook } = mountReveal()
+
+    hook.result.current.revealEnd()
+    // A long note's images keep sizing in: each growth lands inside the
+    // current window and re-arms it, so the reveal outlives a single fixed
+    // window while the layout is still moving.
+    vi.advanceTimersByTime(REVEAL_WINDOW_MS - 100)
+    observer()?.resize()
+    vi.advanceTimersByTime(REVEAL_WINDOW_MS - 100)
+    expect(observer()?.disconnected).toBe(false)
+    observer()?.resize()
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(3)
+
+    vi.advanceTimersByTime(REVEAL_WINDOW_MS)
+    expect(observer()?.disconnected).toBe(true)
   })
 
   it('hands control to the user on pointerdown', () => {
-    const { scrollable, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
+    const { container, scrollCaretIntoView, hook } = mountReveal()
 
     hook.result.current.revealEnd()
-    scrollable.element.dispatchEvent(new Event('pointerdown'))
+    container.dispatchEvent(new Event('pointerdown'))
     expect(observer()?.disconnected).toBe(true)
 
-    scrollable.element.scrollTop = 100
-    scrollable.setScrollRange({ scrollHeight: 900, maxScrollTop: 716 })
     observer()?.resize()
-    expect(scrollable.element.scrollTop).toBe(100)
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(1)
   })
 
-  it('restarts the window when called again, replacing the old reveal', () => {
-    const { scrollable, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
+  it('restarts the reveal when called again, replacing the old one', () => {
+    const { scrollCaretIntoView, hook } = mountReveal()
 
     hook.result.current.revealEnd()
     const first = observer()
@@ -183,40 +160,33 @@ describe('useCaretReveal', () => {
     expect(first?.disconnected).toBe(true)
     expect(FakeResizeObserver.instances).toHaveLength(2)
 
-    scrollable.setScrollRange({ scrollHeight: 900, maxScrollTop: 716 })
     FakeResizeObserver.instances[1]?.resize()
-    expect(scrollable.element.scrollTop).toBe(716)
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(3)
   })
 
   it('cancelReveal ends an active reveal without touching the scroll position', () => {
-    const { scrollable, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
+    const { scrollCaretIntoView, hook } = mountReveal()
 
     hook.result.current.revealEnd()
-    expect(scrollable.element.scrollTop).toBe(400)
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(1)
     hook.result.current.cancelReveal()
     expect(observer()?.disconnected).toBe(true)
-    expect(scrollable.element.scrollTop).toBe(400)
 
-    // An explicit jump-to-top after the cancel must stick: no late re-pin
+    // An explicit jump-to-top after the cancel must stick: no late re-reveal
     // when the keyboard dismisses or content grows, and no live deadline.
-    scrollable.element.scrollTop = 0
-    scrollable.setScrollRange({ scrollHeight: 900, maxScrollTop: 716 })
     observer()?.resize()
-    expect(scrollable.element.scrollTop).toBe(0)
     vi.advanceTimersByTime(REVEAL_WINDOW_MS)
-    expect(scrollable.element.scrollTop).toBe(0)
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(1)
   })
 
   it('stops the reveal on unmount', () => {
-    const { scrollable, hook } = mountReveal({ scrollHeight: 900, maxScrollTop: 400 })
+    const { scrollCaretIntoView, hook } = mountReveal()
 
     hook.result.current.revealEnd()
     hook.unmount()
     expect(observer()?.disconnected).toBe(true)
 
-    scrollable.element.scrollTop = 100
-    scrollable.setScrollRange({ scrollHeight: 900, maxScrollTop: 716 })
     observer()?.resize()
-    expect(scrollable.element.scrollTop).toBe(100)
+    expect(scrollCaretIntoView).toHaveBeenCalledTimes(1)
   })
 })

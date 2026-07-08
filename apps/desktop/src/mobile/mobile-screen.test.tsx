@@ -77,6 +77,7 @@ vi.mock('@/editor/note-editor', async () => {
           setSelection: (position: 'start' | 'end') => {
             editorProbe.selectionCalls.push(position)
           },
+          scrollIntoView: () => {},
           getSelectedText: () => '',
           openSelectionMenu: () => {},
           startPendingReplacement: () => false,

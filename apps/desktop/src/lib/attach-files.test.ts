@@ -41,6 +41,7 @@ function editorHandle(): NoteEditorHandle & {
     insertMarkdown: vi.fn<(markdown: string) => void>(),
     focus: () => {},
     setSelection: () => {},
+    scrollIntoView: () => {},
     getSelectedText: () => '',
     openSelectionMenu: () => {},
     startPendingReplacement: () => false,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type ReactElement } from 'react'
 import { dailyPath } from '@reflect/core'
 import { NotePane } from '@/components/note-pane'
+import { noteEditorHandleFor } from '@/editor/editor-handle-registry'
 import { formatDayLabel } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { IncomingBacklinks } from '@/mobile/incoming-backlinks'
@@ -64,12 +65,24 @@ export function DaySlide({
     contentRef,
   })
 
-  const { revealEnd, cancelReveal } = useCaretReveal({ containerRef, contentRef })
+  // The day's editor registers under its note path as it mounts — before the
+  // autofocus that starts a reveal — so the lookup only misses after the
+  // editor unmounted, when there is no caret left to reveal.
+  const scrollCaretIntoView = useCallback(() => {
+    noteEditorHandleFor(dailyPath(day))?.scrollIntoView()
+  }, [day])
+
+  const { revealEnd, cancelReveal } = useCaretReveal({
+    containerRef,
+    contentRef,
+    scrollCaretIntoView,
+  })
 
   // The end-of-note autofocus scrolls the caret into view against the
   // full-height viewport; the keyboard then raises and shrinks the shell by
-  // its height, dropping the note's end below the fold. The reveal holds the
-  // container at its end while that settles (see use-caret-reveal.ts).
+  // its height — and a long note keeps growing as images size in — dropping
+  // the caret below the fold. The reveal keeps scrolling it back into view
+  // while that settles (see use-caret-reveal.ts).
   //
   // A remount's scroll restore must die first: the double-tap's second
   // arrival often lands while this slide (freshly remounted from another
