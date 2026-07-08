@@ -356,7 +356,10 @@ export function NoteEditor({
     [],
   )
   const handleImageClick = useCallback(
-    ({ src, alt, event }: { src: string; alt: string; event: MouseEvent }) => {
+    // Touch surfaces deliver the tap's `touchend` instead of a click —
+    // meowdown cancels it so iOS WebKit can't focus the editor (and raise
+    // the keyboard) under the opening lightbox.
+    ({ src, alt, event }: { src: string; alt: string; event: MouseEvent | TouchEvent }) => {
       const displayUrl = resolveImageUrlRef.current?.(src) ?? null
       if (displayUrl === null) {
         return

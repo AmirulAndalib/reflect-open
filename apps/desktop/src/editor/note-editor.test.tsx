@@ -16,7 +16,7 @@ interface CapturedEditorProps {
   timeFormat?: '12' | '24'
   children?: ReactNode
   resolveImageUrl?: (src: string) => string | undefined
-  onImageClick?: (payload: { src: string; alt: string; event: MouseEvent }) => void
+  onImageClick?: (payload: { src: string; alt: string; event: MouseEvent | TouchEvent }) => void
   onLinkClick?: (payload: { href: string; event: MouseEvent }) => void
   onTagClick?: (payload: { tag: string; event: MouseEvent }) => void
   onFilePaste?: (file: File) => Promise<string | undefined>
