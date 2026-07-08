@@ -13,6 +13,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { usePinnedNotes } from '@/hooks/use-pinned-notes'
 import { useReorderPinnedNotes } from '@/hooks/use-reorder-pinned-notes'
 import { formatDayLabel } from '@/lib/dates'
+import { displayNoteTitle } from '@/lib/note-title-display'
 import { useSettings } from '@/providers/settings-provider'
 import { routeForPath, routesEqual } from '@/routing/route'
 import { useRouter } from '@/routing/router'
@@ -86,7 +87,7 @@ export function SidebarPinned(): ReactElement | null {
               overlay
               label={
                 activeNote.dailyDate === null
-                  ? activeNote.title
+                  ? displayNoteTitle(activeNote.title)
                   : formatDayLabel(activeNote.dailyDate, settings.dateFormat)
               }
             />

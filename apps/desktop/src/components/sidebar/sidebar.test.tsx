@@ -271,6 +271,18 @@ describe('Sidebar', () => {
     await waitFor(() => expect(roadmap.getAttribute('aria-current')).toBe('page'))
   })
 
+  it('renders wiki links in pinned note titles as display text', async () => {
+    getPinnedNotes.mockResolvedValue([
+      { path: 'notes/meeting.md', title: 'Meeting with [[Ada Lovelace|Ada]]', dailyDate: null },
+    ])
+    const { view } = renderSidebar()
+
+    const pinnedSection = await view.findByRole('region', { name: /pinned notes/i })
+    expect(pinnedSection.textContent).toContain('Meeting with Ada')
+    expect(pinnedSection.textContent).not.toContain('[[Ada Lovelace|Ada]]')
+    expect(view.getByRole('button', { name: 'Meeting with Ada' })).toBeTruthy()
+  })
+
   it('All notes is inactive while the active note is pinned', async () => {
     getPinnedNotes.mockResolvedValue([
       { path: 'notes/roadmap.md', title: 'Roadmap', dailyDate: null },
