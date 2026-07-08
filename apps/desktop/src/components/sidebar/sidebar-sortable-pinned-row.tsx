@@ -10,6 +10,7 @@ import {
 } from '@/lib/notes/pinned-notes-cache'
 import { formatDayLabel } from '@/lib/dates'
 import { openNativeContextMenu } from '@/lib/native-menu/context-menu'
+import { displayNoteTitle } from '@/lib/note-title-display'
 import { unpinNote } from '@/lib/note-pin'
 import { startOperation } from '@/lib/operations'
 import { useGraph } from '@/providers/graph-provider'
@@ -32,7 +33,9 @@ export const SidebarSortablePinnedRow = memo(function SidebarSortablePinnedRow({
   const target = routeForPath(note.path)
   const active = routesEqual(route, target)
   const label =
-    note.dailyDate !== null ? formatDayLabel(note.dailyDate, settings.dateFormat) : note.title
+    note.dailyDate !== null
+      ? formatDayLabel(note.dailyDate, settings.dateFormat)
+      : displayNoteTitle(note.title)
   const {
     isDragging,
     listeners,
