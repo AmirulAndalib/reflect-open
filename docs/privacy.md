@@ -71,11 +71,13 @@ disk at call time), and it is covered by tests.
 ## Error diagnostics
 
 - **Where:** Sentry (`o463484.ingest.us.sentry.io`).
-- **What:** JavaScript error reports from the packaged app: stack traces, release and
-  environment tags, React component stacks, browser/WebView metadata, and recent
-  breadcrumbs that help explain how the app reached the failure. Reflect disables
-  Sentry user identity collection, cookies, query params, HTTP header and body
-  capture, and generative-AI input/output capture. Session Replay is not enabled.
+- **What:** JavaScript error reports from the packaged app: stack traces, exception
+  type, release, environment, and SDK metadata. Before an event leaves the app,
+  Reflect strips free-form event messages, breadcrumbs, request data, custom extras,
+  user data, tags, transaction names, exception messages, event contexts, stack-frame
+  variables, and source context lines. It also disables Sentry user identity
+  collection, cookies, query params, HTTP header and body capture, and generative-AI
+  input/output capture. Session Replay is not enabled.
 - **When:** automatically in official production builds when the React app throws,
   catches, or recovers from an error. Development builds and third-party source builds
   send diagnostics only when explicitly configured for that build.
