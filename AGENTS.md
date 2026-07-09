@@ -169,8 +169,6 @@ pnpm tauri dev        # Full Tauri app with hot reload (stages the CLI sidecar f
 pnpm tauri:dev        # `pnpm tauri dev` with the dev overlay → the "Reflect Dev" flavor (green icon, own identifier; coexists with Reflect / Reflect Beta)
 pnpm build            # turbo build pipeline → apps/desktop/dist/
 pnpm tauri build      # Native app bundle, incl. the reflect CLI sidecar
-                      # Releases: merge the release-please "Release PR" on next (beta) or
-                      #   master (stable) — see docs/macos-distribution.md → Cutting a release
 pnpm release:macos    # Signed + notarized macOS build for distribution (docs/macos-distribution.md)
 pnpm release:macos publish  # The above, then fill and undraft the release-please draft release
 pnpm tauri ios dev "iPhone 17 Pro"  # Run the Tauri iOS target in the simulator (docs/contributing/mobile-simulator.md)
