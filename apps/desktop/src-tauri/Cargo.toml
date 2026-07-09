@@ -1,6 +1,9 @@
 [package]
 name = "reflect-open"
-version = "0.4.0-beta.47"
+# Intentionally frozen: the app version lives in apps/desktop/package.json and
+# tauri.conf.json points at it. The crate is never published, so its version
+# has no consumer — freezing it keeps Cargo.lock out of every release diff.
+version = "0.0.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"

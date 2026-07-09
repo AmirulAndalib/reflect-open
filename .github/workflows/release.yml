@@ -33,14 +33,15 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
-      # The release is tagged v<version> from tauri.conf.json regardless of
-      # the pushed tag, so a mismatch would publish under the wrong name.
-      - name: Verify the pushed tag matches tauri.conf.json
+      # The release is tagged v<version> from apps/desktop/package.json (the
+      # single version source; tauri.conf.json points at it) regardless of the
+      # pushed tag, so a mismatch would publish under the wrong name.
+      - name: Verify the pushed tag matches apps/desktop/package.json
         if: github.ref_type == 'tag'
         run: |
-          version="$(jq -r .version apps/desktop/src-tauri/tauri.conf.json)"
+          version="$(jq -r .version apps/desktop/package.json)"
           if [ "$GITHUB_REF_NAME" != "v${version}" ]; then
-            echo "::error::pushed tag ${GITHUB_REF_NAME} but tauri.conf.json says ${version} — fix the tag, or bump the version (and src-tauri/Cargo.toml)"
+            echo "::error::pushed tag ${GITHUB_REF_NAME} but apps/desktop/package.json says ${version} — fix the tag, or bump the version"
             exit 1
           fi
 

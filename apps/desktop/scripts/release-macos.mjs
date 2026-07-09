@@ -317,9 +317,31 @@ function hostTarget() {
   return target
 }
 
-/** Parse tauri.conf.json — the source of truth for the version and base bundle name. */
+/**
+ * Mirror Tauri's `version` field semantics: a semver string is used as-is; a
+ * path names a package.json (relative to src-tauri) whose "version" field is
+ * the app version. The committed config points at ../package.json — the single
+ * version source, maintained by release-please.
+ */
+export function resolveVersionField(version, readJsonAt) {
+  if (typeof version !== 'string' || version === '') {
+    fail('tauri.conf.json has no "version"')
+  }
+  if (!version.endsWith('.json')) return version
+  const pkg = readJsonAt(version)
+  if (typeof pkg?.version !== 'string') {
+    fail(`${version} (tauri.conf.json "version" pointer) has no "version" field`)
+  }
+  return pkg.version
+}
+
+/** Parse tauri.conf.json (version indirection resolved) — the source of truth for the base bundle name. */
 function readTauriConf() {
-  return JSON.parse(readFileSync(join(appDir, 'src-tauri', 'tauri.conf.json'), 'utf8'))
+  const conf = JSON.parse(readFileSync(join(appDir, 'src-tauri', 'tauri.conf.json'), 'utf8'))
+  conf.version = resolveVersionField(conf.version, (path) =>
+    JSON.parse(readFileSync(join(appDir, 'src-tauri', path), 'utf8')),
+  )
+  return conf
 }
 
 function readPlatformConf(platform) {
@@ -929,7 +951,7 @@ function ensurePublishableCommit() {
 function ensureReleaseIsNew(tag) {
   const existing = run('gh', ['release', 'view', tag])
   if (existing.status === 0) {
-    fail(`release ${tag} already exists — bump "version" in apps/desktop/src-tauri/tauri.conf.json first`)
+    fail(`release ${tag} already exists — bump "version" in apps/desktop/package.json first`)
   }
   if (!/release not found/i.test(existing.output)) {
     fail(`could not check GitHub for an existing ${tag} release:\n${existing.output.trim()}`)
@@ -954,7 +976,7 @@ function ensureTagMatchesCommit(tag, commit) {
     fail(
       `tag ${tag} already exists on origin at ${taggedCommit.slice(0, 7)} but HEAD is ${commit.slice(0, 7)}.\n` +
         '  gh would attach the release to the existing tag, not the commit being built —\n' +
-        '  delete the remote tag or bump "version" in apps/desktop/src-tauri/tauri.conf.json.',
+        '  delete the remote tag or bump "version" in apps/desktop/package.json.',
     )
   }
 }
