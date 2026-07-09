@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from 'react'
 import { ChevronDown, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { addDaysIso } from '@/lib/dates'
@@ -60,7 +60,8 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
   const showingToday = date === today
   const todayButtonRef = useRef<HTMLButtonElement>(null)
 
-  const jumpToToday = (): void => {
+  const jumpToToday = (event: MouseEvent<HTMLButtonElement>): void => {
+    event.currentTarget.blur()
     hapticImpactLight()
     onSelect(today)
     // Selecting today only moves the strip when `date` changes — re-center
@@ -111,7 +112,7 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       {/* Three equal-flanked columns so the month sits at the screen's center
-          regardless of the gear (left) and the conditional Today button (right). */}
+          regardless of the gear (left) and the always-mounted Today slot (right). */}
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 px-1 py-1">
         <div className="justify-self-start">
           <Button
