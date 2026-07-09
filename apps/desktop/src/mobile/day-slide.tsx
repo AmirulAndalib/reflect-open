@@ -4,7 +4,6 @@ import { NotePane } from '@/components/note-pane'
 import { noteEditorHandleFor } from '@/editor/editor-handle-registry'
 import { formatDayLabel } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { driftLog, logScrollAncestorsDiff, snapshotScrollAncestors } from '@/mobile/drift-probe'
 import { IncomingBacklinks } from '@/mobile/incoming-backlinks'
 import { MOBILE_CONTENT_GUTTER } from '@/mobile/mobile-content-gutter'
 import { useCaretReveal } from '@/mobile/use-caret-reveal'
@@ -70,19 +69,7 @@ export function DaySlide({
   // autofocus that starts a reveal — so the lookup only misses after the
   // editor unmounted, when there is no caret left to reveal.
   const scrollCaretIntoView = useCallback(() => {
-    const handle = noteEditorHandleFor(dailyPath(day))
-    // TEMPORARY drift debugging: diff the ancestor scroll offsets around the
-    // old hook's reveal too — it dispatches the same tr.scrollIntoView().
-    const start = containerRef.current
-    const before = start === null ? null : snapshotScrollAncestors(start)
-    driftLog('day-slide reveal (old useCaretReveal hook) dispatching', {
-      day,
-      hasHandle: handle !== undefined && handle !== null,
-    })
-    handle?.scrollIntoView()
-    if (before !== null) {
-      logScrollAncestorsDiff(before, `day-slide reveal (${day})`)
-    }
+    noteEditorHandleFor(dailyPath(day))?.scrollIntoView()
   }, [day])
 
   const { revealEnd, cancelReveal } = useCaretReveal({

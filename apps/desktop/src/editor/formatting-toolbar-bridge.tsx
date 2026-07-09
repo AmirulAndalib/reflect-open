@@ -3,13 +3,6 @@ import { useEditor } from '@meowdown/react'
 import type { EditorExtension } from '@meowdown/core'
 import { isTouchEditorSurface } from '@/lib/platform-surface'
 import {
-  caretDebugInfo,
-  describeEl,
-  driftLog,
-  logScrollAncestorsDiff,
-  snapshotScrollAncestors,
-} from '@/mobile/drift-probe'
-import {
   clearFormattingToolbar,
   publishFormattingToolbar,
   type FormattingToolbarCapabilities,
@@ -95,35 +88,16 @@ export function FormattingToolbarBridge(): null {
         // gives up; the initial raise precedes composing.
         scrollCaretIntoView: () => {
           if (editor.view.composing) {
-            driftLog('bridge reveal SKIPPED (composing)', caretDebugInfo(editor.view))
             return
           }
-          // TEMPORARY drift debugging: capture the caret's geometry and every
-          // ancestor's scroll offsets around the dispatch, so the log shows
-          // exactly which element ProseMirror scrolled and by how much.
-          const before = snapshotScrollAncestors(editor.view.dom)
-          driftLog('bridge reveal dispatching', caretDebugInfo(editor.view))
           editor.view.dispatch(editor.state.tr.scrollIntoView())
-          logScrollAncestorsDiff(before, 'bridge reveal')
         },
       }
 
       function handleFocusIn(): void {
-        driftLog('editor focusin: toolbar claim published', {
-          editorDay:
-            editor.view.dom.closest('[data-day]')?.getAttribute('data-day') ??
-            '<not in a day slide>',
-          activeElement: describeEl(document.activeElement),
-        })
         publish()
       }
       function handleFocusOut(): void {
-        driftLog('editor focusout: toolbar claim cleared', {
-          editorDay:
-            editor.view.dom.closest('[data-day]')?.getAttribute('data-day') ??
-            '<not in a day slide>',
-          activeElement: describeEl(document.activeElement),
-        })
         clearFormattingToolbar(owner)
       }
       function handleSelectionChange(): void {
