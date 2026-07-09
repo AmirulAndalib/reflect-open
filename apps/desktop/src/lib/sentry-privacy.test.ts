@@ -45,6 +45,12 @@ describe('Sentry privacy scrubber', () => {
           {
             type: 'Error',
             value: 'secret note text',
+            module: 'notes.secret-note',
+            mechanism: {
+              type: 'react',
+              handled: true,
+              data: { componentStack: 'secret note text' },
+            },
             stacktrace: {
               frames: [
                 {
@@ -83,6 +89,8 @@ describe('Sentry privacy scrubber', () => {
     expect(scrubbed.sdkProcessingMetadata).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.type).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.value).toBeUndefined()
+    expect(scrubbed.exception?.values?.[0]?.module).toBeUndefined()
+    expect(scrubbed.exception?.values?.[0]?.mechanism).toBeUndefined()
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename).toBe('assets/index.js')
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.abs_path).toBe('app:///assets/index.js')
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]?.module).toBeUndefined()

@@ -32,7 +32,8 @@ export const dropSentryBreadcrumb: NonNullable<SentryInitOptions['beforeBreadcru
  *
  * This keeps release/environment metadata and sanitized stack-frame structure, while stripping
  * messages, breadcrumbs, request data, user data, custom contexts, tags, transaction names,
- * exception type/value text, frame source snippets, frame locals, and local filesystem paths.
+ * exception type/value/mechanism text, frame source snippets, frame locals, and local filesystem
+ * paths.
  */
 export function scrubSentryEventForPrivacy(event: SentryErrorEvent): SentryErrorEvent {
   const scrubbed: SentryErrorEvent = { ...event }
@@ -75,6 +76,8 @@ function scrubException(exception: SentryException): SentryException {
   const scrubbed = { ...exception }
   delete scrubbed.type
   delete scrubbed.value
+  delete scrubbed.mechanism
+  delete scrubbed.module
   if (scrubbed.stacktrace?.frames) {
     scrubbed.stacktrace = {
       ...scrubbed.stacktrace,

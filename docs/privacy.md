@@ -75,10 +75,10 @@ disk at call time), and it is covered by tests.
   source-map debug IDs, release, environment, and SDK metadata. Before an event leaves
   the app, Reflect strips free-form event messages, breadcrumbs, request data, custom
   extras, user data, tags, transaction names, exception messages, event contexts,
-  stack-frame variables, source context lines, and local filesystem paths. App bundle
-  URLs in stack frames and source-map metadata are kept only after query strings and
-  fragments are removed, so source maps can still make stack traces readable. It also
-  disables Sentry user identity
+  exception mechanism data, stack-frame variables, source context lines, and local
+  filesystem paths. App bundle URLs in stack frames and source-map metadata are kept
+  only after query strings and fragments are removed, so source maps can still make
+  stack traces readable. It also disables Sentry user identity
   collection, cookies, query params, HTTP header and body capture, and generative-AI
   input/output capture. Session Replay is not enabled.
 - **When:** automatically in official production builds when the React app throws,
