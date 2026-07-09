@@ -1,6 +1,6 @@
 //! Remote-asset localization for the Reflect V1 import.
 //!
-//! V1 notes link attachments straight at Firebase Storage download URLs. An
+//! V1 notes link attachments straight at Firebase Storage or Reflect's CDN. An
 //! import must not leave a graph depending on Reflect V1's infrastructure, so
 //! every such URL is downloaded into the graph's `assets/` directory and the
 //! markdown link is rewritten to the relative `assets/…` path.
@@ -20,9 +20,12 @@ use std::time::Duration;
 
 use crate::error::{AppError, AppResult};
 
-/// Only asset links on Reflect V1's storage host are localized; every other
+/// Only asset links on Reflect V1's storage hosts are localized; every other
 /// URL in the export is an ordinary link and imports untouched.
-pub(super) const V1_ASSET_URL_PREFIX: &str = "https://firebasestorage.googleapis.com/";
+pub(super) const V1_ASSET_URL_PREFIXES: [&str; 2] = [
+    "https://firebasestorage.googleapis.com/",
+    "https://reflect-assets.app/v1/users/",
+];
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Per-read stall timeout. There is deliberately no whole-request timeout so
@@ -57,13 +60,29 @@ pub(super) struct FetchedAsset {
     pub desired_name: String,
 }
 
-/// Find every remote-asset URL in `markdown` that starts with `prefix`.
+/// Find every remote-asset URL in `markdown` that starts with one of
+/// `prefixes`.
 ///
 /// V1 exports escape URL punctuation the CommonMark way (`?alt=media\&token=`),
 /// so the span keeps the escaped bytes (for splicing) while `url` holds the
 /// unescaped form (for fetching). A span ends at whitespace or any character
 /// that terminates a markdown link destination.
-pub(super) fn scan_remote_spans(markdown: &str, prefix: &str) -> Vec<RemoteSpan> {
+pub(super) fn scan_remote_spans<'a>(
+    markdown: &str,
+    prefixes: impl IntoIterator<Item = &'a str>,
+) -> Vec<RemoteSpan> {
+    let mut spans = Vec::new();
+    for prefix in prefixes {
+        if prefix.is_empty() {
+            continue;
+        }
+        spans.extend(scan_remote_spans_for_prefix(markdown, prefix));
+    }
+    spans.sort_by_key(|span| (span.start, span.end));
+    spans
+}
+
+fn scan_remote_spans_for_prefix(markdown: &str, prefix: &str) -> Vec<RemoteSpan> {
     let mut spans = Vec::new();
     let mut from = 0;
     while let Some(found) = markdown[from..].find(prefix) {
@@ -108,13 +127,13 @@ pub(super) fn scan_remote_spans(markdown: &str, prefix: &str) -> Vec<RemoteSpan>
 /// Replace the remote spans of `markdown` whose URL has a localized path in
 /// `replacements` (URL → `assets/…`). URLs without a replacement (permanent
 /// download failures) keep their remote form.
-pub(super) fn rewrite_markdown(
+pub(super) fn rewrite_markdown<'a>(
     markdown: &str,
-    prefix: &str,
+    prefixes: impl IntoIterator<Item = &'a str>,
     replacements: &HashMap<String, String>,
 ) -> String {
     let mut result = markdown.to_string();
-    for span in scan_remote_spans(markdown, prefix).into_iter().rev() {
+    for span in scan_remote_spans(markdown, prefixes).into_iter().rev() {
         if let Some(local) = replacements.get(&span.url) {
             result.replace_range(span.start..span.end, local);
         }
@@ -135,7 +154,7 @@ pub(super) fn rewrite_asset_paths(
         return markdown.to_string();
     }
     let mut result = markdown.to_string();
-    for span in scan_remote_spans(markdown, "assets/").into_iter().rev() {
+    for span in scan_remote_spans(markdown, ["assets/"]).into_iter().rev() {
         let opens_destination = markdown[..span.start]
             .chars()
             .next_back()
@@ -571,12 +590,13 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
-    const PREFIX: &str = "https://firebasestorage.googleapis.com/";
+    const FIREBASE_PREFIX: &str = "https://firebasestorage.googleapis.com/";
+    const REFLECT_CDN_PREFIX: &str = "https://reflect-assets.app/v1/users/";
 
     #[test]
     fn scan_finds_escaped_urls_in_link_destinations() {
         let markdown = "![](https://firebasestorage.googleapis.com/v0/b/x/o/a?alt=media\\&token=t)\nplain text\n[memo.m4a](https://firebasestorage.googleapis.com/v0/b/x/o/b?alt=media\\&token=u)";
-        let spans = scan_remote_spans(markdown, PREFIX);
+        let spans = scan_remote_spans(markdown, [FIREBASE_PREFIX]);
         assert_eq!(spans.len(), 2);
         assert_eq!(
             spans[0].url,
@@ -595,17 +615,34 @@ mod tests {
     #[test]
     fn scan_ignores_other_hosts() {
         let markdown = "[a](https://example.com/file.png)";
-        assert!(scan_remote_spans(markdown, PREFIX).is_empty());
+        assert!(scan_remote_spans(markdown, [FIREBASE_PREFIX]).is_empty());
     }
 
     #[test]
     fn scan_stops_at_terminators() {
         let markdown = "see https://firebasestorage.googleapis.com/v0/o/a?alt=media end";
-        let spans = scan_remote_spans(markdown, PREFIX);
+        let spans = scan_remote_spans(markdown, [FIREBASE_PREFIX]);
         assert_eq!(spans.len(), 1);
         assert_eq!(
             spans[0].url,
             "https://firebasestorage.googleapis.com/v0/o/a?alt=media"
+        );
+    }
+
+    #[test]
+    fn scan_finds_reflect_assets_cdn_urls() {
+        let markdown = "![](https://reflect-assets.app/v1/users/u/8d964adcdd324599b74cb4efc81aa62d/5ff0f164-fe07-4436-9f9f-234ee49805a0?key=k\\&download=1)\n[clip](https://reflect-assets.app/v1/users/u/0a19dc2e-40e8-4271-8697-616bf11a3edd?key=k)";
+
+        let spans = scan_remote_spans(markdown, [REFLECT_CDN_PREFIX]);
+
+        assert_eq!(spans.len(), 2);
+        assert_eq!(
+            spans[0].url,
+            "https://reflect-assets.app/v1/users/u/8d964adcdd324599b74cb4efc81aa62d/5ff0f164-fe07-4436-9f9f-234ee49805a0?key=k&download=1"
+        );
+        assert_eq!(
+            spans[1].url,
+            "https://reflect-assets.app/v1/users/u/0a19dc2e-40e8-4271-8697-616bf11a3edd?key=k"
         );
     }
 
@@ -617,8 +654,32 @@ mod tests {
             "assets/photo.webp".to_string(),
         )]);
         assert_eq!(
-            rewrite_markdown(markdown, PREFIX, &replacements),
+            rewrite_markdown(markdown, [FIREBASE_PREFIX], &replacements),
             "![](assets/photo.webp) and [f](https://firebasestorage.googleapis.com/o/b?alt=media\\&token=u)"
+        );
+    }
+
+    #[test]
+    fn rewrite_replaces_all_v1_asset_prefixes() {
+        let markdown = "![](https://firebasestorage.googleapis.com/o/a?alt=media\\&token=t) and ![](https://reflect-assets.app/v1/users/u/asset?key=k)";
+        let replacements = HashMap::from([
+            (
+                "https://firebasestorage.googleapis.com/o/a?alt=media&token=t".to_string(),
+                "assets/photo.webp".to_string(),
+            ),
+            (
+                "https://reflect-assets.app/v1/users/u/asset?key=k".to_string(),
+                "assets/cdn-photo.webp".to_string(),
+            ),
+        ]);
+
+        assert_eq!(
+            rewrite_markdown(
+                markdown,
+                V1_ASSET_URL_PREFIXES.iter().copied(),
+                &replacements
+            ),
+            "![](assets/photo.webp) and ![](assets/cdn-photo.webp)"
         );
     }
 
@@ -655,6 +716,22 @@ mod tests {
                 "https://firebasestorage.googleapis.com/v0/b/x/o/users%2Fabc%2Fd8fbbe?alt=media"
             ),
             Some("d8fbbe".to_string())
+        );
+    }
+
+    #[test]
+    fn object_id_uses_the_final_reflect_assets_cdn_segment() {
+        assert_eq!(
+            url_object_id(
+                "https://reflect-assets.app/v1/users/u/8d964adcdd324599b74cb4efc81aa62d/5ff0f164-fe07-4436-9f9f-234ee49805a0?key=k"
+            ),
+            Some("5ff0f164-fe07-4436-9f9f-234ee49805a0".to_string())
+        );
+        assert_eq!(
+            url_object_id(
+                "https://reflect-assets.app/v1/users/u/0a19dc2e-40e8-4271-8697-616bf11a3edd?key=k"
+            ),
+            Some("0a19dc2e-40e8-4271-8697-616bf11a3edd".to_string())
         );
     }
 
