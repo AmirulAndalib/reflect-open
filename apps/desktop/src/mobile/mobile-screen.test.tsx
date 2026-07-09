@@ -614,6 +614,7 @@ describe('MobileShell', () => {
           moveDown: vi.fn(),
           insertTrigger: vi.fn(),
           dismissKeyboard: vi.fn(),
+          scrollCaretIntoView: vi.fn(),
         },
       }),
     )

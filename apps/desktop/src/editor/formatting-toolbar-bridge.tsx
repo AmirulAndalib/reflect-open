@@ -25,6 +25,10 @@ import {
  * Capabilities recompute on DOM `selectionchange` (WebKit fires it for every
  * caret move in the contenteditable) and after each toolbar command, whose
  * own document change is not guaranteed to move the DOM selection.
+ *
+ * The published command surface also carries `scrollCaretIntoView`, which no
+ * toolbar button calls: the keyboard's caret reveal needs to act on whichever
+ * editor holds the caret, and this claim already answers that.
  */
 export function FormattingToolbarBridge(): null {
   const editor = useEditor<EditorExtension>()
@@ -76,6 +80,18 @@ export function FormattingToolbarBridge(): null {
         insertTrigger: (text: FormattingTriggerText) =>
           run(() => editor.commands.insertTrigger(text)),
         dismissKeyboard: () => editor.blur(),
+        // Deliberately not wrapped in `run()`: this moves the scroll, never
+        // the document, so republishing capabilities would be pure churn.
+        // Skipped mid-composition, where a dispatch makes ProseMirror re-read
+        // the DOM and end the composition, eating a half-typed CJK character.
+        // The candidate bar's own height change is the one keyboard event this
+        // gives up; the initial raise precedes composing.
+        scrollCaretIntoView: () => {
+          if (editor.view.composing) {
+            return
+          }
+          editor.view.dispatch(editor.state.tr.scrollIntoView())
+        },
       }
 
       function handleFocusIn(): void {
