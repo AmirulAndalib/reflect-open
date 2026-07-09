@@ -146,6 +146,13 @@ export function EditorSection(): ReactElement {
       </SettingsField>
 
       <SettingsSwitchField
+        legend="Full-width notes"
+        description="Stretch note text across the available page width."
+        checked={settings.editorFullWidthNotes}
+        onCheckedChange={(checked) => updateSettings({ editorFullWidthNotes: checked })}
+      />
+
+      <SettingsSwitchField
         legend="Spell check"
         description="Underline misspelled words while you type."
         checked={settings.editorSpellCheck}
