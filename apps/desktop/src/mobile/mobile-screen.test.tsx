@@ -70,6 +70,7 @@ vi.mock('@/editor/note-editor', async () => {
         handleRef?.({
           setMarkdown: () => {},
           getMarkdown: () => '',
+          commitPendingInput: () => null,
           insertMarkdown: () => {},
           focus: () => {
             editorProbe.focusCalls += 1
@@ -199,6 +200,21 @@ beforeEach(() => {
     }
     if (command === 'note_exists') {
       return (args as { path: string }).path in files
+    }
+    if (command === 'note_create') {
+      const { path, contents } = args as { path: string; contents: string }
+      if (path in files) {
+        return { kind: 'collision' }
+      }
+      files[path] = contents
+      return { kind: 'created', modifiedMs: 1 }
+    }
+    if (command === 'list_files') {
+      return Object.entries(files).map(([path, contents]) => ({
+        path,
+        size: contents.length,
+        modifiedMs: 1,
+      }))
     }
     if (command === 'db_query') {
       return []

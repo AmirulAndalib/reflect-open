@@ -5,17 +5,20 @@ import { RouterProvider, useRouter } from '@/routing/router'
 import { useWikiLinkNavigation } from './use-wiki-link-navigation'
 
 const resolveWikiTarget = vi.hoisted(() => vi.fn())
-const createNoteWithTitle = vi.hoisted(() => vi.fn())
+const resolveOrCreateNoteWithTitle = vi.hoisted(() => vi.fn())
 const openRouteInNewWindow = vi.hoisted(() => vi.fn<() => Promise<boolean>>())
+const operationFail = vi.hoisted(() => vi.fn())
+const startOperation = vi.hoisted(() => vi.fn(() => ({ fail: operationFail })))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   resolveWikiTarget,
-  createNoteWithTitle,
+  resolveOrCreateNoteWithTitle,
 }))
 vi.mock('@/lib/windows/open-in-new-window', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/windows/open-in-new-window')>()),
   openRouteInNewWindow,
 }))
+vi.mock('@/lib/operations', () => ({ startOperation }))
 
 let lastHandler: ((target: string, event?: MouseEvent | KeyboardEvent) => void) | null = null
 
@@ -48,9 +51,11 @@ function currentRoute(view: ReturnType<typeof renderHost>): string {
 
 beforeEach(() => {
   resolveWikiTarget.mockReset()
-  createNoteWithTitle.mockReset()
+  resolveOrCreateNoteWithTitle.mockReset()
   openRouteInNewWindow.mockReset()
   openRouteInNewWindow.mockResolvedValue(true)
+  operationFail.mockReset()
+  startOperation.mockClear()
   lastHandler = null
 })
 
@@ -60,7 +65,7 @@ describe('useWikiLinkNavigation', () => {
     const view = renderHost()
     lastHandler?.('Target')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/target.md'))
-    expect(createNoteWithTitle).not.toHaveBeenCalled()
+    expect(resolveOrCreateNoteWithTitle).not.toHaveBeenCalled()
     view.unmount()
   })
 
@@ -80,17 +85,20 @@ describe('useWikiLinkNavigation', () => {
     await waitFor(() => expect(currentRoute(view)).toContain('"daily"'))
     expect(currentRoute(view)).toContain('2026-06-09')
     expect(view.getByTestId('route').getAttribute('data-focus')).toBe('false')
-    expect(createNoteWithTitle).not.toHaveBeenCalled()
+    expect(resolveOrCreateNoteWithTitle).not.toHaveBeenCalled()
     view.unmount()
   })
 
   it('creates and opens an unresolved title, without a focus intent', async () => {
     resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: 'Brand New' })
-    createNoteWithTitle.mockResolvedValue('notes/created.md')
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'created',
+      path: 'notes/created.md',
+    })
     const view = renderHost(7)
     lastHandler?.('Brand New')
     await waitFor(() => expect(currentRoute(view)).toContain('notes/created.md'))
-    expect(createNoteWithTitle).toHaveBeenCalledWith('Brand New', 7)
+    expect(resolveOrCreateNoteWithTitle).toHaveBeenCalledWith('Brand New', 7)
     expect(view.getByTestId('route').getAttribute('data-focus')).toBe('false')
     view.unmount()
   })
@@ -100,7 +108,7 @@ describe('useWikiLinkNavigation', () => {
     const view = renderHost(null)
     lastHandler?.('Brand New')
     await waitFor(() => expect(resolveWikiTarget).toHaveBeenCalled())
-    expect(createNoteWithTitle).not.toHaveBeenCalled()
+    expect(resolveOrCreateNoteWithTitle).not.toHaveBeenCalled()
     expect(currentRoute(view)).toContain('"today"')
     view.unmount()
   })
@@ -110,7 +118,7 @@ describe('useWikiLinkNavigation', () => {
     const view = renderHost()
     lastHandler?.('   ')
     await waitFor(() => expect(resolveWikiTarget).toHaveBeenCalled())
-    expect(createNoteWithTitle).not.toHaveBeenCalled()
+    expect(resolveOrCreateNoteWithTitle).not.toHaveBeenCalled()
     expect(currentRoute(view)).toContain('"today"')
     view.unmount()
   })
@@ -128,14 +136,34 @@ describe('useWikiLinkNavigation', () => {
 
   it('⌘-click on an unresolved title still creates, then opens the new window', async () => {
     resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: 'Brand New' })
-    createNoteWithTitle.mockResolvedValue('notes/created.md')
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'created',
+      path: 'notes/created.md',
+    })
     const view = renderHost(7)
     lastHandler?.('Brand New', new MouseEvent('click', { metaKey: true }))
     await waitFor(() =>
       expect(openRouteInNewWindow).toHaveBeenCalledWith({ kind: 'note', path: 'notes/created.md' }),
     )
-    expect(createNoteWithTitle).toHaveBeenCalledWith('Brand New', 7)
+    expect(resolveOrCreateNoteWithTitle).toHaveBeenCalledWith('Brand New', 7)
     expect(currentRoute(view)).toContain('"today"')
+    view.unmount()
+  })
+
+  it('does not navigate when the on-disk fallback is ambiguous', async () => {
+    resolveWikiTarget.mockResolvedValue({ kind: 'unresolved', text: 'Business ideas' })
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'ambiguous',
+      paths: ['notes/business-ideas.md', 'notes/business-ideas-2.md'],
+    })
+    const view = renderHost(7)
+    lastHandler?.('Business ideas')
+    await waitFor(() => expect(resolveOrCreateNoteWithTitle).toHaveBeenCalled())
+    expect(currentRoute(view)).toContain('"today"')
+    expect(startOperation).toHaveBeenCalledWith('Opening link')
+    expect(operationFail).toHaveBeenCalledWith(
+      'Couldn’t safely choose one note matching “Business ideas”. Choose the intended note from autocomplete.',
+    )
     view.unmount()
   })
 

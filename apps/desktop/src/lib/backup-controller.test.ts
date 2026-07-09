@@ -35,6 +35,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 interface FakeOptions {
   auth?: string | null
+  /** Hold the direct index write until `releaseIndexApply()` (the convergence barrier). */
+  gateIndexApply?: boolean
   /** Hold the listen promise until `release()` (the teardown-race window). */
   gateListen?: boolean
   failStatus?: boolean
@@ -63,6 +65,7 @@ function fakeBridge(options: FakeOptions = {}) {
     inProgress: false,
   }
   let releaseListen: (() => void) | null = null
+  let releaseIndexApply: (() => void) | null = null
   setBridge({
     invoke: async (command, args) => {
       calls.push(command)
@@ -90,6 +93,17 @@ function fakeBridge(options: FakeOptions = {}) {
           return options.mergeOutcome ?? UP_TO_DATE
         case 'git_push':
           return { pushed: true, nonFastForward: false, rejectionMessage: null }
+        case 'db_query':
+          return []
+        case 'note_read':
+          return '# Remote note\n'
+        case 'index_apply_batch':
+          if (options.gateIndexApply === true) {
+            await new Promise<void>((resolve) => {
+              releaseIndexApply = resolve
+            })
+          }
+          return null
         case 'git_disconnect':
           status.remoteUrl = null
           return status
@@ -106,7 +120,13 @@ function fakeBridge(options: FakeOptions = {}) {
       return () => {}
     },
   })
-  return { calls, invocations, status, releaseListen: () => releaseListen?.() }
+  return {
+    calls,
+    invocations,
+    status,
+    releaseListen: () => releaseListen?.(),
+    releaseIndexApply: () => releaseIndexApply?.(),
+  }
 }
 
 function trackStates(controller: ReturnType<typeof createBackupController>): BackupState[] {
@@ -563,6 +583,36 @@ describe('createBackupController', () => {
     ])
     controller.dispose()
     unlisten()
+  })
+
+  it('keeps launch sync active until pulled notes finish direct indexing', async () => {
+    const { calls, releaseIndexApply } = fakeBridge({
+      gateIndexApply: true,
+      mergeOutcome: {
+        kind: 'fastForward',
+        conflictedPaths: [],
+        changedFiles: [{ path: 'notes/from-remote.md', kind: 'upsert', modifiedMs: 123 }],
+      },
+    })
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+
+    await vi.waitFor(() => {
+      expect(calls).toContain('index_apply_batch')
+    })
+    expect(controller.getState()).toMatchObject({
+      phase: 'connected',
+      status: { state: 'syncing' },
+    })
+
+    releaseIndexApply()
+    await vi.waitFor(() => {
+      expect(controller.getState()).toMatchObject({
+        phase: 'connected',
+        status: { state: 'idle' },
+      })
+    })
+    controller.dispose()
   })
 
   it('defers a pulled note direct-index apply while the mobile app is hidden', async () => {

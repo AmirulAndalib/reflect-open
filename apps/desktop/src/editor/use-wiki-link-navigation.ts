@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { createNoteWithTitle, resolveWikiTarget } from '@reflect/core'
+import { resolveOrCreateNoteWithTitle, resolveWikiTarget } from '@reflect/core'
 import { isIsoDate } from '@/lib/dates'
+import { startOperation } from '@/lib/operations'
 import { isNewWindowClick, openRouteInNewWindow } from '@/lib/windows/open-in-new-window'
 import { routeForPath, type Route } from '@/routing/route'
 import { useRouter } from '@/routing/router'
@@ -8,10 +9,11 @@ import { useRouter } from '@/routing/router'
 /**
  * Navigation for a clicked `[[wiki link]]`: resolve via the index, then open
  * the target. An unresolved ISO date is still a valid daily target (created
- * lazily on first write), and an unresolved non-empty title is created and
- * opened on the spot — Plan 07's create-from-unresolved, consistent with lazy
- * dailies. With no graph generation available, unresolved titles are a no-op
- * (nothing can be written).
+ * lazily on first write). An unresolved non-empty title is rechecked against
+ * the index and its on-disk slug family before it can be created and opened —
+ * Plan 07's create-from-unresolved with a guard for a lagging device index and
+ * title/path mismatch. With no graph generation available, unresolved titles
+ * are a no-op (nothing can be written).
  *
  * A ⌘-click (the originating `event`, when the caller passes it) opens the
  * resolved target in a secondary note window instead — falling back to
@@ -73,9 +75,16 @@ export function useWikiLinkNavigation(
           } else if (isIsoDate(resolution.text)) {
             await open({ kind: 'daily', date: resolution.text })
           } else if (generation !== null && resolution.text.trim() !== '') {
-            const created = await createNoteWithTitle(resolution.text, generation)
-            if (!unmountedRef.current) {
-              await open({ kind: 'note', path: created })
+            const outcome = await resolveOrCreateNoteWithTitle(resolution.text, generation)
+            if (unmountedRef.current) {
+              return
+            }
+            if (outcome.kind === 'ambiguous') {
+              startOperation('Opening link').fail(
+                `Couldn’t safely choose one note matching “${resolution.text}”. Choose the intended note from autocomplete.`,
+              )
+            } else {
+              await open({ kind: 'note', path: outcome.path })
             }
           }
         } catch (err) {

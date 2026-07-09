@@ -38,6 +38,7 @@ function editorHandle(): NoteEditorHandle & {
 } {
   return {
     getMarkdown: () => '',
+    commitPendingInput: () => null,
     setMarkdown: () => {},
     insertMarkdown: vi.fn<(markdown: string) => void>(),
     focus: () => {},

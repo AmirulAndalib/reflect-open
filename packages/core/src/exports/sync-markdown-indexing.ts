@@ -89,6 +89,7 @@ export {
   scanInlineWikiLinks,
   scanInlineImages,
   scanInlineSegments,
+  foldFallbackTitleKey,
   foldKey,
   foldTag,
   isTagName,

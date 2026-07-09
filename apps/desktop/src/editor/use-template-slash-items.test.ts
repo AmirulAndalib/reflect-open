@@ -27,6 +27,7 @@ function fakeEditor(): NoteEditorHandle & { inserted: string[] } {
   return {
     inserted,
     getMarkdown: () => '',
+    commitPendingInput: () => null,
     setMarkdown: () => {},
     insertMarkdown: (markdown) => {
       inserted.push(markdown)

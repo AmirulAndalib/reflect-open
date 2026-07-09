@@ -79,6 +79,12 @@ export interface NoteSessionOptions {
    */
   applyContent: (markdown: string) => void
   /**
+   * Commit native editor input that has not reached the change callback yet.
+   * Returns Markdown only when the editor document changed. Every persistence
+   * flush invokes this before reading the session buffer.
+   */
+  commitPendingInput?: () => string | null
+  /**
    * Treat a missing file as an empty note on load instead of an error; the
    * file is then created by the first save — Plan 06's lazy daily-note
    * contract: opening a day never litters the graph, writing does. Applies

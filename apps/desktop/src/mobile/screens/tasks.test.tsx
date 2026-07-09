@@ -90,6 +90,7 @@ vi.mock('@/editor/note-editor', async () => {
       useEffect(() => {
         handleRef?.({
           getMarkdown: () => areaRef.current?.value ?? '',
+          commitPendingInput: () => null,
           setMarkdown: (markdown) => {
             if (areaRef.current !== null) {
               areaRef.current.value = markdown

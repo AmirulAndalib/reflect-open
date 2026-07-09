@@ -31,6 +31,7 @@ function fakeEditor(): NoteEditorHandle & { applied: string[] } {
       applied.push(markdown)
     },
     getMarkdown: () => '',
+    commitPendingInput: () => null,
     insertMarkdown: () => {},
     focus: () => {},
     setSelection: () => {},
@@ -163,6 +164,21 @@ describe('useNoteDocument', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('captures pending native input before the editor handle unbinds', async () => {
+    const hook = await readyHook()
+    const editor = fakeEditor()
+    const commitPendingInput = vi.fn(() => '# 🧠 Business ideas\n')
+    editor.commitPendingInput = commitPendingInput
+
+    act(() => hook.result.current.bindEditor(editor))
+    act(() => hook.result.current.bindEditor(null))
+    await act(() => flushOpenDocuments())
+
+    expect(commitPendingInput).toHaveBeenCalledOnce()
+    expect(writes).toEqual(['# 🧠 Business ideas\n'])
+    hook.unmount()
   })
 
   it('unmounting unregisters the buffer from the quit-flush registry', async () => {

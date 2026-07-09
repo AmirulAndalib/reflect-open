@@ -134,6 +134,7 @@ export function useNoteDocument(
             setSnapshot(next)
           },
           applyContent: (markdown) => editorRef.current?.setMarkdown(markdown),
+          commitPendingInput: () => editorRef.current?.commitPendingInput() ?? null,
           onContent: coordinator ? coordinator.content : undefined,
           createIfMissing,
           missingSeed,
@@ -198,8 +199,14 @@ export function useNoteDocument(
   )
 
   const bindEditor = useCallback((handle: NoteEditorHandle | null) => {
+    if (handle === null) {
+      const pending = editorRef.current?.commitPendingInput()
+      if (pending !== undefined && pending !== null) {
+        binding.session()?.editorChanged(pending)
+      }
+    }
     editorRef.current = handle
-  }, [])
+  }, [binding])
 
   const keepMine = useCallback(() => {
     binding.session()?.keepMine()
