@@ -1,17 +1,38 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 import tailwindcss from '@tailwindcss/vite'
 import { reactWithCompiler } from './react-compiler-plugin'
 
 // @ts-expect-error process is a Node.js global available in the Vite config context
 const host = process.env.TAURI_DEV_HOST
+// @ts-expect-error process is a Node.js global available in the Vite config context
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN
+// @ts-expect-error process is a Node.js global available in the Vite config context
+const sentryRelease = process.env.SENTRY_RELEASE ?? process.env.VITE_SENTRY_RELEASE ?? process.env.GITHUB_SHA
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [reactWithCompiler(), tailwindcss()],
+  plugins: [
+    reactWithCompiler(),
+    tailwindcss(),
+    sentryAuthToken
+      ? sentryVitePlugin({
+          org: 'reflect-64',
+          project: 'reflect-open',
+          authToken: sentryAuthToken,
+          telemetry: false,
+          ...(sentryRelease ? { release: { name: sentryRelease } } : {}),
+        })
+      : null,
+  ],
 
   // If the target is below Safari 17.5, Lightning CSS downlevels `light-dark()` to a broken polyfill.
-  build: { cssTarget: 'safari17.5' },
+  build: { cssTarget: 'safari17.5', sourcemap: true },
+
+  define: {
+    'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(sentryRelease ?? ''),
+  },
 
   resolve: {
     alias: {

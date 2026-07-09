@@ -1,5 +1,7 @@
+import '@/lib/sentry'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { reactErrorHandler } from '@sentry/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '@/lib/query-client'
 import { registerAppCommands } from '@/lib/commands/app-commands'
@@ -10,6 +12,16 @@ import { EditorTextSizeEffect } from '@/providers/editor-text-size'
 import { SettingsProvider } from '@/providers/settings-provider'
 import { ThemeProvider } from '@/providers/theme-provider'
 import '@/styles/index.css'
+
+interface ReactRootErrorInfo {
+  readonly componentStack?: string | undefined
+}
+
+const sentryReactErrorHandler = reactErrorHandler()
+
+function handleReactRootError(error: unknown, info: ReactRootErrorInfo): void {
+  sentryReactErrorHandler(error, { componentStack: info.componentStack ?? null })
+}
 
 installTauriBridge()
 // Start the platform resolve + surface-chunk fetch (and, on mobile, the
@@ -29,7 +41,11 @@ if (!rootElement) {
 // Platform-neutral providers only — everything desktop- or mobile-specific
 // (update checks, drag region, graph bootstrap mode) lives inside the lazy
 // trees behind the PlatformRoot gate (Plan 19).
-createRoot(rootElement).render(
+createRoot(rootElement, {
+  onUncaughtError: handleReactRootError,
+  onCaughtError: handleReactRootError,
+  onRecoverableError: handleReactRootError,
+}).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <SettingsProvider>

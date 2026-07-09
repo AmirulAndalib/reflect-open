@@ -2,8 +2,8 @@
 
 Reflect is local-first: your notes are markdown files in a folder you chose, the search
 index is SQLite in `.reflect/` beside them, and **no Reflect-hosted server exists in any
-path** — there is no telemetry, no analytics, and no account. Every network call the app
-can make is listed here, with what it carries.
+path**. There is no Reflect account, and every network call the app can make is listed
+here, with what it carries.
 
 The one hard rule sits above all of it: **a note with `private: true` frontmatter never
 has its content sent to any external service.** This is enforced in code at every AI
@@ -68,6 +68,18 @@ disk at call time), and it is covered by tests.
   any BYOK AI enrichment of it honors `private: true`, and no content leaves the device
   except through the calls listed here.
 
+## Error diagnostics
+
+- **Where:** Sentry (`o463484.ingest.us.sentry.io`).
+- **What:** JavaScript error reports from the packaged app: stack traces, release and
+  environment tags, React component stacks, browser/WebView metadata, and recent
+  breadcrumbs that help explain how the app reached the failure. Reflect disables
+  Sentry user identity collection, cookies, query params, HTTP header and body
+  capture, and generative-AI input/output capture. Session Replay is not enabled.
+- **When:** automatically in production builds when the React app throws, catches, or
+  recovers from an error. Development builds send diagnostics only when explicitly
+  enabled for that build.
+
 ## Apple Contacts (off by default)
 
 - **Where:** nowhere on the network. Enabling the Contacts integration reads the
@@ -110,6 +122,7 @@ API keys and tokens live in the **OS keychain only** — never in markdown, neve
 | Model download | Hugging Face | No | Yes (opt-in) |
 | Backup | Your git repository | Yes — including private notes | Yes (needs connecting) |
 | Key validation | The provider | No | — (only when adding a key) |
+| Error diagnostics | Sentry | Not intentionally — error metadata only | No (packaged builds) |
 | Update check | GitHub Releases | No | On in packaged builds |
 | Browser capture | Nowhere (local host on disk) | — (stays on your machine) | — (only when you capture) |
 | Contacts lookup | Nowhere (on-device OS store) | — (stays on your machine) | Yes (opt-in) |
