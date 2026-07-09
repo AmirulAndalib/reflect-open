@@ -109,10 +109,11 @@ channel changelog (`apps/desktop/CHANGELOG.beta.md` on `next`,
 since the last release.
 
 **Merging the Release PR is the release.** release-please then creates a draft GitHub
-release with the changelog as its body and hands the tag name to the Release workflow,
-which builds, signs, notarizes, uploads the assets, and undrafts the release — the
-undraft is what creates the `v<version>` git tag. Nothing is visible to users (and
-`releases/latest` does not move) until every asset is in place.
+release (with its `v<version>` tag — `force-tag-creation`, so later release-please
+runs can always anchor on the previous release) and hands the tag name to the Release
+workflow, which builds, signs, notarizes, uploads the assets, and undrafts the
+release. Nothing is visible to users (and `releases/latest` does not move) until
+every asset is in place.
 
 Merge methods matter:
 

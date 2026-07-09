@@ -26,8 +26,8 @@ concurrency:
   cancel-in-progress: false
 
 # Publish uploads assets into the release-please draft release and undrafts
-# it (which creates the v<version> tag); the manual fallback path still
-# creates the release itself via `gh release create`.
+# it; the manual fallback path still creates the release itself via
+# `gh release create`.
 permissions:
   contents: write
 

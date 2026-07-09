@@ -940,8 +940,8 @@ function ensurePublishableCommit() {
 
 /**
  * Find the GitHub release for a tag, drafts included. release-please creates
- * releases as drafts, and a draft has no git tag yet, so the
- * `releases/tags/<tag>` endpoint cannot see it — list and match instead.
+ * releases as drafts, and the `releases/tags/<tag>` endpoint does not resolve
+ * drafts — list and match instead.
  */
 function findReleaseByTag(tag) {
   const result = spawnSync(
@@ -972,10 +972,9 @@ function ensureReleaseAcceptsAssets(release, tag) {
 }
 
 /**
- * A draft release has no tag yet; its target_commitish records what the tag
- * will point at once it is published. Refuse to attach artifacts built from a
- * different commit. (For an already-published release the git tag exists, so
- * the tag check covers it.)
+ * A draft release's target_commitish records the commit it releases. Refuse
+ * to attach artifacts built from a different commit. (For an already-published
+ * release the git tag is authoritative, so the tag check covers it.)
  */
 function ensureReleaseTargetsCommit(release, tag, commit) {
   if (!release.draft) return ensureTagMatchesCommit(tag, commit)
@@ -1124,8 +1123,8 @@ export function createExistingReleaseUploadArgs({ assets, tag }) {
 /**
  * Build the `gh release edit` args that finalize a release-please draft:
  * title, complete notes, channel flags, and — unless the draft is kept for
- * review — the undraft itself, which creates the tag and makes the release
- * visible to users only once every asset is in place.
+ * review — the undraft itself, which makes the release visible to users only
+ * once every asset is in place.
  */
 export function createFinalizeReleaseArgs({ keepDraft, notesPath, prerelease, productName, tag, version }) {
   const args = ['release', 'edit', tag, '--title', `${productName} ${version}`, '--notes-file', notesPath]
@@ -1231,8 +1230,7 @@ function publishIntoExistingRelease({ assets, draft, prerelease, productName, re
   }
 
   // Finalizing last keeps the release invisible (and `releases/latest`
-  // unmoved) until every asset — latest.json included — is in place. The
-  // undraft is what creates the git tag.
+  // unmoved) until every asset — latest.json included — is in place.
   const finalize = spawnSync(
     'gh',
     createFinalizeReleaseArgs({ keepDraft: draft, notesPath: releaseNotesPath, prerelease, productName, tag, version }),
