@@ -122,7 +122,8 @@ interface NoteEditorProps {
    * Whether to show meowdown's per-block gutter handle: a grip to drag-reorder
    * blocks and a "+" to insert a paragraph below. Off by default. The main note
    * editor opts in; one-line surfaces like the inline task editor leave it off so
-   * no stray grip appears beside them.
+   * no stray grip appears beside them. Always off on the touch surface, which
+   * has no hover to reveal the grip.
    */
   blockHandle?: boolean
   /** Resolve an image `![…](…)` source to a displayable URL; unresolved images are skipped. */
@@ -406,7 +407,11 @@ export function NoteEditor({
         // `12`/`24` here at the boundary, like `markModeFromSyntax`.
         timeFormat={timeFormat === '24h' ? '24' : '12'}
         bulletAfterHeading={bulletAfterHeading}
-        blockHandle={blockHandle}
+        // Pinned off on the touch surface regardless of the caller: the grip is
+        // revealed on hover and drag-reorders blocks with a pointer, neither of
+        // which a touch webview can express. Turning it off also drops the drop
+        // indicator, which meowdown gates on the same prop.
+        blockHandle={isTouchEditorSurface() ? false : blockHandle}
         editorClassName={cn('reflect-editor', className)}
         {...(titlePlaceholder !== undefined ? { placeholder: titlePlaceholder } : {})}
         onDocChange={handleDocChange}
