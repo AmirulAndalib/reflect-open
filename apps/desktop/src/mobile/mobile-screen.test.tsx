@@ -315,18 +315,21 @@ describe('MobileShell', () => {
       throw new Error('missing mounted Today button')
     }
     expect(hiddenTodayButton.getAttribute('aria-hidden')).toBe('true')
+    expect(hiddenTodayButton.disabled).toBe(true)
     expect(hiddenTodayButton.className).toContain('opacity-0')
     await user.click(view.getByRole('button', { name: dayCellLabel(other) }))
     expect(view.getByRole('button', { name: dayCellLabel(other) }).getAttribute('aria-current')).toBe(
       'date',
     )
     const shownTodayButton = view.getByRole('button', { name: 'Today' })
+    expect((shownTodayButton as HTMLButtonElement).disabled).toBe(false)
     expect(shownTodayButton.className).toContain('transition-opacity')
     expect(shownTodayButton.className).toContain('opacity-100')
 
     await user.click(view.getByRole('button', { name: 'Today' }))
     expect(view.queryByRole('button', { name: 'Today' })).toBeNull()
     const fadedTodayButton = view.getByText('Today').closest('button')
+    expect(fadedTodayButton?.disabled).toBe(true)
     expect(fadedTodayButton?.className).toContain('opacity-0')
     expect(document.activeElement).not.toBe(fadedTodayButton)
     expect(view.getByRole('button', { name: dayCellLabel(today) }).getAttribute('aria-current')).toBe(

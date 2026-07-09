@@ -141,13 +141,14 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
             ref={todayButtonRef}
             variant="ghost"
             size="sm"
+            disabled={showingToday}
             aria-hidden={showingToday ? true : undefined}
             tabIndex={showingToday ? -1 : undefined}
             className={cn(
-              'transition-opacity duration-200 ease-out motion-reduce:transition-none',
+              'transition-opacity duration-200 ease-out disabled:opacity-0! motion-reduce:transition-none',
               showingToday ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
-            onClick={showingToday ? undefined : jumpToToday}
+            onClick={jumpToToday}
           >
             Today
           </Button>
