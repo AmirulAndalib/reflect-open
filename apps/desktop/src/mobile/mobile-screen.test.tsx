@@ -321,6 +321,12 @@ describe('MobileShell', () => {
     expect(view.getByRole('button', { name: dayCellLabel(other) }).getAttribute('aria-current')).toBe(
       'date',
     )
+    const fadingTodayButton = view.getByText('Today').closest('button')
+    expect(fadingTodayButton?.disabled).toBe(false)
+    expect(fadingTodayButton?.getAttribute('aria-hidden')).toBe('true')
+    expect(fadingTodayButton?.className).toContain('pointer-events-none')
+    expect(fadingTodayButton?.className).toContain('opacity-100')
+    await waitFor(() => expect(view.getByRole('button', { name: 'Today' })).toBeTruthy())
     const shownTodayButton = view.getByRole('button', { name: 'Today' })
     expect((shownTodayButton as HTMLButtonElement).disabled).toBe(false)
     expect(shownTodayButton.className).toContain('transition-opacity')
@@ -350,7 +356,7 @@ describe('MobileShell', () => {
       view.getByRole('button', { name: dayCellLabel(nextFortnight) }).getAttribute('aria-current'),
     ).toBe('date')
     expect(shownMonth(view)).toBe(monthLabel(monthOf(nextFortnight)))
-    expect(view.getByRole('button', { name: 'Today' })).toBeTruthy()
+    await waitFor(() => expect(view.getByRole('button', { name: 'Today' })).toBeTruthy())
   })
 
   it('jumps to a picked month from the month title’s picker sheet', async () => {
@@ -371,7 +377,7 @@ describe('MobileShell', () => {
     expect(
       view.getByRole('button', { name: dayCellLabel(firstDay) }).getAttribute('aria-current'),
     ).toBe('date')
-    expect(view.getByRole('button', { name: 'Today' })).toBeTruthy()
+    await waitFor(() => expect(view.getByRole('button', { name: 'Today' })).toBeTruthy())
   })
 
   it('keeps the selection when its own month is picked from the sheet', async () => {
@@ -398,6 +404,7 @@ describe('MobileShell', () => {
     await user.click(view.getByRole('button', { name: dayCellLabel(other) }))
     hapticImpactLight.mockClear()
 
+    await waitFor(() => expect(view.getByRole('button', { name: 'Today' })).toBeTruthy())
     await user.click(view.getByRole('button', { name: 'Today' }))
     expect(hapticImpactLight).toHaveBeenCalledTimes(1)
 

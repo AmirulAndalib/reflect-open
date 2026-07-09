@@ -8,10 +8,18 @@ import { monthPickTarget, weekAtIndex, weekStartOf } from '@/mobile/calendar'
 import { hapticImpactLight } from '@/mobile/haptics'
 import { MonthPickerDrawer } from '@/mobile/month-picker-drawer'
 import { MonthTitle } from '@/mobile/month-title'
+import { usePrefersReducedMotion } from '@/mobile/use-reduced-motion'
 import { useWeekStrip } from '@/mobile/use-week-strip'
 import { WeekRow } from '@/mobile/week-row'
 import { useSettings } from '@/providers/settings-provider'
 import { useRouter } from '@/routing/router'
+
+const TODAY_BUTTON_FADE_MS = 200
+
+interface TodayButtonState {
+  readonly showingToday: boolean
+  readonly interactive: boolean
+}
 
 interface CalendarStripProps {
   /**
@@ -47,6 +55,7 @@ interface CalendarStripProps {
 export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStripProps): ReactElement {
   const { settings } = useSettings()
   const { navigate } = useRouter()
+  const prefersReducedMotion = usePrefersReducedMotion()
   const { emblaRef, weekWindow, displayedWeekStart, showWeekOf } = useWeekStrip(
     date,
     settings.weekStartDay,
@@ -59,6 +68,19 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
     displayedWeekStart === selectionWeekStart ? date : addDaysIso(displayedWeekStart, 3)
   const showingToday = date === today
   const todayButtonRef = useRef<HTMLButtonElement>(null)
+  const [todayButtonState, setTodayButtonState] = useState<TodayButtonState>(() => ({
+    showingToday,
+    interactive: !showingToday,
+  }))
+  let todayButtonInteractive = todayButtonState.interactive
+  if (todayButtonState.showingToday !== showingToday) {
+    todayButtonInteractive = !showingToday && prefersReducedMotion
+    setTodayButtonState({ showingToday, interactive: todayButtonInteractive })
+  } else if (!showingToday && prefersReducedMotion && !todayButtonInteractive) {
+    todayButtonInteractive = true
+    setTodayButtonState({ showingToday, interactive: true })
+  }
+  const todayButtonInert = showingToday || !todayButtonInteractive
 
   const jumpToToday = (event: MouseEvent<HTMLButtonElement>): void => {
     event.currentTarget.blur()
@@ -106,6 +128,18 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
     }
   }, [showingToday])
 
+  useEffect(() => {
+    if (showingToday || prefersReducedMotion || todayButtonInteractive) {
+      return
+    }
+    const timeout = window.setTimeout(() => {
+      setTodayButtonState((state) =>
+        state.showingToday ? state : { ...state, interactive: true },
+      )
+    }, TODAY_BUTTON_FADE_MS)
+    return () => window.clearTimeout(timeout)
+  }, [showingToday, prefersReducedMotion, todayButtonInteractive])
+
   return (
     <header
       className="shrink-0 border-b border-border px-2 pb-1"
@@ -142,13 +176,14 @@ export function CalendarStrip({ date, today, resetSeq, onSelect }: CalendarStrip
             variant="ghost"
             size="sm"
             disabled={showingToday}
-            aria-hidden={showingToday ? true : undefined}
-            tabIndex={showingToday ? -1 : undefined}
+            aria-hidden={todayButtonInert ? true : undefined}
+            tabIndex={todayButtonInert ? -1 : undefined}
             className={cn(
               'transition-opacity duration-200 ease-out disabled:opacity-0! motion-reduce:transition-none',
-              showingToday ? 'pointer-events-none opacity-0' : 'opacity-100',
+              todayButtonInert && 'pointer-events-none',
+              showingToday ? 'opacity-0' : 'opacity-100',
             )}
-            onClick={jumpToToday}
+            onClick={todayButtonInert ? undefined : jumpToToday}
           >
             Today
           </Button>
