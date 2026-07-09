@@ -227,6 +227,20 @@ describe('createGraphIndex', () => {
     expect(mockWatchStart).toHaveBeenCalledTimes(1)
   })
 
+  it('resume(null) clears suspension without starting work before graph open', async () => {
+    const index = createGraphIndex()
+    index.suspend()
+
+    index.resume(null, () => false)
+    await Promise.resolve()
+    expect(mockSync).not.toHaveBeenCalled()
+
+    index.sync(5, () => false)
+    await index.settled()
+    expect(mockSync).toHaveBeenCalledTimes(1)
+    expect(mockWatchStart).toHaveBeenCalledTimes(1)
+  })
+
   it('suspend() aborts bulk work, drops live work, and resume coalesces catch-up triggers', async () => {
     const unlisten = vi.fn()
     let canApply: (() => boolean) | undefined

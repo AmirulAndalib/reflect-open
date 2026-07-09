@@ -419,6 +419,34 @@ describe('GraphProvider mobile onboarding (Plans 19/21)', () => {
     }
   })
 
+  it('clears suspension when mobile foregrounds before its index session opens', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    try {
+      const { result } = renderHook(() => useGraph(), { wrapper: mobileWrapper })
+      await waitFor(() => expect(result.current.needsOnboarding).toBe(true))
+      expect(result.current.indexGeneration).toBeNull()
+
+      // The app foregrounds while onboarding still has no graph/index. This
+      // must clear the sticky suspension even though there is nothing to sync.
+      visibility.mockReturnValue('visible')
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+
+      await act(async () => {
+        const done = result.current.completeOnboarding('local')
+        await waitFor(() => expect(pendingOpens.has(MOBILE_ROOT)).toBe(true))
+        resolveOpen(MOBILE_ROOT)
+        await done
+      })
+
+      await waitFor(() => expect(invokeLog).toContain('index_clear'))
+      expect(result.current.status).toBe('ready')
+    } finally {
+      visibility.mockRestore()
+    }
+  })
+
   it('creates the default container graph and records kind + name on completeOnboarding(icloud)', async () => {
     const { result } = renderHook(() => useGraph(), { wrapper: mobileWrapper })
     await waitFor(() => expect(result.current.needsOnboarding).toBe(true))

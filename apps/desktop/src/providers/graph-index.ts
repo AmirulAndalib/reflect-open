@@ -34,9 +34,10 @@ export interface GraphIndex {
   suspend: () => void
   /**
    * Resume after {@link suspend} and run one coalesced full sync for anything
-   * that changed while the live subscription was absent.
+   * that changed while the live subscription was absent. A null generation
+   * clears suspension without starting work (foreground can precede graph open).
    */
-  resume: (generation: number, isStale: () => boolean) => void
+  resume: (generation: number | null, isStale: () => boolean) => void
   /**
    * Abort the in-flight reconcile (if any) and wait for the sync pass to fully
    * settle, so a stale pass can't keep running into the next graph's open.
@@ -146,9 +147,9 @@ export function createGraphIndex(options: GraphIndexOptions = {}): GraphIndex {
     onProgress?.('idle')
   }
 
-  function resume(generation: number, isStale: () => boolean): void {
+  function resume(generation: number | null, isStale: () => boolean): void {
     suspended = false
-    if (!isStale()) {
+    if (generation !== null && !isStale()) {
       // Events intentionally dropped while suspended are recovered by the
       // full reconcile. `refresh` also folds a rapid resume/poll burst into a
       // single queued rerun when a prior pass is still settling.

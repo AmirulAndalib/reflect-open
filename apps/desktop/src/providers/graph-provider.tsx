@@ -184,13 +184,12 @@ export function GraphProvider({
         index.suspend()
         return
       }
-      if (indexGeneration !== null) {
-        const seq = openSeq.current
-        // The full pass recovers every event intentionally missed while the
-        // live subscription was absent; stacked resume/iCloud triggers fold
-        // into the lifecycle's single queued rerun.
-        index.resume(indexGeneration, () => seq !== openSeq.current)
-      }
+      const seq = openSeq.current
+      // A null generation still clears suspension: mobile can foreground
+      // before onboarding/open has produced an index session. With a session,
+      // the full pass recovers every event missed while hidden; stacked
+      // resume/iCloud triggers fold into the lifecycle's queued rerun.
+      index.resume(indexGeneration, () => seq !== openSeq.current)
     }
 
     if (document.visibilityState === 'hidden') {
