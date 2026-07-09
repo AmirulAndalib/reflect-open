@@ -1,6 +1,7 @@
-import { useState, type ReactElement } from 'react'
+import { useCallback, useState, type ReactElement } from 'react'
 import { dateAtIndex } from '@/lib/day-window'
 import { DaySlide } from '@/mobile/day-slide'
+import { attachDriftViewport } from '@/mobile/drift-probe'
 import { useDayCarousel } from '@/mobile/use-day-carousel'
 
 interface DayCarouselProps {
@@ -53,14 +54,24 @@ export function DayCarousel({
   // holding it in state (read during render) rather than a ref is safe.
   const [scrollMemory] = useState(() => new Map<string, number>())
 
+  // TEMPORARY drift debugging: hand the Embla viewport to the probe alongside
+  // Embla's own ref — remove with drift-probe.ts.
+  const setViewportRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      emblaRef(el)
+      attachDriftViewport(el)
+    },
+    [emblaRef],
+  )
+
   return (
-    <div className="min-h-0 flex-1 overflow-hidden" ref={emblaRef}>
+    <div className="min-h-0 flex-1 overflow-hidden" ref={setViewportRef}>
       <div className="flex h-full">
         {Array.from({ length: dayWindow.count }, (_, index) => {
           const day = dateAtIndex(dayWindow, index)
           const mounted = Math.abs(index - selectedIndex) <= MOUNT_RADIUS
           return (
-            <div key={day} className="min-w-0 flex-[0_0_100%]">
+            <div key={day} data-day={day} className="min-w-0 flex-[0_0_100%]">
               {mounted ? (
                 <DaySlide
                   day={day}

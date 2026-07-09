@@ -1,5 +1,6 @@
 import { useEffect, type ReactElement } from 'react'
 import { installBackgroundFlush } from '@/lib/background-flush'
+import { installDriftProbe } from '@/mobile/drift-probe'
 import { MobileAudioMemoProvider } from '@/mobile/audio-memo-provider'
 import { MobileErrorBoundary } from '@/mobile/mobile-error-boundary'
 import { MobileOnboardingScreen } from '@/mobile/onboarding-screen'
@@ -29,6 +30,10 @@ import { RouterProvider } from '@/routing/router'
  */
 export function MobileApp(): ReactElement {
   const { status, graph, error, needsOnboarding } = useGraph()
+  // TEMPORARY drift debugging (see drift-probe.ts) — remove before merging.
+  useEffect(() => {
+    installDriftProbe()
+  }, [])
   useKeyboardHeightVar()
   // The keyboard is what occludes the caret, so the keyboard is what reveals
   // it: one listener here covers every screen's editors.

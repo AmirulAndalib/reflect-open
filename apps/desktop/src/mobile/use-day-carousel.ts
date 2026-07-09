@@ -1,6 +1,7 @@
 import { startTransition, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import useEmblaCarousel from 'embla-carousel-react'
 import { createDayWindow, dateAtIndex, indexWithin, type DayWindow } from '@/lib/day-window'
+import { driftLog, reportSelectedDay } from '@/mobile/drift-probe'
 import { getKeyboardHeight } from '@/mobile/use-keyboard'
 
 /**
@@ -48,7 +49,9 @@ export function shouldRecenter(
  * across renders; Embla evaluates it at drag start.
  */
 function dragAllowedWithKeyboardClosed(): boolean {
-  return getKeyboardHeight() === 0
+  const allowed = getKeyboardHeight() === 0
+  driftLog('embla watchDrag evaluated', { keyboardHeight: getKeyboardHeight(), allowed })
+  return allowed
 }
 
 /** What the carousel should do when the external target `date` changes. */
@@ -156,6 +159,12 @@ export function useDayCarousel(
   const onEmblaSelect = useCallback(
     (api: NonNullable<typeof emblaApi>) => {
       const index = api.selectedScrollSnap()
+      driftLog('embla select', {
+        index,
+        day: dateAtIndex(dayWindow, index),
+        // Optional-called: the unit tests' fake Embla api has no rootNode.
+        viewportScrollLeft: api.rootNode?.().scrollLeft,
+      })
       startTransition(() => {
         setSelectedIndex(index)
         onTarget(dateAtIndex(dayWindow, index))
@@ -179,6 +188,12 @@ export function useDayCarousel(
   const onEmblaSettle = useCallback(
     (api: NonNullable<typeof emblaApi>) => {
       const index = api.selectedScrollSnap()
+      driftLog('embla settle', {
+        index,
+        day: dateAtIndex(dayWindow, index),
+        // Optional-called: the unit tests' fake Embla api has no rootNode.
+        viewportScrollLeft: api.rootNode?.().scrollLeft,
+      })
       setSelectedIndex(index)
       const day = dateAtIndex(dayWindow, index)
       if (day !== reportedRef.current) {
@@ -211,6 +226,7 @@ export function useDayCarousel(
   // same frame as the strip's new selection (no visible lag).
   useLayoutEffect(() => {
     if (indexWithin(dayWindow, date) === -1) {
+      driftLog('carousel re-anchor (date outside window)', { date, windowStart: dayWindow.start })
       // Re-anchor the window when a far date link lands outside it; runs only on
       // that rare miss, and the rebuilt window then contains the date, so it
       // cannot loop.
@@ -241,13 +257,27 @@ export function useDayCarousel(
     }
     windowStartRef.current = dayWindow.start
     reportedRef.current = date
+    // Optional-called: the unit tests' fake Embla api has no rootNode.
+    const scrollLeftBefore = emblaApi.rootNode?.().scrollLeft
     if (sync.action === 'reinit') {
       emblaApi.reInit({ startIndex: sync.index })
     } else {
       emblaApi.scrollTo(sync.index, true)
     }
+    driftLog('carousel follow effect', {
+      action: sync.action,
+      index: sync.index,
+      date,
+      viewportScrollLeft: `${scrollLeftBefore} -> ${emblaApi.rootNode?.().scrollLeft}`,
+    })
     setSelectedIndex(sync.index)
   }, [emblaApi, date, dayWindow])
+
+  // TEMPORARY drift debugging: tell the probe which day the carousel centers,
+  // so reveal logs can compare it against the focused editor's day.
+  useEffect(() => {
+    reportSelectedDay(dateAtIndex(dayWindow, selectedIndex))
+  }, [dayWindow, selectedIndex])
 
   return { emblaRef, dayWindow, selectedIndex }
 }

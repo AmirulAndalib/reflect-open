@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react'
+import { describeEl, driftLog } from '@/mobile/drift-probe'
 
 /** How long a reveal outlives the *last* layout disturbance before handing
  *  the scroll back to the user. The iOS keyboard raise (and the shell
@@ -66,36 +67,45 @@ export function useCaretReveal({
     stopRef.current?.()
     let observer: ResizeObserver | null = null
     let deadline: ReturnType<typeof setTimeout> | null = null
-    const stop = (): void => {
-      if (stopRef.current === stop) {
+    // TEMPORARY drift debugging: `cause` strings thread through so the log
+    // shows what re-armed or ended each reveal — remove with drift-probe.ts.
+    const stop = (cause = 'restart / cancel / unmount'): void => {
+      driftLog('caret-reveal window stopped', { cause })
+      if (stopRef.current === stopExternally) {
         stopRef.current = null
       }
       if (deadline !== null) {
         clearTimeout(deadline)
       }
       observer?.disconnect()
-      container.removeEventListener('pointerdown', stop)
-      container.removeEventListener('scroll', reveal)
+      container.removeEventListener('pointerdown', stopOnPointerDown)
+      container.removeEventListener('scroll', revealOnScroll)
     }
-    const reveal = (): void => {
+    const stopExternally = (): void => stop()
+    const stopOnPointerDown = (): void => stop('container pointerdown (user took over)')
+    const reveal = (cause: string): void => {
       if (deadline !== null) {
         clearTimeout(deadline)
       }
-      deadline = setTimeout(stop, REVEAL_WINDOW_MS)
+      deadline = setTimeout(() => stop('quiet window elapsed'), REVEAL_WINDOW_MS)
+      driftLog('caret-reveal revealing', { cause })
       scrollCaretIntoView()
     }
-    stopRef.current = stop
-    reveal()
-    observer = new ResizeObserver(reveal)
+    const revealOnScroll = (): void => reveal('container scrolled (not by the user)')
+    stopRef.current = stopExternally
+    reveal('reveal window armed')
+    observer = new ResizeObserver((entries) =>
+      reveal(`resize of ${entries.map((entry) => describeEl(entry.target)).join(', ')}`),
+    )
     observer.observe(container)
     observer.observe(content)
-    container.addEventListener('pointerdown', stop, { passive: true })
+    container.addEventListener('pointerdown', stopOnPointerDown, { passive: true })
     // Anything that scrolls the caret out of view mid-reveal loses. Sizes are
     // covered by the observer, but iOS WebKit may scroll the container
     // directly to reveal the newly focused editor — no resize involved. The
     // user's own take-over always leads with a pointerdown (which stops the
     // reveal above), so a scroll arriving here is never the user's.
-    container.addEventListener('scroll', reveal, { passive: true })
+    container.addEventListener('scroll', revealOnScroll, { passive: true })
   }, [containerRef, contentRef, scrollCaretIntoView])
 
   const cancelReveal = useCallback(() => {

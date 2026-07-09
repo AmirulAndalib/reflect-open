@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { addPluginListener, invoke } from '@tauri-apps/api/core'
 import { z } from 'zod'
 import { focusedEditorCommands } from '@/editor/formatting-toolbar-store'
+import { driftLog } from '@/mobile/drift-probe'
 
 const keyboardStateSchema = z.object({ height: z.number(), duration: z.number() })
 
@@ -26,6 +27,7 @@ export function publishKeyboardHeight(height: number): void {
   if (height === currentKeyboardHeight) {
     return
   }
+  driftLog('keyboard height change', { from: currentKeyboardHeight, to: height })
   currentKeyboardHeight = height
   for (const listener of keyboardListeners) {
     listener()
@@ -140,18 +142,26 @@ export function useKeyboardCaretReveal(): void {
 
   useEffect(() => {
     if (height <= 0) {
+      driftLog('keyboard reveal effect: height 0, skipped')
       return
     }
     // A passive effect, so this runs after the paint that applied both the CSS
     // variable and the tab bar's swap for the formatting toolbar: the scroll
     // container is already at its final height. The one frame that painted the
     // caret still occluded is invisible inside the keyboard's own animation.
-    focusedEditorCommands()?.scrollCaretIntoView()
+    const commands = focusedEditorCommands()
+    driftLog('keyboard reveal effect firing', { height, hasFocusedEditor: commands !== null })
+    commands?.scrollCaretIntoView()
     // Backstop for chrome that settles a frame late (the tab bar unmounting
     // republishes `--mobile-tab-bar-height`). Re-read the slot: by now the
     // editor may have unmounted, or another may hold the caret.
     const frame = requestAnimationFrame(() => {
-      focusedEditorCommands()?.scrollCaretIntoView()
+      const backstop = focusedEditorCommands()
+      driftLog('keyboard reveal rAF backstop firing', {
+        height,
+        hasFocusedEditor: backstop !== null,
+      })
+      backstop?.scrollCaretIntoView()
     })
     return () => {
       cancelAnimationFrame(frame)
