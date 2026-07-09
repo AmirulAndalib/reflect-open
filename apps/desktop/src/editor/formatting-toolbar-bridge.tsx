@@ -86,7 +86,7 @@ export function FormattingToolbarBridge(): null {
           if (editor.view.composing) {
             return
           }
-          editor.view.dispatch(editor.state.tr.scrollIntoView())
+          editor.commands.scrollIntoView()
         },
       }
 
