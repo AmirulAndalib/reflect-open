@@ -243,8 +243,10 @@ pub async fn graph_import_reflect_v1_zip(
         emit_import_progress(&app, "downloading", 0, prepared.remote_asset_count());
     }
     let download_app = app.clone();
+    let user_agent = crate::app_user_agent(&app);
     let downloads = prepared
         .download_assets(
+            &user_agent,
             cancel.flag(),
             std::sync::Arc::new(move |done, total| {
                 emit_import_progress(&download_app, "downloading", done, total);
