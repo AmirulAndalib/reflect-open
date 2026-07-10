@@ -1,4 +1,11 @@
-import { useMemo, useState, type ReactElement } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactElement,
+} from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { dailyDatesInRange, hasBridge, type WeekStartDay } from '@reflect/core'
 import { CalendarIcon } from '@/components/icons/calendar-icon'
@@ -17,6 +24,7 @@ import {
 } from '@/lib/month-grid'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
+import { isNewWindowClick, openRouteInNewWindow } from '@/lib/windows/open-in-new-window'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
 import { useRouter } from '@/routing/router'
@@ -44,16 +52,54 @@ const HEADER_BUTTON_CLASS =
  * on a grey one), and days that already have a daily note carry a dot marker
  * revealed while the pointer is over the calendar (an indexed `dailyDate`
  * row — daily files exist only once written, so a row means real content).
- * Clicking a day navigates to it; the month view follows the selected day,
- * and the calendar glyph between the month arrows jumps back to today.
+ * Clicking a day navigates to it; modifier-clicking opens that daily note in
+ * a secondary window. The month view follows the selected day, and the
+ * calendar glyph between the month arrows jumps back to today.
  */
 export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactElement {
-  const { navigate } = useRouter()
+  const { navigate, arrivalSeq, entryId } = useRouter()
   const { graph } = useGraph()
   const { settings } = useSettings()
   const weekStartsOn = toWeekStartsOn(settings.weekStartDay)
 
   const [month, setMonth] = useState(() => monthOf(selectedDate))
+  // A failed native open falls back after an await. Only the latest unchanged
+  // navigation intent may do that; otherwise a late failure could pull the
+  // user back to a day they already left.
+  const unmountedRef = useRef(false)
+  const latestOpenRequestRef = useRef(0)
+  const navigationStateRef = useRef({ arrivalSeq, entryId, selectedDate })
+  useEffect(() => {
+    unmountedRef.current = false
+    return () => {
+      unmountedRef.current = true
+    }
+  }, [])
+  useEffect(() => {
+    navigationStateRef.current = { arrivalSeq, entryId, selectedDate }
+  }, [arrivalSeq, entryId, selectedDate])
+
+  function openDate(date: string, event: MouseEvent<HTMLButtonElement>): void {
+    const route = { kind: 'daily', date } as const
+    const request = ++latestOpenRequestRef.current
+    if (isNewWindowClick(event)) {
+      const navigationState = navigationStateRef.current
+      void openRouteInNewWindow(route).then((opened) => {
+        const currentNavigationState = navigationStateRef.current
+        const isLatestIntent = latestOpenRequestRef.current === request
+        const navigationIsUnchanged =
+          currentNavigationState.arrivalSeq === navigationState.arrivalSeq &&
+          currentNavigationState.entryId === navigationState.entryId &&
+          currentNavigationState.selectedDate === navigationState.selectedDate
+        if (!opened && !unmountedRef.current && isLatestIntent && navigationIsUnchanged) {
+          navigate(route)
+        }
+      })
+      return
+    }
+    navigate(route)
+  }
+
   // Render-time state adjustment (not an effect): navigating to another day
   // re-anchors the visible month before the stale grid can paint.
   const [lastSelected, setLastSelected] = useState(selectedDate)
@@ -138,7 +184,7 @@ export function DayCalendar({ selectedDate, today }: DayCalendarProps): ReactEle
                     aria-label={formatDayLabel(cell.date, settings.dateFormat)}
                     aria-current={isToday ? 'date' : undefined}
                     aria-pressed={isSelected}
-                    onClick={() => navigate({ kind: 'daily', date: cell.date })}
+                    onClick={(event) => openDate(cell.date, event)}
                     className={cn(
                       'relative cursor-default py-1.5 text-xs',
                       // Today stays fully visible even as an adjacent-month

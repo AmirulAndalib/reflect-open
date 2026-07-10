@@ -48,8 +48,9 @@ under every window at once.
 
 ## Opening a window
 
-1. A modifier click (`isNewWindowClick` — **mouse events only**: meowdown
-   also fires link handlers for Mod-Enter keyboard follows, whose modifier
+1. A modifier click on a note link or calendar day (`isNewWindowClick` —
+   **mouse events only**: meowdown also fires link handlers for Mod-Enter
+   keyboard follows, whose modifier
    is held by definition) resolves the target as usual, then calls
    `openRouteInNewWindow` / `openDeepLinkInNewWindow`
    (`src/lib/windows/open-in-new-window.ts`). Routes serialize through the
