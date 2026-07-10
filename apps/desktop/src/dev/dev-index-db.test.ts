@@ -7,6 +7,11 @@ import {
   type IndexedNote,
 } from '@reflect/core'
 import { createDevIndexDb, type DevIndexDb } from '@/dev/dev-index-db'
+import {
+  buildAllNotesSearch,
+  EMPTY_ALL_NOTES_FILTERS,
+  searchPlanFor,
+} from '@/mobile/search-filters/filter-state'
 
 function sampleNote(overrides: Partial<IndexedNote> = {}): IndexedNote {
   return {
@@ -228,6 +233,27 @@ describe('createDevIndexDb', () => {
       'notes/car-log.md',
       'notes/car-wash.md',
       'notes/garage.md',
+    ])
+  })
+
+  it('finds a partial multi-term title through the mobile All search plan', async () => {
+    const db = await openDb()
+    db.applyNote(
+      sampleNote({
+        path: 'notes/tim-maccaw.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n97',
+        title: 'Tim MacCaw',
+        titleKey: 'tim maccaw',
+        text: 'An otherwise unrelated body.',
+        preview: 'An otherwise unrelated body.',
+        tags: [],
+      }),
+    )
+    installQueryBridge(db)
+
+    const parsed = buildAllNotesSearch('Tim Mac', EMPTY_ALL_NOTES_FILTERS, null)
+    await expect(searchWithFilters(parsed, searchPlanFor(parsed))).resolves.toMatchObject([
+      { path: 'notes/tim-maccaw.md', title: 'Tim MacCaw', snippet: null },
     ])
   })
 

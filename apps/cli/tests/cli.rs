@@ -322,6 +322,24 @@ fn search_matches_latin_title_terms_at_word_starts_only() {
     );
 }
 
+/// Multi-term Latin title recall accepts a prefix of each word, even though
+/// FTS5 itself cannot match the partial `Mac` token against `MacCaw`.
+#[test]
+fn search_finds_a_multi_term_partial_latin_title() {
+    let fixture = graph();
+    fixture.write_note(
+        "notes/tim-maccaw.md",
+        "# Tim MacCaw\nan otherwise unrelated body\n",
+    );
+    fixture.build_index();
+
+    let text = stdout(&reflect(&fixture, &["search", "Tim Mac"]));
+    assert!(
+        text.contains("notes/tim-maccaw.md"),
+        "expected the partial title match:\n{text}"
+    );
+}
+
 /// The V1-style exact-title boost (`filtered-search.ts`): a note whose title
 /// *is* the query ranks ahead of a louder lexical (bm25) match whose title only
 /// contains the query among other words — exact title is promoted before bm25.
