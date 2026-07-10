@@ -204,9 +204,11 @@ describe('CommandPalette', () => {
     const { view } = renderPalette('rust')
     const result = await view.findByText('Rust Notes')
     const item = result.closest('[cmdk-item]')
-    expect(item).not.toBeNull()
+    if (item === null) {
+      throw new Error('expected a command palette item')
+    }
 
-    fireEvent.click(item!, { metaKey: true })
+    fireEvent.click(item, { metaKey: true })
 
     expect(view.queryByTestId('palette-overlay')).toBeNull()
     expect(openRouteInNewWindow).toHaveBeenCalledTimes(1)
@@ -227,9 +229,11 @@ describe('CommandPalette', () => {
     const { view } = renderPalette('rust')
     const result = await view.findByText('Rust Notes')
     const item = result.closest('[cmdk-item]')
-    expect(item).not.toBeNull()
+    if (item === null) {
+      throw new Error('expected a command palette item')
+    }
 
-    fireEvent.click(item!, { metaKey: true })
+    fireEvent.click(item, { metaKey: true })
 
     expect(view.queryByTestId('palette-overlay')).toBeNull()
     await waitFor(() =>
