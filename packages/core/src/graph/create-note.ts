@@ -185,8 +185,15 @@ async function indexedPathForTitle(title: string): Promise<string | null> {
 }
 
 function diskTitleResolution(disk: DiskTitleMatch): ExistingTitleResolution | null {
-  if (disk.exactPaths.length > 0) {
+  if (disk.exactPaths.length === 1) {
     return { kind: 'resolved', path: disk.exactPaths[0]! }
+  }
+  // Several files claiming the identical title/alias (the historic duplicate
+  // bug's own output) is a guess too: sorted-first would even prefer the
+  // `-2.md` dupe over the original (`-` sorts before `.`). Refuse, same as an
+  // ambiguous fallback.
+  if (disk.exactPaths.length > 1) {
+    return { kind: 'ambiguous', paths: [...disk.exactPaths].sort() }
   }
   if (disk.unreadablePaths.length > 0 || disk.fallbackPaths.length > 1) {
     return {
@@ -206,8 +213,8 @@ function diskTitleResolution(disk: DiskTitleMatch): ExistingTitleResolution | nu
  *
  * Exact index resolution always wins. On a miss, the title's on-disk slug
  * family is parsed for exact title/alias matches and then for the conservative
- * leading-emoji fallback. A fallback is accepted only when exactly one file
- * claims it; multiple or unreadable candidates are ambiguous and no file is
+ * leading-emoji fallback. Either tier is accepted only when exactly one file
+ * claims it; multiple (or unreadable) candidates are ambiguous and no file is
  * written. The index is queried once more immediately before creation. The
  * native path claim is atomic and no-clobber; if it loses to a concurrent sync
  * checkout or creator, the winner is resolved before trying a suffix.

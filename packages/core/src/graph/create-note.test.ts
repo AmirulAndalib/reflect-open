@@ -199,6 +199,23 @@ describe('resolveOrCreateNoteWithTitle', () => {
     expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
   })
 
+  it('refuses to pick between multiple exact-title matches', async () => {
+    // The historic duplicate bug's own output: two files claiming the same
+    // title. Sorted-first would even prefer the `-2` dupe over the original.
+    const invoke = bindBridge({
+      files: {
+        'notes/business-ideas.md': '# Business ideas\n',
+        'notes/business-ideas-2.md': '# Business ideas\n',
+      },
+    })
+
+    await expect(resolveOrCreateNoteWithTitle('Business ideas', 7)).resolves.toEqual({
+      kind: 'ambiguous',
+      paths: ['notes/business-ideas-2.md', 'notes/business-ideas.md'],
+    })
+    expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
+  })
+
   it('blocks creation when the fallback is ambiguous or unreadable', async () => {
     const invoke = bindBridge({
       files: {
