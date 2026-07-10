@@ -11,8 +11,6 @@ export const NOTE_ROW_HEIGHT = 64
 /** One rendered row with query-aware title and snippet segments. */
 export interface NoteRowModel {
   path: string
-  /** Canonical note title, retained independently from its search presentation. */
-  title: string
   /** Title split into plain and highlighted free-text search matches. */
   titleSegments: HighlightSegment[]
   /** File modification time (epoch ms) — the relative timestamp. */

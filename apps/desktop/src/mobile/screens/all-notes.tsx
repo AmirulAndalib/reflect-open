@@ -4,7 +4,6 @@ import { ChevronLeft, FileText, SearchX } from 'lucide-react'
 import {
   foldTag,
   hasBridge,
-  highlightSearchText,
   listNoteTags,
   parseHighlights,
   searchWithFilters,
@@ -28,15 +27,11 @@ import { useGraph } from '@/providers/graph-provider'
 import { routeForPath } from '@/routing/route'
 import { useRouter } from '@/routing/router'
 
-/** A search hit resolved into the shared row shape for its free-text query. */
-export function rowForHit(hit: FilteredSearchHit, query: string): NoteRowModel {
+/** A search hit resolved into the shared row shape. */
+export function rowForHit(hit: FilteredSearchHit): NoteRowModel {
   return {
     path: hit.path,
-    title: hit.title,
-    titleSegments:
-      hit.titleHighlight === null
-        ? highlightSearchText(hit.title, query)
-        : parseHighlights(hit.titleHighlight),
+    titleSegments: parseHighlights(hit.highlightedTitle),
     mtime: hit.mtime,
     isPinned: hit.isPinned,
     snippet:
@@ -107,18 +102,16 @@ export function MobileAllNotes({
     queryFn: () => listNoteTags(),
     enabled,
   })
-  const { data: rows } = useQuery({
+  const { data: hits } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'mobile-all-notes', parsed],
-    queryFn: async () => {
-      const hits = await searchWithFilters(parsed, searchPlanFor(parsed))
-      return hits.map((hit) => rowForHit(hit, parsed.text))
-    },
+    queryFn: () => searchWithFilters(parsed, searchPlanFor(parsed)),
     enabled,
     // Typing re-keys the query as the deferred value settles; holding the
     // previous rows avoids a blank flash between keystrokes.
     placeholderData: keepPreviousData,
   })
 
+  const rows = useMemo(() => (hits ?? []).map(rowForHit), [hits])
   const pristine = parsed.text === '' && !parsed.filtered
 
   const addPendingTag = (facet: NoteTagFacet): void => {
@@ -170,20 +163,20 @@ export function MobileAllNotes({
           />
         )}
       </header>
-      {/* Undefined rows mean "still fetching" only while the query can run —
+      {/* Undefined hits mean "still fetching" only while the query can run —
           with no bridge/graph it never will, and the empty state is honest. */}
-      {enabled && rows === undefined ? (
+      {enabled && hits === undefined ? (
         <div className="flex flex-1 items-center justify-center" aria-label="Loading notes">
           <Spinner className="size-5 text-text-muted" />
         </div>
-      ) : (rows ?? []).length === 0 ? (
+      ) : (hits ?? []).length === 0 ? (
         pristine ? (
           <Empty icon={<FileText className="size-6" />} message="No notes yet" />
         ) : (
           <Empty icon={<SearchX className="size-6" />} message="No matches" />
         )
       ) : (
-        <NoteRowList rows={rows ?? []} onOpen={(path) => navigate(routeForPath(path))} />
+        <NoteRowList rows={rows} onOpen={(path) => navigate(routeForPath(path))} />
       )}
     </div>
   )

@@ -13,7 +13,6 @@ describe('NoteRowList', () => {
   it('renders title search matches with the snippet highlight treatment', async () => {
     const row: NoteRowModel = {
       path: 'notes/tim-maccaw.md',
-      title: 'Tim MacCaw',
       titleSegments: [
         { text: 'Tim Mac', highlighted: true },
         { text: 'Caw', highlighted: false },

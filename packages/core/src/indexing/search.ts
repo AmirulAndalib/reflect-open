@@ -1,6 +1,5 @@
 import { sql } from 'kysely'
 import { db } from './db'
-import { splitSearchTerms } from './search-query'
 
 /**
  * Search-highlight plumbing for indexed snippets and query-matched titles.
@@ -40,56 +39,6 @@ export function parseHighlights(snippet: string): HighlightSegment[] {
     highlighted = !highlighted
   }
   return segments
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function highlightLiterals(text: string, literals: string[]): HighlightSegment[] {
-  const alternatives = [...literals]
-    .sort((first, second) => second.length - first.length)
-    .map(escapeRegExp)
-  const matcher = new RegExp(alternatives.join('|'), 'giu')
-  const segments: HighlightSegment[] = []
-  let previousEnd = 0
-
-  for (const match of text.matchAll(matcher)) {
-    const start = match.index
-    if (start > previousEnd) {
-      segments.push({ text: text.slice(previousEnd, start), highlighted: false })
-    }
-    segments.push({ text: match[0], highlighted: true })
-    previousEnd = start + match[0].length
-  }
-
-  if (previousEnd < text.length) {
-    segments.push({ text: text.slice(previousEnd), highlighted: false })
-  }
-  return segments
-}
-
-/**
- * Split plain text into case-insensitive query-match runs. A contiguous
- * multi-term phrase wins when present; otherwise each term is highlighted,
- * matching the result-title treatment in Reflect's original search UI.
- */
-export function highlightSearchText(text: string, query: string): HighlightSegment[] {
-  if (text === '') {
-    return []
-  }
-  const terms = splitSearchTerms(query)
-  if (terms.length === 0) {
-    return [{ text, highlighted: false }]
-  }
-
-  if (terms.length > 1) {
-    const phraseSegments = highlightLiterals(text, [terms.join(' ')])
-    if (phraseSegments.some((segment) => segment.highlighted)) {
-      return phraseSegments
-    }
-  }
-  return highlightLiterals(text, terms)
 }
 
 /** A uniformly random note path, or null on an empty graph (Plan 08 command). */

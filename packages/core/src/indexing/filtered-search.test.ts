@@ -38,7 +38,7 @@ describe('searchWithFilters', () => {
       {
         path: 'notes/work.md',
         title: 'Work',
-        titleHighlight: null,
+        highlightedTitle: 'Work',
         dailyDate: null,
         snippet: null,
         preview: 'Weekly agenda.',
@@ -103,7 +103,7 @@ describe('searchWithFilters', () => {
       {
         path: 'daily/2026-01-02.md',
         title: '2026-01-02',
-        titleHighlight: null,
+        highlightedTitle: '2026-01-02',
         dailyDate: '2026-01-02',
         snippet: null,
         preview: 'Standup notes.',
@@ -130,7 +130,7 @@ describe('searchWithFilters', () => {
         preview: 'Quokka facts.',
         mtime: 3000,
         is_pinned: 0,
-        title_highlight: '\u0001Quokka\u0002',
+        fts_highlighted_title: '\u0001Quokka\u0002',
         snippet: 'a …',
       },
     ])
@@ -141,7 +141,7 @@ describe('searchWithFilters', () => {
       {
         path: 'notes/quokka.md',
         title: 'Quokka',
-        titleHighlight: '\u0001Quokka\u0002',
+        highlightedTitle: '\u0001Quokka\u0002',
         dailyDate: null,
         snippet: 'a …',
         preview: 'Quokka facts.',
