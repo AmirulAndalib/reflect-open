@@ -183,6 +183,7 @@ export {
   templateSlugPathForTitle,
   listTemplates,
   type TemplateEntry,
+  highlightSearchText,
   parseHighlights,
   randomNotePath,
   parseSearchQuery,

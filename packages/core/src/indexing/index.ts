@@ -122,6 +122,7 @@ export {
   type DateSuggestionContext,
 } from './date-suggestions'
 export {
+  highlightSearchText,
   parseHighlights,
   randomNotePath,
   HIGHLIGHT_START,

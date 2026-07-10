@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  parseHighlights,
   parseSearchQuery,
   searchNotes,
   searchWithFilters,
@@ -233,6 +234,34 @@ describe('createDevIndexDb', () => {
       'notes/car-log.md',
       'notes/car-wash.md',
       'notes/garage.md',
+    ])
+  })
+
+  it('returns title markers from SQLite for tokenizer-normalized matches', async () => {
+    const db = await openDb()
+    db.applyNote(
+      sampleNote({
+        path: 'notes/cafe-alpha.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n90',
+        title: 'Café Alpha',
+        titleKey: 'café alpha',
+        text: 'An otherwise unrelated body.',
+        preview: 'An otherwise unrelated body.',
+        tags: [],
+      }),
+    )
+    installQueryBridge(db)
+
+    const accentHit = (await searchWithFilters(parseSearchQuery('cafe')))[0]!
+    expect(parseHighlights(accentHit.titleHighlight ?? '')).toEqual([
+      { text: 'Café', highlighted: true },
+      { text: ' Alpha', highlighted: false },
+    ])
+
+    const punctuationHit = (await searchWithFilters(parseSearchQuery('alpha,')))[0]!
+    expect(parseHighlights(punctuationHit.titleHighlight ?? '')).toEqual([
+      { text: 'Café ', highlighted: false },
+      { text: 'Alpha', highlighted: true },
     ])
   })
 

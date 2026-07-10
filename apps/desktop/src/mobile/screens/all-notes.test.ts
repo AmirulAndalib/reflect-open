@@ -6,6 +6,7 @@ function hit(overrides: Partial<FilteredSearchHit>): FilteredSearchHit {
   return {
     path: 'notes/a.md',
     title: 'A',
+    titleHighlight: null,
     dailyDate: null,
     snippet: null,
     preview: '',
@@ -18,7 +19,7 @@ function hit(overrides: Partial<FilteredSearchHit>): FilteredSearchHit {
 describe('rowForHit', () => {
   it('renders an FTS snippet as highlighted segments', () => {
     // \u0001/\u0002 are the index's highlight markers (core's search.ts).
-    const row = rowForHit(hit({ snippet: 'a \u0001match\u0002 here' }))
+    const row = rowForHit(hit({ snippet: 'a \u0001match\u0002 here' }), 'match')
     expect(row.snippet).toEqual([
       { text: 'a ', highlighted: false },
       { text: 'match', highlighted: true },
@@ -27,12 +28,37 @@ describe('rowForHit', () => {
   })
 
   it('falls back to the stored preview when no text was searched', () => {
-    const row = rowForHit(hit({ preview: 'First line of the note.' }))
+    const row = rowForHit(hit({ preview: 'First line of the note.' }), '')
     expect(row.snippet).toEqual([{ text: 'First line of the note.', highlighted: false }])
   })
 
   it('renders no snippet line for an empty preview', () => {
-    expect(rowForHit(hit({})).snippet).toEqual([])
+    expect(rowForHit(hit({}), '').snippet).toEqual([])
+  })
+
+  it('highlights free-text matches in the note title', () => {
+    const row = rowForHit(hit({ title: 'Tim MacCaw' }), 'tim mac')
+    expect(row.title).toBe('Tim MacCaw')
+    expect(row.titleSegments).toEqual([
+      { text: 'Tim Mac', highlighted: true },
+      { text: 'Caw', highlighted: false },
+    ])
+  })
+
+  it('uses the index title markers for tokenizer-normalized matches', () => {
+    const row = rowForHit(
+      hit({ title: 'Café Alpha', titleHighlight: '\u0001Café\u0002 Alpha' }),
+      'cafe',
+    )
+    expect(row.titleSegments).toEqual([
+      { text: 'Café', highlighted: true },
+      { text: ' Alpha', highlighted: false },
+    ])
+  })
+
+  it('does not highlight a body-only query that appears inside the title', () => {
+    const row = rowForHit(hit({ title: 'Oscar plans', titleHighlight: 'Oscar plans' }), 'car')
+    expect(row.titleSegments).toEqual([{ text: 'Oscar plans', highlighted: false }])
   })
 })
 
