@@ -48,6 +48,8 @@ export function visibleTaskBreadcrumbs(breadcrumbs: readonly string[]): string[]
 /** One consecutive run of task rows sharing the same parent outline labels. */
 export interface TaskContext {
   readonly breadcrumbs: readonly string[]
+  /** What the UI labels this context ({@link visibleTaskBreadcrumbs}); empty → unlabeled. */
+  readonly visibleBreadcrumbs: readonly string[]
   readonly tasks: readonly OpenTask[]
 }
 
@@ -57,14 +59,22 @@ function haveSameBreadcrumbs(left: readonly string[], right: readonly string[]):
 
 /** Group consecutive task rows that share the same parent outline context. */
 export function groupTaskContexts(tasks: readonly OpenTask[]): TaskContext[] {
-  const contexts: { breadcrumbs: readonly string[]; tasks: OpenTask[] }[] = []
+  const contexts: {
+    breadcrumbs: readonly string[]
+    visibleBreadcrumbs: readonly string[]
+    tasks: OpenTask[]
+  }[] = []
 
   for (const task of tasks) {
     const previous = contexts.at(-1)
     if (previous !== undefined && haveSameBreadcrumbs(previous.breadcrumbs, task.breadcrumbs)) {
       previous.tasks.push(task)
     } else {
-      contexts.push({ breadcrumbs: task.breadcrumbs, tasks: [task] })
+      contexts.push({
+        breadcrumbs: task.breadcrumbs,
+        visibleBreadcrumbs: visibleTaskBreadcrumbs(task.breadcrumbs),
+        tasks: [task],
+      })
     }
   }
 

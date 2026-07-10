@@ -40,6 +40,8 @@ export {
 export { listTemplates, type TemplateEntry } from './template-list'
 export {
   buildIndexedNote,
+  decodeTaskBreadcrumbs,
+  encodeTaskBreadcrumbs,
   indexedNoteSchema,
   indexedLinkSchema,
   indexedTagSchema,
@@ -96,7 +98,6 @@ export {
   groupTaskContexts,
   groupTasks,
   taskDateBucket,
-  visibleTaskBreadcrumbs,
   type TaskContext,
   type TaskGroup,
   type TaskGroupKind,

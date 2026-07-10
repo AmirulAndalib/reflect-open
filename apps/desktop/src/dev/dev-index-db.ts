@@ -1,5 +1,5 @@
 import sqlite3InitModule, { type Database, type SqlValue } from '@sqlite.org/sqlite-wasm'
-import { ReflectError, type IndexedNote } from '@reflect/core'
+import { encodeTaskBreadcrumbs, ReflectError, type IndexedNote } from '@reflect/core'
 
 /**
  * The dev bridge's SQLite index: the real `crates/index-schema` migrations
@@ -173,7 +173,7 @@ export async function createDevIndexDb(): Promise<DevIndexDb> {
             note.path,
             task.markerOffset,
             task.text,
-            JSON.stringify(task.breadcrumbs),
+            encodeTaskBreadcrumbs(task.breadcrumbs),
             task.raw,
             task.checked,
             task.dueDate,

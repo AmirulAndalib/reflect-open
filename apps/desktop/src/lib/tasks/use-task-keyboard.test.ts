@@ -1,28 +1,11 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type OpenTask } from '@reflect/core'
+import { makeOpenTask as task } from './open-task-fixture'
 import { taskKey } from './task-identity'
 import { type TaskActions } from './use-task-actions'
 import { type TaskSelection } from './use-task-selection'
 import { useTaskKeyboard } from './use-task-keyboard'
-
-function task(over: Partial<OpenTask> = {}): OpenTask {
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    raw: '[ ] do it',
-    checked: false,
-    text: 'do it',
-    breadcrumbs: [],
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...over,
-  }
-}
 
 function makeSelection(over: Partial<TaskSelection> = {}): TaskSelection {
   return {

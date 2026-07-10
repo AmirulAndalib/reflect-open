@@ -1,6 +1,6 @@
-import { z } from 'zod'
 import type { TaskMarker } from '../markdown'
 import { db } from './db'
+import { decodeTaskBreadcrumbs } from './indexed-note'
 
 /**
  * One open task plus the note context the Tasks view (Plan 18) groups and
@@ -25,8 +25,6 @@ export interface OpenTask extends TaskMarker {
   updatedAt: number
 }
 
-const taskBreadcrumbsSchema = z.array(z.string()).readonly()
-
 function taskRowsQuery() {
   return db
     .selectFrom('tasks')
@@ -48,13 +46,23 @@ function taskRowsQuery() {
     ])
 }
 
-function toTaskRow(row: {
-  checked: number
-  isPinned: number
-  breadcrumbs: string
-}): { checked: boolean; isPinned: boolean; breadcrumbs: readonly string[] } {
-  const breadcrumbs = taskBreadcrumbsSchema.parse(JSON.parse(row.breadcrumbs))
-  return { ...row, checked: row.checked !== 0, isPinned: row.isPinned !== 0, breadcrumbs }
+/** Map one raw SQL row to its domain shape: 0/1 flags to booleans, the
+ * breadcrumbs column decoded. The raw fields are destructured away so the
+ * stored `breadcrumbs: string` never leaks past this boundary. */
+function toTaskRow<Row extends { checked: number; isPinned: number; breadcrumbs: string }>(
+  row: Row,
+): Omit<Row, 'checked' | 'isPinned' | 'breadcrumbs'> & {
+  checked: boolean
+  isPinned: boolean
+  breadcrumbs: readonly string[]
+} {
+  const { checked, isPinned, breadcrumbs, ...task } = row
+  return {
+    ...task,
+    checked: checked !== 0,
+    isPinned: isPinned !== 0,
+    breadcrumbs: decodeTaskBreadcrumbs(breadcrumbs),
+  }
 }
 
 /**
@@ -67,7 +75,7 @@ export async function getOpenTasks(): Promise<OpenTask[]> {
     .orderBy('tasks.notePath')
     .orderBy('tasks.markerOffset')
     .execute()
-  return rows.map((row) => ({ ...row, ...toTaskRow(row) }))
+  return rows.map(toTaskRow)
 }
 
 /**
@@ -80,5 +88,5 @@ export async function getCompletedTasks(): Promise<OpenTask[]> {
     .orderBy('notes.updatedAt', 'desc')
     .orderBy('tasks.markerOffset')
     .execute()
-  return rows.map((row) => ({ ...row, ...toTaskRow(row) }))
+  return rows.map(toTaskRow)
 }

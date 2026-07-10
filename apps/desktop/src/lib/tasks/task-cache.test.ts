@@ -1,5 +1,5 @@
-import { type OpenTask } from '@reflect/core'
 import { describe, expect, it } from 'vitest'
+import { makeOpenTask as task } from './open-task-fixture'
 import {
   asCompleted,
   asOpen,
@@ -8,25 +8,6 @@ import {
   withEditedTask,
   withoutTasks,
 } from './task-cache'
-
-function task(overrides: Partial<OpenTask> = {}): OpenTask {
-  const text = overrides.text ?? 'do it'
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    raw: `[ ] ${text}`,
-    checked: false,
-    text,
-    breadcrumbs: [],
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...overrides,
-  }
-}
 
 const a = task({ markerOffset: 1, text: 'a' })
 const b = task({ markerOffset: 2, text: 'b' })

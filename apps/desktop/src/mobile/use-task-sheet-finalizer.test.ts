@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenTask } from '@reflect/core'
+import { makeOpenTask } from '@/lib/tasks/open-task-fixture'
 import {
   useTaskSheetFinalizer,
   type TaskSheetFinalizerDeps,
@@ -14,22 +15,7 @@ import {
  */
 
 function task(overrides: Partial<OpenTask> = {}): OpenTask {
-  const text = overrides.text ?? 'alpha'
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    raw: `[ ] ${text}`,
-    checked: false,
-    text,
-    breadcrumbs: [],
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...overrides,
-  }
+  return makeOpenTask({ text: 'alpha', ...overrides })
 }
 
 const edit = vi.fn()

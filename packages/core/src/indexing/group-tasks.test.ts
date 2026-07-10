@@ -63,6 +63,14 @@ describe('groupTaskContexts', () => {
     ])
   })
 
+  it('labels each context with its visible breadcrumbs', () => {
+    const contexts = groupTaskContexts([
+      task({ markerOffset: 1, breadcrumbs: [' Project '] }),
+      task({ markerOffset: 2, breadcrumbs: ['Tasks:'] }),
+    ])
+    expect(contexts.map((context) => context.visibleBreadcrumbs)).toEqual([['Project'], []])
+  })
+
   it('returns no contexts for no tasks', () => {
     expect(groupTaskContexts([])).toEqual([])
   })

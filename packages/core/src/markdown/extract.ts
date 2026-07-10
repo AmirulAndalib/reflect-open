@@ -6,6 +6,7 @@ import { foldTag } from './keys'
 import { parseInlineLink } from './link-syntax'
 import { buildPlainText, plainTextOfRange, unescapeMarkdownText } from './plain-text'
 import { normalizeWikiTarget } from './resolve'
+import { taskBreadcrumbs } from './task-breadcrumbs'
 import { parseTaskMarker } from './task-marker'
 import type {
   AssetRef,
@@ -192,57 +193,6 @@ function hasRoundTaskListMarker(body: string, markerStart: number): boolean {
 function lineEndAfter(body: string, from: number): number {
   const newline = body.indexOf('\n', from)
   return newline === -1 ? body.length : newline
-}
-
-function listItemLeadTextblock(item: SyntaxNode): SyntaxNode | null {
-  for (let child = item.firstChild; child !== null; child = child.nextSibling) {
-    if (child.name === 'ListMark') {
-      continue
-    }
-    return child.name === 'Paragraph' || child.name === 'Task' ? child : null
-  }
-  return null
-}
-
-function listItemBreadcrumbLabel(
-  body: string,
-  item: SyntaxNode,
-  cuts: Span[],
-  literalRanges: Span[],
-): string | null {
-  const textblock = listItemLeadTextblock(item)
-  if (textblock === null) {
-    return null
-  }
-  const text = plainTextOfRange(body, textblock.from, textblock.to, cuts, literalRanges)
-  return text === '' ? null : text
-}
-
-function taskBreadcrumbs(
-  body: string,
-  taskNode: SyntaxNode,
-  cuts: Span[],
-  literalRanges: Span[],
-): string[] {
-  const ownItem = taskNode.parent
-  if (ownItem?.name !== 'ListItem') {
-    return []
-  }
-
-  const breadcrumbs: string[] = []
-  let ancestor = ownItem.parent
-
-  while (ancestor !== null && ancestor !== undefined) {
-    if (ancestor.name === 'ListItem') {
-      const text = listItemBreadcrumbLabel(body, ancestor, cuts, literalRanges)
-      if (text !== null) {
-        breadcrumbs.push(text)
-      }
-    }
-    ancestor = ancestor.parent
-  }
-
-  return breadcrumbs.reverse()
 }
 
 /**

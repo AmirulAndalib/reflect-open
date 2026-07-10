@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenTask } from '@reflect/core'
 import { useEffect, useState, type MutableRefObject, type ReactNode } from 'react'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
+import { makeOpenTask as task } from '@/lib/tasks/open-task-fixture'
 import { resetRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { TasksScreen } from './tasks-screen'
@@ -177,27 +178,6 @@ vi.mock('@/lib/operations', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/operations')>()),
   startOperation,
 }))
-
-function task(overrides: Partial<OpenTask> = {}): OpenTask {
-  const text = overrides.text ?? 'do it'
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    // The row renders `raw`; default it to the marker line for `text` so display
-    // assertions match unless a case overrides `raw` explicitly.
-    raw: `[ ] ${text}`,
-    checked: false,
-    text,
-    breadcrumbs: [],
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...overrides,
-  }
-}
 
 function RouteProbe(): ReactNode {
   const { route } = useRouter()

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { OpenTask } from '@reflect/core'
 import type { TaskFilters } from '@/lib/tasks/task-filters'
+import { makeOpenTask as task } from '@/lib/tasks/open-task-fixture'
 import { composeVisibleTaskGroups, visibleGroups } from '@/lib/tasks/task-visibility'
 
 const TODAY = '2026-06-14'
@@ -12,25 +12,6 @@ const ALL_ON: TaskFilters = {
   upcoming: true,
   other: true,
   archived: false,
-}
-
-function task(overrides: Partial<OpenTask> = {}): OpenTask {
-  const text = overrides.text ?? 'do it'
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    raw: `[ ] ${text}`,
-    checked: false,
-    text,
-    breadcrumbs: [],
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...overrides,
-  }
 }
 
 describe('composeVisibleTaskGroups', () => {

@@ -101,13 +101,28 @@ export const indexedEmailSchema = z.object({
 })
 export type IndexedEmail = z.infer<typeof indexedEmailSchema>
 
+const taskBreadcrumbsSchema = z.array(z.string()).readonly()
+
+/**
+ * The `tasks.breadcrumbs` column's format: the ordered label array as one JSON
+ * string. Every writer and reader of the column goes through this pair (or,
+ * in Rust, `write.rs`'s `serde_json` mirror — the db tests pin that parity).
+ */
+export function encodeTaskBreadcrumbs(breadcrumbs: readonly string[]): string {
+  return JSON.stringify(breadcrumbs)
+}
+
+export function decodeTaskBreadcrumbs(column: string): readonly string[] {
+  return taskBreadcrumbsSchema.parse(JSON.parse(column))
+}
+
 export const indexedTaskSchema = z.object({
   /** Character offset of the marker's `[` in the file (UTF-16 units) — the row PK with `path`. */
   markerOffset: z.number(),
   /** Display/search text of the task's marker line, markdown stripped. */
   text: z.string(),
   /** Parent outline/list item text, top-down, displayed in the Tasks view. */
-  breadcrumbs: z.array(z.string()).readonly(),
+  breadcrumbs: taskBreadcrumbsSchema,
   /** The marker line verbatim — the surgical write-back's staleness guard. */
   raw: z.string(),
   checked: z.boolean(),

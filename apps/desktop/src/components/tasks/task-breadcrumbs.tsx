@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
-import { visibleTaskBreadcrumbs } from '@reflect/core'
 
 interface TaskBreadcrumbsProps {
+  /** The context's display labels ({@link TaskContext.visibleBreadcrumbs}); empty renders nothing. */
   breadcrumbs: readonly string[]
   /** Select every task row sharing this outline context. */
   onSelect: () => void
@@ -12,11 +12,10 @@ export function TaskBreadcrumbs({
   breadcrumbs,
   onSelect,
 }: TaskBreadcrumbsProps): ReactElement | null {
-  const visible = visibleTaskBreadcrumbs(breadcrumbs)
-  if (visible.length === 0) {
+  if (breadcrumbs.length === 0) {
     return null
   }
-  const label = visible.join(' → ')
+  const label = breadcrumbs.join(' → ')
 
   return (
     <li className="min-w-0 px-4 pt-1.5 lg:px-12">

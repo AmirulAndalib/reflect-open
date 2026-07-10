@@ -89,7 +89,7 @@ export function TaskGroupSection({
             return (
               <Fragment key={taskKey(firstTask)}>
                 <TaskBreadcrumbs
-                  breadcrumbs={context.breadcrumbs}
+                  breadcrumbs={context.visibleBreadcrumbs}
                   onSelect={() => selection.select(context.tasks.map(taskKey))}
                 />
                 {context.tasks.map((task) => {
