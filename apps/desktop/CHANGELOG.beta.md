@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0-beta.4](https://github.com/team-reflect/reflect-open/compare/v0.5.0-beta.3...v0.5.0-beta.4) (2026-07-10)
+
+
+### Bug Fixes
+
+* **desktop:** recover invisible main window ([#716](https://github.com/team-reflect/reflect-open/issues/716)) ([96f11fb](https://github.com/team-reflect/reflect-open/commit/96f11fbbd4ab5cf966bd0fe338922c6b1bd6d94f))
+* find non-Latin title substrings in search ([#718](https://github.com/team-reflect/reflect-open/issues/718)) ([3e5ce4b](https://github.com/team-reflect/reflect-open/commit/3e5ce4b01cf09d0f6b496dc530295e526193daf9))
+* link conflict warnings to affected notes ([#714](https://github.com/team-reflect/reflect-open/issues/714)) ([603b6dc](https://github.com/team-reflect/reflect-open/commit/603b6dcd4c38e617632c84a42b15434d5cd00e7d))
+* **mobile:** keep Today taps on the current day ([#720](https://github.com/team-reflect/reflect-open/issues/720)) ([db82a6b](https://github.com/team-reflect/reflect-open/commit/db82a6bd304ba11802b8f0d7a9334c1917b20a6c))
+* show the installed app version in About ([#715](https://github.com/team-reflect/reflect-open/issues/715)) ([56197be](https://github.com/team-reflect/reflect-open/commit/56197be9af13b089dec3a8bb0313d2778c740339))
+
 ## [0.5.0-beta.3](https://github.com/team-reflect/reflect-open/compare/v0.5.0-beta.2...v0.5.0-beta.3) (2026-07-10)
 
 
