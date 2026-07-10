@@ -154,16 +154,19 @@ impl PreparedImport {
     /// Download every remote attachment into the graph's staging directory.
     /// Transient failures abort (nothing has been written to the graph yet);
     /// permanent 4xx failures come back as [`DownloadOutcome::Gone`].
+    /// `user_agent` identifies the configured application version.
     /// `cancelled` stops the workers between fetches; `on_progress` receives
     /// `(completed, total)` after each download settles.
     pub async fn download_assets(
         &self,
+        user_agent: &str,
         cancelled: Arc<AtomicBool>,
         on_progress: Arc<dyn Fn(usize, usize) + Send + Sync>,
     ) -> AppResult<HashMap<String, DownloadOutcome>> {
         import_assets::download_remote_assets(
             &self.staging,
             self.urls.clone(),
+            user_agent,
             cancelled,
             on_progress,
         )
@@ -1501,8 +1504,11 @@ mod tests {
         prefix: &str,
     ) -> AppResult<ImportSummary> {
         let prepared = prepare_zip_import_from(root, zip_path, &[prefix])?;
-        let downloads =
-            tauri::async_runtime::block_on(prepared.download_assets(no_cancel(), no_progress()))?;
+        let downloads = tauri::async_runtime::block_on(prepared.download_assets(
+            "Reflect/test",
+            no_cancel(),
+            no_progress(),
+        ))?;
         finalize_import(root, prepared, downloads, |_, _| {})
     }
 
@@ -1585,9 +1591,12 @@ mod tests {
         let Some(before) = open_fd_count() else {
             return;
         };
-        let downloads =
-            tauri::async_runtime::block_on(prepared.download_assets(no_cancel(), no_progress()))
-                .unwrap();
+        let downloads = tauri::async_runtime::block_on(prepared.download_assets(
+            "Reflect/test",
+            no_cancel(),
+            no_progress(),
+        ))
+        .unwrap();
         let Some(after) = open_fd_count() else {
             return;
         };
@@ -1695,6 +1704,7 @@ mod tests {
         let record = Arc::clone(&seen);
 
         tauri::async_runtime::block_on(prepared.download_assets(
+            "Reflect/test",
             no_cancel(),
             Arc::new(move |done, total| record.lock().unwrap().push((done, total))),
         ))
@@ -1718,8 +1728,11 @@ mod tests {
         let prepared = prepare_zip_import_from(root.path(), &zip_path, &[&base]).unwrap();
         let cancelled = Arc::new(AtomicBool::new(true));
 
-        let result =
-            tauri::async_runtime::block_on(prepared.download_assets(cancelled, no_progress()));
+        let result = tauri::async_runtime::block_on(prepared.download_assets(
+            "Reflect/test",
+            cancelled,
+            no_progress(),
+        ));
 
         match result.err() {
             Some(AppError::Io { message }) => assert!(message.contains("cancelled")),

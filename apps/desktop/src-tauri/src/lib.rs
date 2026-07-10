@@ -53,13 +53,35 @@ mod spike_mobile;
 
 use tauri::{Emitter, Manager};
 
-/// Returns the desktop application version from Cargo metadata.
+/// Returns the application version from Tauri's resolved package metadata.
 ///
 /// The canonical round-trip example for the IPC boundary: the frontend reaches
 /// it only through `@reflect/core`'s typed, zod-validated `getAppVersion`.
 #[tauri::command]
-fn app_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+fn app_version<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> String {
+    app.package_info().version.to_string()
+}
+
+/// Builds the HTTP User-Agent from the same resolved version shown in the UI.
+pub(crate) fn app_user_agent<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> String {
+    format!("Reflect/{}", app.package_info().version)
+}
+
+#[cfg(test)]
+mod app_metadata_tests {
+    use super::{app_user_agent, app_version};
+
+    #[test]
+    fn app_metadata_uses_tauri_package_info() {
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.package_info_mut().version = "7.8.9-beta.4".parse().expect("valid version");
+        let app = tauri::test::mock_builder()
+            .build(context)
+            .expect("mock app");
+
+        assert_eq!(app_version(app.handle().clone()), "7.8.9-beta.4");
+        assert_eq!(app_user_agent(app.handle()), "Reflect/7.8.9-beta.4");
+    }
 }
 
 /// Which UI family this build serves. The frontend's root gate (Plan 19)
