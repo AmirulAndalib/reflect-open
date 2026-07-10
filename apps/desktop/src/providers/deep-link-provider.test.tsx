@@ -95,6 +95,35 @@ describe('DeepLinkProvider', () => {
     expect(io.isStale?.()).toBe(true)
   })
 
+  it.each([
+    'reflect://append?text=captured',
+    'reflect://task?text=captured',
+    'reflect://edit-notes?content=invalid',
+  ])('does not stale a pending note resolve for non-navigation URL %s', (url) => {
+    mount()
+    attachedHandler()('reflect://note/x')
+    const pendingNoteIo = handleDeepLink.mock.calls[0]![1]
+
+    attachedHandler()(url)
+
+    expect(pendingNoteIo.isStale?.()).toBe(false)
+    expect(handleDeepLink.mock.calls[1]![1].isStale).toBeUndefined()
+  })
+
+  it.each(['reflect://today', 'reflect://note/y'])(
+    'stales a pending note resolve for newer navigation URL %s',
+    (url) => {
+      mount()
+      attachedHandler()('reflect://note/x')
+      const pendingNoteIo = handleDeepLink.mock.calls[0]![1]
+
+      attachedHandler()(url)
+
+      expect(pendingNoteIo.isStale?.()).toBe(true)
+      expect(handleDeepLink.mock.calls[1]![1].isStale?.()).toBe(false)
+    },
+  )
+
   it('a StrictMode probe cycle does not stale a link the probe attach drained', () => {
     // The note window's initial deep link buffers in the intake and is drained
     // by the FIRST attach — which in dev is StrictMode's probe run. Its async

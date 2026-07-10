@@ -134,6 +134,7 @@ describe('DailyContextSidebar calendar', () => {
     const day = view.getByRole('button', { name: formatDayLabel('2026-06-18', 'mdy') })
 
     fireEvent.click(day, { metaKey: true })
+    await waitFor(() => expect(openRouteInNewWindow).toHaveBeenCalledTimes(1))
     view.rerender(
       <TooltipProvider>
         <QueryClientProvider

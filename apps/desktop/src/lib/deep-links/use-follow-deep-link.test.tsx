@@ -88,6 +88,7 @@ describe('useFollowDeepLink', () => {
     const view = render(<Harness />)
 
     modifierClick()
+    expect(openDeepLinkInNewWindow).toHaveBeenCalledWith('reflect://note/older')
     fireEvent.click(view.getByRole('button', { name: 'Navigate away' }))
     await act(async () => {
       finishOpen(false)
@@ -106,6 +107,7 @@ describe('useFollowDeepLink', () => {
     const view = render(<Harness />)
 
     modifierClick()
+    expect(openDeepLinkInNewWindow).toHaveBeenCalledWith('reflect://note/older')
     fireEvent.click(view.getByRole('button', { name: 'Open newer note link' }), {
       metaKey: true,
     })
@@ -117,6 +119,56 @@ describe('useFollowDeepLink', () => {
     expect(dispatchDeepLink).not.toHaveBeenCalled()
   })
 
+  it.each([
+    'reflect://append?text=captured',
+    'reflect://task?text=captured',
+    'reflect://edit-notes?content=invalid',
+  ])('does not cancel a pending failed fallback for non-address URL %s', async (url) => {
+    let finishOpen: (opened: boolean) => void = () => {}
+    openDeepLinkInNewWindow.mockReturnValue(
+      new Promise((resolve) => {
+        finishOpen = resolve
+      }),
+    )
+    render(<Harness />)
+
+    modifierClick()
+    expect(openDeepLinkInNewWindow).toHaveBeenCalledWith('reflect://note/older')
+    followDeepLink?.(url, new MouseEvent('click', { metaKey: true }))
+    await act(async () => {
+      finishOpen(false)
+    })
+
+    expect(openDeepLinkInNewWindow).toHaveBeenCalledTimes(1)
+    expect(dispatchDeepLink.mock.calls).toEqual([
+      [url],
+      ['reflect://note/older'],
+    ])
+  })
+
+  it.each(['reflect://today', 'reflect://note/newer'])(
+    'cancels a pending failed fallback for newer address URL %s',
+    async (url) => {
+      let finishOpen: (opened: boolean) => void = () => {}
+      openDeepLinkInNewWindow.mockReturnValue(
+        new Promise((resolve) => {
+          finishOpen = resolve
+        }),
+      )
+      render(<Harness />)
+
+      modifierClick()
+      expect(openDeepLinkInNewWindow).toHaveBeenCalledWith('reflect://note/older')
+      followDeepLink?.(url)
+      await act(async () => {
+        finishOpen(false)
+      })
+
+      expect(dispatchDeepLink).toHaveBeenCalledTimes(1)
+      expect(dispatchDeepLink).toHaveBeenCalledWith(url)
+    },
+  )
+
   it('drops a failed fallback after its rendered-link host unmounts', async () => {
     let finishOpen: (opened: boolean) => void = () => {}
     openDeepLinkInNewWindow.mockReturnValue(
@@ -127,6 +179,7 @@ describe('useFollowDeepLink', () => {
     const view = render(<Harness />)
 
     modifierClick()
+    expect(openDeepLinkInNewWindow).toHaveBeenCalledWith('reflect://note/older')
     view.rerender(<Harness showHost={false} />)
     await act(async () => {
       finishOpen(false)

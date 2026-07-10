@@ -115,6 +115,7 @@ describe('useNoteLinkNavigation', () => {
     const view = render(<Harness />)
 
     fireEvent.click(view.getByRole('button', { name: 'Alpha' }), { metaKey: true })
+    await waitFor(() => expect(openRouteInNewWindow).toHaveBeenCalledTimes(1))
     fireEvent.click(view.getByRole('button', { name: 'Bravo' }))
     expect(route(view)).toEqual({ kind: 'note', path: 'notes/bravo.md' })
 
@@ -135,6 +136,7 @@ describe('useNoteLinkNavigation', () => {
     const view = render(<Harness />)
 
     fireEvent.click(view.getByRole('button', { name: 'Alpha' }), { metaKey: true })
+    await waitFor(() => expect(openRouteInNewWindow).toHaveBeenCalledTimes(1))
     fireEvent.click(view.getByRole('button', { name: 'Reopen current route' }))
     await act(async () => {
       finishOpen?.(false)
@@ -153,6 +155,7 @@ describe('useNoteLinkNavigation', () => {
     const view = render(<Harness scopeKey="2026-07-10" />)
 
     fireEvent.click(view.getByRole('button', { name: 'Alpha' }), { metaKey: true })
+    await waitFor(() => expect(openRouteInNewWindow).toHaveBeenCalledTimes(1))
     view.rerender(<Harness scopeKey="2026-07-11" />)
     await act(async () => {
       finishOpen?.(false)
@@ -171,6 +174,7 @@ describe('useNoteLinkNavigation', () => {
     const view = render(<Harness />)
 
     fireEvent.click(view.getByRole('button', { name: 'Alpha' }), { metaKey: true })
+    await waitFor(() => expect(openRouteInNewWindow).toHaveBeenCalledTimes(1))
     view.rerender(<Harness visible={false} />)
     await act(async () => {
       finishOpen?.(false)

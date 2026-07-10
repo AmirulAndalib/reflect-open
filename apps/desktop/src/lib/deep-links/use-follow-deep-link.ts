@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { dispatchDeepLink } from '@/lib/deep-links/intake'
+import { parseDeepLink } from '@/lib/deep-links/parse'
 import {
   isNewWindowClick,
   openDeepLinkInNewWindow,
@@ -11,7 +12,7 @@ import {
 } from '@/lib/windows/link-navigation-intent'
 import { useNavigationRevision } from '@/routing/router'
 
-/** Follow one validated `reflect://` link. */
+/** Follow one in-app `reflect://` link. */
 export type FollowDeepLink = (href: string, event?: NewWindowClickEvent) => void
 
 /**
@@ -38,6 +39,14 @@ export function useFollowDeepLink(): FollowDeepLink {
 
   return useCallback(
     (href, event) => {
+      const link = parseDeepLink(href)
+      // A capture or rejected URL still dispatches so the graph-scoped handler
+      // can write it or surface the error, but it cannot supersede navigation.
+      if (link === null || link.kind === 'capture') {
+        dispatchDeepLink(href)
+        return
+      }
+
       const intent = beginLinkNavigationIntent()
       if (!isNewWindowClick(event)) {
         dispatchDeepLink(href)

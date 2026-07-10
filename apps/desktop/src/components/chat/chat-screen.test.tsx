@@ -94,7 +94,7 @@ vi.mock('@/editor/markdown-preview', () => ({
     onWikiLinkClick,
   }: {
     content: string
-    onWikiLinkClick?: (target: string) => void
+    onWikiLinkClick?: (target: string, event?: MouseEvent | KeyboardEvent) => void
   }) => {
     const wikiTargets = Array.from(content.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)).map(
       (match) => match[1]!,
@@ -103,7 +103,11 @@ vi.mock('@/editor/markdown-preview', () => ({
       <div data-testid="markdown-preview">
         {content}
         {wikiTargets.map((target) => (
-          <button key={target} type="button" onClick={() => onWikiLinkClick?.(target)}>
+          <button
+            key={target}
+            type="button"
+            onClick={(event) => onWikiLinkClick?.(target, event.nativeEvent)}
+          >
             Open {target}
           </button>
         ))}
@@ -305,6 +309,29 @@ describe('ChatScreen', () => {
     await userEvent.click(await view.findByRole('button', { name: 'Open Atlas' }))
 
     await waitFor(() => expect(probedRoute).toEqual({ kind: 'note', path: 'notes/atlas.md' }))
+  })
+
+  it('opens ⌘-clicked cited wiki links in a new window', async () => {
+    configureModel()
+    scriptTurn([
+      { type: 'text-delta', text: 'See [[Atlas]].' },
+      {
+        type: 'complete',
+        messages: [{ role: 'assistant', content: 'See [[Atlas]].' }],
+      },
+    ])
+    const view = renderChat()
+
+    await userEvent.type(view.getByLabelText('Chat message'), 'what should I open?{Enter}')
+    fireEvent.click(await view.findByRole('button', { name: 'Open Atlas' }), { metaKey: true })
+
+    await waitFor(() =>
+      expect(openRouteInNewWindow).toHaveBeenCalledWith({
+        kind: 'note',
+        path: 'notes/atlas.md',
+      }),
+    )
+    expect(probedRoute).toEqual({ kind: 'today' })
   })
 
   it('offers the provider catalog in the picker, keeping a custom model selectable', async () => {
