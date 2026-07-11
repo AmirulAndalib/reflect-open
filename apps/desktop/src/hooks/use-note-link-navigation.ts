@@ -45,12 +45,18 @@ export function useNoteLinkNavigation(scopeKey?: string | number | null): NoteLi
       }
 
       const startedInScope = scopeKeyRef.current
-      void openRouteInNewWindow(target).then((opened) => {
+      void (async () => {
+        let opened = false
+        try {
+          opened = await openRouteInNewWindow(target)
+        } catch {
+          // Treat a native open failure like a declined open and fall back below.
+        }
         if (opened || isStale() || !Object.is(scopeKeyRef.current, startedInScope)) {
           return
         }
         navigate(target)
-      })
+      })()
     },
     [beginLinkIntent, navigate],
   )

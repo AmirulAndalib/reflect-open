@@ -78,6 +78,17 @@ describe('useFollowDeepLink', () => {
     )
   })
 
+  it('falls back to in-window dispatch when the window open rejects', async () => {
+    openDeepLinkInNewWindow.mockRejectedValue(new Error('window creation failed'))
+    render(<Harness />)
+
+    modifierClick()
+
+    await vi.waitFor(() =>
+      expect(dispatchDeepLink).toHaveBeenCalledWith('reflect://note/older'),
+    )
+  })
+
   it('drops a failed fallback after a newer router navigation', async () => {
     let finishOpen: (opened: boolean) => void = () => {}
     openDeepLinkInNewWindow.mockReturnValue(
@@ -114,6 +125,28 @@ describe('useFollowDeepLink', () => {
     await vi.waitFor(() => expect(openRouteInNewWindow).toHaveBeenCalledTimes(1))
     await act(async () => {
       finishOpen(false)
+    })
+
+    expect(dispatchDeepLink).not.toHaveBeenCalled()
+  })
+
+  it('drops a rejected fallback after a newer note-link window intent', async () => {
+    let rejectOpen: (cause: Error) => void = () => {}
+    openDeepLinkInNewWindow.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectOpen = reject
+      }),
+    )
+    const view = render(<Harness />)
+
+    modifierClick()
+    expect(openDeepLinkInNewWindow).toHaveBeenCalledWith('reflect://note/older')
+    fireEvent.click(view.getByRole('button', { name: 'Open newer note link' }), {
+      metaKey: true,
+    })
+    await vi.waitFor(() => expect(openRouteInNewWindow).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      rejectOpen(new Error('window creation failed'))
     })
 
     expect(dispatchDeepLink).not.toHaveBeenCalled()

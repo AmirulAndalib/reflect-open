@@ -36,12 +36,18 @@ export function useFollowDeepLink(): FollowDeepLink {
         return
       }
 
-      void openDeepLinkInNewWindow(href).then((opened) => {
+      void (async () => {
+        let opened = false
+        try {
+          opened = await openDeepLinkInNewWindow(href)
+        } catch {
+          // Treat a native open failure like a declined open and fall back below.
+        }
         if (opened || isStale()) {
           return
         }
         dispatchDeepLink(href)
-      })
+      })()
     },
     [beginLinkIntent],
   )

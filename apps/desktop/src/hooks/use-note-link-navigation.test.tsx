@@ -105,6 +105,17 @@ describe('useNoteLinkNavigation', () => {
     )
   })
 
+  it('falls back to current-window navigation when a secondary window open rejects', async () => {
+    openRouteInNewWindow.mockRejectedValue(new Error('window creation failed'))
+    const view = render(<Harness />)
+
+    fireEvent.click(view.getByRole('button', { name: 'Alpha' }), { metaKey: true })
+
+    await waitFor(() =>
+      expect(route(view)).toEqual({ kind: 'note', path: 'notes/alpha.md' }),
+    )
+  })
+
   it('does not let an older failed open override a newer note-link intent', async () => {
     let finishOpen: ((opened: boolean) => void) | null = null
     openRouteInNewWindow.mockReturnValue(
@@ -124,6 +135,30 @@ describe('useNoteLinkNavigation', () => {
     })
 
     expect(route(view)).toEqual({ kind: 'note', path: 'notes/bravo.md' })
+  })
+
+  it('does not let an older rejected open override a newer note-link intent', async () => {
+    let rejectOpen: (cause: Error) => void = () => {}
+    openRouteInNewWindow
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectOpen = reject
+          }),
+      )
+      .mockResolvedValueOnce(true)
+    const view = render(<Harness />)
+
+    fireEvent.click(view.getByRole('button', { name: 'Alpha' }), { metaKey: true })
+    await waitFor(() => expect(openRouteInNewWindow).toHaveBeenCalledTimes(1))
+    fireEvent.click(view.getByRole('button', { name: 'Bravo' }), { metaKey: true })
+    await waitFor(() => expect(openRouteInNewWindow).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      rejectOpen(new Error('window creation failed'))
+    })
+
+    expect(route(view)).toEqual({ kind: 'allNotes', tag: null })
   })
 
   it('does not fall back after another control re-navigates to the same route', async () => {
