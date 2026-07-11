@@ -1,20 +1,31 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { PaletteProvider, usePalette } from '@/components/command-palette/palette-provider'
 import { listRegisteredBindings } from '@/editor/keymap'
 import { registerAppCommands } from '@/lib/commands/app-commands'
+import { dispatchMenuCommand } from '@/lib/native-menu/dispatch'
 import { NoteTemplatesProvider } from '@/providers/note-templates-provider'
 import { ShortcutsProvider, useShortcuts } from '@/providers/shortcuts-provider'
-import { SidebarProvider } from '@/providers/sidebar-provider'
+import { SidebarProvider, useSidebar } from '@/providers/sidebar-provider'
 import { useAppShortcuts } from './app-shortcuts'
 import { RouterProvider, useRouter } from './router'
 
 const newChat = vi.hoisted(() => vi.fn())
 const openRecent = vi.hoisted(() => vi.fn())
 const openRouteInNewWindow = vi.hoisted(() => vi.fn(async () => true))
+const platform = vi.hoisted(() => ({ isMacosDesktop: false }))
+const nativeMenu = vi.hoisted(() => ({ installed: false }))
 
 vi.mock('@/lib/windows/open-in-new-window', () => ({ openRouteInNewWindow }))
+vi.mock('@/lib/native-menu/menu', () => ({
+  isNativeMenuInstalled: () => nativeMenu.installed,
+}))
+vi.mock('@/lib/platform', () => ({
+  get isMacosDesktop() {
+    return platform.isMacosDesktop
+  },
+}))
 
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({
@@ -45,6 +56,11 @@ vi.mock('@/providers/chat-provider', () => ({
 
 registerAppCommands() // production does this in main.tsx
 
+beforeEach(() => {
+  platform.isMacosDesktop = false
+  nativeMenu.installed = false
+})
+
 afterEach(() => {
   cleanup()
   openRecent.mockClear()
@@ -55,7 +71,12 @@ function shortcutsHook() {
   return renderHook(
     () => {
       useAppShortcuts()
-      return { router: useRouter(), palette: usePalette(), shortcuts: useShortcuts() }
+      return {
+        router: useRouter(),
+        palette: usePalette(),
+        shortcuts: useShortcuts(),
+        sidebar: useSidebar(),
+      }
     },
     {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -103,6 +124,7 @@ describe('app shortcuts', () => {
       'Mod-[',
       'Mod-]',
       'Mod-k',
+      'Mod-\\',
       'Alt-Mod-l',
       'Meta-1',
       'Meta-9',
@@ -196,6 +218,53 @@ describe('app shortcuts', () => {
     expect(result.current.palette.open).toBe(false)
     act(() => press('k'))
     expect(result.current.palette.open).toBe(true)
+  })
+
+  it('⌘\\ toggles the sidebar in both directions', () => {
+    const { result } = shortcutsHook()
+    expect(result.current.sidebar.collapsed).toBe(false)
+
+    act(() => press('\\'))
+    expect(result.current.sidebar.collapsed).toBe(true)
+
+    act(() => press('\\'))
+    expect(result.current.sidebar.collapsed).toBe(false)
+  })
+
+  it('keeps the macOS webview fallback until the native menu is installed', () => {
+    platform.isMacosDesktop = true
+    const { result } = shortcutsHook()
+    const event = new KeyboardEvent('keydown', {
+      key: '\\',
+      metaKey: true,
+      cancelable: true,
+    })
+
+    act(() => {
+      window.dispatchEvent(event)
+    })
+    expect(event.defaultPrevented).toBe(true)
+    expect(result.current.sidebar.collapsed).toBe(true)
+  })
+
+  it('leaves ⌘\\ to the native macOS menu accelerator', () => {
+    platform.isMacosDesktop = true
+    nativeMenu.installed = true
+    const { result } = shortcutsHook()
+    const event = new KeyboardEvent('keydown', {
+      key: '\\',
+      metaKey: true,
+      cancelable: true,
+    })
+
+    act(() => {
+      window.dispatchEvent(event)
+    })
+    expect(event.defaultPrevented).toBe(false)
+    expect(result.current.sidebar.collapsed).toBe(false)
+
+    act(() => dispatchMenuCommand('sidebar.toggle'))
+    expect(result.current.sidebar.collapsed).toBe(true)
   })
 
   it('defers ⌘K to a focused editor that already handled it', () => {
