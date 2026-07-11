@@ -355,6 +355,25 @@ describe('v1 subject alias flow', () => {
         insertText: 'Second Shared',
       })
 
+      // Matching the duplicate *title* must not hide the losing note either:
+      // its ranked spelling fails verification, so it is rescued through the
+      // unique alias it still wins. Recency keeps it above the title winner.
+      const sharedTitleSuggestions = await suggestWikiLinkTargets('Shared')
+      expect(sharedTitleSuggestions).toMatchObject([
+        {
+          path: 'notes/z-shared.md',
+          target: 'Shared',
+          alias: 'Second Shared',
+          insertText: 'Second Shared',
+        },
+        {
+          path: 'notes/a-shared.md',
+          target: 'Shared',
+          alias: null,
+          insertText: 'Shared',
+        },
+      ])
+
       await Promise.all(
         [
           ...dateSuggestions,
@@ -362,6 +381,7 @@ describe('v1 subject alias flow', () => {
           ...invalidDateSuggestions,
           ...duplicateSuggestions,
           ...aliasSuggestions,
+          ...sharedTitleSuggestions,
         ].map(expectSuggestionAddressesItsPath),
       )
       await expect(suggestWikiLinkTargets('Unsafe | Title')).resolves.toEqual([])

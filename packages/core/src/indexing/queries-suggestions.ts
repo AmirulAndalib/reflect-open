@@ -152,13 +152,73 @@ async function queryWikiTargetCandidates(
  * authoritative one-winner-per-key address map. The canonical title is the
  * preferred target for alias rows; if that title lost a collision but the
  * selected alias itself resolves to the note, the alias remains a truthful
- * fallback address. A pathless generated date is reattached to an existing
- * daily even when its custom title kept it out of the search rows. Candidates
- * with no safe textual address are omitted.
+ * fallback address. A candidate whose ranked spellings all fail is rescued
+ * through any other alias the note still wins (a duplicate-title loser matched
+ * by its title must not hide the unique alias that addresses it). A pathless
+ * generated date is reattached to an existing daily even when its custom title
+ * kept it out of the search rows. Candidates with no safe textual address are
+ * omitted.
  */
 interface WikiAddressWinner {
   path: string
   dailyDate: string | null
+}
+
+/**
+ * The verified suggestion for an existing note using only its ranked
+ * spellings (canonical target, then the matched alias), or `null` when
+ * neither is a safe winning address for `candidate.path`.
+ */
+function addressableAsRanked(
+  candidate: WikiSuggestion,
+  winners: ReadonlyMap<string, WikiAddressWinner>,
+): WikiLinkSuggestion | null {
+  const canonicalWinner = winners.get(normalizeWikiTarget(candidate.target).key)
+  const canonicalInsert = serializeWikiSuggestionAddress(
+    candidate.target,
+    candidate.alias,
+  )
+  if (canonicalWinner?.path === candidate.path && canonicalInsert !== null) {
+    return { ...candidate, insertText: canonicalInsert }
+  }
+  if (candidate.alias !== null) {
+    const aliasKey = normalizeWikiTarget(candidate.alias).key
+    const aliasInsert = serializeWikiSuggestionAddress(candidate.alias, null)
+    if (winners.get(aliasKey)?.path === candidate.path && aliasInsert !== null) {
+      return { ...candidate, insertText: aliasInsert }
+    }
+  }
+  return null
+}
+
+/**
+ * For each path, the aliases (declaration order) that the note itself wins in
+ * `note_keys` — the truthful fallback addresses for notes whose ranked
+ * spellings all lost their key or cannot be serialized.
+ */
+async function winningAliasesByPath(
+  paths: ReadonlySet<string>,
+): Promise<Map<string, string[]>> {
+  const winning = new Map<string, string[]>()
+  for (const chunk of inClauseChunks([...paths])) {
+    const rows = await db
+      .selectFrom('aliases')
+      .innerJoin('noteKeys', (join) =>
+        join
+          .onRef('noteKeys.key', '=', 'aliases.aliasKey')
+          .onRef('noteKeys.notePath', '=', 'aliases.notePath'),
+      )
+      .where('aliases.notePath', 'in', chunk)
+      .select(['aliases.notePath', 'aliases.alias'])
+      .orderBy(sql`"aliases"."rowid"`)
+      .execute()
+    for (const row of rows) {
+      const aliases = winning.get(row.notePath) ?? []
+      aliases.push(row.alias)
+      winning.set(row.notePath, aliases)
+    }
+  }
+  return winning
 }
 
 async function verifyWikiSuggestionAddresses(
@@ -192,11 +252,21 @@ async function verifyWikiSuggestionAddresses(
     }
   }
 
+  const unaddressedPaths = new Set<string>()
+  for (const candidate of candidates) {
+    if (candidate.path !== null && addressableAsRanked(candidate, winners) === null) {
+      unaddressedPaths.add(candidate.path)
+    }
+  }
+  const rescueAliases =
+    unaddressedPaths.size > 0
+      ? await winningAliasesByPath(unaddressedPaths)
+      : new Map<string, string[]>()
+
   const verified: WikiLinkSuggestion[] = []
   for (const candidate of candidates) {
-    const canonicalKey = normalizeWikiTarget(candidate.target).key
-    const canonicalWinner = winners.get(canonicalKey)
     if (candidate.path === null) {
+      const canonicalWinner = winners.get(normalizeWikiTarget(candidate.target).key)
       const insertText = serializeWikiSuggestionAddress(
         candidate.target,
         candidate.alias,
@@ -216,23 +286,16 @@ async function verifyWikiSuggestionAddresses(
         }
       }
     } else {
-      const canonicalInsert = serializeWikiSuggestionAddress(
-        candidate.target,
-        candidate.alias,
-      )
-      if (
-        canonicalWinner?.path === candidate.path &&
-        canonicalInsert !== null
-      ) {
-        verified.push({ ...candidate, insertText: canonicalInsert })
-      } else if (candidate.alias !== null) {
-        const aliasKey = normalizeWikiTarget(candidate.alias).key
-        const aliasInsert = serializeWikiSuggestionAddress(candidate.alias, null)
-        if (
-          winners.get(aliasKey)?.path === candidate.path &&
-          aliasInsert !== null
-        ) {
-          verified.push({ ...candidate, insertText: aliasInsert })
+      const ranked = addressableAsRanked(candidate, winners)
+      if (ranked !== null) {
+        verified.push(ranked)
+      } else {
+        for (const alias of rescueAliases.get(candidate.path) ?? []) {
+          const insertText = serializeWikiSuggestionAddress(alias, null)
+          if (insertText !== null) {
+            verified.push({ ...candidate, alias, insertText })
+            break
+          }
         }
       }
     }

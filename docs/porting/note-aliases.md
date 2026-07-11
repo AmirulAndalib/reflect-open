@@ -88,7 +88,9 @@ aliases:
    example `[[Tim MacCaw // Dad|Dad]]` when that full title resolves to the
    intended note. Otherwise rename or remove the accidental standalone note so
    bare `[[Dad]]` resolves through the alias. Duplicate complete titles cannot
-   both be addressed by that title; give the losing note a unique alias.
+   both be addressed by that title; give the losing note a unique alias — `[[`
+   autocomplete then offers the losing note through that alias even when the
+   search matched its title.
 
 ## Open porting task
 
