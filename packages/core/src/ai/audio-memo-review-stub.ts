@@ -8,7 +8,7 @@
  * instead of calling any provider. Capture and note plumbing run exactly as
  * in production.
  */
-export const APP_REVIEW_STUB_KEY = 'sk-demo-app-review'
+export const APP_REVIEW_STUB_KEY = 'sk-demo'
 
 export function stubTranscriptBody(): string {
   return (
