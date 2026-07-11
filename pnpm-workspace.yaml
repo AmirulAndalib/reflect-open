@@ -20,7 +20,9 @@ minimumReleaseAgeExclude:
   - prosemirror-flat-list
   - prosemirror-view
 
-# overrides:
-#   '@meowdown/core': https://pkg.pr.new/prosekit/meowdown/@meowdown/core@623bc43
-#   '@meowdown/react': https://pkg.pr.new/prosekit/meowdown/@meowdown/react@623bc43
-# blockExoticSubdeps: false
+# Temporary snapshot of prosekit/meowdown#287; replace it with the released
+# package version after the upstream fix ships.
+overrides:
+  '@meowdown/core': https://pkg.pr.new/prosekit/meowdown/@meowdown/core@e04a672
+  '@meowdown/react': https://pkg.pr.new/prosekit/meowdown/@meowdown/react@e04a672
+blockExoticSubdeps: false
