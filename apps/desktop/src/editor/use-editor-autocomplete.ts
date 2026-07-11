@@ -8,6 +8,7 @@ import {
 import {
   contactLinkSuggestions,
   createNoteWithTitle,
+  generateDateSuggestions,
   hasBridge,
   isContactsReadable,
   suggestTags,
@@ -67,12 +68,13 @@ export function useEditorAutocomplete(): EditorAutocomplete {
       if (!hasBridge() || graph === null) {
         return []
       }
+      const dateContext = {
+        today: todayIso(),
+        dateFormat: settings.dateFormat,
+        weekStartDay: settings.weekStartDay,
+      }
       const [suggestions, contacts] = await Promise.all([
-        suggestWikiLinkTargets(query, 8, {
-          today: todayIso(),
-          dateFormat: settings.dateFormat,
-          weekStartDay: settings.weekStartDay,
-        }),
+        suggestWikiLinkTargets(query, 8, dateContext),
         // A contacts hiccup (permission revoked mid-session, store error)
         // must cost only its own rows, never the note suggestions.
         contactsInMenu
@@ -86,6 +88,7 @@ export function useEditorAutocomplete(): EditorAutocomplete {
         offerCreate: true,
         contacts,
         requireSerializableWikiText: true,
+        queryReadsAsDate: generateDateSuggestions(query, dateContext).length > 0,
       }).map((entry) => {
         if (entry.kind === 'create') {
           return {

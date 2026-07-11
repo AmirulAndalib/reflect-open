@@ -38,6 +38,13 @@ export interface EntryOptions {
    * the attendee combobox.
    */
   requireSerializableWikiText?: boolean
+  /**
+   * The raw query parses as a date phrase ("tomorrow", "next friday").
+   * Callers with a date-suggestion context pass this so the Create row stays
+   * suppressed even when address verification dropped the generated date row
+   * itself (its key can be owned by a non-daily note).
+   */
+  queryReadsAsDate?: boolean
 }
 
 export function buildAutocompleteEntries<Suggestion extends WikiSuggestion>(
@@ -79,10 +86,12 @@ export function buildAutocompleteEntries<Suggestion extends WikiSuggestion>(
   // nothing to create. (A full `YYYY-MM-DD` query always has its daily
   // suggestion injected by the query layer, so dates never offer a create.)
   const resolvesAsTyped = resolvable.has(key)
-  // A generated date suggestion means the query reads as a date — "3 days ago",
-  // "next friday" — so offering to create a note with that literal title would
-  // be noise.
-  const hasDateSuggestion = suggestions.some((suggestion) => suggestion.generated !== undefined)
+  // A query that reads as a date — "3 days ago", "next friday" — means a note
+  // with that literal title would be noise. The surviving suggestions alone
+  // can't decide this: verification may have dropped the generated date row.
+  const hasDateSuggestion =
+    options.queryReadsAsDate === true ||
+    suggestions.some((suggestion) => suggestion.generated !== undefined)
   // A contact row for the exact typed name IS the create action (prefilled) —
   // a bare Create row beside it would just be the worse duplicate.
   const contactCoversQuery = contacts.some((contact) => foldKey(contact.fullName) === key)

@@ -172,6 +172,7 @@ export {
   suggestWikiTargets,
   suggestWikiLinkTargets,
   suggestTags,
+  generateDateSuggestions,
   serializeWikiSuggestionAddress,
   wikiSuggestionInsertText,
   getIndexedFileFacts,

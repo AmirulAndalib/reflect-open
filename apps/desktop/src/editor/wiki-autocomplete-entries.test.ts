@@ -86,6 +86,18 @@ describe('buildAutocompleteEntries', () => {
     expect(entries.every((entry) => entry.kind === 'suggestion')).toBe(true)
   })
 
+  it('does not offer create when the query reads as a date whose suggestion was filtered', () => {
+    // Address verification drops a generated date whose key is owned by a
+    // non-daily note; the query still reads as a date, so a note literally
+    // titled "tomorrow" stays as noisy as ever.
+    expect(
+      buildAutocompleteEntries('tomorrow', [], {
+        offerCreate: true,
+        queryReadsAsDate: true,
+      }),
+    ).toEqual([])
+  })
+
   it('never offers create from unsettled (in-flight) suggestions', () => {
     // The visible list belongs to the previous query while fetching — a match
     // for the current text may be about to arrive.
