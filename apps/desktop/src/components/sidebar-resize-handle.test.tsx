@@ -116,6 +116,39 @@ describe('SidebarResizeHandle', () => {
     expect(settingsState.updateSettings).toHaveBeenCalledWith({ sidebarWidth: 420 })
   })
 
+  it('a bare click on a capped rail commits nothing', () => {
+    const handle = renderHandle('workspace')
+    settingsState.settings.sidebarWidth = 480
+    const aside = handle.parentElement
+    if (aside === null) {
+      throw new Error('handle parent missing')
+    }
+    vi.spyOn(aside, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 800))
+
+    // No movement past the activation threshold: this is a click, and it must
+    // not persist the capped 400px over the stored 480px preference.
+    firePointer(handle, 'pointerdown', { pointerId: 7, button: 0, clientX: 400 })
+    firePointer(handle, 'pointermove', { pointerId: 7, clientX: 401 })
+    firePointer(handle, 'pointerup', { pointerId: 7, clientX: 401 })
+
+    expect(settingsState.updateSettings).not.toHaveBeenCalled()
+    expect(rootVariable('--sidebar-width')).toBe('')
+    expect(rootVariable('cursor')).toBe('')
+  })
+
+  it('steps the keyboard resize from the rendered width on a capped rail', () => {
+    const handle = renderHandle('workspace')
+    settingsState.settings.sidebarWidth = 480
+    const aside = handle.parentElement
+    if (aside === null) {
+      throw new Error('handle parent missing')
+    }
+    vi.spyOn(aside, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 800))
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' })
+    expect(settingsState.updateSettings).toHaveBeenLastCalledWith({ sidebarWidth: 416 })
+  })
+
   it('reverts an unmount-interrupted drag to the persisted width', () => {
     const handle = renderHandle('workspace')
 

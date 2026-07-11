@@ -17,6 +17,14 @@ import { useSettings } from '@/providers/settings-provider'
 /** How far one arrow-key press moves the divider, in CSS pixels. */
 const KEYBOARD_STEP_PX = 16
 
+/**
+ * Pointer travel before a press counts as a drag. Below this it is a click
+ * and commits nothing — on a viewport-capped rail the drag rebases on the
+ * rendered width, and a bare click must not persist that smaller value over
+ * the user's wider preference.
+ */
+const DRAG_ACTIVATE_PX = 3
+
 /** Which resizable AppShell panel a handle controls. */
 export type ResizableSidebarPanel = 'workspace' | 'context'
 
@@ -48,6 +56,8 @@ interface DragState {
   pointerId: number
   startX: number
   startWidth: number
+  /** Set once travel passes {@link DRAG_ACTIVATE_PX}; a never-activated press is a click. */
+  activated: boolean
 }
 
 /**
@@ -143,6 +153,19 @@ export function useSidebarResize(panel: ResizableSidebarPanel): SidebarResize {
     [range, side],
   )
 
+  // The divider's true starting width: the aside's rendered width, not the
+  // persisted one. The shell's viewport cap (`max-w-[40vw]`) can render the
+  // rail narrower than the setting, and stepping from the setting would leave
+  // the divider lagging the pointer (or a keystroke) by the difference.
+  // Layoutless test environments measure zero and fall back to the setting.
+  const renderedBaseWidth = useCallback(
+    (handle: HTMLElement): number => {
+      const rendered = handle.parentElement?.getBoundingClientRect().width
+      return rendered ? clampSidebarWidth(range, rendered) : settingsWidth
+    },
+    [range, settingsWidth],
+  )
+
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>): void => {
       if (event.button !== 0 || dragRef.current !== null) {
@@ -153,23 +176,16 @@ export function useSidebarResize(panel: ResizableSidebarPanel): SidebarResize {
       } catch {
         // Synthetic tests do not have a live pointer to capture.
       }
-      // Rebase on the aside's rendered width, not the persisted one: the
-      // shell's viewport cap (`max-w-[40vw]`) can render the rail narrower
-      // than the setting, and seeding from the setting would leave the
-      // divider lagging the pointer by the difference. Layoutless test
-      // environments measure zero and fall back to the setting.
-      const rendered = event.currentTarget.parentElement?.getBoundingClientRect().width
-      const startWidth = rendered ? clampSidebarWidth(range, rendered) : settingsWidth
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
-        startWidth,
+        startWidth: renderedBaseWidth(event.currentTarget),
+        activated: false,
       }
       activeSidebarWidthDrags.add(cssVariable)
-      setDragWidth(startWidth)
       setDragChrome(true)
     },
-    [range, settingsWidth, cssVariable],
+    [renderedBaseWidth, cssVariable],
   )
 
   const onPointerMove = useCallback(
@@ -177,6 +193,12 @@ export function useSidebarResize(panel: ResizableSidebarPanel): SidebarResize {
       const drag = dragRef.current
       if (drag === null || drag.pointerId !== event.pointerId) {
         return
+      }
+      if (!drag.activated) {
+        if (Math.abs(event.clientX - drag.startX) < DRAG_ACTIVATE_PX) {
+          return
+        }
+        drag.activated = true
       }
       const next = widthAt(drag, event.clientX)
       applyWidth(next)
@@ -194,9 +216,12 @@ export function useSidebarResize(panel: ResizableSidebarPanel): SidebarResize {
       dragRef.current = null
       activeSidebarWidthDrags.delete(cssVariable)
       setDragChrome(false)
-      const next = widthAt(drag, event.clientX)
-      applyWidth(next)
-      commitWidth(next)
+      // A never-activated press is a click, not a drag — commit nothing.
+      if (drag.activated) {
+        const next = widthAt(drag, event.clientX)
+        applyWidth(next)
+        commitWidth(next)
+      }
       setDragWidth(null)
     },
     [widthAt, applyWidth, commitWidth, cssVariable],
@@ -212,14 +237,15 @@ export function useSidebarResize(panel: ResizableSidebarPanel): SidebarResize {
       if (dragRef.current !== null) {
         return
       }
+      const base = renderedBaseWidth(event.currentTarget)
       const grow = side === 'left' ? 1 : -1
       let next: number
       switch (event.key) {
         case 'ArrowRight':
-          next = clampSidebarWidth(range, settingsWidth + KEYBOARD_STEP_PX * grow)
+          next = clampSidebarWidth(range, base + KEYBOARD_STEP_PX * grow)
           break
         case 'ArrowLeft':
-          next = clampSidebarWidth(range, settingsWidth - KEYBOARD_STEP_PX * grow)
+          next = clampSidebarWidth(range, base - KEYBOARD_STEP_PX * grow)
           break
         case 'Home':
           next = side === 'left' ? range.min : range.max
@@ -234,7 +260,7 @@ export function useSidebarResize(panel: ResizableSidebarPanel): SidebarResize {
       applyWidth(next)
       commitWidth(next)
     },
-    [side, range, settingsWidth, applyWidth, commitWidth],
+    [side, range, renderedBaseWidth, applyWidth, commitWidth],
   )
 
   // A drag interrupted by unmount (sidebar collapsed mid-drag, context route
