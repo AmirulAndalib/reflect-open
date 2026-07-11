@@ -69,6 +69,8 @@ export interface ReconcileInput {
   date: string
   /** The day last reported back through `onSelect` — the echo guard. */
   reported: string
+  /** A date-preserving arrival must still cancel any in-flight swipe. */
+  forceScroll: boolean
 }
 
 /**
@@ -81,7 +83,8 @@ export interface ReconcileInput {
  *   animation the user may have restarted.
  * - `reinit` when the window was re-anchored (its start moved): Embla must
  *   reinitialize onto the rebuilt slide set at the target index.
- * - `scroll` for an ordinary in-window jump (calendar tap, Today, near link).
+ * - `scroll` for an ordinary in-window jump (calendar tap, Today, near link),
+ *   or a forced same-date arrival that must cancel an in-flight swipe.
  */
 export function reconcileCarousel(input: ReconcileInput): CarouselSync {
   if (input.index === -1) {
@@ -89,6 +92,9 @@ export function reconcileCarousel(input: ReconcileInput): CarouselSync {
   }
   if (input.windowStart !== input.lastWindowStart) {
     return { action: 'reinit', index: input.index }
+  }
+  if (input.forceScroll) {
+    return { action: 'scroll', index: input.index }
   }
   if (input.date === input.reported) {
     return { action: 'none' }
@@ -103,6 +109,32 @@ export interface DayCarousel {
   dayWindow: DayWindow
   /** The centered slide's index — the view mounts editors around it. */
   selectedIndex: number
+}
+
+interface CarouselSelectionState {
+  readonly navigationKey: string
+  readonly index: number
+}
+
+/**
+ * State updater adopting the arrival's `navigationKey` and `index`, bailing
+ * out (returning the current state) when both already match — the state is an
+ * object, so an unconditional set would re-render the whole slide belt even
+ * when nothing changed.
+ */
+function adoptSelection(
+  navigationKey: string,
+  index: number,
+): (current: CarouselSelectionState) => CarouselSelectionState {
+  return (current) =>
+    current.navigationKey === navigationKey && current.index === index
+      ? current
+      : { navigationKey, index }
+}
+
+interface CarouselNavigationState {
+  readonly navigationKey: string
+  readonly date: string
 }
 
 /**
@@ -121,8 +153,9 @@ export interface DayCarousel {
  */
 export function useDayCarousel(
   date: string,
+  navigationKey: string,
   onSelect: (date: string) => void,
-  onTarget: (date: string) => void,
+  onTarget: (date: string, navigationKey: string) => void,
 ): DayCarousel {
   const [dayWindow, setDayWindow] = useState<DayWindow>(() => createDayWindow(date, CAROUSEL_WINDOW))
   // Frozen at mount: `embla-carousel-react` reinitializes whenever the options
@@ -137,13 +170,35 @@ export function useDayCarousel(
     watchDrag: dragAllowedWithKeyboardClosed,
   }))
   const [emblaRef, emblaApi] = useEmblaCarousel(emblaOptions)
-  const [selectedIndex, setSelectedIndex] = useState(() => indexWithin(dayWindow, date))
+  const routeIndex = indexWithin(dayWindow, date)
+  const [selection, setSelection] = useState<CarouselSelectionState>(() => ({
+    navigationKey,
+    index: routeIndex,
+  }))
+  // A newer router arrival is authoritative over transition-priority swipe
+  // state. Carry its identity in the state itself so an older queued updater
+  // cannot restore the old mount radius after navigation has won.
+  const selectedIndex =
+    selection.navigationKey === navigationKey || routeIndex === -1
+      ? selection.index
+      : routeIndex
+  if (selection.navigationKey !== navigationKey) {
+    setSelection({ navigationKey, index: selectedIndex })
+  }
   // The day we last reported via onSelect — so the route echo it produces
   // doesn't trigger a redundant (animation-cancelling) scrollTo.
   const reportedRef = useRef(date)
   // The window start we last reconciled against — a change means a re-anchor,
   // so Embla must reinitialize rather than scroll.
   const windowStartRef = useRef(dayWindow.start)
+  const reconciledNavigationRef = useRef<CarouselNavigationState>({ navigationKey, date })
+  // Event listeners are replaced in a passive effect. This layout-updated
+  // identity lets the old listener ignore a synchronous `scrollTo`/`reInit`
+  // event from a newer navigation commit.
+  const latestNavigationKeyRef = useRef(navigationKey)
+  useLayoutEffect(() => {
+    latestNavigationKeyRef.current = navigationKey
+  }, [navigationKey])
 
   // The swipe's target is known at pointer-up (`select`), and two light
   // things follow it from there. The slide window: the mount radius tracks
@@ -155,13 +210,18 @@ export function useDayCarousel(
   // first ones.
   const onEmblaSelect = useCallback(
     (api: NonNullable<typeof emblaApi>) => {
+      if (navigationKey !== latestNavigationKeyRef.current) {
+        return
+      }
       const index = api.selectedScrollSnap()
       startTransition(() => {
-        setSelectedIndex(index)
-        onTarget(dateAtIndex(dayWindow, index))
+        setSelection((current) =>
+          current.navigationKey === navigationKey ? { ...current, index } : current,
+        )
+        onTarget(dateAtIndex(dayWindow, index), navigationKey)
       })
     },
-    [dayWindow, onTarget],
+    [dayWindow, navigationKey, onTarget],
   )
 
   // The swipe's heavy consequence — reporting the day, which the parent turns
@@ -178,8 +238,11 @@ export function useDayCarousel(
   // onto the slide the user is already looking at.
   const onEmblaSettle = useCallback(
     (api: NonNullable<typeof emblaApi>) => {
+      if (navigationKey !== latestNavigationKeyRef.current) {
+        return
+      }
       const index = api.selectedScrollSnap()
-      setSelectedIndex(index)
+      setSelection(adoptSelection(navigationKey, index))
       const day = dateAtIndex(dayWindow, index)
       if (day !== reportedRef.current) {
         reportedRef.current = day
@@ -189,7 +252,7 @@ export function useDayCarousel(
         setDayWindow(createDayWindow(day, CAROUSEL_WINDOW))
       }
     },
-    [dayWindow, onSelect],
+    [dayWindow, navigationKey, onSelect],
   )
 
   useEffect(() => {
@@ -252,12 +315,17 @@ export function useDayCarousel(
     if (!emblaApi) {
       return
     }
+    const previousNavigation = reconciledNavigationRef.current
+    const forceScroll =
+      previousNavigation.navigationKey !== navigationKey && previousNavigation.date === date
+    reconciledNavigationRef.current = { navigationKey, date }
     const sync = reconcileCarousel({
       index: indexWithin(dayWindow, date),
       windowStart: dayWindow.start,
       lastWindowStart: windowStartRef.current,
       date,
       reported: reportedRef.current,
+      forceScroll,
     })
     if (sync.action === 'none') {
       return
@@ -269,8 +337,8 @@ export function useDayCarousel(
     } else {
       emblaApi.scrollTo(sync.index, true)
     }
-    setSelectedIndex(sync.index)
-  }, [emblaApi, date, dayWindow])
+    setSelection(adoptSelection(navigationKey, sync.index))
+  }, [emblaApi, date, dayWindow, navigationKey])
 
   return { emblaRef, dayWindow, selectedIndex }
 }

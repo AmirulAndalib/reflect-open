@@ -263,6 +263,83 @@ fn search_boosts_title_matches_over_body_matches() {
     );
 }
 
+/// `unicode61` treats an uninterrupted Japanese title as one token. Search
+/// therefore supplements MATCH with folded title-substring recall, including
+/// common two-character queries that a trigram-only index would miss.
+#[test]
+fn search_finds_a_short_japanese_term_inside_a_title() {
+    let fixture = graph();
+    fixture.write_note(
+        "notes/title-hit.md",
+        "# 来週の東京旅行計画\nan otherwise unrelated body\n",
+    );
+    fixture.write_note(
+        "notes/body-hit.md",
+        "# 別のノート\nan otherwise unrelated 東京 body token\n",
+    );
+    fixture.build_index();
+
+    let text = stdout(&reflect(&fixture, &["search", "東京"]));
+    let title_pos = text.find("notes/title-hit.md").unwrap();
+    let body_pos = text.find("notes/body-hit.md").unwrap();
+    assert!(
+        title_pos < body_pos,
+        "expected the title substring match before the body match:\n{text}"
+    );
+
+    let multi_term = stdout(&reflect(&fixture, &["search", "東京 旅行"]));
+    assert!(multi_term.contains("notes/title-hit.md"));
+    assert!(!multi_term.contains("notes/body-hit.md"));
+}
+
+/// Title recall anchors space-delimited terms at word starts: `car` leads
+/// with the title-prefix note, still returns the body match, and never
+/// surfaces a mid-word title hit like `Oscar party plans`.
+#[test]
+fn search_matches_latin_title_terms_at_word_starts_only() {
+    let fixture = graph();
+    fixture.write_note(
+        "notes/car-log.md",
+        "# Car maintenance log\nan otherwise unrelated body\n",
+    );
+    fixture.write_note(
+        "notes/oscar.md",
+        "# Oscar party plans\nan otherwise unrelated body\n",
+    );
+    fixture.write_note("notes/garage.md", "# Garage\nthe car needs new brakes\n");
+    fixture.build_index();
+
+    let text = stdout(&reflect(&fixture, &["search", "car"]));
+    let title_pos = text.find("notes/car-log.md").unwrap();
+    let body_pos = text.find("notes/garage.md").unwrap();
+    assert!(
+        title_pos < body_pos,
+        "expected the title-prefix match before the body match:\n{text}"
+    );
+    assert!(
+        !text.contains("notes/oscar.md"),
+        "a mid-word title substring must not match:\n{text}"
+    );
+}
+
+/// Multi-term Latin title recall accepts a prefix of each word, even though
+/// FTS5 itself cannot match the partial `Mac` token against `MacCaw`.
+#[test]
+fn search_finds_a_multi_term_partial_latin_title() {
+    let fixture = graph();
+    fixture.write_note(
+        "notes/tim-maccaw.md",
+        "# Tim MacCaw\nan otherwise unrelated body\n",
+    );
+    fixture.build_index();
+
+    let text = stdout(&reflect(&fixture, &["search", "Tim Mac"]));
+    assert!(
+        text.contains("notes/tim-maccaw.md"),
+        "expected the partial title match:\n{text}"
+    );
+}
+
 /// The V1-style exact-title boost (`filtered-search.ts`): a note whose title
 /// *is* the query ranks ahead of a louder lexical (bm25) match whose title only
 /// contains the query among other words — exact title is promoted before bm25.

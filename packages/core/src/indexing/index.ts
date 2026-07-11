@@ -39,6 +39,8 @@ export {
 export { listTemplates, type TemplateEntry } from './template-list'
 export {
   buildIndexedNote,
+  decodeTaskBreadcrumbs,
+  encodeTaskBreadcrumbs,
   indexedNoteSchema,
   indexedLinkSchema,
   indexedTagSchema,
@@ -71,7 +73,6 @@ export {
   getOpenTasks,
   getCompletedTasks,
   getPinnedNotes,
-  searchNotes,
   suggestWikiTargets,
   suggestTags,
   getIndexedFileFacts,
@@ -87,11 +88,17 @@ export {
   type NoteRow,
   type OpenTask,
   type PinnedNote,
-  type SearchHit,
   type TagSuggestion,
 } from './queries'
 export { resolveNoteTarget } from './resolve-target'
-export { groupTasks, taskDateBucket, type TaskGroup, type TaskGroupKind } from './group-tasks'
+export {
+  groupTaskContexts,
+  groupTasks,
+  taskDateBucket,
+  type TaskContext,
+  type TaskGroup,
+  type TaskGroupKind,
+} from './group-tasks'
 export {
   listNotes,
   listNoteTags,
@@ -131,9 +138,11 @@ export {
 export { extractSnippetTasks, type SnippetTask } from './snippet-tasks'
 export { parseSearchQuery, type ParsedSearchQuery, type SearchFilters } from './filter-query'
 export {
+  searchNotes,
   searchWithFilters,
   type FilteredSearchHit,
   type FilteredSearchOptions,
+  type SearchHit,
 } from './filtered-search'
 export {
   rewriteLinksForTitleChange,

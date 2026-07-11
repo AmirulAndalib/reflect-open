@@ -3,7 +3,8 @@ import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 import { reactWithCompiler } from './react-compiler-plugin'
-import tauriConfig from './src-tauri/tauri.conf.json'
+// The single version source; tauri.conf.json's `version` also points here.
+import pkg from './package.json'
 
 // @ts-expect-error process is a Node.js global available in the Vite config context
 const host = process.env.TAURI_DEV_HOST
@@ -19,7 +20,7 @@ export default defineConfig(async () => ({
       project: 'reflect-open',
       telemetry: false,
       release: {
-        name: `reflect@${tauriConfig.version}`,
+        name: `reflect@${pkg.version}`,
       },
       sourcemaps: {
         filesToDeleteAfterUpload: ['./dist/**/*.map'],
@@ -28,7 +29,7 @@ export default defineConfig(async () => ({
   ],
 
   define: {
-    __REFLECT_VERSION__: JSON.stringify(tauriConfig.version),
+    __REFLECT_VERSION__: JSON.stringify(pkg.version),
   },
 
   // If the target is below Safari 17.5, Lightning CSS downlevels `light-dark()` to a broken polyfill.

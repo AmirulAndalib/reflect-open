@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type OpenTask } from '@reflect/core'
+import { makeOpenTask as task } from './open-task-fixture'
 import {
   archiveRecentlyCompleted,
   forgetRecentlyCompleted,
@@ -10,23 +11,6 @@ import {
   resetRecentlyCompleted,
   useRecentlyCompleted,
 } from './recently-completed'
-
-function task(over: Partial<OpenTask> = {}): OpenTask {
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    raw: '[ ] do it',
-    checked: false,
-    text: 'do it',
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...over,
-  }
-}
 
 beforeEach(() => resetRecentlyCompleted())
 afterEach(() => {

@@ -1,4 +1,4 @@
-//! Secondary note windows (⌘-click a note link → its own window, Plan 06).
+//! Secondary note windows (modifier-click or command → its own window, Plan 06).
 //!
 //! The shell owns *creation* only: one window per deep-link target, deduped
 //! by a content-addressed label, plus the one-shot bootstrap a secondary
@@ -32,11 +32,82 @@ pub const MAIN_WINDOW_LABEL: &str = "main";
 /// and hash labels would otherwise accrete in the state file forever).
 pub const NOTE_WINDOW_PREFIX: &str = "note-";
 
-/// Event delivered to an existing note window when its target is ⌘-clicked
-/// again: the window may have navigated elsewhere since it opened, so a
-/// focus alone could surface the wrong note — the payload (the deep link)
-/// re-navigates it to the clicked target.
+/// Event delivered when an already-open target is requested again: the window
+/// may have navigated elsewhere since it opened, so a focus alone could
+/// surface the wrong note — the payload (the deep link) re-navigates it to the
+/// requested target.
 const WINDOW_NAVIGATE_EVENT: &str = "window:navigate";
+
+/// Window properties that survive a desktop restart.
+///
+/// Visibility is intentionally absent. The main window starts hidden while
+/// geometry restores, and shutdown or updater relaunches can otherwise persist
+/// that temporary state and leave every subsequent launch hidden.
+#[cfg(desktop)]
+pub(crate) fn restorable_window_state_flags() -> tauri_plugin_window_state::StateFlags {
+    use tauri_plugin_window_state::StateFlags;
+
+    StateFlags::SIZE
+        | StateFlags::POSITION
+        | StateFlags::MAXIMIZED
+        | StateFlags::DECORATIONS
+        | StateFlags::FULLSCREEN
+}
+
+#[cfg(desktop)]
+fn surface_window<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    if let Err(err) = window.unminimize() {
+        tracing::warn!(error = %err, label = window.label(), "failed to unminimize window");
+    }
+    if let Err(err) = window.show() {
+        tracing::warn!(error = %err, label = window.label(), "failed to show window");
+    }
+    if let Err(err) = window.set_focus() {
+        tracing::warn!(error = %err, label = window.label(), "failed to focus window");
+    }
+}
+
+/// Show, unminimize, and focus the existing main window.
+///
+/// Returns whether the window exists, so macOS Dock reopen handling can create
+/// a replacement after the user has closed the original window.
+#[cfg(desktop)]
+pub(crate) fn surface_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return false;
+    };
+    surface_window(&window);
+    true
+}
+
+/// Recover the main window when macOS asks an app with no visible windows to
+/// reopen (normally a Dock click).
+#[cfg(target_os = "macos")]
+pub(crate) fn reopen_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if app.state::<QuitState>().armed() {
+        return;
+    }
+    if surface_main_window(app) {
+        return;
+    }
+
+    let Some(config) = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|config| config.label == MAIN_WINDOW_LABEL)
+        .cloned()
+    else {
+        tracing::warn!("cannot reopen main window because its config is missing");
+        return;
+    };
+
+    match WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build()) {
+        Ok(window) => surface_window(&window),
+        Err(err) => tracing::warn!(error = %err, "failed to recreate main window"),
+    }
+}
 
 fn lock_init<'a>(
     state: &'a State<'_, WindowInit>,
@@ -48,8 +119,8 @@ fn lock_init<'a>(
 }
 
 /// The label for a note window addressing `deep_link` — content-addressed so
-/// ⌘-clicking the same target focuses the existing window instead of piling
-/// up duplicates. Stable within a process run, which is all dedupe needs.
+/// reopening the same target focuses the existing window instead of piling up
+/// duplicates. Stable within a process run, which is all dedupe needs.
 fn note_window_label(deep_link: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     deep_link.hash(&mut hasher);
@@ -58,8 +129,8 @@ fn note_window_label(deep_link: &str) -> String {
 
 /// Surface an already-open window for this target, when one exists: show,
 /// focus, and deliver the link ([`WINDOW_NAVIGATE_EVENT`]) so a window that
-/// has navigated away comes back to the note that was clicked. All
-/// best-effort — a focus that fails must not fail the click.
+/// has navigated away comes back to the note that was requested. All
+/// best-effort — a focus that fails must not fail the open request.
 fn focus_existing(app: &tauri::AppHandle, label: &str, deep_link: &str) -> bool {
     let Some(existing) = app.get_webview_window(label) else {
         return false;
@@ -105,7 +176,7 @@ pub async fn open_note_window(
     }
     // Mid-quit, a new webview would never join the flush handshake's pending
     // set — the armed windows' confirms would exit underneath it. Refuse
-    // (best-effort: the ⌘-click site degrades to in-window navigation).
+    // (best-effort: modifier-click callers degrade to in-window navigation).
     if quit.armed() {
         return Err(AppError::io("the app is quitting"));
     }
@@ -226,6 +297,39 @@ pub fn window_bootstrap(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(desktop)]
+    #[test]
+    fn restart_state_restores_geometry_but_never_visibility() {
+        use tauri_plugin_window_state::StateFlags;
+
+        let flags = restorable_window_state_flags();
+        for geometry_flag in [
+            StateFlags::SIZE,
+            StateFlags::POSITION,
+            StateFlags::MAXIMIZED,
+            StateFlags::DECORATIONS,
+            StateFlags::FULLSCREEN,
+        ] {
+            assert!(flags.contains(geometry_flag));
+        }
+        assert!(!flags.contains(StateFlags::VISIBLE));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn surfacing_main_window_distinguishes_missing_and_existing_windows() {
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("mock app");
+        assert!(!surface_main_window(app.handle()));
+
+        let _main = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, WebviewUrl::default())
+            .visible(false)
+            .build()
+            .expect("main window");
+        assert!(surface_main_window(app.handle()));
+    }
 
     #[test]
     fn labels_are_stable_per_target_and_distinct_across_targets() {

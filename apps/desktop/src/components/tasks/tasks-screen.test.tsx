@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenTask } from '@reflect/core'
 import { useEffect, useState, type MutableRefObject, type ReactNode } from 'react'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
+import { makeOpenTask as task } from '@/lib/tasks/open-task-fixture'
 import { resetRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { TasksScreen } from './tasks-screen'
@@ -178,26 +179,6 @@ vi.mock('@/lib/operations', async (importOriginal) => ({
   startOperation,
 }))
 
-function task(overrides: Partial<OpenTask> = {}): OpenTask {
-  const text = overrides.text ?? 'do it'
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    // The row renders `raw`; default it to the marker line for `text` so display
-    // assertions match unless a case overrides `raw` explicitly.
-    raw: `[ ] ${text}`,
-    checked: false,
-    text,
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...overrides,
-  }
-}
-
 function RouteProbe(): ReactNode {
   const { route } = useRouter()
   return <output data-testid="route">{JSON.stringify(route)}</output>
@@ -324,14 +305,75 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
-  it('opens a task’s source note via the open arrow', async () => {
+  it('renders one breadcrumb per consecutive task context and selects that context', async () => {
     getOpenTasks.mockResolvedValue([
-      task({ notePath: 'notes/p.md', dailyDate: null, text: 'project task', noteTitle: 'Project' }),
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 2,
+        text: 'first',
+        noteTitle: 'Project',
+        breadcrumbs: ['StartupToolbox', 'Reflections'],
+      }),
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 20,
+        text: 'second',
+        noteTitle: 'Project',
+        breadcrumbs: ['StartupToolbox', 'Reflections'],
+      }),
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 40,
+        text: 'third',
+        noteTitle: 'Project',
+        breadcrumbs: ['StartupToolbox', 'Later'],
+      }),
+    ])
+    const view = renderScreen()
+
+    const context = await view.findByRole('button', {
+      name: 'StartupToolbox → Reflections',
+    })
+    expect(view.getAllByText('StartupToolbox → Reflections')).toHaveLength(1)
+    view.getByText('StartupToolbox → Later')
+
+    await userEvent.click(context)
+    expect(view.getByRole('button', { name: 'Convert to bullet 2' })).toBeDefined()
+    view.unmount()
+  })
+
+  it('hides a lone generic task breadcrumb', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 2,
+        text: 'project task',
+        noteTitle: 'Project',
+        breadcrumbs: ['Tasks:'],
+      }),
     ])
     const view = renderScreen()
 
     await view.findByText('project task')
-    await userEvent.click(view.getByRole('button', { name: 'Open Project' }))
+    expect(view.queryByText('Tasks:')).toBeNull()
+    view.unmount()
+  })
+
+  it('opens a task’s source note from its title without an arrow', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        dailyDate: null,
+        dueDate: '2026-06-10',
+        text: 'project task',
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    const sourceLink = await view.findByRole('button', { name: 'Project' })
+    expect(sourceLink.querySelector('svg')).toBeNull()
+    await userEvent.click(sourceLink)
     expect(view.getByTestId('route').textContent).toContain('notes/p.md')
     view.unmount()
   })

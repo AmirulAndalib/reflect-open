@@ -8,7 +8,8 @@ import { useListSelection, type ListSelection } from '@/lib/selection/use-list-s
  * view code and its tests read in task terms.
  *
  * `isSoleSelected` is the state that mounts a task row's inline editor;
- * `activeKey()` is the row Return-to-add targets.
+ * `activeKey()` is the row Return-to-add targets. Programmatic selection is
+ * used by a task-context breadcrumb to select the rows it labels.
  */
 export type TaskSelection = ListSelection
 

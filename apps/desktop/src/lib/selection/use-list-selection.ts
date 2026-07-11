@@ -25,6 +25,8 @@ export interface ListSelection {
   isSoleSelected: (key: string) => boolean
   /** Apply a row click, honoring ⌘/Ctrl (toggle) and Shift (range) modifiers. */
   clickSelect: (key: string, event: Pick<MouseEvent, 'metaKey' | 'ctrlKey' | 'shiftKey'>) => void
+  /** Replace the selection with these visible keys, normalized to render order. */
+  select: (keys: readonly string[]) => void
   selectAll: () => void
   clear: () => void
   /** ↑/↓: move a single selection by one in the flat order. */
@@ -115,6 +117,14 @@ export function useListSelection(orderedKeys: readonly string[]): ListSelection 
     [rangeBetween],
   )
 
+  const select = useCallback((keys: readonly string[]) => {
+    const requested = new Set(keys)
+    const visible = orderRef.current.filter((key) => requested.has(key))
+    setSelected(new Set(visible))
+    anchorRef.current = visible[0] ?? null
+    cursorRef.current = visible.at(-1) ?? null
+  }, [])
+
   const selectAll = useCallback(() => {
     const order = orderRef.current
     if (order.length === 0) {
@@ -175,6 +185,7 @@ export function useListSelection(orderedKeys: readonly string[]): ListSelection 
     isSelected: (key) => selected.has(key),
     isSoleSelected: (key) => selected.size === 1 && selected.has(key),
     clickSelect,
+    select,
     selectAll,
     clear,
     move,

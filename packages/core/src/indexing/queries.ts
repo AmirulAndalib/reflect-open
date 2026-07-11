@@ -1,15 +1,12 @@
-import type { Database } from '@reflect/db'
-import { sql, type Selectable } from 'kysely'
+import { sql } from 'kysely'
 import {
   foldEmail,
-  foldKey,
   foldTag,
   resolveWikiLinkAsync,
   type Resolution,
 } from '../markdown'
 import { db } from './db'
 import { inClauseChunks } from './query-utils'
-import { buildFtsMatch } from './search-query'
 export {
   getBacklinks,
   getBacklinksWithContext,
@@ -245,39 +242,6 @@ export async function getIndexMeta(key: string): Promise<string | null> {
     .select('value')
     .executeTakeFirst()
   return row?.value ?? null
-}
-
-/** A full-text search result: the note's path and title. */
-export type SearchHit = Pick<Selectable<Database['searchFts']>, 'path' | 'title'>
-
-/**
- * Full-text search over title + body (FTS5 `MATCH`), ranked like the palette's
- * lexical search (`searchWithFilters` in `filtered-search.ts`): an exact title
- * match leads, then title-boosted bm25, then pinned and recency as
- * deterministic tiebreakers, with `path` as the stable final fallback. The
- * `notes` join supplies the title-rank/pinned/recency columns; the exact-title
- * key is folded the same way titles were at index time so it can't drift from
- * the stored `notes.title_key`.
- */
-export async function searchNotes(query: string, limit = 50): Promise<SearchHit[]> {
-  const match = buildFtsMatch(query)
-  if (match === null) {
-    return [] // nothing to search (FTS5 also errors on an empty MATCH).
-  }
-  const titleKey = foldKey(query)
-  return db
-    .selectFrom('searchFts')
-    .innerJoin('notes', 'notes.path', 'searchFts.path')
-    .where('notes.kind', '!=', 'template')
-    .select(['searchFts.path', 'searchFts.title'])
-    .where(sql<boolean>`search_fts MATCH ${match}`)
-    .orderBy(sql`case when "notes"."title_key" = ${titleKey} then 0 else 1 end`)
-    .orderBy(sql`bm25(search_fts, 0, 10.0, 1.0)`)
-    .orderBy('notes.isPinned', 'desc')
-    .orderBy('notes.mtime', 'desc')
-    .orderBy('notes.path', 'asc')
-    .limit(limit)
-    .execute()
 }
 
 /** What a pass knows about an indexed note without reading its file. */

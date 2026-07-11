@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactElement } from 'react'
+import { useCallback, type ReactElement } from 'react'
 import { untitledNotePath } from '@reflect/core'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -7,6 +7,7 @@ import { AudioMemoFab } from '@/mobile/audio-memo-fab'
 import { CalendarStrip } from '@/mobile/calendar-strip'
 import { DayCarousel } from '@/mobile/day-carousel'
 import { useDailyArrivals } from '@/mobile/use-daily-arrivals'
+import { useSwipeTarget } from '@/mobile/use-swipe-target'
 import { useRouter } from '@/routing/router'
 
 /**
@@ -22,30 +23,24 @@ import { useRouter } from '@/routing/router'
  * day change scrolls the carousel rather than remounting it.
  */
 export function MobileDaily({ date }: { date: string }): ReactElement {
-  const { navigate, arrivalSeq, arrivalFocusEditor } = useRouter()
+  const { navigate, entryId, arrivalSeq, arrivalFocusEditor } = useRouter()
   // One live `today` for the whole surface: the strip marks today's cell and
   // the `select` below decide "is this today?" from the *same* value, so they
   // can't disagree across the midnight rollover (which would otherwise route a
   // tap on the highlighted today cell to a frozen `daily` date). Selecting
   // today routes to the live `today` route, keeping the spine rolling over.
   const today = useToday()
+  // The identity of the current router arrival. Every navigate bumps
+  // `arrivalSeq` (history moves change `entryId`), so any arrival — including
+  // a date-preserving Today tap — mints a new key, which supersedes the swipe
+  // state scoped to the old one.
+  const navigationKey = `${entryId}:${arrivalSeq}:${date}`
   // The day a swipe is heading toward, announced at pointer-up — the strip
   // (and its rolling month title) follows it while the carousel's snap
   // animation plays, instead of waiting for the settle-time route change.
-  const [targetDate, setTargetDate] = useState<string | null>(null)
-  // Any route move — the swipe's own settle, a strip tap, a date link, back —
-  // supersedes the override: the route is the truth again. Cleared on the
-  // `date` change itself (the render-phase previous-value pattern) rather
-  // than in `select`, because navigations from elsewhere (a daily backlink,
-  // history) never pass through `select`.
-  const [lastDate, setLastDate] = useState(date)
-  if (date !== lastDate) {
-    setLastDate(date)
-    setTargetDate(null)
-  }
+  const { targetDate, followSwipeTarget } = useSwipeTarget(navigationKey)
   const select = useCallback(
     (day: string): void => {
-      setTargetDate(null)
       navigate(day === today ? { kind: 'today' } : { kind: 'daily', date: day })
     },
     [navigate, today],
@@ -69,10 +64,11 @@ export function MobileDaily({ date }: { date: string }): ReactElement {
         date={date}
         today={today}
         scrollResetSeq={resetSeq}
+        navigationKey={navigationKey}
         focusDate={focusDate}
         onFocusConsumed={consumeFocus}
         onSelect={select}
-        onTarget={setTargetDate}
+        onTarget={followSwipeTarget}
       />
       <Button
         size="icon"

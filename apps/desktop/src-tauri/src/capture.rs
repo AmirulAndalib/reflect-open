@@ -492,14 +492,17 @@ fn classify_fetch_error(err: reqwest::Error) -> AppError {
 /// can reach arbitrary hosts is this bounded, HTML-only primitive, and the
 /// privacy gate in `@reflect/core` runs before it is ever called.
 #[tauri::command]
-pub async fn capture_meta_fetch(url: String) -> AppResult<String> {
+pub async fn capture_meta_fetch<R: tauri::Runtime>(
+    url: String,
+    app: tauri::AppHandle<R>,
+) -> AppResult<String> {
     if !url.starts_with("https://") && !url.starts_with("http://") {
         return Err(AppError::parse(format!("not an http(s) url: {url}")));
     }
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(5))
         .timeout(META_FETCH_TIMEOUT)
-        .user_agent(concat!("Reflect/", env!("CARGO_PKG_VERSION")))
+        .user_agent(crate::app_user_agent(&app))
         .build()
         .map_err(|err| AppError::io(err.to_string()))?;
     let response = client

@@ -1,27 +1,34 @@
-import { sql, type RawBuilder } from 'kysely'
-import { foldKey } from '../markdown'
+import type { Database } from '@reflect/db'
+import { sql, type RawBuilder, type Selectable } from 'kysely'
 import { db } from './db'
-import type { ParsedSearchQuery } from './filter-query'
+import { literalSearchQuery, type ParsedSearchQuery } from './filter-query'
 import { resolveWikiTarget } from './queries'
 import { HIGHLIGHT_END, HIGHLIGHT_START } from './search'
-import { buildFtsMatch } from './search-query'
+import { buildFtsMatch, buildTitleMatchSql } from './search-query'
+import { highlightTitle } from './title-highlight'
 
 /**
  * The one palette search (Plan 08): parsed filter tokens become composable
  * predicates on `notes` (EXISTS subqueries against `tags` and the `backlinks`
- * view), with free text constraining and ranking through FTS. Free-text
- * ranking promotes an exact title match (V1's strongest jump-to-note signal)
- * ahead of every body hit, then orders by title-boosted bm25, with pinned and
- * recency as deterministic tiebreakers. Filters may be empty — plain text
- * search is the degenerate case, so there is exactly one search path to keep
- * correct. Without text, results order by recency — a (possibly filtered)
- * recall feed. The mobile All tab reuses that recall feed as its filtered
- * list via {@link FilteredSearchOptions}.
+ * view), with free text constraining and ranking through FTS plus folded
+ * title recall. Title recall matches each query term at a title word start —
+ * except terms in unsegmented scripts such as Japanese, which match anywhere:
+ * FTS5's default `unicode61` tokenizer treats an uninterrupted title as one
+ * token, so a shorter title query can never match it lexically
+ * (`buildTitleMatchSql`). Free-text ranking promotes exact, prefix, then
+ * all-terms title matches ahead of body hits, followed by title-boosted bm25,
+ * pinned, and recency. Filters may be empty — plain text search is the
+ * degenerate case, so there is exactly one search path to keep correct.
+ * Without text, results order by recency — a (possibly filtered) recall feed.
+ * The mobile All tab reuses that recall feed as its filtered list via
+ * {@link FilteredSearchOptions}.
  */
 
 export interface FilteredSearchHit {
   path: string
   title: string
+  /** Full title with search matches marked; plain when the title did not match. */
+  highlightedTitle: string
   dailyDate: string | null
   /** Highlighted body snippet when free text was searched, else null. */
   snippet: string | null
@@ -180,7 +187,12 @@ export async function searchWithFilters(
       taggedQuery = taggedQuery.orderBy(order)
     }
     const rows = await taggedQuery.execute()
-    return rows.map((row) => ({ ...row, snippet: null, isPinned: row.isPinned !== 0 }))
+    return rows.map((row) => ({
+      ...row,
+      highlightedTitle: row.title,
+      snippet: null,
+      isPinned: row.isPinned !== 0,
+    }))
   }
 
   // Templates never surface in search — they are boilerplate, not notes.
@@ -236,40 +248,95 @@ export async function searchWithFilters(
   if (filters.updatedBeforeMs !== null) {
     query = query.where('notes.mtime', '<', filters.updatedBeforeMs)
   }
-  if (limit !== null) {
-    query = query.limit(limit)
-  }
-
   if (match === null) {
     // No free text: a filtered recall feed, newest first.
     let recallQuery = query
     for (const order of recallOrder(options.pinnedFirst === true)) {
       recallQuery = recallQuery.orderBy(order)
     }
+    if (limit !== null) {
+      recallQuery = recallQuery.limit(limit)
+    }
     const rows = await recallQuery.execute()
-    return rows.map((row) => ({ ...row, snippet: null, isPinned: row.isPinned !== 0 }))
+    return rows.map((row) => ({
+      ...row,
+      highlightedTitle: row.title,
+      snippet: null,
+      isPinned: row.isPinned !== 0,
+    }))
   }
 
-  // Free text: constrain + rank + snippet through FTS. An exact title match
-  // leads (title-rank 0); within a rank class, title-boosted bm25 orders (same
-  // weights as the unfiltered palette search), then pinned and recency break
-  // ties, with `path` as the stable final fallback. The exact-title key is
-  // folded the same way titles were at index time, so it can never drift from
-  // the stored `notes.title_key`.
-  const titleKey = foldKey(parsed.text)
-  const rows = await query
-    .innerJoin('searchFts', 'searchFts.path', 'notes.path')
-    .select(
-      sql<string>`snippet(search_fts, 2, ${HIGHLIGHT_START}, ${HIGHLIGHT_END}, '…', 10)`.as(
-        'snippet',
-      ),
+  // SQLite rejects `MATCH ... OR title_key LIKE ...`, and flattening an FTS
+  // subquery under this notes-first join reruns MATCH for every note. An
+  // explicitly materialized CTE computes lexical hits once, while the outer
+  // join safely admits title-recall-only rows and preserves FTS snippets.
+  // The admission OR can't use an index, so the ranked path scans the
+  // (filtered) notes table once per query — `instr` over titles is cheap at
+  // graph scale, and the FTS pass stays a single MATCH.
+  const lexicalDb = db.with(
+    (cte) => cte('lexical').materialized(),
+    (queryDb) =>
+      queryDb
+        .selectFrom('searchFts')
+        .select([
+          'searchFts.path',
+          sql<string>`highlight(search_fts, 1, ${HIGHLIGHT_START}, ${HIGHLIGHT_END})`.as(
+            'ftsHighlightedTitle',
+          ),
+          sql<string>`snippet(search_fts, 2, ${HIGHLIGHT_START}, ${HIGHLIGHT_END}, '…', 10)`.as(
+            'snippet',
+          ),
+          sql<number>`bm25(search_fts, 0, 10.0, 1.0)`.as('rank'),
+        ])
+        .where(sql<boolean>`search_fts MATCH ${match}`),
+  )
+  const filteredNotes = query.select('notes.titleKey').as('filteredNotes')
+  const titleMatch = buildTitleMatchSql(sql.ref<string>('filteredNotes.titleKey'), parsed.text)
+  let rankedQuery = lexicalDb
+    .selectFrom(filteredNotes)
+    .leftJoin('lexical', 'lexical.path', 'filteredNotes.path')
+    .select([
+      'filteredNotes.path',
+      'filteredNotes.title',
+      'filteredNotes.dailyDate',
+      'filteredNotes.preview',
+      'filteredNotes.mtime',
+      'filteredNotes.isPinned',
+      'lexical.ftsHighlightedTitle',
+      'lexical.snippet',
+    ])
+    .where(
+      sql<boolean>`("lexical"."path" is not null or ${titleMatch.containsAllTerms})`,
     )
-    .where(sql<boolean>`search_fts MATCH ${match}`)
-    .orderBy(sql`case when "notes"."title_key" = ${titleKey} then 0 else 1 end`)
-    .orderBy(sql`bm25(search_fts, 0, 10.0, 1.0)`)
-    .orderBy('notes.isPinned', 'desc')
-    .orderBy('notes.mtime', 'desc')
-    .orderBy('notes.path', 'asc')
-    .execute()
-  return rows.map((row) => ({ ...row, isPinned: row.isPinned !== 0 }))
+    .orderBy(titleMatch.rank)
+    .orderBy(sql`coalesce("lexical"."rank", 0)`)
+    .orderBy('filteredNotes.isPinned', 'desc')
+    .orderBy('filteredNotes.mtime', 'desc')
+    .orderBy('filteredNotes.path', 'asc')
+  if (limit !== null) {
+    rankedQuery = rankedQuery.limit(limit)
+  }
+  const rows = await rankedQuery.execute()
+  return rows.map(({ ftsHighlightedTitle, ...row }) => ({
+    ...row,
+    highlightedTitle: highlightTitle(row.title, parsed.text, ftsHighlightedTitle),
+    isPinned: row.isPinned !== 0,
+  }))
+}
+
+/** A lexical/title search result: the note's path and title. */
+export type SearchHit = Pick<Selectable<Database['notes']>, 'path' | 'title'>
+
+/**
+ * Plain-text search over title + body: {@link searchWithFilters} without
+ * filter parsing (tokens like `is:daily` stay literal search text), projected
+ * to path + title. Delegating keeps exactly one ranked search query to keep
+ * correct — recall and ordering can never drift from the palette's.
+ */
+export async function searchNotes(query: string, limit = 50): Promise<SearchHit[]> {
+  if (buildFtsMatch(query) === null) {
+    return [] // nothing to search — never fall through to the recall feed.
+  }
+  const hits = await searchWithFilters(literalSearchQuery(query), { limit })
+  return hits.map((hit) => ({ path: hit.path, title: hit.title }))
 }

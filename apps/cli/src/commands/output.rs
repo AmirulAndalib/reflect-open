@@ -59,7 +59,7 @@ pub struct HitJson {
     pub path: String,
     pub title: String,
     pub snippet: String,
-    /// bm25 rank (more negative = better match).
+    /// bm25 rank (more negative = better match); `0` for title-only substring hits.
     pub score: f64,
 }
 
