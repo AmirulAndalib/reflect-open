@@ -162,7 +162,8 @@ Every capture lands in two phases so saving never waits on the network or AI:
      provider/model used in provenance.
 
 6. **Write path (desktop-owned, executed inside drain step 3 above).** Default shape:
-   - append a `[[Links]]` entry to **today's daily note** (Plan 06 append-under-heading);
+   - append the capture under `## [[Links]]` in **today's daily note**, resolving the
+     existing `Links` category note (including aliases/renames) or creating it safely;
    - create a **dedicated markdown note** when the capture has enough phase-1 content
      to be worth preserving (selection/highlights present, or a screenshot) — the
      description arrives later in phase 2 and is patched into the dedicated note then,
@@ -208,9 +209,10 @@ Every capture lands in two phases so saving never waits on the network or AI:
 
 ## Acceptance criteria
 
-- With the extension installed, capturing a page appends a `[[Links]]` entry to today's
-  daily note with the screenshot already saved under `assets/` (phase 1, synchronous),
-  then asynchronously gains an AI description + scraped meta tags (phase 2).
+- With the extension installed, capturing a page appends under `## [[Links]]` in today's
+  daily note, with the category note and screenshot under `assets/` already saved
+  (phase 1, synchronous), then asynchronously gains an AI description + scraped meta
+  tags (phase 2).
 - **Capturing with the desktop app closed** queues the capture; it lands (raw, then
   enriched) on next app launch (test-asserted).
 - With no AI connection enabled, captures still get the raw entry + scraped meta tags;

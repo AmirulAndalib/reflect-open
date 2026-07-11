@@ -25,6 +25,7 @@ import { getSecret } from '../secrets/keychain'
 const generateAudioMemoTitleMock = vi.hoisted(() =>
   vi.fn<(request: GenerateAudioMemoTitleRequest) => Promise<string>>(),
 )
+const ensureBacklinkTargetMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../graph/commands', () => ({
   listDir: vi.fn(),
@@ -41,6 +42,9 @@ vi.mock('../ai/transcribe', async (importOriginal) => ({
 vi.mock('../ai/audio-memo-title', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../ai/audio-memo-title')>()),
   generateAudioMemoTitle: generateAudioMemoTitleMock,
+}))
+vi.mock('./backlink-target', () => ({
+  ensureBacklinkTarget: ensureBacklinkTargetMock,
 }))
 vi.mock('../secrets/keychain', () => ({
   getSecret: vi.fn(),
@@ -90,6 +94,7 @@ beforeEach(() => {
   getSecretMock.mockResolvedValue('sk-live-key')
   transcribeMock.mockResolvedValue('memo transcript')
   generateAudioMemoTitleMock.mockResolvedValue('Memo Transcript')
+  ensureBacklinkTargetMock.mockResolvedValue('Audio memos')
 })
 
 describe('audioMemoIdentity', () => {
@@ -204,10 +209,11 @@ describe('reconcileAudioMemos', () => {
       ],
       [
         'daily/2026-06-11.md',
-        'morning thoughts\n\n## Audio memos\n\n- [[audio-memo-2026-06-11-153022-845|Memo Transcript]]\n',
+        'morning thoughts\n\n## [[Audio memos]]\n\n- [[audio-memo-2026-06-11-153022-845|Memo Transcript]]\n',
         3,
       ],
     ])
+    expect(ensureBacklinkTargetMock).toHaveBeenCalledWith('Audio memos', 3)
     expect(generateAudioMemoTitleMock).toHaveBeenCalledWith({
       credentials: {
         config: { ...PROVIDERS.providers[0], model: 'gpt-5.4-nano' },
@@ -269,6 +275,7 @@ describe('reconcileAudioMemos', () => {
       expect.stringContaining('second transcript'),
       3,
     )
+    expect(ensureBacklinkTargetMock).toHaveBeenCalledTimes(1)
   })
 
   it('a failed note write stops before the backlink — the transcript is never tombstoned away', async () => {
@@ -297,9 +304,70 @@ describe('reconcileAudioMemos', () => {
 
     expect(writeNoteMock).toHaveBeenCalledWith(
       'daily/2026-06-11.md',
-      '## Audio memos\n\n- [[audio-memo-2026-06-11-153022-845|Memo Transcript]]\n',
+      '## [[Audio memos]]\n\n- [[audio-memo-2026-06-11-153022-845|Memo Transcript]]\n',
       3,
     )
+  })
+
+  it('upgrades the legacy plain memo heading without creating a second section', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    readNoteMock.mockResolvedValue(
+      '## Audio memos\n\n- [[audio-memo-2026-06-10-090000-000|Yesterday]]\n',
+    )
+
+    await reconcile()
+
+    expect(writeNoteMock).toHaveBeenCalledWith(
+      'daily/2026-06-11.md',
+      '## [[Audio memos]]\n\n- [[audio-memo-2026-06-10-090000-000|Yesterday]]\n\n- [[audio-memo-2026-06-11-153022-845|Memo Transcript]]\n',
+      3,
+    )
+  })
+
+  it('uses the current title when the Audio memos note was renamed', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    ensureBacklinkTargetMock.mockResolvedValue('Voice notes')
+
+    await reconcile()
+
+    expect(writeNoteMock).toHaveBeenCalledWith(
+      'daily/2026-06-11.md',
+      expect.stringContaining('## [[Voice notes]]'),
+      3,
+    )
+  })
+
+  it('stops before writing the transcript when the category note cannot be ensured', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    ensureBacklinkTargetMock.mockRejectedValue({ kind: 'io', message: 'disk full' })
+
+    const outcome = await reconcile()
+
+    expect(outcome).toEqual({
+      pending: 1,
+      transcribed: 0,
+      rejected: 0,
+      stopped: { reason: 'io', message: 'disk full' },
+    })
+    expect(writeNoteMock).not.toHaveBeenCalled()
+    expect(transcribeMock).not.toHaveBeenCalled()
+  })
+
+  it('does not finalize a memo while its category backlink is ambiguous', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    ensureBacklinkTargetMock.mockRejectedValue({
+      kind: 'unknown',
+      message: 'The [[Audio memos]] backlink matches multiple notes',
+    })
+
+    const outcome = await reconcile()
+
+    expect(outcome).toMatchObject({
+      transcribed: 0,
+      stopped: { reason: 'unknown', message: expect.stringContaining('matches multiple notes') },
+    })
+    expect(transcribeMock).not.toHaveBeenCalled()
+    expect(writeNoteMock).not.toHaveBeenCalled()
   })
 
   it('a daily-note backlink without the note is a tombstone — deletion stays deleted', async () => {
@@ -475,10 +543,11 @@ describe('reconcileAudioMemos', () => {
   it('the abort gate stops between memos', async () => {
     const earlier = audioMemoIdentity(new Date(2026, 5, 10, 9, 0, 0, 0), 'audio/mp4')
     listDirMock.mockResolvedValue([fileMeta(earlier.audioPath), fileMeta(MEMO.audioPath)])
-    // The gate is consulted three times per memo (loop top, post-read,
-    // post-transcribe): let the first memo through, stop the second.
+    // The first memo checks at loop start, after category resolution, after
+    // the asset read, and after transcription; stop at the next loop start.
     const isStale = vi
       .fn()
+      .mockReturnValueOnce(false)
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(false)
@@ -509,6 +578,26 @@ describe('reconcileAudioMemos', () => {
       transcribed: 0,
       stopped: { reason: 'stale' },
     })
+    expect(writeNoteMock).not.toHaveBeenCalled()
+  })
+
+  it('a graph switch during category resolution stops before reading the recording', async () => {
+    listDirMock.mockResolvedValue([fileMeta(MEMO.audioPath)])
+    let closed = false
+    ensureBacklinkTargetMock.mockImplementation(async () => {
+      closed = true
+      return 'Audio memos'
+    })
+
+    const outcome = await reconcile({ isStale: () => closed })
+
+    expect(outcome).toMatchObject({
+      pending: 1,
+      transcribed: 0,
+      stopped: { reason: 'stale' },
+    })
+    expect(readAssetMock).not.toHaveBeenCalled()
+    expect(transcribeMock).not.toHaveBeenCalled()
     expect(writeNoteMock).not.toHaveBeenCalled()
   })
 

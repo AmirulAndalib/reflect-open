@@ -17,9 +17,10 @@ import {
 } from '../ai/transcribe'
 import { listDir, listFiles, readAsset, readNote, writeAsset, writeNote } from '../graph/commands'
 import { AUDIO_MEMOS_DIR, audioMemoPath, dailyPath, notePath } from '../graph/paths'
-import { appendUnderHeading, wikiLinkSafe } from '../markdown/edit'
+import { appendUnderBacklinkedHeading, wikiLinkSafe } from '../markdown/edit'
 import { getSecret } from '../secrets/keychain'
 import type { AiProviderConfig } from '../settings/schema'
+import { ensureBacklinkTarget } from './backlink-target'
 
 /**
  * Capture actions for audio memos (the first of the `actions/` capture
@@ -32,9 +33,10 @@ import type { AiProviderConfig } from '../settings/schema'
  *    network. The sync engine commits it like any other change.
  * 2. **Reconcile** ({@link reconcileAudioMemos}): a memo's transcription is a
  *    note with the **same basename** (`notes/<base>.md`). Any memo without
- *    one is transcribed (BYOK provider), named from that transcript, its
- *    transcription note written, and a backlink appended to its day's daily
- *    note — note first, because it carries the transcript: a failure between
+ *    one resolves or creates the `Audio memos` category note, is transcribed
+ *    (BYOK provider), named from that transcript, written to its transcription
+ *    note, and backlinked from its day's daily note — transcript note first,
+ *    because it carries the result: a failure between
  *    the two writes leaves an unlinked note, never a tombstoned memo whose
  *    transcript was dropped. A
  *    failed pass (offline, bad key) leaves the memo pending; the next
@@ -306,21 +308,17 @@ async function memoNoteBody(input: {
   }
 }
 
-/** Where the memo's daily-note backlink lands (`appendUnderHeading` creates
- * it), mirroring link capture's `## Links` so both append paths read the same. */
-const MEMOS_HEADING = 'Audio memos'
-
+/** The category note every audio-memo section backlinks. */
+const MEMOS_NOTE_TITLE = 'Audio memos'
 /**
- * Append the memo's wikilink to its day's daily note, once — under an
- * `## Audio memos` section, creating the heading and the file as needed
- * (capture must never depend on the note already existing). The write goes
- * straight to disk: the watcher reindexes it, and an open editor session
- * reconciles it like any external change (clean buffers reload in place;
- * dirty ones park a conflict rather than being clobbered).
+ * Append the memo's wikilink once under `## [[Audio memos]]`, creating the
+ * heading and daily file as needed. The watcher reindexes the direct write;
+ * open dirty editors park a conflict instead of being clobbered.
  */
 async function ensureDailyBacklink(
   memo: AudioMemoIdentity,
   title: string,
+  memosNoteTitle: string,
   generation: number,
 ): Promise<void> {
   const source = await dailyNoteSource(memo.date, generation)
@@ -329,7 +327,8 @@ async function ensureDailyBacklink(
   }
   const displayTitle = wikiLinkSafe(title) || memo.title
   const link = `- [[${memo.base}|${displayTitle}]]`
-  await writeNote(dailyPath(memo.date), appendUnderHeading(source, MEMOS_HEADING, link), generation)
+  const updated = appendUnderBacklinkedHeading(source, memosNoteTitle, link, [MEMOS_NOTE_TITLE])
+  await writeNote(dailyPath(memo.date), updated, generation)
 }
 
 /**
@@ -380,9 +379,10 @@ export interface ReconcileAudioMemosOutcome {
 }
 
 /**
- * Transcribe every pending memo: read the recording back, transcribe, write
- * the transcription note, then append the daily-note backlink. The note is
- * written **first** — it carries the transcript, so a failure between the
+ * Transcribe every pending memo: ensure the category target, read the
+ * recording, transcribe, write the transcription note, then append the daily
+ * backlink. The transcript note is written **first** — it carries the result,
+ * so a failure between the
  * two writes leaves an unlinked note (recoverable from All Notes), never a
  * backlink-tombstoned memo whose transcript was dropped. A recording the
  * provider refuses gets a failure note (tombstoning it) and the pass moves
@@ -443,6 +443,7 @@ export async function reconcileAudioMemos(
 
   let transcribed = 0
   let rejected = 0
+  let memosNoteTitle: string | null = null
   // The gate is consulted again after every slow await (the asset read, the
   // provider call), not just per memo: a graph switch mid-transcription must
   // not bill another provider call or touch any note. Reads and writes are
@@ -460,6 +461,8 @@ export async function reconcileAudioMemos(
       return stalled()
     }
     try {
+      memosNoteTitle ??= await ensureBacklinkTarget(MEMOS_NOTE_TITLE, input.generation)
+      if (stale()) return stalled()
       const audio = new Blob([base64ToBytes(await readAsset(memo.audioPath, input.generation))], {
         type: memo.mimeType,
       })
@@ -478,7 +481,7 @@ export async function reconcileAudioMemos(
         return stalled()
       }
       await writeNote(memo.notePath, transcriptionNote(memo, note.title, note.body), input.generation)
-      await ensureDailyBacklink(memo, note.title, input.generation)
+      await ensureDailyBacklink(memo, note.title, memosNoteTitle, input.generation)
       if (note.rejected) {
         rejected += 1
       } else {
