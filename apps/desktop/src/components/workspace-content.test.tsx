@@ -42,6 +42,14 @@ vi.mock('@/providers/focused-daily-provider', () => ({
 vi.mock('@/providers/sidebar-provider', () => ({
   useSidebar: () => ({ collapsed: workspaceState.collapsed, toggleSidebar: vi.fn() }),
 }))
+// The AppShell asides mount resize handles, which read the persisted widths.
+vi.mock('@/providers/settings-provider', () => ({
+  useSettings: () => ({
+    settings: { sidebarWidth: 260, contextSidebarWidth: 320 },
+    updateSettings: vi.fn(),
+    updateSettingsWith: vi.fn(),
+  }),
+}))
 vi.mock('@/routing/app-shortcuts', () => ({ useAppShortcuts: () => ({}) }))
 
 const { WorkspaceContent } = await import('./workspace-content')
