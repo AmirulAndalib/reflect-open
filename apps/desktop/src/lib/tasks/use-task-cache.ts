@@ -1,6 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { errorMessage, type OpenTask } from '@reflect/core'
+import { type TaskMarkerOffsetChange } from '@/lib/note-task'
 import { startOperation } from '@/lib/operations'
+import { withRelocatedTaskMarkers } from '@/lib/tasks/task-cache'
 import { sameTask } from '@/lib/tasks/task-identity'
 import { completedTasksQueryKey, tasksQueryKey } from '@/lib/tasks/tasks-query'
 import { useGraph } from '@/providers/graph-provider'
@@ -21,10 +23,12 @@ export interface TaskCacheWriter {
   patch: (open: TaskListPatch, completed: TaskListPatch) => void
   /**
    * Upsert one optimistic open row (Return-to-add) and remove the same identity
-   * from completed. A contextual insert shifts later source offsets, so its real
-   * marker can temporarily collide with a stale cached row until reindexing.
+   * from completed. Contextual callers relocate shifted source rows first so the
+   * new marker cannot collide with an existing cache identity.
    */
   addOpen: (task: OpenTask) => void
+  /** Re-key existing rows shifted by a contextual write, in both task caches. */
+  relocate: (notePath: string, changes: readonly TaskMarkerOffsetChange[]) => void
   /** Restore both lists from a snapshot and surface the failure once (single-write undo). */
   rollback: (captured: TaskCacheSnapshot | undefined, label: string, cause: unknown) => void
   /**
@@ -76,6 +80,13 @@ export function useTaskCacheWriter(): TaskCacheWriter {
     )
   }
 
+  const relocate = (notePath: string, changes: readonly TaskMarkerOffsetChange[]): void => {
+    patch(
+      (rows) => withRelocatedTaskMarkers(rows, notePath, changes),
+      (rows) => withRelocatedTaskMarkers(rows, notePath, changes),
+    )
+  }
+
   const rollback = (
     captured: TaskCacheSnapshot | undefined,
     label: string,
@@ -96,5 +107,5 @@ export function useTaskCacheWriter(): TaskCacheWriter {
     startOperation(label).fail(errorMessage(cause))
   }
 
-  return { snapshot, patch, addOpen, rollback, reconcile }
+  return { snapshot, patch, addOpen, relocate, rollback, reconcile }
 }

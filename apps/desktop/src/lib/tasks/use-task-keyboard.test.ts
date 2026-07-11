@@ -350,12 +350,12 @@ describe('useTaskKeyboard', () => {
     })
   })
 
-  it('Return continues a grouped active row inside its task context', () => {
+  it('Return continues a grouped Current row inside its task context', () => {
     const grouped = task({
       notePath: 'notes/a.md',
       noteTitle: 'A',
       breadcrumbs: ['Project', 'Phase one'],
-      dueDate: '2026-07-01',
+      dueDate: '2026-06-15',
     })
     const insert = vi.fn().mockResolvedValue(null)
     const insertAfter = vi.fn().mockResolvedValue(null)

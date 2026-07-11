@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { type OpenTask } from '@reflect/core'
 import { type TaskMarkerOffsetChange } from '@/lib/note-task'
-import { withCheckedMarker } from '@/lib/tasks/task-cache'
+import { withCheckedMarker, withRelocatedTaskMarkers } from '@/lib/tasks/task-cache'
 import { taskKey } from '@/lib/tasks/task-identity'
 
 /**
@@ -95,25 +95,10 @@ export function relocateRecentlyCompleted(
   if (root !== graphRoot || changes.length === 0) {
     return
   }
-  let changed = false
-  const next = tasks.flatMap((task) => {
-    if (task.notePath !== notePath) {
-      return [task]
-    }
-    const exact = changes.find(
-      (change) => change.from === task.markerOffset && change.fromRaw === task.raw,
-    )
-    const rawMatches = exact === undefined
-      ? changes.filter((change) => change.fromRaw === task.raw)
-      : []
-    const change = exact ?? (rawMatches.length === 1 ? rawMatches[0] : undefined)
-    if (change === undefined) {
-      return [task]
-    }
-    changed = true
-    return change.marker === null ? [] : [{ ...task, ...change.marker }]
-  })
-  if (changed) {
+  const next = withRelocatedTaskMarkers(tasks, notePath, changes, {
+    matchUniqueRaw: true,
+  }) ?? tasks
+  if (next !== tasks) {
     tasks = next
     emit()
   }

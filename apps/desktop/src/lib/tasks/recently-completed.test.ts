@@ -92,6 +92,34 @@ describe('recently-completed', () => {
     expect(result.current.map((row) => taskKey(row))).toEqual(['a.md:36'])
   })
 
+  it('refreshes an edited struck row from its relocated persisted marker', () => {
+    const { result } = renderHook(() => useRecentlyCompleted('/g', undefined))
+    act(() =>
+      markRecentlyCompleted('/g', [
+        task({ notePath: 'a.md', markerOffset: 20, raw: '[ ] old', text: 'old' }),
+      ]),
+    )
+
+    act(() =>
+      relocateRecentlyCompleted('/g', 'a.md', [
+        {
+          from: 20,
+          fromRaw: '[x] old',
+          marker: {
+            markerOffset: 20,
+            raw: '[x] edited [[2026-07-01]]',
+          },
+        },
+      ]),
+    )
+
+    expect(result.current[0]).toMatchObject({
+      raw: '[x] edited [[2026-07-01]]',
+      text: 'edited 2026-07-01',
+      dueDate: '2026-07-01',
+    })
+  })
+
   it('does not guess when a stale raw marker is ambiguous', () => {
     const { result } = renderHook(() => useRecentlyCompleted('/g', undefined))
     act(() =>

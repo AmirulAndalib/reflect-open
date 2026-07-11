@@ -802,7 +802,13 @@ describe('TasksScreen', () => {
   it('Enter in a grouped task keeps the new row in that breadcrumb context', async () => {
     continueTaskInContext.mockResolvedValue({
       created: { markerOffset: 40, raw: '[ ] ' },
-      offsetChanges: [],
+      offsetChanges: [
+        {
+          from: 40,
+          fromRaw: '[ ] later',
+          marker: { markerOffset: 56, raw: '[ ] later' },
+        },
+      ],
     })
     getOpenTasks.mockResolvedValue([
       task({
@@ -839,11 +845,43 @@ describe('TasksScreen', () => {
     )
     expect(insertTask).not.toHaveBeenCalled()
     await view.findByTestId('task-editor')
+    expect(view.getByText('later')).toBeDefined()
 
     await userEvent.click(
       view.getByRole('button', { name: 'StartupToolbox → Reflections' }),
     )
     expect(view.getByRole('button', { name: 'Convert to bullet 2' })).toBeDefined()
+    view.unmount()
+  })
+
+  it('preserves a grouped task draft when contextual insertion is refused', async () => {
+    continueTaskInContext.mockRejectedValue(new Error('This note is open.'))
+    editTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/a.md',
+        markerOffset: 2,
+        raw: '[ ] first',
+        text: 'first',
+        noteTitle: 'A',
+        breadcrumbs: ['Project'],
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByRole('button', { name: 'continue-edit' }))
+
+    await waitFor(() =>
+      expect(editTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/a.md', raw: '[ ] first' }),
+        'edited content',
+        1,
+      ),
+    )
+    expect(insertTask).not.toHaveBeenCalled()
+    expect(await view.findByRole('button', { name: 'edited content' })).toBeDefined()
+    expect(fail).toHaveBeenCalledWith('This note is open.')
     view.unmount()
   })
 

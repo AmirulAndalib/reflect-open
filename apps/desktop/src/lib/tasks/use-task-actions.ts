@@ -368,6 +368,18 @@ export function useTaskActions(): TaskActions {
     },
   })
 
+  async function persistTaskDraft(task: OpenTask, content: string | null): Promise<boolean> {
+    try {
+      if (content === '') {
+        await deleteMutation.mutateAsync([task])
+      } else if (content !== null) {
+        await editMutation.mutateAsync({ task, content })
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
   return {
     isPending:
       completeMutation.isPending ||
@@ -435,19 +447,22 @@ export function useTaskActions(): TaskActions {
         return null
       }
       if (task.breadcrumbs.length > 0) {
-        return contextInsert.insert(task, content)
+        try {
+          const created = await contextInsert.insert(task, content)
+          if (created !== null) {
+            return created
+          }
+        } catch {
+          // Failure already surfaced; fall through to preserve the draft.
+        }
+        await persistTaskDraft(task, content)
+        return null
       }
       // Resolve the current row first and *await* it, so the append reads the
       // settled source — the new offset can't drift when the line above resized.
       // Emptied content (the row was cleared) deletes that row rather than leaving
       // a bare `+ [ ]` ghost; a real change persists; null (unchanged) is left be.
-      try {
-        if (content === '') {
-          await deleteMutation.mutateAsync([task])
-        } else if (content !== null) {
-          await editMutation.mutateAsync({ task, content })
-        }
-      } catch {
+      if (!(await persistTaskDraft(task, content))) {
         return null // the edit/delete rollback already surfaced the failure
       }
       let markerOffset: number

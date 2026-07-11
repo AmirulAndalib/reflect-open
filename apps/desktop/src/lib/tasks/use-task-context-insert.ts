@@ -15,7 +15,10 @@ interface ContextInsertInput {
 }
 
 export interface TaskContextInsert {
-  /** Resolve the current draft, add an empty row in the same context, and return it. */
+  /**
+   * Resolve the current draft, add an empty row in the same context, and return it.
+   * A failed write rejects after its optimistic cache update has been rolled back.
+   */
   readonly insert: (task: OpenTask, content: string | null) => Promise<OpenTask | null>
   /** Whether a contextual insert already has a disk write in flight. */
   readonly isPending: boolean
@@ -53,12 +56,12 @@ export function useTaskContextInsert(): TaskContextInsert {
         return null
       }
       const { generation, root } = graph
-      let result: ContinuedTaskInContext
-      try {
-        result = await mutation.mutateAsync({ task, content, generation })
-      } catch {
-        return null
-      }
+      const result: ContinuedTaskInContext = await mutation.mutateAsync({
+        task,
+        content,
+        generation,
+      })
+      cache.relocate(task.notePath, result.offsetChanges)
       relocateRecentlyCompleted(root, task.notePath, result.offsetChanges)
       const created = insertedTaskRow(
         insertTargetForTask(task),
