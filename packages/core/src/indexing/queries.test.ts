@@ -297,6 +297,9 @@ describe('getBacklinksWithContext', () => {
     expect(sourceQuery?.sql).not.toContain('order by "notes"."title"')
     expect(sourceQuery?.params).toEqual(['notes/target.md', 3])
 
+    const countQuery = dbQueries().find(({ sql }) => sql.includes('count(*)'))
+    expect(countQuery?.sql).toContain('inner join "notes"')
+
     const contextQuery = dbQueries().find(({ sql }) =>
       sql.includes('"backlinks"."pos_from"'),
     )

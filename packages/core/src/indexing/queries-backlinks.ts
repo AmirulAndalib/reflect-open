@@ -64,9 +64,10 @@ export interface BacklinkContextPage {
   /** The next page's keyset cursor, or `null` when every source is loaded. */
   readonly nextCursor: BacklinkSourceCursor | null
   /**
-   * Resolved wiki-link rows before block-context deduplication. This is the
-   * only exact total available without reading every source note, so it may be
-   * greater than the eventual number of rendered contexts.
+   * Resolved wiki-link rows with an indexed source note, before block-context
+   * deduplication. This is the only exact total available without reading
+   * every source note, so it may be greater than the eventual number of
+   * rendered contexts.
    */
   readonly indexedLinkCount: number
 }
@@ -136,6 +137,7 @@ export async function getBacklinksWithContext(
       .execute(),
     db
       .selectFrom('backlinks')
+      .innerJoin('notes', 'notes.path', 'backlinks.sourcePath')
       .where('targetPath', '=', path)
       .select(sql<number>`count(*)`.as('count'))
       .executeTakeFirst(),
