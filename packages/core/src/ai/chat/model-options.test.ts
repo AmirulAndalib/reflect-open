@@ -23,6 +23,9 @@ describe('chatModelOptions', () => {
     expect(options.find((option) => option.modelId === 'claude-fable-5')?.label).toBe(
       'Claude Fable 5',
     )
+    expect(options.find((option) => option.modelId === 'claude-sonnet-5')?.label).toBe(
+      'Claude Sonnet 5',
+    )
   })
 
   it('keeps a custom configured model selectable, labeled by its raw id', () => {

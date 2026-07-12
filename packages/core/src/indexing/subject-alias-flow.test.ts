@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
-import Database from 'better-sqlite3'
-import { load as loadSqliteVec } from 'sqlite-vec'
+import { getLoadablePath as getSqliteVecPath } from 'sqlite-vec'
 import { describe, expect, it } from 'vitest'
 import { resolveOrCreateNoteWithTitle } from '../graph/create-note'
 import { normalizeWikiTarget, parseNote } from '../markdown'
@@ -15,17 +15,18 @@ import {
 } from './queries'
 import { wikiSuggestionInsertText } from './suggest'
 
-type SqliteParameter = string | number | bigint | Buffer | null
 type SqliteRow = Record<string, unknown>
 
 const MIGRATIONS_DIRECTORY = fileURLToPath(
   new URL('../../../../crates/index-schema/migrations/', import.meta.url),
 )
 
-function openMigratedIndex(): Database.Database {
-  const database = new Database(':memory:')
+function openMigratedIndex(): DatabaseSync {
+  const database = new DatabaseSync(':memory:', { allowExtension: true })
   try {
-    loadSqliteVec(database)
+    // Keep this an exact production migration chain: 0002/0003 create vec0
+    // tables, so their native extension must be available before replay.
+    database.loadExtension(getSqliteVecPath())
     const migrations = readdirSync(MIGRATIONS_DIRECTORY)
       .filter((filename) => filename.endsWith('.sql'))
       .sort()
@@ -39,7 +40,7 @@ function openMigratedIndex(): Database.Database {
   }
 }
 
-function sqliteParameter(value: unknown): SqliteParameter {
+function sqliteParameter(value: unknown): SQLInputValue {
   if (
     value === null ||
     typeof value === 'string' ||
@@ -53,35 +54,17 @@ function sqliteParameter(value: unknown): SqliteParameter {
 }
 
 function queryRows(
-  database: Database.Database,
+  database: DatabaseSync,
   sql: string,
   params: readonly unknown[],
 ): Promise<SqliteRow[]> {
-  const statement = database.prepare<SqliteParameter[], SqliteRow>(sql)
+  const statement = database.prepare(sql)
   return Promise.resolve(statement.all(...params.map(sqliteParameter)))
 }
 
-function applyProjection(database: Database.Database, indexed: IndexedNote): void {
+function applyProjection(database: DatabaseSync, indexed: IndexedNote): void {
   database
-    .prepare<
-      [
-        string,
-        string | null,
-        string,
-        string,
-        string,
-        string | null,
-        number,
-        number,
-        number | null,
-        number,
-        string,
-        string,
-        number,
-        string | null,
-        number,
-      ]
-    >(
+    .prepare(
       `INSERT INTO notes(
         path, id, title, title_key, kind, daily_date, is_private, is_pinned,
         pinned_order, mtime, file_hash, preview, has_conflict, gist_url, gist_stale
@@ -105,16 +88,14 @@ function applyProjection(database: Database.Database, indexed: IndexedNote): voi
       Number(indexed.gistStale),
     )
 
-  const insertAlias = database.prepare<[string, string, string]>(
+  const insertAlias = database.prepare(
     'INSERT INTO aliases(note_path, alias, alias_key) VALUES (?, ?, ?)',
   )
   for (const alias of indexed.aliases) {
     insertAlias.run(indexed.path, alias.alias, alias.aliasKey)
   }
 
-  const insertLink = database.prepare<
-    [string, string, string, string, string | null, number, number]
-  >(
+  const insertLink = database.prepare(
     `INSERT INTO links(
       source_path, kind, target_raw, target_key, alias, pos_from, pos_to
     ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -140,7 +121,7 @@ function project(path: string, source: string, mtime: number): IndexedNote {
   })
 }
 
-function connectIndex(database: Database.Database): void {
+function connectIndex(database: DatabaseSync): void {
   setBridge({
     invoke: (command, args) => {
       if (command !== 'db_query') {

@@ -23,6 +23,8 @@ import { useNoteDocument } from '@/editor/use-note-document'
 import { useTagNavigation } from '@/editor/use-tag-navigation'
 import { useTemplateSlashItems } from '@/editor/use-template-slash-items'
 import { useWikiLinkNavigation } from '@/editor/use-wiki-link-navigation'
+import { useWikiLinkHoverPreview } from '@/editor/use-wiki-link-hover-preview'
+import { isTouchEditorSurface } from '@/lib/platform-surface'
 import { cn } from '@/lib/utils'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
@@ -157,6 +159,13 @@ export function NotePaneComponent({
     resolveFileInfo,
     saveError,
   } = useAssetPersistence(generation, path)
+  const renderWikilinkHoverCard = useWikiLinkHoverPreview({
+    generation,
+    graphKey: graph?.root ?? null,
+    dateFormat: settings.dateFormat,
+    resolveImageUrl,
+    resolveAssetOpenPath,
+  })
   const onWikiLinkClick = useWikiLinkNavigation(generation)
   const onTagClick = useTagNavigation()
   const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()
@@ -340,6 +349,9 @@ export function NotePaneComponent({
         resolveFileLink={resolveAssetFileLink}
         resolveFileInfo={resolveFileInfo}
         onWikiLinkClick={onWikiLinkClick}
+        {...(generation !== null && !isTouchEditorSurface()
+          ? { renderWikilinkHoverCard }
+          : {})}
         onTagClick={onTagClick}
         onWikilinkSearch={onWikilinkSearch}
         onTagSearch={onTagSearch}

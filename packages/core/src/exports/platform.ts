@@ -145,6 +145,10 @@ export {
   type ResolveOrCreateNoteResult,
 } from '../graph/create-note'
 export {
+  resolveExistingWikiTarget,
+  type ExistingWikiTargetResolution,
+} from '../graph/resolve-existing-wiki-target'
+export {
   settingsSchema,
   editorMarkdownSyntaxSchema,
   editorSpellCheckSchema,
@@ -152,6 +156,11 @@ export {
   editorBulletAfterHeadingSchema,
   editorTextSizeSchema,
   editorFullWidthSchema,
+  sidebarWidthSchema,
+  contextSidebarWidthSchema,
+  SIDEBAR_WIDTH_RANGE,
+  CONTEXT_SIDEBAR_WIDTH_RANGE,
+  clampSidebarWidth,
   semanticSearchEnabledSchema,
   describeAssetsSchema,
   contactsEnabledSchema,
@@ -177,6 +186,7 @@ export {
   type Settings,
   type EditorMarkdownSyntax,
   type EditorTextSize,
+  type SidebarWidthRange,
   type ThemePreference,
   type TimeFormat,
   type DateFormat,

@@ -17,9 +17,11 @@ import {
   type FileLinkResolver,
   type MarkMode,
   type StartPendingReplacementOptions,
+  type WikilinkHoverHit,
 } from '@meowdown/core'
 import {
   MeowdownEditor,
+  WikilinkHoverCard,
   type EditorHandle,
   type PendingReplacementResolveHandler,
   type SelectionMenuSearchHandler,
@@ -37,10 +39,11 @@ import {
 import { isOpenableExternalUrl } from '@/editor/open-external-link'
 import { isTouchEditorSurface } from '@/lib/platform-surface'
 import { useLightboxTransition } from '@/editor/use-lightbox-transition'
-import { dispatchDeepLink } from '@/lib/deep-links/intake'
 import { isDeepLinkUrl } from '@/lib/deep-links/parse'
-import { isNewWindowClick, openDeepLinkInNewWindow } from '@/lib/windows/open-in-new-window'
+import { useFollowDeepLink } from '@/lib/deep-links/use-follow-deep-link'
 import { cn } from '@/lib/utils'
+
+type WikilinkHoverRenderer = (hit: WikilinkHoverHit) => ReactNode | Promise<ReactNode>
 
 /**
  * Reflect's note editor: a thin wrapper over `@meowdown/react`'s
@@ -153,6 +156,13 @@ interface NoteEditorProps {
    * modifiers, e.g. ⌘-click opens the target in a new window.
    */
   onWikiLinkClick?: (target: string, event?: MouseEvent | KeyboardEvent) => void
+  /**
+   * Resolve the passive body of Meowdown's editor-scoped wiki-link hover
+   * card. Resolving `null` (missing, ambiguous, or unavailable targets)
+   * renders no card. Must be a stable function: a new identity re-runs the
+   * resolution for the currently hovered link.
+   */
+  renderWikilinkHoverCard?: WikilinkHoverRenderer
   /** Click on an inline `#tag`. The tag name arrives without the leading `#`. */
   onTagClick?: (tag: string) => void
   /** Search notes for the `[[` autocomplete menu. */
@@ -208,6 +218,7 @@ export function NoteEditor({
   resolveFileLink,
   resolveFileInfo,
   onWikiLinkClick,
+  renderWikilinkHoverCard,
   onTagClick,
   onWikilinkSearch,
   onTagSearch,
@@ -222,6 +233,7 @@ export function NoteEditor({
   handleRef,
 }: NoteEditorProps): ReactElement {
   const innerRef = useRef<EditorHandle>(null)
+  const followDeepLink = useFollowDeepLink()
 
   // Latest callbacks, read through refs so a changing prop identity never
   // rebuilds meowdown's extensions (the uncontrolled-editor contract).
@@ -321,15 +333,7 @@ export function NoteEditor({
       // new window instead; a declined open (capture link, browser dev)
       // degrades to the normal dispatch.
       if (isDeepLinkUrl(href)) {
-        if (isNewWindowClick(event)) {
-          void openDeepLinkInNewWindow(href).then((opened) => {
-            if (!opened) {
-              dispatchDeepLink(href)
-            }
-          })
-          return
-        }
-        dispatchDeepLink(href)
+        followDeepLink(href, event)
         return
       }
       if (!isOpenableExternalUrl(href)) {
@@ -339,7 +343,7 @@ export function NoteEditor({
         console.error('open link failed:', errorMessage(cause))
       })
     },
-    [],
+    [followDeepLink],
   )
   // A file pill is a claimed link, so a click on it routes exactly like a
   // link click: `assets/…` through the asset opener, anything else through
@@ -430,6 +434,9 @@ export function NoteEditor({
       >
         <EditorInputTraits />
         <FormattingToolbarBridge />
+        {renderWikilinkHoverCard !== undefined ? (
+          <WikilinkHoverCard>{renderWikilinkHoverCard}</WikilinkHoverCard>
+        ) : null}
         {children}
       </MeowdownEditor>
       <ImageLightbox

@@ -1,12 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+interface MenuItemOptionsForTest {
+  readonly id?: string
+  readonly text?: string
+  readonly accelerator?: string
+  readonly action?: (commandId: string) => void
+}
+
+interface SubmenuOptionsForTest {
+  readonly text: string
+  readonly items: readonly MenuItemOptionsForTest[]
+}
+
 const isTauri = vi.hoisted(() => vi.fn(() => true))
 const isMainWindow = vi.hoisted(() => vi.fn(() => true))
 const setAsAppMenu = vi.hoisted(() => vi.fn(async () => null))
 const setAsWindowsMenuForNSApp = vi.hoisted(() => vi.fn(async () => {}))
 const setAsHelpMenuForNSApp = vi.hoisted(() => vi.fn(async () => {}))
 const submenuNew = vi.hoisted(() =>
-  vi.fn(async () => ({ setAsWindowsMenuForNSApp, setAsHelpMenuForNSApp })),
+  vi.fn(async (_options: SubmenuOptionsForTest) => ({
+    setAsWindowsMenuForNSApp,
+    setAsHelpMenuForNSApp,
+  })),
 )
 const menuNew = vi.hoisted(() => vi.fn(async () => ({ setAsAppMenu })))
 
@@ -18,7 +33,8 @@ vi.mock('@tauri-apps/api/menu', () => ({
 vi.mock('@/lib/windows/window-role', () => ({ isMainWindow }))
 
 const { APP_COMMANDS, keybindingFor } = await import('@/lib/commands/app-commands')
-const { appMenuLayout, installNativeMenu } = await import('./menu')
+const { setMenuCommandDispatch } = await import('./dispatch')
+const { appMenuLayout, installNativeMenu, isNativeMenuInstalled } = await import('./menu')
 
 beforeEach(() => {
   vi.stubGlobal('navigator', { userAgent: 'Macintosh', maxTouchPoints: 0 })
@@ -32,6 +48,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  setMenuCommandDispatch(null)
   vi.unstubAllGlobals()
 })
 
@@ -88,6 +105,30 @@ describe('appMenuLayout', () => {
 })
 
 describe('installNativeMenu', () => {
+  it('installs sidebar.toggle as a native Command+\\ menu accelerator', async () => {
+    const dispatch = vi.fn()
+    setMenuCommandDispatch(dispatch)
+
+    await installNativeMenu()
+
+    const viewMenu = submenuNew.mock.calls
+      .map(([options]) => options)
+      .find((options) => options.text === 'View')
+    const sidebarToggle = viewMenu?.items.find((item) => item.id === 'sidebar.toggle')
+
+    expect(sidebarToggle).toMatchObject({
+      id: 'sidebar.toggle',
+      text: 'Toggle sidebar',
+      accelerator: 'CmdOrCtrl+\\',
+    })
+    expect(sidebarToggle?.action).toBeTypeOf('function')
+    sidebarToggle?.action?.('sidebar.toggle')
+    expect(dispatch).toHaveBeenCalledWith('sidebar.toggle')
+    expect(menuNew).toHaveBeenCalledTimes(1)
+    expect(setAsAppMenu).toHaveBeenCalledTimes(1)
+    expect(isNativeMenuInstalled()).toBe(true)
+  })
+
   it('leaves the main window’s app-wide menu intact when a note window boots', async () => {
     isMainWindow.mockReturnValue(false)
 

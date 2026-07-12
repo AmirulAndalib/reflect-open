@@ -6,6 +6,8 @@ import { APP_COMMANDS } from '@/lib/commands/app-commands'
 import { runCommand } from '@/lib/commands/registry'
 import { todayIso } from '@/lib/dates'
 import { setMenuCommandDispatch } from '@/lib/native-menu/dispatch'
+import { isNativeMenuInstalled } from '@/lib/native-menu/menu'
+import { isMacosDesktop } from '@/lib/platform'
 import { retryFailedEmbeddings } from '@/lib/semantic'
 import type { CommandContext } from '@/lib/commands/types'
 import { useAudioMemo } from '@/providers/audio-memo-provider'
@@ -39,6 +41,11 @@ export const APP_BINDINGS = registerKeymap(
 
 const BINDING_TO_ID = new Map(BOUND_COMMANDS.map(({ binding, command }) => [binding, command.id]))
 const HISTORY_COMMAND_IDS = new Set(['history.back', 'history.forward'])
+
+// AppKit owns this key equivalent on macOS. Keep it in the registry for
+// display, collision detection, and the plain-browser/non-macOS fallback, but
+// do not consume its keydown in the webview before the native menu sees it.
+const NATIVE_MACOS_MENU_COMMAND_IDS = new Set(['sidebar.toggle'])
 
 const CODE_TO_BINDING_KEY: Record<string, string> = {
   BracketLeft: '[',
@@ -132,6 +139,14 @@ function idForKeyDown(event: KeyboardEvent): string | null {
     }
   }
   return null
+}
+
+function isNativeMacosMenuCommand(commandId: string): boolean {
+  return (
+    isMacosDesktop &&
+    isNativeMenuInstalled() &&
+    NATIVE_MACOS_MENU_COMMAND_IDS.has(commandId)
+  )
 }
 
 /**
@@ -272,7 +287,7 @@ export function useAppShortcuts(): CommandContext {
 
     function onHistoryKeyDownCapture(event: KeyboardEvent) {
       const id = idForKeyDown(event)
-      if (id === null || !HISTORY_COMMAND_IDS.has(id)) {
+      if (id === null || isNativeMacosMenuCommand(id) || !HISTORY_COMMAND_IDS.has(id)) {
         return
       }
       if (triggerCommand(id)) {
@@ -291,7 +306,7 @@ export function useAppShortcuts(): CommandContext {
         return
       }
       const id = idForKeyDown(event)
-      if (id === null) {
+      if (id === null || isNativeMacosMenuCommand(id)) {
         return
       }
       if (triggerCommand(id)) {

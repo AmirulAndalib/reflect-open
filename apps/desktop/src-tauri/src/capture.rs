@@ -310,8 +310,14 @@ pub fn capture_inbox_reject(
 
 /// The App Group the iOS share extension spools into. Must match the
 /// `com.apple.security.application-groups` entitlement on the app and the
-/// extension targets (`ios.project.yml`).
-#[cfg(target_os = "ios")]
+/// extension targets (`ios.project.yml`) and `groupId` in
+/// `CaptureInbox.swift`. Debug builds are the dev flavor and use their own
+/// group so a dev install never drains the production app's inbox; the Xcode
+/// debug configuration compiles the Rust dev profile, so `debug_assertions`
+/// tracks the flavor exactly.
+#[cfg(all(target_os = "ios", debug_assertions))]
+const SHARED_GROUP_ID: &str = "group.app.reflect.dev";
+#[cfg(all(target_os = "ios", not(debug_assertions)))]
 const SHARED_GROUP_ID: &str = "group.app.reflect";
 
 /// The envelope spool directory inside the App Group container. The extension

@@ -140,7 +140,7 @@ cargo test --workspace
 For iOS simulator development:
 
 ```bash
-pnpm tauri ios dev "iPhone 17 Pro"
+pnpm tauri:ios:dev "iPhone 17 Pro"
 ```
 
 For TestFlight builds:

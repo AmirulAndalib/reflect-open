@@ -11,6 +11,7 @@ import { useMainWindowEffect } from '@/hooks/use-main-window-effect'
 import { startDeepLinkListener } from '@/lib/deep-links/intake'
 import { trackSubscriptions } from '@/lib/subscriptions'
 import { GraphProvider } from '@/providers/graph-provider'
+import { SidebarWidthEffect } from '@/providers/sidebar-width'
 import { UpdateProvider } from '@/providers/update-provider'
 
 /**
@@ -55,6 +56,7 @@ export function DesktopRoot(): ReactElement {
     <UpdateProvider>
       <GraphProvider>
         <TooltipProvider>
+          <SidebarWidthEffect />
           <WindowDragRegion />
           <App />
           <Toaster />

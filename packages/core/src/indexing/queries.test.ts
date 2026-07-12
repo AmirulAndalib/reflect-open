@@ -219,112 +219,253 @@ describe('listDailyNotes', () => {
 })
 
 describe('getBacklinksWithContext', () => {
-  it('orders sources most recent first — daily date for dailies, edit time otherwise (V1 parity)', async () => {
-    mockInvoke.mockImplementation(async (command) => {
-      if (command === 'db_query') {
-        return [
-          { source_path: 'daily/2026-07-01.md', pos_from: 4, source_title: '2026-07-01' },
-          { source_path: 'notes/older.md', pos_from: 9, source_title: 'Older' },
-        ]
+  interface MockBacklinkSource {
+    path: string
+    title: string
+    recencyMs: number
+    content: string
+    positions: number[]
+  }
+
+  function mockBacklinkPage({
+    sources,
+    indexedLinkCount,
+    targetKeys = ['target'],
+  }: {
+    sources: MockBacklinkSource[]
+    indexedLinkCount: number
+    targetKeys?: string[]
+  }): void {
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'note_read') {
+        return sources.find((source) => source.path === args['path'])?.content ?? ''
       }
-      return 'a line with a [[target]] link'
+      if (command !== 'db_query') {
+        throw new Error(`unexpected command: ${command}`)
+      }
+      const query = String(args['sql'])
+      if (query.includes('count(*)')) {
+        return [{ count: indexedLinkCount }]
+      }
+      if (query.includes('note_keys')) {
+        return targetKeys.map((key) => ({ key }))
+      }
+      if (query.includes('select distinct')) {
+        return sources.map((source) => ({
+          source_path: source.path,
+          source_title: source.title,
+          recency_ms: source.recencyMs,
+        }))
+      }
+      if (query.includes('"backlinks"."pos_from"')) {
+        return sources.flatMap((source) =>
+          source.positions.map((posFrom) => ({
+            source_path: source.path,
+            pos_from: posFrom,
+          })),
+        )
+      }
+      throw new Error(`unexpected query: ${query}`)
+    })
+  }
+
+  function dbQueries(): Array<{ sql: string; params: unknown[] }> {
+    return mockInvoke.mock.calls.flatMap(([command, args]) =>
+      command === 'db_query'
+        ? [{ sql: String(args['sql']), params: args['params'] as unknown[] }]
+        : [],
+    )
+  }
+
+  it('pages complete sources in deterministic recency order and reads only included sources', async () => {
+    mockBacklinkPage({
+      indexedLinkCount: 3,
+      sources: [
+        {
+          path: 'daily/2026-07-01.md',
+          title: '2026-07-01',
+          recencyMs: 2_000,
+          content: 'daily [[target]]',
+          positions: [6],
+        },
+        {
+          path: 'notes/older.md',
+          title: 'Older',
+          recencyMs: 1_000,
+          content: 'older [[target]]',
+          positions: [6],
+        },
+        {
+          path: 'notes/not-loaded.md',
+          title: 'Not loaded',
+          recencyMs: 500,
+          content: 'extra [[target]]',
+          positions: [6],
+        },
+      ],
     })
 
-    const rows = await getBacklinksWithContext('notes/target.md')
+    const page = await getBacklinksWithContext('notes/target.md', {
+      cursor: null,
+      limit: 2,
+    })
 
-    expect(rows.map((row) => row.sourcePath)).toEqual([
+    expect(page.contexts.map((row) => row.sourcePath)).toEqual([
       'daily/2026-07-01.md',
       'notes/older.md',
     ])
-    const [command, args] = mockInvoke.mock.calls[0]!
-    expect(command).toBe('db_query')
-    const sql = String(args['sql'])
-    // Recency interleaves dailies (calendar date) with regular notes (edit
-    // time); title must not be the sort key.
-    expect(sql).toContain(
-      'order by coalesce(strftime(\'%s\', "notes"."daily_date") * 1000, "notes"."updated_at") desc',
+    expect(page.nextCursor).toEqual({ recencyMs: 1_000, sourcePath: 'notes/older.md' })
+    expect(page.indexedLinkCount).toBe(3)
+    expect(
+      mockInvoke.mock.calls
+        .filter(([command]) => command === 'note_read')
+        .map(([, args]) => args['path']),
+    ).toEqual(['daily/2026-07-01.md', 'notes/older.md'])
+
+    const sourceQuery = dbQueries().find(({ sql }) => sql.includes('select distinct'))
+    expect(sourceQuery).toBeDefined()
+    expect(sourceQuery?.sql).toContain('strftime')
+    expect(sourceQuery?.sql).toContain('"notes"."daily_date"')
+    expect(sourceQuery?.sql).toContain('"notes"."updated_at"')
+    expect(sourceQuery?.sql).toContain('desc')
+    expect(sourceQuery?.sql).not.toContain('order by "notes"."title"')
+    expect(sourceQuery?.params).toEqual(['notes/target.md', 3])
+
+    const countQuery = dbQueries().find(({ sql }) => sql.includes('count(*)'))
+    expect(countQuery?.sql).toContain('inner join "notes"')
+
+    const contextQuery = dbQueries().find(({ sql }) =>
+      sql.includes('"backlinks"."pos_from"'),
     )
-    expect(sql).not.toContain('order by "notes"."title"')
-    // Groups stay contiguous and links keep document order.
-    expect(sql).toContain('"backlinks"."source_path"')
-    expect(sql).toContain('"backlinks"."pos_from"')
+    expect(contextQuery?.sql).toContain('"backlinks"."source_path"')
+    expect(contextQuery?.sql).toContain('"backlinks"."pos_from"')
   })
+
+  it('uses the recency/path keyset after a cursor and returns null at the end', async () => {
+    const content = 'next [[target]]'
+    mockBacklinkPage({
+      indexedLinkCount: 2,
+      sources: [
+        {
+          path: 'notes/next.md',
+          title: 'Next',
+          recencyMs: 900,
+          content,
+          positions: [content.indexOf('[[target]]')],
+        },
+      ],
+    })
+
+    const page = await getBacklinksWithContext('notes/target.md', {
+      cursor: { recencyMs: 1_000, sourcePath: 'notes/previous.md' },
+      limit: 1,
+    })
+
+    expect(page.nextCursor).toBeNull()
+    expect(page.contexts.map((context) => context.sourcePath)).toEqual(['notes/next.md'])
+    const sourceQuery = dbQueries().find(({ sql }) => sql.includes('select distinct'))
+    expect(sourceQuery?.sql).toContain('"backlinks"."source_path" >')
+    expect(sourceQuery?.sql.toLowerCase()).not.toContain(' offset ')
+    expect(sourceQuery?.params).toEqual([
+      'notes/target.md',
+      1_000,
+      1_000,
+      'notes/previous.md',
+      2,
+    ])
+  })
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects an invalid page limit (%s) before querying',
+    async (limit) => {
+      await expect(
+        getBacklinksWithContext('notes/target.md', { cursor: null, limit }),
+      ).rejects.toThrow('positive safe integer')
+      expect(mockInvoke).not.toHaveBeenCalled()
+    },
+  )
 
   it('extracts the block context around the link — a list item keeps its children', async () => {
     const content = '- kickoff with [[target]]\n  - prep the agenda\n- unrelated\n'
-    mockInvoke.mockImplementation(async (command) => {
-      if (command === 'db_query') {
-        return [
-          {
-            source_path: 'notes/source.md',
-            pos_from: content.indexOf('[[target]]'),
-            source_title: 'Source',
-          },
-        ]
-      }
-      return content
+    mockBacklinkPage({
+      indexedLinkCount: 1,
+      sources: [
+        {
+          path: 'notes/source.md',
+          title: 'Source',
+          recencyMs: 1_000,
+          content,
+          positions: [content.indexOf('[[target]]')],
+        },
+      ],
     })
 
-    const rows = await getBacklinksWithContext('notes/target.md')
+    const page = await getBacklinksWithContext('notes/target.md', {
+      cursor: null,
+      limit: 10,
+    })
 
-    expect(rows.map((row) => row.snippet)).toEqual([
+    expect(page.contexts.map((row) => row.snippet)).toEqual([
       '- kickoff with [[target]]\n  - prep the agenda',
     ])
   })
 
   it('co-groups sibling branches through the target aliases, not just the clicked spelling', async () => {
     const content = '- parent line\n  - one [[Project X]]\n  - two [[projx]]\n'
-    mockInvoke.mockImplementation(async (command, args) => {
-      if (command !== 'db_query') {
-        return content
-      }
-      const sql = String(args['sql'])
-      if (sql.includes('note_keys')) {
-        return [{ key: 'project x' }, { key: 'projx' }]
-      }
-      return [
+    mockBacklinkPage({
+      indexedLinkCount: 1,
+      targetKeys: ['project x', 'projx'],
+      sources: [
         {
-          source_path: 'notes/source.md',
-          pos_from: content.indexOf('[[Project X]]'),
-          source_title: 'Source',
+          path: 'notes/source.md',
+          title: 'Source',
+          recencyMs: 1_000,
+          content,
+          positions: [content.indexOf('[[Project X]]')],
         },
-      ]
+      ],
     })
 
-    const rows = await getBacklinksWithContext('notes/target.md')
+    const page = await getBacklinksWithContext('notes/target.md', {
+      cursor: null,
+      limit: 10,
+    })
 
-    expect(rows.map((row) => row.snippet)).toEqual([
+    expect(page.contexts.map((row) => row.snippet)).toEqual([
       '- parent line\n  - one [[Project X]]\n  - two [[projx]]',
     ])
   })
 
-  it('collapses mentions with an identical context into one row (V1 parity)', async () => {
+  it('deduplicates a complete source while reporting the raw indexed link count', async () => {
     const content = 'both [[target]] links on one [[target]] line\n\nanother [[target]] mention\n'
-    mockInvoke.mockImplementation(async (command) => {
-      if (command === 'db_query') {
-        return [
-          { source_path: 'notes/source.md', pos_from: 5, source_title: 'Source' },
-          {
-            source_path: 'notes/source.md',
-            pos_from: content.lastIndexOf('[[target]] line'),
-            source_title: 'Source',
-          },
-          {
-            source_path: 'notes/source.md',
-            pos_from: content.indexOf('another'),
-            source_title: 'Source',
-          },
-        ]
-      }
-      return content
+    mockBacklinkPage({
+      indexedLinkCount: 3,
+      sources: [
+        {
+          path: 'notes/source.md',
+          title: 'Source',
+          recencyMs: 1_000,
+          content,
+          positions: [
+            5,
+            content.lastIndexOf('[[target]] line'),
+            content.indexOf('another'),
+          ],
+        },
+      ],
     })
 
-    const rows = await getBacklinksWithContext('notes/target.md')
+    const page = await getBacklinksWithContext('notes/target.md', {
+      cursor: null,
+      limit: 1,
+    })
 
-    expect(rows.map((row) => row.snippet)).toEqual([
+    expect(page.contexts.map((row) => row.snippet)).toEqual([
       'both [[target]] links on one [[target]] line',
       'another [[target]] mention',
     ])
+    expect(page.contexts).toHaveLength(2)
+    expect(page.indexedLinkCount).toBe(3)
   })
 })
 

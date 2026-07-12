@@ -147,7 +147,7 @@ describe('AiProvidersSection', () => {
     fireEvent.keyDown(dialog.getByRole('combobox', { name: 'Provider' }), { key: 'ArrowDown' })
     fireEvent.keyDown(await screen.findByRole('option', { name: 'Anthropic' }), { key: 'Enter' })
     fireEvent.click(dialog.getByRole('combobox', { name: 'Default model' }))
-    fireEvent.click(await screen.findByRole('option', { name: /Claude Sonnet 4\.6/ }))
+    fireEvent.click(await screen.findByRole('option', { name: /Claude Sonnet 5/ }))
     fireEvent.change(dialog.getByLabelText('API key'), {
       target: { value: 'sk-ant-test-wxyz1' },
     })
@@ -158,7 +158,7 @@ describe('AiProvidersSection', () => {
     const [added] = doc.aiProviders
     expect(added).toMatchObject({
       provider: 'anthropic',
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       keyHint: 'wxyz1',
     })
     // The first entry becomes the default automatically.

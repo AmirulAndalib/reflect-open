@@ -360,7 +360,7 @@ html:root {
 /* The leading H1 is the document title: the regular-note subject, matching
    the daily date subject. H2 and H3 step down the type scale so a section
    heading reads as subordinate to the title, not a second one: auto-appended
-   sections (`## Links`, `## Audio memos`) land at H2, one size below the
+   sections (`## [[Links]]`, `## [[Audio memos]]`) land at H2, one size below the
    subject; H3 sits at body size, carried by weight rather than scale. */
 .reflect-editor h1 { @apply text-note-subject; } /* text-xl, 20px */
 .reflect-editor h2 { font-size: var(--text-lg, 1.125rem); } /* 18px */

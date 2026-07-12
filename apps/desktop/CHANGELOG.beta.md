@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.6.0-beta.12](https://github.com/team-reflect/reflect-open/compare/v0.6.0-beta.11...v0.6.0-beta.12) (2026-07-12)
+
+
+### Features
+
+* add backlink hover previews ([#768](https://github.com/team-reflect/reflect-open/issues/768)) ([16c8b4f](https://github.com/team-reflect/reflect-open/commit/16c8b4f7b8a5d952391f76a174431b6707604406))
+
+
+### Bug Fixes
+
+* keep notes with many backlinks responsive ([#767](https://github.com/team-reflect/reflect-open/issues/767)) ([4ec5a69](https://github.com/team-reflect/reflect-open/commit/4ec5a694001c7023182a06653c30febdd274465f))
+* **mobile:** show task context grouping ([#769](https://github.com/team-reflect/reflect-open/issues/769)) ([072f3f6](https://github.com/team-reflect/reflect-open/commit/072f3f6519fac652b5bb16a3d7beb7bf97a13f2a))
+* update meowdown to ^0.45.1 ([#759](https://github.com/team-reflect/reflect-open/issues/759)) ([6e0f159](https://github.com/team-reflect/reflect-open/commit/6e0f1593236dffcf3b8302cd898e4903c72a4762))
+* update meowdown to ^0.46.0 ([#766](https://github.com/team-reflect/reflect-open/issues/766)) ([a2edb38](https://github.com/team-reflect/reflect-open/commit/a2edb38deb2547df8566f378d4ffd62ee671609b))
+
+## [0.6.0-beta.11](https://github.com/team-reflect/reflect-open/compare/v0.6.0-beta.10...v0.6.0-beta.11) (2026-07-12)
+
+
+### Features
+
+* add Claude Sonnet 5 to AI chat ([#762](https://github.com/team-reflect/reflect-open/issues/762)) ([5e9f277](https://github.com/team-reflect/reflect-open/commit/5e9f277aa4db140b3a58e544d8072f9e2cb5cece))
+
+## [0.6.0-beta.10](https://github.com/team-reflect/reflect-open/compare/v0.6.0-beta.9...v0.6.0-beta.10) (2026-07-12)
+
+
+### Features
+
+* add GPT-5.6 models to AI chat ([#760](https://github.com/team-reflect/reflect-open/issues/760)) ([7fd7826](https://github.com/team-reflect/reflect-open/commit/7fd782627c9408b6aaac04357b7cc5ab53a9cf2c))
+
+
+### Bug Fixes
+
+* **desktop:** soften the sidebar resize handle hover ([#753](https://github.com/team-reflect/reflect-open/issues/753)) ([9a3b3ad](https://github.com/team-reflect/reflect-open/commit/9a3b3ad510e6d29d7336a8a5f4a322aff4335391))
+* scroll to the caret when it sits on a backlink ([#758](https://github.com/team-reflect/reflect-open/issues/758)) ([1b29144](https://github.com/team-reflect/reflect-open/commit/1b29144f1b981235fda47823738eba0c1e796472))
+
+## [0.6.0-beta.9](https://github.com/team-reflect/reflect-open/compare/v0.6.0-beta.8...v0.6.0-beta.9) (2026-07-11)
+
+
+### Features
+
+* **desktop:** drag to resize the sidebar and context panel ([#751](https://github.com/team-reflect/reflect-open/issues/751)) ([1b448a2](https://github.com/team-reflect/reflect-open/commit/1b448a245dfa85a16ebf142c7fdf67007171837f))
+
+
+### Bug Fixes
+
+* backlink audio memos and links from daily notes ([#745](https://github.com/team-reflect/reflect-open/issues/745)) ([98eb22f](https://github.com/team-reflect/reflect-open/commit/98eb22f4eff8372b1d777836067c56940c7411a5))
+* make sidebar toggling keyboard-first ([#749](https://github.com/team-reflect/reflect-open/issues/749)) ([276906e](https://github.com/team-reflect/reflect-open/commit/276906e01acba961d6fe334db39163f4806c7818))
+* update meowdown to ^0.44.1 ([#743](https://github.com/team-reflect/reflect-open/issues/743)) ([d47005a](https://github.com/team-reflect/reflect-open/commit/d47005a55b16c256cd2906052132e0d8d7ce8e6b))
+
+## [0.6.0-beta.8](https://github.com/team-reflect/reflect-open/compare/v0.6.0-beta.7...v0.6.0-beta.8) (2026-07-11)
+
+
+### Features
+
+* **desktop:** open note references in new windows ([#731](https://github.com/team-reflect/reflect-open/issues/731)) ([05432b8](https://github.com/team-reflect/reflect-open/commit/05432b81511ccd753b160d5a9c5cfcd144633a10))
+
+
+### Bug Fixes
+
+* harden cross-device title resolution ([#744](https://github.com/team-reflect/reflect-open/issues/744)) ([25edd7e](https://github.com/team-reflect/reflect-open/commit/25edd7ece954e2dadbc4421311f94783b04741d7))
+* highlight note titles in mobile search ([#733](https://github.com/team-reflect/reflect-open/issues/733)) ([c0a2e03](https://github.com/team-reflect/reflect-open/commit/c0a2e03c6dff95bea1fe5ee0017ef2604c65ed31))
+* keep Return-created tasks in their groups ([#727](https://github.com/team-reflect/reflect-open/issues/727)) ([ec47836](https://github.com/team-reflect/reflect-open/commit/ec47836975fdced5547310225a8c4183f31b4246))
+* prevent emoji title loss and link duplicates ([#696](https://github.com/team-reflect/reflect-open/issues/696)) ([eeeb4de](https://github.com/team-reflect/reflect-open/commit/eeeb4de38676c0692fb07960a30f541e82aa843c))
+* restore mobile checklist and task toolbar cycle ([#730](https://github.com/team-reflect/reflect-open/issues/730)) ([76e02b1](https://github.com/team-reflect/reflect-open/commit/76e02b17d82cc2b1d25c485fc10560d09c81dc32))
+
 ## [0.6.0-beta.7](https://github.com/team-reflect/reflect-open/compare/v0.6.0-beta.6...v0.6.0-beta.7) (2026-07-11)
 
 

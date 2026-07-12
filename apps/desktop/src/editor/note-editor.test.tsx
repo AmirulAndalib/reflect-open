@@ -28,7 +28,10 @@ interface CapturedEditorProps {
   onFileClick?: (payload: { href: string; name: string; event: MouseEvent | KeyboardEvent }) => void
 }
 
-const captured = vi.hoisted(() => ({ props: null as CapturedEditorProps | null }))
+const captured = vi.hoisted(() => ({
+  props: null as CapturedEditorProps | null,
+  hoverRenderer: null as unknown,
+}))
 
 /** The stub editor `useEditor` hands `EditorInputTraits` (see the mock below). */
 const editorStub = vi.hoisted(() => ({
@@ -55,6 +58,10 @@ vi.mock('@/lib/windows/open-in-new-window', async (importOriginal) => ({
 // `useEditor` backs `EditorInputTraits` (mounted inside the editor).
 vi.mock('@meowdown/react', () => ({
   useEditor: () => editorStub,
+  WikilinkHoverCard: ({ children }: { children: unknown }) => {
+    captured.hoverRenderer = children
+    return <div data-testid="wikilink-hover-card" />
+  },
   MeowdownEditor: (props: CapturedEditorProps) => {
     captured.props = props
     return (
@@ -124,6 +131,7 @@ function firePointer(element: Element, type: string, init: Record<string, unknow
 
 beforeEach(() => {
   captured.props = null
+  captured.hoverRenderer = null
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     writable: true,
@@ -161,6 +169,21 @@ describe('NoteEditor markdown syntax mode', () => {
   it('passes an explicit markdown syntax mode to meowdown', () => {
     render(<NoteEditor initialContent="" markMode="show" />)
     expect(captured.props?.mode).toBe('show')
+  })
+})
+
+describe('NoteEditor wiki-link hover card', () => {
+  it('does not mount the optional card without a host renderer', () => {
+    render(<NoteEditor initialContent="" />)
+    expect(screen.queryByTestId('wikilink-hover-card')).toBeNull()
+  })
+
+  it('mounts the card with the host renderer as its body resolver', () => {
+    const renderer = async (): Promise<ReactNode> => null
+    render(<NoteEditor initialContent="" renderWikilinkHoverCard={renderer} />)
+
+    expect(screen.getByTestId('wikilink-hover-card')).toBeInTheDocument()
+    expect(captured.hoverRenderer).toBe(renderer)
   })
 })
 

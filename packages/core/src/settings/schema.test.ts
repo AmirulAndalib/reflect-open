@@ -10,6 +10,8 @@ describe('settingsSchema', () => {
       editorBulletAfterHeading: true,
       editorTextSize: 'small',
       editorFullWidth: false,
+      sidebarWidth: 260,
+      contextSidebarWidth: 320,
       semanticSearchEnabled: false,
       describeAssets: true,
       contactsEnabled: false,
@@ -35,6 +37,8 @@ describe('settingsSchema', () => {
     expect(DEFAULT_SETTINGS.editorBulletAfterHeading).toBe(true)
     expect(DEFAULT_SETTINGS.editorTextSize).toBe('small')
     expect(DEFAULT_SETTINGS.editorFullWidth).toBe(false)
+    expect(DEFAULT_SETTINGS.sidebarWidth).toBe(260)
+    expect(DEFAULT_SETTINGS.contextSidebarWidth).toBe(320)
     expect(DEFAULT_SETTINGS.semanticSearchEnabled).toBe(false)
     expect(DEFAULT_SETTINGS.describeAssets).toBe(true)
     expect(DEFAULT_SETTINGS.contactsEnabled).toBe(false)
@@ -73,6 +77,11 @@ describe('settingsSchema', () => {
     expect(settingsSchema.parse({ editorTextSize: 'large' }).editorTextSize).toBe('large')
     expect(settingsSchema.parse({ editorFullWidth: false }).editorFullWidth).toBe(false)
     expect(settingsSchema.parse({ editorFullWidth: true }).editorFullWidth).toBe(true)
+    expect(settingsSchema.parse({ sidebarWidth: 300 }).sidebarWidth).toBe(300)
+    expect(settingsSchema.parse({ sidebarWidth: 200 }).sidebarWidth).toBe(200)
+    expect(settingsSchema.parse({ sidebarWidth: 480 }).sidebarWidth).toBe(480)
+    expect(settingsSchema.parse({ contextSidebarWidth: 360 }).contextSidebarWidth).toBe(360)
+    expect(settingsSchema.parse({ contextSidebarWidth: 240 }).contextSidebarWidth).toBe(240)
     expect(settingsSchema.parse({ theme: 'dark' }).theme).toBe('dark')
     expect(settingsSchema.parse({ theme: 'light' }).theme).toBe('light')
     expect(settingsSchema.parse({ theme: 'system' }).theme).toBe('system')
@@ -119,6 +128,15 @@ describe('settingsSchema', () => {
     expect(settingsSchema.parse({ editorTextSize: 3 }).editorTextSize).toBe('small')
     expect(settingsSchema.parse({ editorFullWidth: 'yes' }).editorFullWidth).toBe(false)
     expect(settingsSchema.parse({ editorFullWidth: 1 }).editorFullWidth).toBe(false)
+    expect(settingsSchema.parse({ sidebarWidth: 'wide' }).sidebarWidth).toBe(260)
+    // Out-of-range numbers clamp instead of resetting: a near-miss hand-edit
+    // keeps its intent.
+    expect(settingsSchema.parse({ sidebarWidth: 100 }).sidebarWidth).toBe(200)
+    expect(settingsSchema.parse({ sidebarWidth: 9000 }).sidebarWidth).toBe(480)
+    expect(settingsSchema.parse({ sidebarWidth: 315.4 }).sidebarWidth).toBe(315)
+    expect(settingsSchema.parse({ contextSidebarWidth: 'wide' }).contextSidebarWidth).toBe(320)
+    expect(settingsSchema.parse({ contextSidebarWidth: 100 }).contextSidebarWidth).toBe(240)
+    expect(settingsSchema.parse({ contextSidebarWidth: 9000 }).contextSidebarWidth).toBe(480)
     expect(settingsSchema.parse({ theme: 'sepia' }).theme).toBe('system')
     expect(settingsSchema.parse({ theme: 7 }).theme).toBe('system')
     expect(settingsSchema.parse({ timeFormat: '36h' }).timeFormat).toBe('12h')
@@ -162,6 +180,8 @@ describe('settingsSchema', () => {
       editorBulletAfterHeading: true,
       editorTextSize: 'small',
       editorFullWidth: false,
+      sidebarWidth: 260,
+      contextSidebarWidth: 320,
       semanticSearchEnabled: false,
       describeAssets: true,
       contactsEnabled: false,

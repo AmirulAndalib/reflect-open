@@ -6,11 +6,20 @@ import type { ReactNode } from 'react'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { IncomingBacklinks } from './incoming-backlinks'
 
-const getBacklinksWithContext = vi.hoisted(() => vi.fn())
+const { getBacklinksWithContext, getBacklinksPage } = vi.hoisted(() => {
+  const getBacklinksWithContext = vi.fn()
+  const getBacklinksPage = vi.fn(async (path: string, options: unknown) => {
+    const result: unknown = await getBacklinksWithContext(path, options)
+    return Array.isArray(result)
+      ? { contexts: result, nextCursor: null, indexedLinkCount: result.length }
+      : result
+  })
+  return { getBacklinksWithContext, getBacklinksPage }
+})
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
-  getBacklinksWithContext,
+  getBacklinksWithContext: getBacklinksPage,
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
@@ -40,6 +49,7 @@ function renderSection(path: string) {
 beforeEach(() => {
   window.sessionStorage.clear()
   getBacklinksWithContext.mockReset()
+  getBacklinksPage.mockClear()
 })
 
 describe('IncomingBacklinks', () => {

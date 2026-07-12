@@ -14,6 +14,9 @@ export {
   getBacklinksWithContext,
   type Backlink,
   type BacklinkContext,
+  type BacklinkContextPage,
+  type BacklinkContextPageOptions,
+  type BacklinkSourceCursor,
 } from './queries-backlinks'
 export { getCompletedTasks, getOpenTasks, type OpenTask } from './queries-tasks'
 export {

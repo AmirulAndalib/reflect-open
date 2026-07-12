@@ -4,6 +4,7 @@ import {
   appendBlock,
   appendTaskLine,
   appendTaskToContext,
+  appendUnderBacklinkedHeading,
   appendUnderHeading,
   clearTaskDueDate,
   editTaskLine,
@@ -57,6 +58,49 @@ describe('appendUnderHeading', () => {
 
   it('matches the heading case-insensitively', () => {
     expect(appendUnderHeading(doc, 'a', '- new')).toBe('# A\n\nalpha\n\n- new\n\n# B\n\nbeta')
+  })
+})
+
+describe('appendUnderBacklinkedHeading', () => {
+  it('creates a linked H2 section when the category is missing', () => {
+    expect(appendUnderBacklinkedHeading('morning notes\n', 'Links', '- [[Article]]')).toBe(
+      'morning notes\n\n## [[Links]]\n\n- [[Article]]\n',
+    )
+  })
+
+  it('appends to an existing linked section without duplicating it', () => {
+    const source = '## [[Links]]\n\n- [[Old]]\n\n## Other\n\ntext\n'
+    expect(appendUnderBacklinkedHeading(source, 'Links', '- [[New]]')).toBe(
+      '## [[Links]]\n\n- [[Old]]\n\n- [[New]]\n\n## Other\n\ntext\n',
+    )
+  })
+
+  it('matches a linked target case-insensitively and preserves its alias', () => {
+    const source = '## [[LINKS|Saved links]]\n\n- [[Old]]\n'
+    expect(appendUnderBacklinkedHeading(source, 'Links', '- [[New]]')).toBe(
+      '## [[LINKS|Saved links]]\n\n- [[Old]]\n\n- [[New]]\n',
+    )
+  })
+
+  it('upgrades a legacy plain section in place and preserves its content', () => {
+    const source = 'intro\n\n## links\n\n- [[Old]]\n\n## Other\n\ntext\n'
+    expect(appendUnderBacklinkedHeading(source, 'Links', '- [[New]]')).toBe(
+      'intro\n\n## [[Links]]\n\n- [[Old]]\n\n- [[New]]\n\n## Other\n\ntext\n',
+    )
+  })
+
+  it('does not mistake escaped literal brackets for a linked heading', () => {
+    const source = '## \\[[Links]]\n\nliteral brackets\n'
+    expect(appendUnderBacklinkedHeading(source, 'Links', '- [[New]]')).toBe(
+      '## \\[[Links]]\n\nliteral brackets\n\n## [[Links]]\n\n- [[New]]\n',
+    )
+  })
+
+  it('preserves a user-authored plain heading at another level', () => {
+    const source = '# Links\n\ntitle-like content\n'
+    expect(appendUnderBacklinkedHeading(source, 'Links', '- [[New]]')).toBe(
+      '# Links\n\ntitle-like content\n\n## [[Links]]\n\n- [[New]]\n',
+    )
   })
 })
 

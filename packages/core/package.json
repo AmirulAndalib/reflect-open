@@ -13,9 +13,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.87",
+    "@ai-sdk/anthropic": "^3.0.96",
     "@ai-sdk/google": "^3.0.84",
-    "@ai-sdk/openai": "^3.0.75",
+    "@ai-sdk/openai": "^3.0.84",
     "@lezer/common": "^1.5.2",
     "@lezer/markdown": "^1.6.4",
     "@reflect/db": "workspace:*",
@@ -28,8 +28,6 @@
   },
   "devDependencies": {
     "@ai-sdk/provider": "^3.0.11",
-    "@types/better-sqlite3": "^7.6.13",
-    "better-sqlite3": "^12.11.1",
     "jsdom": "^29.1.1",
     "sqlite-vec": "^0.1.9",
     "typescript": "~6.0.3",

@@ -2,10 +2,11 @@ import type { SyntaxNode } from '@lezer/common'
 import { parseNote } from './extract'
 import { splitFrontmatter } from './frontmatter'
 import { parseBody } from './grammar'
+import { foldKey } from './keys'
 import { normalizeWikiTarget } from './resolve'
 import { scanInlineWikiLinks } from './scan'
 import { parseTaskMarker } from './task-marker'
-import type { Heading, TaskMarker } from './model'
+import type { Heading, TaskMarker, WikiLink } from './model'
 
 /**
  * Source-level edit helpers (Plan 03). These splice the original string by node
@@ -348,14 +349,140 @@ export function appendUnderHeading(source: string, heading: string, block: strin
   const target = headings.find((candidate) => candidate.text.toLowerCase() === headingKey)
 
   if (!target) {
-    const base = source.replace(/\s*$/, '')
-    const prefix = base.length > 0 ? `${base}\n\n` : ''
-    return `${prefix}## ${heading.trim()}\n\n${block}\n`
+    return appendHeadingSection(source, heading, block)
   }
 
+  return appendAtHeading(source, headings, target, block)
+}
+
+function appendHeadingSection(source: string, heading: string, block: string): string {
+  const base = source.replace(/\s*$/, '')
+  const prefix = base.length > 0 ? `${base}\n\n` : ''
+  return `${prefix}## ${heading.trim()}\n\n${block}\n`
+}
+
+function appendAtHeading(
+  source: string,
+  headings: Heading[],
+  target: Heading,
+  block: string,
+): string {
   const sectionEnd = nextSectionStart(headings, target, source.length)
   const head = source.slice(0, sectionEnd).replace(/\s*$/, '')
   const tail = source.slice(sectionEnd)
   const inserted = `${head}\n\n${block}`
   return tail ? `${inserted}\n\n${tail}` : `${inserted}\n`
+}
+
+/** The target when a heading consists entirely of one parsed wiki link. */
+function linkedHeadingTarget(
+  source: string,
+  heading: Heading,
+  wikiLinks: readonly WikiLink[],
+): string | null {
+  const raw = source.slice(heading.from, heading.to)
+  const firstLine = raw.slice(0, raw.indexOf('\n') === -1 ? raw.length : raw.indexOf('\n'))
+  const content = firstLine
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/, '')
+    .replace(/[ \t]+#+[ \t]*$/, '')
+    .trim()
+  const match = /^\[\[\s*([^\]|\r\n]+?)\s*(?:\|[^\]\r\n]*)?\]\]$/.exec(content)
+  const textTarget = match?.[1]?.trim()
+  if (textTarget === undefined || textTarget === '') {
+    return null
+  }
+  const parsedLink = wikiLinks.find(
+    (link) =>
+      link.from >= heading.from &&
+      link.to <= heading.to &&
+      foldKey(link.target) === foldKey(textTarget),
+  )
+  return parsedLink?.target ?? null
+}
+
+/**
+ * Whether `heading` names `title` either as a linked heading (`## [[Links]]`)
+ * or as the legacy plain form (`## Links`). A linked heading's target, rather
+ * than its display alias, identifies the section.
+ */
+export function headingMatchesBacklinkedTitle(
+  source: string,
+  heading: Heading,
+  wikiLinks: readonly WikiLink[],
+  title: string,
+): boolean {
+  return foldKey(linkedHeadingTarget(source, heading, wikiLinks) ?? heading.text) === foldKey(title)
+}
+
+function matchingBacklinkedHeading(
+  source: string,
+  headings: readonly Heading[],
+  wikiLinks: readonly WikiLink[],
+  titles: readonly string[],
+): Heading | undefined {
+  const matches = headings.filter((heading) =>
+    heading.level === 2 &&
+    titles.some((title) => headingMatchesBacklinkedTitle(source, heading, wikiLinks, title)),
+  )
+  return (
+    matches.find((heading) => linkedHeadingTarget(source, heading, wikiLinks) !== null) ?? matches[0]
+  )
+}
+
+/**
+ * Add the missing wiki link to an existing legacy `## Title` section heading.
+ * Missing or already-linked sections are byte-identical no-ops.
+ */
+export function upgradeSectionHeadingBacklink(
+  source: string,
+  title: string,
+  matchingTitles: readonly string[] = [],
+): string {
+  const safeTitle = wikiLinkSafe(title)
+  if (safeTitle === '') {
+    throw new Error('a backlinked heading needs a title')
+  }
+  const { headings, wikiLinks } = parseNote({ path: '', source })
+  const target = matchingBacklinkedHeading(source, headings, wikiLinks, [safeTitle, ...matchingTitles])
+  if (target === undefined || linkedHeadingTarget(source, target, wikiLinks) !== null) {
+    return source
+  }
+  return (
+    source.slice(0, target.from) +
+    `${'#'.repeat(target.level)} [[${safeTitle}]]` +
+    source.slice(target.to)
+  )
+}
+
+/**
+ * Append `block` under a section whose heading is itself a wiki link. New
+ * sections are emitted as `## [[Title]]`; an existing linked heading is reused,
+ * including an aliased display spelling. The old app-generated `## Title` form
+ * is upgraded in place so the next automatic append adds the missing backlink
+ * without splitting one category across duplicate sections.
+ */
+export function appendUnderBacklinkedHeading(
+  source: string,
+  title: string,
+  block: string,
+  matchingTitles: readonly string[] = [],
+): string {
+  const safeTitle = wikiLinkSafe(title)
+  if (safeTitle === '') {
+    throw new Error('a backlinked heading needs a title')
+  }
+  const linkedHeading = `[[${safeTitle}]]`
+  const upgraded = upgradeSectionHeadingBacklink(source, safeTitle, matchingTitles)
+  const { headings, wikiLinks } = parseNote({ path: '', source: upgraded })
+  const target = matchingBacklinkedHeading(
+    upgraded,
+    headings,
+    wikiLinks,
+    [safeTitle, ...matchingTitles],
+  )
+
+  if (target === undefined) {
+    return appendHeadingSection(upgraded, linkedHeading, block)
+  }
+  return appendAtHeading(upgraded, headings, target, block)
 }

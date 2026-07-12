@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react'
 import { ChevronRight } from 'lucide-react'
+import { BacklinkLoadMore } from '@/components/backlink-load-more'
 import { BacklinkSourceGroup } from '@/components/backlink-source-group'
 import { useBacklinkNavigation } from '@/hooks/use-backlink-navigation'
 import { useBacklinkSources } from '@/hooks/use-backlink-sources'
@@ -17,16 +18,25 @@ interface BacklinksPanelProps {
  * dividers between groups. The header toggle collapses the linking lines while the
  * source titles stay visible, and the choice persists for the session
  * across all notes. Ambient and always-available — the associative recall
- * the product is built on — and cheap: one indexed query per visible note
- * ({@link useBacklinkSources}). Renders nothing when the note has no inbound
- * links, but a failed query surfaces as an alert — a failing query means the
- * index is broken, not that the note is unlinked.
+ * the product is built on — and cheap: source-note pages load only as their
+ * shared sentinel approaches the viewport ({@link useBacklinkSources}).
+ * Renders nothing when the note has no inbound links, but a failed query
+ * surfaces as an alert — a failing query means the index is broken, not that
+ * the note is unlinked.
  *
  * Desktop chrome (hover-revealed group chevrons, hover-sized targets); the
  * mobile surfaces render `IncomingBacklinks` over the same data layer.
  */
 export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | null {
-  const { groups, count, isError } = useBacklinkSources(path)
+  const {
+    groups,
+    count,
+    isError,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    loadMore,
+  } = useBacklinkSources(path)
   const [expanded, setExpanded] = useBacklinksExpanded()
   const { openSource, onWikilinkClick, resolveImageUrl } = useBacklinkNavigation()
 
@@ -87,6 +97,14 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
             resolveImageUrl={resolveImageUrl}
           />
         ))}
+        <BacklinkLoadMore
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          isFetchNextPageError={isFetchNextPageError}
+          loadMore={loadMore}
+          className="mt-4"
+          buttonClassName="-ml-2"
+        />
       </div>
     </section>
   )

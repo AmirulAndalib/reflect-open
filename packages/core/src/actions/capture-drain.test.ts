@@ -18,6 +18,8 @@ import {
 } from './capture-harness'
 import type { TextCaptureEnvelope } from './capture-envelope'
 
+const ensureBacklinkTargetMock = vi.hoisted(() => vi.fn())
+
 vi.mock('../graph/commands', () => ({
   captureInboxList: vi.fn(),
   captureInboxRead: vi.fn(),
@@ -39,9 +41,13 @@ vi.mock('../ai/describe-page', async (importOriginal) => ({
 vi.mock('../secrets/keychain', () => ({
   getSecret: vi.fn(),
 }))
+vi.mock('./backlink-target', () => ({
+  ensureBacklinkTarget: ensureBacklinkTargetMock,
+}))
 
 beforeEach(() => {
   wireCaptureMocks()
+  ensureBacklinkTargetMock.mockResolvedValue('Links')
 })
 
 describe('drainCaptureInbox', () => {
@@ -70,8 +76,9 @@ describe('drainCaptureInbox', () => {
     expect(note).toContain(`## Screenshot\n\n![An article](${IDENTITY.assetPath})`)
 
     const daily = files.get(DAILY)
-    expect(daily).toContain('## Links')
+    expect(daily).toContain('## [[Links]]')
     expect(daily).toContain('- [[capture-2026-06-11-153022-845-7c9e|An article]]')
+    expect(ensureBacklinkTargetMock).toHaveBeenCalledWith('Links', 3)
     expect(spool.size).toBe(0)
   })
 
@@ -137,16 +144,111 @@ describe('drainCaptureInbox', () => {
     expect(spool.size).toBe(0)
   })
 
-  it('appends to the existing Links section without duplicating it', async () => {
+  it('upgrades the existing plain Links section without duplicating it', async () => {
     files.set(DAILY, '# plans\n\n## Links\n\n[[capture-2026-06-11-090000-000-0000|Old]]\n')
     addSpool(envelope())
 
     await drain()
 
     const daily = files.get(DAILY) ?? ''
-    expect(daily.match(/## Links/g)).toHaveLength(1)
+    expect(daily.match(/## \[\[Links\]\]/g)).toHaveLength(1)
+    expect(daily).not.toContain('## Links\n')
     expect(daily).toContain('[[capture-2026-06-11-090000-000-0000|Old]]')
     expect(daily).toContain('- [[capture-2026-06-11-153022-845-7c9e|An article]]')
+  })
+
+  it('reuses an existing linked Links section for same-day dedup', async () => {
+    addSpool(
+      envelope({
+        id: '00000000-0000-4000-8000-000000000001',
+        capturedAt: new Date(2026, 5, 11, 9, 30, 0, 0).toISOString(),
+      }),
+    )
+    await drain()
+
+    addSpool(envelope())
+    const outcome = await drain()
+
+    expect(outcome.deduped).toBe(1)
+    const daily = files.get(DAILY) ?? ''
+    expect(daily.match(/## \[\[Links\]\]/g)).toHaveLength(1)
+    expect(daily.match(/capture-2026-06-11-093000-000-0000/g)).toHaveLength(1)
+  })
+
+  it('upgrades a legacy heading even when a same-day recapture is deduplicated', async () => {
+    addSpool(
+      envelope({
+        id: '00000000-0000-4000-8000-000000000001',
+        capturedAt: new Date(2026, 5, 11, 9, 30, 0, 0).toISOString(),
+      }),
+    )
+    await drain()
+    files.set(DAILY, (files.get(DAILY) ?? '').replace('## [[Links]]', '## Links'))
+
+    addSpool(envelope())
+    const outcome = await drain()
+
+    expect(outcome.deduped).toBe(1)
+    expect(files.get(DAILY)).toContain('## [[Links]]')
+    expect(files.get(DAILY)).not.toContain('## Links\n')
+  })
+
+  it('deduplicates across every matching Links section', async () => {
+    addSpool(
+      envelope({
+        id: '00000000-0000-4000-8000-000000000001',
+        capturedAt: new Date(2026, 5, 11, 9, 30, 0, 0).toISOString(),
+      }),
+    )
+    await drain()
+    files.set(DAILY, `## Links\n\n- [[Old]]\n\n${files.get(DAILY) ?? ''}`)
+
+    addSpool(envelope())
+    const outcome = await drain()
+
+    expect(outcome.deduped).toBe(1)
+    expect(files.has(IDENTITY.notePath)).toBe(false)
+  })
+
+  it('keeps the spool retryable when the Links note cannot be ensured', async () => {
+    addSpool(envelope())
+    ensureBacklinkTargetMock.mockRejectedValue({ kind: 'io', message: 'disk full' })
+
+    const outcome = await drain()
+
+    expect(outcome.stopped).toEqual({ reason: 'io', message: 'disk full' })
+    expect(files.size).toBe(0)
+    expect(spool.size).toBe(2)
+  })
+
+  it('uses the current title when the Links note was renamed', async () => {
+    ensureBacklinkTargetMock.mockResolvedValue('Bookmarks')
+    addSpool(envelope())
+
+    await drain()
+
+    expect(files.get(DAILY)).toContain('## [[Bookmarks]]')
+    expect(files.get(DAILY)).not.toContain('## [[Links]]')
+    expect(ensureBacklinkTargetMock).toHaveBeenCalledWith('Links', 3)
+  })
+
+  it('deduplicates captures under a renamed Links heading', async () => {
+    addSpool(
+      envelope({
+        id: '00000000-0000-4000-8000-000000000001',
+        capturedAt: new Date(2026, 5, 11, 9, 30, 0, 0).toISOString(),
+      }),
+    )
+    await drain()
+    files.set(DAILY, (files.get(DAILY) ?? '').replace('[[Links]]', '[[Bookmarks]]'))
+    ensureBacklinkTargetMock.mockResolvedValue('Bookmarks')
+
+    addSpool(envelope())
+    const outcome = await drain()
+
+    expect(outcome.deduped).toBe(1)
+    expect(files.has(IDENTITY.notePath)).toBe(false)
+    expect(files.get(DAILY)).toContain('## [[Bookmarks]]')
   })
 
   it('saves a private-day capture raw, marked skipped', async () => {
