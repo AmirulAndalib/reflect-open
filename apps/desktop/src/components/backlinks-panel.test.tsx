@@ -6,13 +6,22 @@ import type { ReactNode } from 'react'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { BacklinksPanel } from './backlinks-panel'
 
-const getBacklinksWithContext = vi.hoisted(() => vi.fn())
+const { getBacklinksWithContext, getBacklinksPage } = vi.hoisted(() => {
+  const getBacklinksWithContext = vi.fn()
+  const getBacklinksPage = vi.fn(async (path: string, options: unknown) => {
+    const result: unknown = await getBacklinksWithContext(path, options)
+    return Array.isArray(result)
+      ? { contexts: result, nextCursor: null, indexedLinkCount: result.length }
+      : result
+  })
+  return { getBacklinksWithContext, getBacklinksPage }
+})
 const resolveOrCreateNoteWithTitle = vi.hoisted(() => vi.fn())
 const openRouteInNewWindow = vi.hoisted(() => vi.fn<() => Promise<boolean>>())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
-  getBacklinksWithContext,
+  getBacklinksWithContext: getBacklinksPage,
   resolveOrCreateNoteWithTitle,
 }))
 vi.mock('@/providers/graph-provider', () => ({
@@ -47,6 +56,7 @@ function renderPanel(path: string) {
 beforeEach(() => {
   window.sessionStorage.clear()
   getBacklinksWithContext.mockReset()
+  getBacklinksPage.mockClear()
   resolveOrCreateNoteWithTitle.mockReset()
   openRouteInNewWindow.mockReset().mockResolvedValue(true)
 })

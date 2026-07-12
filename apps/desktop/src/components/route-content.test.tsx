@@ -68,7 +68,11 @@ vi.mock('@/editor/note-editor', async () => {
 })
 
 const indexFns = vi.hoisted(() => ({
-  getBacklinksWithContext: vi.fn(async () => []),
+  getBacklinksWithContext: vi.fn(async () => ({
+    contexts: [],
+    nextCursor: null,
+    indexedLinkCount: 0,
+  })),
   relatedNotes: vi.fn(async () => []),
 }))
 vi.mock('@reflect/core', async (importOriginal) => ({

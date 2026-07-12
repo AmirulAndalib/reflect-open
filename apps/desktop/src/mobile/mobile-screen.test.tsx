@@ -107,7 +107,11 @@ vi.mock('@/mobile/haptics', () => ({
 }))
 
 const indexFns = vi.hoisted(() => ({
-  getBacklinksWithContext: vi.fn(async () => []),
+  getBacklinksWithContext: vi.fn(async () => ({
+    contexts: [],
+    nextCursor: null,
+    indexedLinkCount: 0,
+  })),
 }))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),

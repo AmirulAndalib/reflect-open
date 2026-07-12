@@ -1,7 +1,7 @@
 import { useState, type ReactElement } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { WikilinkClickHandler } from '@meowdown/core'
-import { BacklinkSnippetList } from '@/components/backlink-snippet-list'
+import { BacklinkSnippet } from '@/components/backlink-snippet'
 import type { BacklinkSource } from '@/lib/group-backlinks'
 import { cn } from '@/lib/utils'
 
@@ -83,14 +83,18 @@ export function IncomingBacklinkGroup({
       </div>
 
       {expanded ? (
-        <BacklinkSnippetList
-          snippets={source.snippets}
-          notePath={source.path}
-          sourceTitle={source.title}
-          className="space-y-1.5 pb-3"
-          onWikilinkClick={onWikilinkClick}
-          resolveImageUrl={resolveImageUrl}
-        />
+        <div className="space-y-1.5 pb-3">
+          {source.snippets.map((snippet) => (
+            <BacklinkSnippet
+              key={snippet.key}
+              text={snippet.text}
+              notePath={source.path}
+              tasks={snippet.tasks}
+              onWikilinkClick={onWikilinkClick}
+              resolveImageUrl={resolveImageUrl}
+            />
+          ))}
+        </div>
       ) : null}
     </div>
   )
