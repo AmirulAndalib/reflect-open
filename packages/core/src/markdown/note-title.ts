@@ -1,6 +1,8 @@
 import { wikiLinkSafe } from './edit'
 import { scanInlineSegments } from './scan'
 
+// Unlike displayNoteTitle, target derivation scans raw source so wiki links are
+// normalized even inside Markdown syntax such as code spans and autolinks.
 function renderEmbeddedWikiLinks(title: string): string | null {
   let rendered = ''
   let cursor = 0

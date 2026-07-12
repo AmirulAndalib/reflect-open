@@ -7,6 +7,10 @@ describe('displayNoteTitle', () => {
       'Meeting with Ada about Notes',
     )
   })
+
+  it('uses the target when a wiki link has no alias', () => {
+    expect(displayNoteTitle('Meeting with [[Ada Lovelace]]')).toBe('Meeting with Ada Lovelace')
+  })
 })
 
 describe('wikiLinkTargetForTitle', () => {
@@ -16,6 +20,12 @@ describe('wikiLinkTargetForTitle', () => {
 
   it('turns a rich title into valid visible wiki-link text', () => {
     expect(wikiLinkTargetForTitle('Meeting with [[Ada Lovelace|Ada]]')).toBe('Meeting with Ada')
+  })
+
+  it('uses the target when an embedded wiki link has no alias', () => {
+    expect(wikiLinkTargetForTitle('Meeting with [[Ada Lovelace]]')).toBe(
+      'Meeting with Ada Lovelace',
+    )
   })
 
   it('preserves titles without embedded wiki-link source byte-for-byte', () => {

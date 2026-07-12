@@ -442,5 +442,11 @@ mod tests {
             renamed.aliases,
             vec!["Meeting with [[Ada Lovelace|Ada]]", "Meeting with Ada"]
         );
+
+        let already_claimed = parse_note_meta(
+            "notes/meeting.md",
+            "---\naliases: ['Meeting with Ada']\n---\n# Meeting with [[Ada Lovelace|Ada]]\n",
+        );
+        assert_eq!(already_claimed.aliases, vec!["Meeting with Ada"]);
     }
 }
