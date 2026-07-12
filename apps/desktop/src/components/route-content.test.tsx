@@ -1,6 +1,6 @@
 import { act, render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { setBridge } from '@reflect/core'
 import { PaletteProvider, usePalette } from '@/components/command-palette/palette-provider'
@@ -8,6 +8,7 @@ import { flushOpenDocuments } from '@/editor/open-documents'
 import type { NoteEditorHandle } from '@/editor/note-editor'
 import { RouterProvider } from '@/routing/router'
 import type { Route } from '@/routing/route'
+import { setPlatformSurface } from '@/lib/platform-surface'
 import { RouteContent } from './route-content'
 
 /**
@@ -21,6 +22,7 @@ import { RouteContent } from './route-content'
 const editorProbe = vi.hoisted(() => ({
   onChange: null as ((markdown: string) => void) | null,
   focusCalls: [] as string[],
+  hoverRenderer: null as boolean | null,
 }))
 
 vi.mock('@/editor/note-editor', async () => {
@@ -30,11 +32,14 @@ vi.mock('@/editor/note-editor', async () => {
       initialContent,
       onChange,
       handleRef,
+      renderWikilinkHoverCard,
     }: {
       initialContent: string
       onChange: (markdown: string) => void
       handleRef?: (handle: NoteEditorHandle | null) => void
+      renderWikilinkHoverCard?: unknown
     }) => {
+      editorProbe.hoverRenderer = renderWikilinkHoverCard !== undefined
       const markdownRef = useRef(initialContent)
       editorProbe.onChange = (markdown) => {
         markdownRef.current = markdown
@@ -129,6 +134,7 @@ beforeEach(() => {
   writes = []
   editorProbe.onChange = null
   editorProbe.focusCalls.length = 0
+  editorProbe.hoverRenderer = null
   mockInvoke.mockReset()
   mockInvoke.mockImplementation(async (command, args) => {
     if (command === 'note_read') {
@@ -149,6 +155,10 @@ beforeEach(() => {
     }
     return null
   })
+})
+
+afterEach(() => {
+  setPlatformSurface({ touchEditor: false, mobileApp: false })
 })
 
 function PaletteProbe(): ReactElement {
@@ -190,9 +200,20 @@ describe('RouteContent', () => {
     await view.findByLabelText('Editing notes/exist.md')
     expect(view.queryByTestId('daily-stream')).toBeNull()
     expect(view.getByTestId('fake-editor').textContent).toContain('# Hello')
+    expect(editorProbe.hoverRenderer).toBe(true)
 
     // The navigated-to note takes focus on mount.
     await waitFor(() => expect(editorProbe.focusCalls).toContain('focus'))
+    view.unmount()
+  })
+
+  it('omits the wiki-link hover renderer on a touch editor surface', async () => {
+    setPlatformSurface({ touchEditor: true })
+    files['notes/exist.md'] = '# Hello\n'
+    const view = renderRoute({ kind: 'note', path: 'notes/exist.md' })
+
+    await view.findByLabelText('Editing notes/exist.md')
+    expect(editorProbe.hoverRenderer).toBe(false)
     view.unmount()
   })
 
