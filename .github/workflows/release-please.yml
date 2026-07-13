@@ -28,6 +28,7 @@ jobs:
     # whether any release exists.
     outputs:
       release_created: ${{ steps.result.outputs.release_created }}
+      release_available: ${{ steps.result.outputs.release_available }}
       tag_name: ${{ steps.result.outputs.tag_name }}
       release_commit: ${{ steps.result.outputs.release_commit }}
     steps:
@@ -558,6 +559,7 @@ jobs:
           set -euo pipefail
 
           release_created=false
+          release_available=false
           tag_name=""
           release_commit=""
           if [ "$IS_PROMOTION" = "true" ]; then
@@ -597,7 +599,9 @@ jobs:
                 tag_name="$expected_tag"
                 echo "Recovering draft ${expected_tag} created by an earlier promotion attempt."
               else
-                echo "The promoted ${expected_tag} release is already published; no release work remains."
+                release_available=true
+                tag_name="$expected_tag"
+                echo "The promoted ${expected_tag} release is already published; release delivery remains complete."
               fi
             else
               if [ "$STABLE_RELEASE_PR_MERGED" = "true" ]; then
@@ -623,12 +627,15 @@ jobs:
             tag_name="$FIRST_TAG_NAME"
           fi
 
-          if [ "$release_created" = "true" ] && [ -z "$tag_name" ]; then
-            echo "::error::release-please reported a release without a tag"
+          if [ "$release_created" = "true" ]; then
+            release_available=true
+          fi
+          if [ "$release_available" = "true" ] && [ -z "$tag_name" ]; then
+            echo "::error::verified release is missing its tag"
             exit 1
           fi
           if [ "$IS_PROMOTION" = "true" ] && \
-            [ "$release_created" = "true" ] && \
+            [ "$release_available" = "true" ] && \
             [ "$tag_name" != "v${EXPECTED_STABLE_VERSION}" ]; then
             echo "::error::promoted release tag ${tag_name} does not match v${EXPECTED_STABLE_VERSION}"
             exit 1
@@ -661,7 +668,7 @@ jobs:
             fi
           fi
 
-          if [ "$release_created" = "true" ]; then
+          if [ "$release_available" = "true" ]; then
             if [[ ! "$tag_name" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
               echo "::error::release-please returned invalid tag ${tag_name}"
               exit 1
@@ -689,6 +696,7 @@ jobs:
 
           {
             echo "release_created=$release_created"
+            echo "release_available=$release_available"
             echo "tag_name=$tag_name"
             echo "release_commit=$release_commit"
           } >> "$GITHUB_OUTPUT"
@@ -752,14 +760,16 @@ jobs:
         run: node apps/desktop/scripts/release-promotion.mjs "$TAG" "$RELEASE_COMMIT"
 
   # After a stable release, open a single PR that merges master back into next
-  # and advances the beta manifest. A human merges it with a merge commit —
-  # never squash, or the two branches diverge for good. This job does not wait
-  # for publish-release: the code is already on master, and a failed build is
-  # retried via workflow_dispatch.
+  # and advances the beta manifest. `release_available` also stays true when a
+  # promotion rerun verifies an already-published release, so this idempotent
+  # job can recover after an earlier back-merge failure. A human merges it with
+  # a merge commit — never squash, or the two branches diverge for good. This
+  # job does not wait for publish-release: the code is already on master, and a
+  # failed build is retried via workflow_dispatch.
   post-stable:
     name: Open the back-merge PR
     needs: release-please
-    if: github.ref_name == 'master' && needs.release-please.outputs.release_created == 'true'
+    if: github.ref_name == 'master' && needs.release-please.outputs.release_available == 'true'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
