@@ -81,6 +81,7 @@ test('a beta retry only recovers release state for its immutable commit', () => 
 
 test('failed release maintenance gets two bounded automatic retries', () => {
   expect(retryWorkflow).toContain('workflow_run:')
+  expect(retryWorkflow).toContain('# zizmor: ignore[dangerous-triggers]')
   expect(retryWorkflow).toContain('workflows: [Release PR]')
   expect(retryWorkflow).toContain('types: [completed]')
   expect(retryWorkflow).toContain('actions: write')

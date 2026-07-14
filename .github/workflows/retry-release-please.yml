@@ -1,6 +1,9 @@
 name: Retry Release PR
 
 on:
+  # zizmor: ignore[dangerous-triggers]
+  # Release PR only runs on protected-branch pushes, and this workflow never
+  # checks out or executes content from the triggering run.
   workflow_run:
     workflows: [Release PR]
     types: [completed]
