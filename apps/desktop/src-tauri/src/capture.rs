@@ -310,8 +310,14 @@ pub fn capture_inbox_reject(
 
 /// The App Group the iOS share extension spools into. Must match the
 /// `com.apple.security.application-groups` entitlement on the app and the
-/// extension targets (`ios.project.yml`).
-#[cfg(target_os = "ios")]
+/// extension targets (`ios.project.yml`) and `groupId` in
+/// `CaptureInbox.swift`. Debug builds are the dev flavor and use their own
+/// group so a dev install never drains the production app's inbox; the Xcode
+/// debug configuration compiles the Rust dev profile, so `debug_assertions`
+/// tracks the flavor exactly.
+#[cfg(all(target_os = "ios", debug_assertions))]
+const SHARED_GROUP_ID: &str = "group.app.reflect.dev";
+#[cfg(all(target_os = "ios", not(debug_assertions)))]
 const SHARED_GROUP_ID: &str = "group.app.reflect";
 
 /// The envelope spool directory inside the App Group container. The extension
@@ -492,14 +498,17 @@ fn classify_fetch_error(err: reqwest::Error) -> AppError {
 /// can reach arbitrary hosts is this bounded, HTML-only primitive, and the
 /// privacy gate in `@reflect/core` runs before it is ever called.
 #[tauri::command]
-pub async fn capture_meta_fetch(url: String) -> AppResult<String> {
+pub async fn capture_meta_fetch<R: tauri::Runtime>(
+    url: String,
+    app: tauri::AppHandle<R>,
+) -> AppResult<String> {
     if !url.starts_with("https://") && !url.starts_with("http://") {
         return Err(AppError::parse(format!("not an http(s) url: {url}")));
     }
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(5))
         .timeout(META_FETCH_TIMEOUT)
-        .user_agent(concat!("Reflect/", env!("CARGO_PKG_VERSION")))
+        .user_agent(crate::app_user_agent(&app))
         .build()
         .map_err(|err| AppError::io(err.to_string()))?;
     let response = client

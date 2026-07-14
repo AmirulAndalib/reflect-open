@@ -24,8 +24,10 @@ touches a Reflect server, because there isn't one.
 - **Transcription.** Runs against the user's own OpenAI or Gemini key
   (chosen by `pickTranscriptionConfig` in `@reflect/core`; keys in the OS
   keychain via `apps/desktop/src-tauri/src/secrets.rs`). The reconciler
-  (`apps/desktop/src/lib/transcription-reconciler.ts`) writes the transcript
-  into the daily note and retries pending memos in the background.
+  (`apps/desktop/src/lib/transcription-reconciler.ts`) writes a dedicated
+  transcript note, resolves or creates the `Audio memos` category note, and
+  backlinks both from the daily note under `## [[Audio memos]]`. Pending memos
+  retry in the background.
 - **No key configured.** The mic button is disabled with a tooltip pointing
   at Settings — there is no metered fallback tier to fall back to.
 

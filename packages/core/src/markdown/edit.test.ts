@@ -3,6 +3,8 @@ import { parseNote } from './extract'
 import {
   appendBlock,
   appendTaskLine,
+  appendTaskToContext,
+  appendUnderBacklinkedHeading,
   appendUnderHeading,
   clearTaskDueDate,
   editTaskLine,
@@ -56,6 +58,49 @@ describe('appendUnderHeading', () => {
 
   it('matches the heading case-insensitively', () => {
     expect(appendUnderHeading(doc, 'a', '- new')).toBe('# A\n\nalpha\n\n- new\n\n# B\n\nbeta')
+  })
+})
+
+describe('appendUnderBacklinkedHeading', () => {
+  it('creates a linked H2 section when the category is missing', () => {
+    expect(appendUnderBacklinkedHeading('morning notes\n', 'Links', '- [[Article]]')).toBe(
+      'morning notes\n\n## [[Links]]\n\n- [[Article]]\n',
+    )
+  })
+
+  it('appends to an existing linked section without duplicating it', () => {
+    const source = '## [[Links]]\n\n- [[Old]]\n\n## Other\n\ntext\n'
+    expect(appendUnderBacklinkedHeading(source, 'Links', '- [[New]]')).toBe(
+      '## [[Links]]\n\n- [[Old]]\n\n- [[New]]\n\n## Other\n\ntext\n',
+    )
+  })
+
+  it('matches a linked target case-insensitively and preserves its alias', () => {
+    const source = '## [[LINKS|Saved links]]\n\n- [[Old]]\n'
+    expect(appendUnderBacklinkedHeading(source, 'Links', '- [[New]]')).toBe(
+      '## [[LINKS|Saved links]]\n\n- [[Old]]\n\n- [[New]]\n',
+    )
+  })
+
+  it('upgrades a legacy plain section in place and preserves its content', () => {
+    const source = 'intro\n\n## links\n\n- [[Old]]\n\n## Other\n\ntext\n'
+    expect(appendUnderBacklinkedHeading(source, 'Links', '- [[New]]')).toBe(
+      'intro\n\n## [[Links]]\n\n- [[Old]]\n\n- [[New]]\n\n## Other\n\ntext\n',
+    )
+  })
+
+  it('does not mistake escaped literal brackets for a linked heading', () => {
+    const source = '## \\[[Links]]\n\nliteral brackets\n'
+    expect(appendUnderBacklinkedHeading(source, 'Links', '- [[New]]')).toBe(
+      '## \\[[Links]]\n\nliteral brackets\n\n## [[Links]]\n\n- [[New]]\n',
+    )
+  })
+
+  it('preserves a user-authored plain heading at another level', () => {
+    const source = '# Links\n\ntitle-like content\n'
+    expect(appendUnderBacklinkedHeading(source, 'Links', '- [[New]]')).toBe(
+      '# Links\n\ntitle-like content\n\n## [[Links]]\n\n- [[New]]\n',
+    )
   })
 })
 
@@ -179,6 +224,11 @@ describe('editTaskLine', () => {
     expect(editTaskLine(source, indexedTask(source), 'really done')).toBe('+ [x] really done\n')
   })
 
+  it('preserves a CRLF line ending', () => {
+    const source = '+ [ ] old\r\n'
+    expect(editTaskLine(source, indexedTask(source), 'edited')).toBe('+ [ ] edited\r\n')
+  })
+
   it('keeps the indentation and bullet style of a nested item', () => {
     const source = '  + [ ] nested task\n'
     expect(editTaskLine(source, indexedTask(source), 'edited')).toBe('  + [ ] edited\n')
@@ -250,6 +300,69 @@ describe('appendTaskLine', () => {
     const tasks = parseNote({ path: 'n.md', source }).tasks
     expect(tasks).toHaveLength(1)
     expect(tasks[0]!.markerOffset).toBe(markerOffset)
+  })
+})
+
+describe('appendTaskToContext', () => {
+  it('adds a sibling at the end of a nested task context', () => {
+    const source = [
+      '+ StartupToolbox',
+      '  + Reflections',
+      '    + [ ] first',
+      '  + Later',
+      '    + [ ] third',
+      '',
+    ].join('\n')
+    const anchor = parseNote({ path: 'notes/n.md', source }).tasks[0]!
+    const inserted = appendTaskToContext(source, anchor)
+
+    expect(inserted.source).toBe([
+      '+ StartupToolbox',
+      '  + Reflections',
+      '    + [ ] first',
+      '    + [ ] ',
+      '  + Later',
+      '    + [ ] third',
+      '',
+    ].join('\n'))
+    const created = parseNote({ path: 'notes/n.md', source: inserted.source }).tasks.find(
+      (task) => task.markerOffset === inserted.markerOffset,
+    )
+    expect(created?.breadcrumbs).toEqual(['StartupToolbox', 'Reflections'])
+  })
+
+  it('appends after the selected context subtree without reparenting its children', () => {
+    const source = [
+      '+ Group',
+      '  + [ ] parent',
+      '    + [ ] child',
+      '  + [ ] peer',
+      '+ Other',
+      '',
+    ].join('\n')
+    const tasks = parseNote({ path: 'notes/n.md', source }).tasks
+    const inserted = appendTaskToContext(source, tasks[0]!)
+    const nextTasks = parseNote({ path: 'notes/n.md', source: inserted.source }).tasks
+
+    expect(nextTasks.map((task) => ({ text: task.text, breadcrumbs: task.breadcrumbs }))).toEqual([
+      { text: 'parent', breadcrumbs: ['Group'] },
+      { text: 'child', breadcrumbs: ['Group', 'parent'] },
+      { text: 'peer', breadcrumbs: ['Group'] },
+      { text: '', breadcrumbs: ['Group'] },
+    ])
+  })
+
+  it('refuses a task that is no longer nested under a parent list item', () => {
+    const source = '+ [ ] top-level\n'
+    const task = parseNote({ path: 'notes/n.md', source }).tasks[0]!
+    expect(() => appendTaskToContext(source, task)).toThrow(TaskStaleError)
+  })
+
+  it('preserves CRLF line endings around the inserted task', () => {
+    const source = '+ Group\r\n  + [ ] first\r\n'
+    const task = parseNote({ path: 'notes/n.md', source }).tasks[0]!
+    const inserted = appendTaskToContext(source, task)
+    expect(inserted.source).toBe('+ Group\r\n  + [ ] first\r\n  + [ ] \r\n')
   })
 })
 

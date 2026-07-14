@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '../ipc/bridge'
-import { getBacklinks, resolveWikiTarget, searchNotes } from './queries'
+import { getBacklinks, resolveWikiTarget } from './queries'
+import { searchNotes } from './filtered-search'
 import { hashContent } from './hash'
 import { PROJECTION_VERSION } from './indexed-note'
 import {
@@ -48,7 +49,20 @@ beforeEach(() => {
       case 'db_query':
         if (sql.includes('index_meta')) return metaRows
         if (sql.includes('from "assets"')) return [{ note_path: 'notes/a.md' }]
-        if (sql.includes('search_fts')) return [{ path: 'notes/a.md', title: 'A' }]
+        if (sql.includes('search_fts')) {
+          return [
+            {
+              path: 'notes/a.md',
+              title: 'A',
+              daily_date: null,
+              preview: 'Hello',
+              mtime: 5,
+              is_pinned: 0,
+              fts_highlighted_title: 'A',
+              snippet: '\u0001Hello\u0002',
+            },
+          ]
+        }
         if (sql.includes('backlinks')) {
           return [{ source_path: 'notes/b.md', target_raw: 'A', alias: null, pos_from: 0, pos_to: 3 }]
         }
@@ -446,17 +460,20 @@ describe('Kysely → db_query bridge', () => {
     expect(mockInvoke.mock.calls.length).toBe(before)
   })
 
-  it('searchNotes ranks by exact title, bm25, pinned and recency', async () => {
+  it('searchNotes runs the palette ranked query (title match, bm25, pinned, recency)', async () => {
     await searchNotes('hello')
     const query = mockInvoke.mock.calls.find(([cmd]) => cmd === 'db_query')
     const sql = String((query![1] as { sql: string }).sql).toLowerCase()
-    // Same ranked join/order contract as the palette's `searchWithFilters`.
-    expect(sql).toContain('inner join "notes"')
-    expect(sql).toContain('case when "notes"."title_key" =')
+    // searchNotes delegates to `searchWithFilters`, so it emits the palette's
+    // ranked query verbatim — one search path, orderings can't drift.
+    expect(sql).toContain('with "lexical" as materialized')
+    expect(sql).toContain('left join "lexical"')
+    expect(sql).toContain('when "filtered_notes"."title_key" =')
+    expect(sql).toContain(`instr(' ' || "filtered_notes"."title_key"`)
     expect(sql).toContain('bm25(search_fts, 0, 10.0, 1.0)')
-    expect(sql).toContain('"notes"."is_pinned" desc')
-    expect(sql).toContain('"notes"."mtime" desc')
-    expect(sql).toContain('"notes"."path" asc')
+    expect(sql).toContain('"filtered_notes"."is_pinned" desc')
+    expect(sql).toContain('"filtered_notes"."mtime" desc')
+    expect(sql).toContain('"filtered_notes"."path" asc')
   })
 
   it('getBacklinks maps snake_case rows back to camelCase', async () => {

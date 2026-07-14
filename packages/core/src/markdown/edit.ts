@@ -1,8 +1,12 @@
+import type { SyntaxNode } from '@lezer/common'
 import { parseNote } from './extract'
+import { splitFrontmatter } from './frontmatter'
+import { parseBody } from './grammar'
+import { foldKey } from './keys'
 import { normalizeWikiTarget } from './resolve'
 import { scanInlineWikiLinks } from './scan'
 import { parseTaskMarker } from './task-marker'
-import type { Heading, TaskMarker } from './model'
+import type { Heading, TaskMarker, WikiLink } from './model'
 
 /**
  * Source-level edit helpers (Plan 03). These splice the original string by node
@@ -96,8 +100,9 @@ export function editTaskLine(source: string, task: TaskMarker, content: string):
   }
   const newline = source.indexOf('\n', offset)
   const lineEnd = newline === -1 ? source.length : newline
+  const contentEnd = lineEnd > offset && source[lineEnd - 1] === '\r' ? lineEnd - 1 : lineEnd
   const rewritten = text.length > 0 ? `${marker} ${text}` : marker
-  return source.slice(0, offset) + rewritten + source.slice(lineEnd)
+  return source.slice(0, offset) + rewritten + source.slice(contentEnd)
 }
 
 /**
@@ -128,6 +133,80 @@ export function appendTaskLine(source: string): { source: string; markerOffset: 
   const base = source.replace(/\s*$/, '')
   const prefix = base.length > 0 ? `${base}\n+ ` : '+ '
   return { source: `${prefix}[ ] \n`, markerOffset: prefix.length }
+}
+
+function taskNodeAt(body: string, markerOffset: number): SyntaxNode | null {
+  let node: SyntaxNode | null = parseBody(body).resolve(markerOffset, 1)
+  while (node !== null && node.name !== 'Task') {
+    node = node.parent
+  }
+  return node
+}
+
+function nearestParentListItem(taskNode: SyntaxNode): SyntaxNode | null {
+  const ownItem = taskNode.parent
+  if (ownItem?.name !== 'ListItem') {
+    return null
+  }
+  for (let ancestor = ownItem.parent; ancestor !== null; ancestor = ancestor.parent) {
+    if (ancestor.name === 'ListItem') {
+      return ancestor
+    }
+  }
+  return null
+}
+
+function insertionLineEnding(source: string, insertionOffset: number): '\r\n' | '\n' {
+  if (source.startsWith('\r\n', insertionOffset)) {
+    return '\r\n'
+  }
+  if (source[insertionOffset] === '\n') {
+    return '\n'
+  }
+  const previousNewline = source.lastIndexOf('\n', insertionOffset - 1)
+  return previousNewline > 0 && source[previousNewline - 1] === '\r' ? '\r\n' : '\n'
+}
+
+/**
+ * Add an empty task to the end of `task`'s nearest parent-list context. The new
+ * line reuses the task's exact indentation and round-list prefix, so parsing it
+ * yields the same ancestor breadcrumbs. The indexed marker is relocated through
+ * the normal stale guard first; a task that no longer has a parent context is
+ * refused rather than silently appended at the note root.
+ */
+export function appendTaskToContext(
+  source: string,
+  task: TaskMarker,
+): {
+  source: string
+  markerOffset: number
+  anchorOffset: number
+  insertionOffset: number
+} {
+  const locatedOffset = locateTaskMarker(source, task.markerOffset, task.raw)
+  const { body, bodyOffset } = splitFrontmatter(source)
+  const taskNode = taskNodeAt(body, locatedOffset - bodyOffset)
+  const contextItem = taskNode === null ? null : nearestParentListItem(taskNode)
+  if (contextItem === null) {
+    throw new TaskStaleError('task no longer has a parent list context')
+  }
+
+  const contextEnd = bodyOffset + contextItem.to
+  // Lezer's CRLF ranges end between `\r` and `\n`; splice before the pair so
+  // the inserted line cannot inherit a lone LF at either boundary.
+  const insertionOffset =
+    source[contextEnd - 1] === '\r' && source[contextEnd] === '\n' ? contextEnd - 1 : contextEnd
+  const lineStart = source.lastIndexOf('\n', locatedOffset - 1) + 1
+  const linePrefix = source.slice(lineStart, locatedOffset)
+  const lineEnding = insertionLineEnding(source, insertionOffset)
+  const trailingLineEnding = insertionOffset === source.length ? lineEnding : ''
+  const inserted = `${lineEnding}${linePrefix}[ ] ${trailingLineEnding}`
+  return {
+    source: source.slice(0, insertionOffset) + inserted + source.slice(insertionOffset),
+    markerOffset: insertionOffset + lineEnding.length + linePrefix.length,
+    anchorOffset: locatedOffset,
+    insertionOffset,
+  }
 }
 
 /**
@@ -270,14 +349,140 @@ export function appendUnderHeading(source: string, heading: string, block: strin
   const target = headings.find((candidate) => candidate.text.toLowerCase() === headingKey)
 
   if (!target) {
-    const base = source.replace(/\s*$/, '')
-    const prefix = base.length > 0 ? `${base}\n\n` : ''
-    return `${prefix}## ${heading.trim()}\n\n${block}\n`
+    return appendHeadingSection(source, heading, block)
   }
 
+  return appendAtHeading(source, headings, target, block)
+}
+
+function appendHeadingSection(source: string, heading: string, block: string): string {
+  const base = source.replace(/\s*$/, '')
+  const prefix = base.length > 0 ? `${base}\n\n` : ''
+  return `${prefix}## ${heading.trim()}\n\n${block}\n`
+}
+
+function appendAtHeading(
+  source: string,
+  headings: Heading[],
+  target: Heading,
+  block: string,
+): string {
   const sectionEnd = nextSectionStart(headings, target, source.length)
   const head = source.slice(0, sectionEnd).replace(/\s*$/, '')
   const tail = source.slice(sectionEnd)
   const inserted = `${head}\n\n${block}`
   return tail ? `${inserted}\n\n${tail}` : `${inserted}\n`
+}
+
+/** The target when a heading consists entirely of one parsed wiki link. */
+function linkedHeadingTarget(
+  source: string,
+  heading: Heading,
+  wikiLinks: readonly WikiLink[],
+): string | null {
+  const raw = source.slice(heading.from, heading.to)
+  const firstLine = raw.slice(0, raw.indexOf('\n') === -1 ? raw.length : raw.indexOf('\n'))
+  const content = firstLine
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/, '')
+    .replace(/[ \t]+#+[ \t]*$/, '')
+    .trim()
+  const match = /^\[\[\s*([^\]|\r\n]+?)\s*(?:\|[^\]\r\n]*)?\]\]$/.exec(content)
+  const textTarget = match?.[1]?.trim()
+  if (textTarget === undefined || textTarget === '') {
+    return null
+  }
+  const parsedLink = wikiLinks.find(
+    (link) =>
+      link.from >= heading.from &&
+      link.to <= heading.to &&
+      foldKey(link.target) === foldKey(textTarget),
+  )
+  return parsedLink?.target ?? null
+}
+
+/**
+ * Whether `heading` names `title` either as a linked heading (`## [[Links]]`)
+ * or as the legacy plain form (`## Links`). A linked heading's target, rather
+ * than its display alias, identifies the section.
+ */
+export function headingMatchesBacklinkedTitle(
+  source: string,
+  heading: Heading,
+  wikiLinks: readonly WikiLink[],
+  title: string,
+): boolean {
+  return foldKey(linkedHeadingTarget(source, heading, wikiLinks) ?? heading.text) === foldKey(title)
+}
+
+function matchingBacklinkedHeading(
+  source: string,
+  headings: readonly Heading[],
+  wikiLinks: readonly WikiLink[],
+  titles: readonly string[],
+): Heading | undefined {
+  const matches = headings.filter((heading) =>
+    heading.level === 2 &&
+    titles.some((title) => headingMatchesBacklinkedTitle(source, heading, wikiLinks, title)),
+  )
+  return (
+    matches.find((heading) => linkedHeadingTarget(source, heading, wikiLinks) !== null) ?? matches[0]
+  )
+}
+
+/**
+ * Add the missing wiki link to an existing legacy `## Title` section heading.
+ * Missing or already-linked sections are byte-identical no-ops.
+ */
+export function upgradeSectionHeadingBacklink(
+  source: string,
+  title: string,
+  matchingTitles: readonly string[] = [],
+): string {
+  const safeTitle = wikiLinkSafe(title)
+  if (safeTitle === '') {
+    throw new Error('a backlinked heading needs a title')
+  }
+  const { headings, wikiLinks } = parseNote({ path: '', source })
+  const target = matchingBacklinkedHeading(source, headings, wikiLinks, [safeTitle, ...matchingTitles])
+  if (target === undefined || linkedHeadingTarget(source, target, wikiLinks) !== null) {
+    return source
+  }
+  return (
+    source.slice(0, target.from) +
+    `${'#'.repeat(target.level)} [[${safeTitle}]]` +
+    source.slice(target.to)
+  )
+}
+
+/**
+ * Append `block` under a section whose heading is itself a wiki link. New
+ * sections are emitted as `## [[Title]]`; an existing linked heading is reused,
+ * including an aliased display spelling. The old app-generated `## Title` form
+ * is upgraded in place so the next automatic append adds the missing backlink
+ * without splitting one category across duplicate sections.
+ */
+export function appendUnderBacklinkedHeading(
+  source: string,
+  title: string,
+  block: string,
+  matchingTitles: readonly string[] = [],
+): string {
+  const safeTitle = wikiLinkSafe(title)
+  if (safeTitle === '') {
+    throw new Error('a backlinked heading needs a title')
+  }
+  const linkedHeading = `[[${safeTitle}]]`
+  const upgraded = upgradeSectionHeadingBacklink(source, safeTitle, matchingTitles)
+  const { headings, wikiLinks } = parseNote({ path: '', source: upgraded })
+  const target = matchingBacklinkedHeading(
+    upgraded,
+    headings,
+    wikiLinks,
+    [safeTitle, ...matchingTitles],
+  )
+
+  if (target === undefined) {
+    return appendHeadingSection(upgraded, linkedHeading, block)
+  }
+  return appendAtHeading(upgraded, headings, target, block)
 }

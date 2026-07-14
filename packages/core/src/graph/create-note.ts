@@ -1,9 +1,12 @@
 import { ulid } from 'ulidx'
-import { availableNotePath } from '../indexing/note-paths'
 import { upsertFrontmatter } from '../markdown/frontmatter'
 import { slugForTitle } from '../markdown/slug'
-import { writeNote } from './commands'
+import { createNoteIfAbsent } from './commands'
 import { notePath } from './paths'
+import {
+  resolveExistingWikiTarget,
+  type ExistingWikiTargetResolution,
+} from './resolve-existing-wiki-target'
 
 /**
  * Note identity at creation (`docs/readable-filenames.md`): regular notes get
@@ -74,7 +77,84 @@ export async function createNoteWithTitle(
   generation: number,
   body?: string,
 ): Promise<string> {
-  const path = await availableNotePath(slugForTitle(title))
-  await writeNote(path, newNoteSource(title, body), generation)
-  return path
+  const claimed = await claimNotePathForSlug(slugForTitle(title), newNoteSource(title, body), generation)
+  return claimed.path
+}
+
+/** Far beyond any real graph's same-slug population; fail loud instead of spinning. */
+const MAX_CREATE_ATTEMPTS = 1000
+
+/** The outcome of resolving an existing wiki target or safely creating it. */
+export type ResolveOrCreateNoteResult =
+  | { readonly kind: 'resolved'; readonly path: string }
+  | { readonly kind: 'created'; readonly path: string }
+  | { readonly kind: 'ambiguous'; readonly paths: readonly string[] }
+  | { readonly kind: 'unavailable'; readonly paths: readonly string[] }
+
+type ExistingTitleResolution = Exclude<ExistingWikiTargetResolution, { kind: 'missing' }>
+
+/**
+ * Claim the first free path in `slug`'s collision family (`slug.md`, then
+ * `slug-2.md`, …) through the atomic no-clobber create — the one ordinal
+ * convention both create entry points share. `onCollision` runs after each
+ * lost claim; a non-null result short-circuits instead of trying the next
+ * suffix (`resolveOrCreateNoteWithTitle` re-resolves the winner there).
+ */
+async function claimNotePathForSlug(
+  slug: string,
+  source: string,
+  generation: number,
+): Promise<{ kind: 'created'; path: string }>
+async function claimNotePathForSlug(
+  slug: string,
+  source: string,
+  generation: number,
+  onCollision: () => Promise<ExistingTitleResolution | null>,
+): Promise<ResolveOrCreateNoteResult>
+async function claimNotePathForSlug(
+  slug: string,
+  source: string,
+  generation: number,
+  onCollision?: () => Promise<ExistingTitleResolution | null>,
+): Promise<ResolveOrCreateNoteResult> {
+  for (let ordinal = 1; ordinal <= MAX_CREATE_ATTEMPTS; ordinal += 1) {
+    const path = notePath(ordinal === 1 ? slug : `${slug}-${ordinal}`)
+    const outcome = await createNoteIfAbsent(path, source, generation)
+    if (outcome.kind === 'created') {
+      return { kind: 'created', path }
+    }
+    const resolution = (await onCollision?.()) ?? null
+    if (resolution !== null) {
+      return resolution
+    }
+  }
+  throw new Error(`no available note path for slug "${slug}" after ${MAX_CREATE_ATTEMPTS} attempts`)
+}
+
+/**
+ * Resolve a wiki-link title while guarding its title-derived creation path
+ * against a stale per-device index.
+ *
+ * Delegates the read-only decision to {@link resolveExistingWikiTarget}, so
+ * date/title/alias precedence, ambiguity, unavailable files, the bounded disk
+ * fallback, and the final index race check have one implementation. Only a
+ * genuine `missing` result reaches the atomic no-clobber claim. If that claim
+ * loses to a concurrent sync checkout or creator, the winner is resolved
+ * before any suffix is tried.
+ */
+export async function resolveOrCreateNoteWithTitle(
+  title: string,
+  generation: number,
+): Promise<ResolveOrCreateNoteResult> {
+  const existing = await resolveExistingWikiTarget(title, generation)
+  if (existing.kind !== 'missing') {
+    return existing
+  }
+
+  // On a lost claim, re-resolve both projections before considering a
+  // suffix: the winner may be the note this link meant.
+  return claimNotePathForSlug(slugForTitle(title), newNoteSource(title), generation, async () => {
+    const collisionResolution = await resolveExistingWikiTarget(title, generation)
+    return collisionResolution.kind === 'missing' ? null : collisionResolution
+  })
 }

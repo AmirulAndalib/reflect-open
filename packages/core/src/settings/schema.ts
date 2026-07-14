@@ -75,6 +75,62 @@ export type EditorTextSize = z.infer<typeof editorTextSizeSchema>
 export const editorFullWidthSchema = z.boolean().catch(false)
 
 /**
+ * The clamp range for a user-adjustable sidebar width, in CSS pixels. Shared
+ * between the schema (so a hand-edited document can't wreck the layout) and
+ * the drag interaction (so the handle stops where the schema would clamp).
+ */
+export interface SidebarWidthRange {
+  readonly min: number
+  readonly max: number
+  /** The width a fresh install starts from — also the double-click reset target. */
+  readonly fallback: number
+}
+
+/**
+ * The workspace (left) sidebar's range. The minimum keeps the sidebar clear
+ * of the macOS traffic lights, which float over its top-left corner at an
+ * OS-controlled position; the maximum protects the note pane.
+ */
+export const SIDEBAR_WIDTH_RANGE: SidebarWidthRange = { min: 200, max: 480, fallback: 260 }
+
+/**
+ * The contextual (right) panel's range. Its minimum is higher than the
+ * workspace sidebar's because the panel's month calendar needs the room.
+ */
+export const CONTEXT_SIDEBAR_WIDTH_RANGE: SidebarWidthRange = {
+  min: 240,
+  max: 480,
+  fallback: 320,
+}
+
+/** Rounds a width to whole pixels and clamps it into the given range. */
+export function clampSidebarWidth(range: SidebarWidthRange, width: number): number {
+  return Math.min(range.max, Math.max(range.min, Math.round(width)))
+}
+
+function sidebarWidthValueSchema(range: SidebarWidthRange) {
+  return z
+    .number()
+    .catch(range.fallback)
+    .transform((width) => clampSidebarWidth(range, width))
+}
+
+/**
+ * The workspace (left) sidebar's width in CSS pixels, set by dragging its
+ * right edge. Desktop-only — the mobile tree has its own shell and never
+ * reads it. A non-number degrades to the default; an out-of-range number
+ * clamps instead of resetting so a near-miss hand-edit keeps its intent.
+ */
+export const sidebarWidthSchema = sidebarWidthValueSchema(SIDEBAR_WIDTH_RANGE)
+
+/**
+ * The contextual (right) panel's width in CSS pixels, set by dragging its
+ * left edge. Same resilience contract as {@link sidebarWidthSchema};
+ * independent of it because the two panels carry different content densities.
+ */
+export const contextSidebarWidthSchema = sidebarWidthValueSchema(CONTEXT_SIDEBAR_WIDTH_RANGE)
+
+/**
  * The app color theme. `system` (the default) follows the OS preference;
  * `light`/`dark` pin it. Persisted here so the choice survives relaunch.
  */
@@ -356,6 +412,8 @@ export const settingsSchema = z
     editorBulletAfterHeading: editorBulletAfterHeadingSchema,
     editorTextSize: editorTextSizeSchema,
     editorFullWidth: editorFullWidthSchema,
+    sidebarWidth: sidebarWidthSchema,
+    contextSidebarWidth: contextSidebarWidthSchema,
     semanticSearchEnabled: semanticSearchEnabledSchema,
     describeAssets: describeAssetsSchema,
     contactsEnabled: contactsEnabledSchema,

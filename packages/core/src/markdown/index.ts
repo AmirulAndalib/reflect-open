@@ -40,6 +40,7 @@ export {
   appendBlock,
   appendUnderHeading,
   appendTaskLine,
+  appendTaskToContext,
   wikiLinkSafe,
   editTaskLine,
   removeTaskLine,
@@ -63,7 +64,7 @@ export {
   type ConflictSide,
 } from './conflict-markers'
 export { extractEmailFields, foldEmail } from './email-fields'
-export { foldKey, foldTag } from './keys'
+export { foldFallbackTitleKey, foldKey, foldTag } from './keys'
 export { gistBodyHash, gistFilename } from './gist'
 export { slugForTitle } from './slug'
 export { subjectAliases } from './subject-aliases'

@@ -144,6 +144,16 @@ reflect-open/
 └── turbo.json, pnpm-workspace.yaml
 ```
 
+### Related repos
+
+- **Meowdown:** the local checkout lives at `~/repos/meowdown`. Meowdown is the
+  first-party hybrid/live-preview Markdown editor that Reflect uses through
+  `@meowdown/core` and `@meowdown/react`. When investigating editor behavior,
+  markdown round-tripping, keybindings, slash menus, wiki links, task checkboxes,
+  paste/drop handling, or mobile editor quirks, check that repo as well as this
+  one. If the root cause is in Meowdown, fix it there and open the PR against the
+  Meowdown project rather than papering over it in Reflect.
+
 **Design system**
 
 All UI work should follow the Reflect design system documented in [`design-system/readme.md`](design-system/readme.md). Key resources:
@@ -171,7 +181,7 @@ pnpm build            # turbo build pipeline → apps/desktop/dist/
 pnpm tauri build      # Native app bundle, incl. the reflect CLI sidecar
 pnpm release:macos    # Signed + notarized macOS build for distribution (docs/macos-distribution.md)
 pnpm release:macos publish  # The above, then fill and undraft the release-please draft release
-pnpm tauri ios dev "iPhone 17 Pro"  # Run the Tauri iOS target in the simulator (docs/contributing/mobile-simulator.md)
+pnpm tauri:ios:dev "iPhone 17 Pro"  # Run the Tauri iOS target in the simulator (docs/contributing/mobile-simulator.md)
 pnpm release:ios preflight --build-number=123  # Check iOS/TestFlight signing, App Store Connect app record, and upload auth
 pnpm release:ios testflight --build-number=123 --wait  # Build and upload the iOS app to TestFlight
 ```
@@ -179,7 +189,10 @@ pnpm release:ios testflight --build-number=123 --wait  # Build and upload the iO
 **iOS simulator**
 
 The mobile app is the Tauri iOS target of `apps/desktop`, not a separate
-package. Use `pnpm tauri ios dev "iPhone 17 Pro"` from the repo root; list
+package. Use `pnpm tauri:ios:dev "iPhone 17 Pro"` from the repo root (or
+`pnpm tauri:ios:dev --host` for a physical device); debug builds are the dev
+flavor (`app.reflect.ios.dev`, shown as `Reflect Dev`) and need that script's
+config overlay, so do not run plain `tauri ios dev`. List
 available simulator names with `xcrun simctl list devices available`. The first
 run can be quiet while Xcode compiles Rust, Swift plugin code, and native
 dependencies. See `docs/contributing/mobile-simulator.md` before committing

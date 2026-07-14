@@ -136,6 +136,10 @@ export function createBackupController(options: BackupControllerOptions): Backup
   let engine: SyncEngine | null = null
   let unlisten: Unlisten | null = null
   const domDisposers: Array<() => void> = []
+  /** Serializes direct index writes without delaying synchronous file-change fanout. */
+  let remoteIndexTail: Promise<void> = Promise.resolve()
+  /** Invalidates index work that was queued before a controller teardown/restart. */
+  let remoteIndexEpoch = 0
 
   function setState(next: BackupState): void {
     if (disposed) {
@@ -149,6 +153,7 @@ export function createBackupController(options: BackupControllerOptions): Backup
 
   /** The single teardown path — every exit (failure, dispose, restart) takes it. */
   function teardown(): void {
+    remoteIndexEpoch += 1
     engine?.stop()
     engine = null
     unlisten?.()
@@ -159,10 +164,13 @@ export function createBackupController(options: BackupControllerOptions): Backup
     setBackupFlusher(null)
   }
 
-  function onRemoteChanges(changes: ChangedFile[]): void {
+  function onRemoteChanges(changes: ChangedFile[]): void | Promise<void> {
     if (changes.length === 0) {
       return
     }
+    // Capture before fanout: a synchronous subscriber can tear down/restart
+    // the controller, and work from this old merge must remain invalidated.
+    const notificationEpoch = remoteIndexEpoch
     // Pull-applied writes must not depend on the file watcher being up (the
     // launch pull can land before watch start), so consumers are notified
     // directly. The whole batch goes to the local file-changes channel —
@@ -173,17 +181,31 @@ export function createBackupController(options: BackupControllerOptions): Backup
     emitFileChanges(changes)
     const indexable = changes.filter((change) => isNotePath(change.path))
     if (indexGeneration !== null && indexable.length > 0) {
-      void applyIndexChanges(
-        indexable,
-        indexGeneration,
-        undefined,
-        undefined,
-        () => !isMobileSurface() || document.visibilityState !== 'hidden',
-      ).then((mutations) => {
+      const task = remoteIndexTail.then(async () => {
+        // Teardown stops the engine and invalidates work that has not begun.
+        // A landed merge was already fanned out synchronously above; the next
+        // watcher/reconcile pass can rebuild this disposable projection.
+        if (disposed || notificationEpoch !== remoteIndexEpoch) {
+          return
+        }
+        const mutations = await applyIndexChanges(
+          indexable,
+          indexGeneration,
+          undefined,
+          undefined,
+          () => !isMobileSurface() || document.visibilityState !== 'hidden',
+        )
         if (mutations > 0) {
           throttledInvalidateIndexQueries()
         }
       })
+      // Direct index writes remain ordered across retry merges. Their handled
+      // promise is what the engine joins before idle; failure is logged but
+      // never prevents the already-concurrent Git push of Markdown truth.
+      remoteIndexTail = task.catch((cause) => {
+        console.error('pulled-note direct index apply failed:', cause)
+      })
+      return remoteIndexTail
     }
   }
 

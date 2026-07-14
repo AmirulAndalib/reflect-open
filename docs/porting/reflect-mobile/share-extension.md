@@ -96,11 +96,15 @@ There is no API to POST to — the design inverts from *send to server* to
 - **Ingest is foreground-only** (v1 posture, like sync): graph open, window
   focus/online, and `visibilitychange` → visible all schedule the
   relay+drain pass; no background refresh task.
-- **Entitlements are spec-driven**: the entitlement contents live in
-  `ios.project.yml`/`gen/apple/project.yml` (`entitlements.properties`), and
-  xcodegen writes the `.entitlements` files from them — regens (including
-  `tauri ios init`) are idempotent instead of wiping the files to empty
-  dicts, which is what they used to do.
+- **Entitlements are hand-maintained per flavor** (superseding the earlier
+  spec-driven `entitlements.properties` approach): each target commits a
+  release `.entitlements` and a dev `.dev.entitlements`, and
+  `ios.project.yml` selects one per configuration via
+  `CODE_SIGN_ENTITLEMENTS`. There is no xcodegen `entitlements:` block, so
+  regens (including `tauri ios init`) do not touch the files at all; the old
+  wipe-to-empty-dict failure mode cannot recur, and the dev flavor
+  (`app.reflect.ios.dev`, `group.app.reflect.dev`) gets its own capability
+  set.
 - **CI signing must preserve the App Group.** Tauri's App Store Connect
   API-key flow (the TestFlight workflow) archives with signing disabled and
   dummy-signs only the app binary before export; `xcodebuild -exportArchive`

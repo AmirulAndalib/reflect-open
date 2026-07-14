@@ -79,6 +79,14 @@ export interface NoteSessionOptions {
    */
   applyContent: (markdown: string) => void
   /**
+   * Ask the live editor to reconcile pending native input immediately before
+   * persistence. When reconciliation changes the document, the implementation
+   * must deliver that change to {@link NoteSession.editorChanged} synchronously
+   * before returning. A normalized but unchanged snapshot must not be emitted
+   * as an edit.
+   */
+  reconcilePendingEditorInput?: () => void
+  /**
    * Treat a missing file as an empty note on load instead of an error; the
    * file is then created by the first save — Plan 06's lazy daily-note
    * contract: opening a day never litters the graph, writing does. Applies

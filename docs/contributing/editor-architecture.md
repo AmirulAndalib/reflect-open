@@ -13,6 +13,7 @@ NotePane / DailyStream / MobileNote     components — composition only
   │    └─ createNoteSession()           pure document state machine (note-session.ts)
   │         └─ readNote / writeNote     @reflect/core typed commands
   ├─ useWikiLinkNavigation()            [[link]] click → route / create
+  ├─ useWikiLinkHoverPreview()          [[link]] hover → passive local preview
   ├─ useImagePersistence()              paste/drop → assets/ write
   └─ <NoteEditor>                       meowdown + our extensions (note-editor.tsx)
 ```
@@ -136,6 +137,8 @@ editor work must survive pane teardown. The pieces to understand are:
 | `wiki-links.ts` | `[[…]]` chips as view decorations over literal text |
 | `wiki-autocomplete.tsx` / `-entries.ts` | `[[` popover; pure row assembly |
 | `use-wiki-link-navigation.ts` | chip click → resolve → navigate or create |
+| `use-wiki-link-hover-preview.tsx` | desktop chip hover → side-effect-free local preview renderer |
+| `read-existing-note-source.ts` | live open-session content, else generation-pinned disk read |
 | `images.ts` / `use-image-persistence.ts` | image widgets; paste/drop → `assets/` |
 | `keymap.ts` | central shortcut registry (rejects duplicate bindings) |
 

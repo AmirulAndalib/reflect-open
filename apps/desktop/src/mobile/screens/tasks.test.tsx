@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenTask } from '@reflect/core'
+import { makeOpenTask as task } from '@/lib/tasks/open-task-fixture'
 import { resetRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { MobileTasks } from './tasks'
@@ -20,14 +21,14 @@ import { MobileTasks } from './tasks'
 
 const getOpenTasks = vi.hoisted(() => vi.fn())
 const getCompletedTasks = vi.hoisted(() => vi.fn())
-const resolveWikiTarget = vi.hoisted(() => vi.fn())
+const resolveOrCreateNoteWithTitle = vi.hoisted(() => vi.fn())
 const hapticImpactLight = vi.hoisted(() => vi.fn())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   getOpenTasks,
   getCompletedTasks,
-  resolveWikiTarget,
+  resolveOrCreateNoteWithTitle,
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
@@ -132,12 +133,14 @@ const toggleTask = vi.hoisted(() => vi.fn())
 const deleteTask = vi.hoisted(() => vi.fn())
 const editTask = vi.hoisted(() => vi.fn())
 const insertTask = vi.hoisted(() => vi.fn())
+const continueTaskInContext = vi.hoisted(() => vi.fn())
 const convertTaskToBullet = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/note-task', () => ({
   toggleTask,
   deleteTask,
   editTask,
   insertTask,
+  continueTaskInContext,
   convertTaskToBullet,
 }))
 
@@ -172,24 +175,6 @@ vi.mock('@/components/ui/drawer', () => ({
   DrawerContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   DrawerTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
 }))
-
-function task(overrides: Partial<OpenTask> = {}): OpenTask {
-  const text = overrides.text ?? 'do it'
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    raw: `[ ] ${text}`,
-    checked: false,
-    text,
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...overrides,
-  }
-}
 
 /** Narrow a queried element to the editor stub's textarea so `.value` typechecks. */
 function asTextArea(element: HTMLElement): HTMLTextAreaElement {
@@ -226,12 +211,20 @@ beforeEach(() => {
   editTask.mockReset()
   insertTask.mockReset()
   insertTask.mockResolvedValue(0)
+  continueTaskInContext.mockReset()
+  continueTaskInContext.mockResolvedValue({
+    created: { markerOffset: 0, raw: '[ ] ' },
+    offsetChanges: [],
+  })
   convertTaskToBullet.mockReset()
   convertTaskToBullet.mockResolvedValue(undefined)
   startOperation.mockClear()
   fail.mockReset()
-  resolveWikiTarget.mockReset()
-  resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/other.md' })
+  resolveOrCreateNoteWithTitle.mockReset()
+  resolveOrCreateNoteWithTitle.mockResolvedValue({
+    kind: 'resolved',
+    path: 'notes/other.md',
+  })
   hapticImpactLight.mockClear()
   editorProbe.focusCalls = 0
   resetRecentlyCompleted()
@@ -256,6 +249,32 @@ describe('MobileTasks', () => {
     view.getByRole('button', { name: 'N' })
     // Date buckets show the source note's compact date on the row.
     view.getByText('6/1/2026')
+    view.unmount()
+  })
+
+  it('renders one read-only breadcrumb per consecutive task context', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ markerOffset: 2, text: 'first', breadcrumbs: ['Project', 'Release'] }),
+      task({ markerOffset: 20, text: 'second', breadcrumbs: ['Project', 'Release'] }),
+      task({ markerOffset: 40, text: 'third', breadcrumbs: ['Project', 'Later'] }),
+      task({ markerOffset: 60, text: 'fourth', breadcrumbs: ['Project', 'Release'] }),
+    ])
+    const view = renderScreen()
+
+    expect(await view.findAllByText('Project → Release')).toHaveLength(2)
+    expect(view.getAllByText('Project → Later')).toHaveLength(1)
+    expect(view.queryByRole('button', { name: 'Project → Release' })).toBeNull()
+    view.unmount()
+  })
+
+  it('hides a lone generic task breadcrumb', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ markerOffset: 2, text: 'project task', breadcrumbs: ['Tasks:'] }),
+    ])
+    const view = renderScreen()
+
+    await view.findByText('project task')
+    expect(view.queryByText('Tasks:')).toBeNull()
     view.unmount()
   })
 
@@ -706,10 +725,17 @@ describe('MobileTasks', () => {
     const view = renderScreen()
 
     await view.findByText('buy milk')
-    await user.type(view.getByRole('searchbox', { name: 'Search tasks' }), 'milk')
+    const search = view.getByRole('searchbox', { name: 'Search tasks' })
+    await user.type(search, 'milk')
 
     await waitFor(() => expect(view.queryByText('call mum')).toBeNull())
     view.getByText('buy milk')
+
+    await user.click(view.getByRole('button', { name: 'Clear search' }))
+
+    expect((search as HTMLInputElement).value).toBe('')
+    expect(document.activeElement).toBe(search)
+    await view.findByText('call mum')
     view.unmount()
   })
 

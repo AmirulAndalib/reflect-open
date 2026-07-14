@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react'
+import { fireEvent, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,16 +6,30 @@ import type { ReactNode } from 'react'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { BacklinksPanel } from './backlinks-panel'
 
-const getBacklinksWithContext = vi.hoisted(() => vi.fn())
-const resolveWikiTarget = vi.hoisted(() => vi.fn())
+const { getBacklinksWithContext, getBacklinksPage } = vi.hoisted(() => {
+  const getBacklinksWithContext = vi.fn()
+  const getBacklinksPage = vi.fn(async (path: string, options: unknown) => {
+    const result: unknown = await getBacklinksWithContext(path, options)
+    return Array.isArray(result)
+      ? { contexts: result, nextCursor: null, indexedLinkCount: result.length }
+      : result
+  })
+  return { getBacklinksWithContext, getBacklinksPage }
+})
+const resolveOrCreateNoteWithTitle = vi.hoisted(() => vi.fn())
+const openRouteInNewWindow = vi.hoisted(() => vi.fn<() => Promise<boolean>>())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
-  getBacklinksWithContext,
-  resolveWikiTarget,
+  getBacklinksWithContext: getBacklinksPage,
+  resolveOrCreateNoteWithTitle,
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
+}))
+vi.mock('@/lib/windows/open-in-new-window', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/windows/open-in-new-window')>()),
+  openRouteInNewWindow,
 }))
 
 function RouteProbe(): ReactNode {
@@ -42,7 +56,9 @@ function renderPanel(path: string) {
 beforeEach(() => {
   window.sessionStorage.clear()
   getBacklinksWithContext.mockReset()
-  resolveWikiTarget.mockReset()
+  getBacklinksPage.mockClear()
+  resolveOrCreateNoteWithTitle.mockReset()
+  openRouteInNewWindow.mockReset().mockResolvedValue(true)
 })
 
 describe('BacklinksPanel', () => {
@@ -87,7 +103,10 @@ describe('BacklinksPanel', () => {
         tasks: [],
       },
     ])
-    resolveWikiTarget.mockResolvedValue({ kind: 'resolved', ref: 'notes/roadmap.md' })
+    resolveOrCreateNoteWithTitle.mockResolvedValue({
+      kind: 'resolved',
+      path: 'notes/roadmap.md',
+    })
     const view = renderPanel('notes/source.md')
 
     // The [[Roadmap]] source renders as a chip whose label is the bare target,
@@ -142,6 +161,30 @@ describe('BacklinksPanel', () => {
     // A backlink tap must not request focus — on mobile that would raise the
     // keyboard mid-arrival; desktop autofocuses note arrivals on its own.
     expect(view.getByTestId('route').getAttribute('data-focus')).toBe('false')
+    view.unmount()
+  })
+
+  it('opens a ⌘-clicked backlink source in a new window', async () => {
+    getBacklinksWithContext.mockResolvedValue([
+      {
+        sourcePath: 'notes/meeting.md',
+        sourceTitle: 'Meeting Notes',
+        snippet: 'discussed [[Roadmap]] follow-ups',
+        posFrom: 12,
+        tasks: [],
+      },
+    ])
+    const view = renderPanel('notes/roadmap.md')
+
+    fireEvent.click(await view.findByText('Meeting Notes'), { metaKey: true })
+
+    await waitFor(() =>
+      expect(openRouteInNewWindow).toHaveBeenCalledWith({
+        kind: 'note',
+        path: 'notes/meeting.md',
+      }),
+    )
+    expect(view.getByTestId('route').textContent).toContain('"today"')
     view.unmount()
   })
 

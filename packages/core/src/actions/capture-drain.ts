@@ -10,10 +10,16 @@ import {
 } from '../graph/commands'
 import { dailyPath, notePath } from '../graph/paths'
 import { hashContent } from '../indexing/hash'
-import { appendBlock, appendUnderHeading } from '../markdown/edit'
+import {
+  appendBlock,
+  appendUnderBacklinkedHeading,
+  headingMatchesBacklinkedTitle,
+  upgradeSectionHeadingBacklink,
+} from '../markdown/edit'
 import { parseNote } from '../markdown/extract'
 import { parseFrontmatter, splitFrontmatter } from '../markdown/frontmatter'
 import type { ReconcileStop } from './audio-memo'
+import { ensureBacklinkTarget } from './backlink-target'
 import {
   captureFromPath,
   captureIdentity,
@@ -36,8 +42,8 @@ import {
   type CaptureStatus,
 } from './capture-note'
 
-/** Where the daily-note entry lands (`appendUnderHeading` creates it). */
-const LINKS_HEADING = 'Links'
+/** The category note every captured-link section backlinks. */
+const LINKS_NOTE_TITLE = 'Links'
 
 /** Long-edge cap for promoted screenshots (the Rust side re-encodes JPEG). */
 const SCREENSHOT_MAX_DIM = 1600
@@ -75,20 +81,31 @@ interface SameDayCapture {
 
 async function findSameDayCapture(
   dailySource: string,
+  sectionTitles: readonly string[],
   url: string,
   selectionHash: string | undefined,
   generation: number,
 ): Promise<SameDayCapture | null> {
   const { headings, wikiLinks } = parseNote({ path: '', source: dailySource })
-  const links = headings.find((heading) => heading.text.toLowerCase() === LINKS_HEADING.toLowerCase())
-  if (!links) {
+  const linkSections = headings.filter(
+    (heading) =>
+      heading.level === 2 &&
+      sectionTitles.some((title) =>
+        headingMatchesBacklinkedTitle(dailySource, heading, wikiLinks, title),
+      ),
+  )
+  if (linkSections.length === 0) {
     return null
   }
-  const sectionEnd =
-    headings.find((heading) => heading.from > links.from && heading.level <= links.level)?.from ??
-    dailySource.length
+  const ranges = linkSections.map((section) => ({
+    from: section.to,
+    to:
+      headings.find(
+        (heading) => heading.from > section.from && heading.level <= section.level,
+      )?.from ?? dailySource.length,
+  }))
   const targets = wikiLinks
-    .filter((link) => link.from >= links.to && link.from < sectionEnd)
+    .filter((link) => ranges.some((range) => link.from >= range.from && link.from < range.to))
     .map((link) => link.target)
   for (const target of targets) {
     const identity = captureFromPath(notePath(target))
@@ -171,11 +188,13 @@ export async function drainCaptureInbox(
       }
       const fresh = captureIdentity(new Date(envelope.capturedAt), envelope.id)
       const daily = dailyPath(fresh.date)
+      const linksNoteTitle = await ensureBacklinkTarget(LINKS_NOTE_TITLE, input.generation)
       const dailySource = await noteSource(daily, input.generation)
       const selection = envelope.selection?.trim()
       const selectionHash = selection ? await hashContent(selection) : undefined
       const existing = await findSameDayCapture(
         dailySource,
+        [linksNoteTitle, LINKS_NOTE_TITLE],
         envelope.url,
         selectionHash,
         input.generation,
@@ -217,11 +236,13 @@ export async function drainCaptureInbox(
         // daily's link text in step.
         updatedDaily = retitleDailyEntry(updatedDaily, identity.base, existing.title, freshTitle)
       }
+      updatedDaily = upgradeSectionHeadingBacklink(updatedDaily, linksNoteTitle, [LINKS_NOTE_TITLE])
       if (!updatedDaily.includes(`[[${identity.base}`)) {
-        updatedDaily = appendUnderHeading(
+        updatedDaily = appendUnderBacklinkedHeading(
           updatedDaily,
-          LINKS_HEADING,
+          linksNoteTitle,
           `- [[${identity.base}|${freshTitle}]]`,
+          [LINKS_NOTE_TITLE],
         )
       }
       if (updatedDaily !== dailySource) {

@@ -1,7 +1,7 @@
 {
   "name": "@reflect/desktop",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0-beta.17",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,6 +15,7 @@
     "lint:react": "eslint .",
     "tauri": "tauri",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
+    "tauri:ios:dev": "tauri ios dev --config src-tauri/tauri.ios.dev.conf.json",
     "tauri:build:dev": "tauri build --config src-tauri/tauri.dev.conf.json",
     "tauri:build:beta": "tauri build --config src-tauri/tauri.beta.conf.json"
   },
@@ -22,8 +23,8 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "@meowdown/core": "^0.42.1",
-    "@meowdown/react": "^0.42.1",
+    "@meowdown/core": "^0.47.0",
+    "@meowdown/react": "^0.47.0",
     "@reflect/core": "workspace:*",
     "@reflect/db": "workspace:*",
     "@reflect/design-system": "workspace:*",

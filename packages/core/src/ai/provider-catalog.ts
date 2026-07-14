@@ -42,6 +42,9 @@ export const AI_PROVIDERS: NonEmptyArray<AiProviderInfo> = [
     label: 'OpenAI',
     keyPlaceholder: 'sk-…',
     models: [
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', contextWindow: 1_000_000 },
+      { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', contextWindow: 1_000_000 },
+      { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', contextWindow: 1_000_000 },
       { id: 'gpt-5.5', label: 'GPT-5.5', contextWindow: 1_000_000 },
       { id: 'gpt-5.4', label: 'GPT-5.4', contextWindow: 1_000_000 },
       { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini', contextWindow: 400_000 },
@@ -55,6 +58,7 @@ export const AI_PROVIDERS: NonEmptyArray<AiProviderInfo> = [
     models: [
       { id: 'claude-fable-5', label: 'Claude Fable 5', contextWindow: 1_000_000 },
       { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', contextWindow: 1_000_000 },
+      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', contextWindow: 1_000_000 },
       { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', contextWindow: 1_000_000 },
       { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', contextWindow: 200_000 },
     ],

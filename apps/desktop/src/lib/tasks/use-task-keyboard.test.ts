@@ -1,27 +1,11 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type OpenTask } from '@reflect/core'
+import { makeOpenTask as task } from './open-task-fixture'
 import { taskKey } from './task-identity'
 import { type TaskActions } from './use-task-actions'
 import { type TaskSelection } from './use-task-selection'
 import { useTaskKeyboard } from './use-task-keyboard'
-
-function task(over: Partial<OpenTask> = {}): OpenTask {
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    raw: '[ ] do it',
-    checked: false,
-    text: 'do it',
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...over,
-  }
-}
 
 function makeSelection(over: Partial<TaskSelection> = {}): TaskSelection {
   return {
@@ -30,6 +14,7 @@ function makeSelection(over: Partial<TaskSelection> = {}): TaskSelection {
     isSelected: () => false,
     isSoleSelected: () => false,
     clickSelect: vi.fn(),
+    select: vi.fn(),
     selectAll: vi.fn(),
     clear: vi.fn(),
     move: vi.fn(),
@@ -363,6 +348,37 @@ describe('useTaskKeyboard', () => {
       isPinned: true,
       pinnedOrder: 3,
     })
+  })
+
+  it('Return continues a grouped Current row inside its task context', () => {
+    const grouped = task({
+      notePath: 'notes/a.md',
+      noteTitle: 'A',
+      breadcrumbs: ['Project', 'Phase one'],
+      dueDate: '2026-06-15',
+    })
+    const insert = vi.fn().mockResolvedValue(null)
+    const insertAfter = vi.fn().mockResolvedValue(null)
+    const selection = makeSelection({
+      selected: new Set(['grouped']),
+      selectedCount: 1,
+      activeKey: () => 'grouped',
+    })
+    mount({
+      selection,
+      actions: makeActions({ insert, insertAfter }),
+      tasksByKey: new Map([['grouped', grouped]]),
+    })
+
+    press(root, 'Enter')
+    expect(insertAfter).toHaveBeenCalledWith(grouped, null, {
+      notePath: 'notes/a.md',
+      noteTitle: 'A',
+      dailyDate: null,
+      isPinned: false,
+      pinnedOrder: null,
+    })
+    expect(insert).not.toHaveBeenCalled()
   })
 
   it('Return falls to today’s daily when the pivot is no longer selected', () => {

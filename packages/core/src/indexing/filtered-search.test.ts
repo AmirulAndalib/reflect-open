@@ -38,6 +38,7 @@ describe('searchWithFilters', () => {
       {
         path: 'notes/work.md',
         title: 'Work',
+        highlightedTitle: 'Work',
         dailyDate: null,
         snippet: null,
         preview: 'Weekly agenda.',
@@ -102,6 +103,7 @@ describe('searchWithFilters', () => {
       {
         path: 'daily/2026-01-02.md',
         title: '2026-01-02',
+        highlightedTitle: '2026-01-02',
         dailyDate: '2026-01-02',
         snippet: null,
         preview: 'Standup notes.',
@@ -119,7 +121,7 @@ describe('searchWithFilters', () => {
     expect(args['params']).toEqual(['work', 'template', 1, startOfLocalDay('2026-01-01'), 12])
   })
 
-  it('promotes exact title, then bm25, then pinned and recency on text search', async () => {
+  it('promotes title matches, then bm25, pinned and recency on text search', async () => {
     mockInvoke.mockResolvedValueOnce([
       {
         path: 'notes/quokka.md',
@@ -128,6 +130,7 @@ describe('searchWithFilters', () => {
         preview: 'Quokka facts.',
         mtime: 3000,
         is_pinned: 0,
+        fts_highlighted_title: '\u0001Quokka\u0002',
         snippet: 'a …',
       },
     ])
@@ -138,6 +141,7 @@ describe('searchWithFilters', () => {
       {
         path: 'notes/quokka.md',
         title: 'Quokka',
+        highlightedTitle: '\u0001Quokka\u0002',
         dailyDate: null,
         snippet: 'a …',
         preview: 'Quokka facts.',
@@ -149,19 +153,26 @@ describe('searchWithFilters', () => {
     const [command, args] = mockInvoke.mock.calls[0]!
     expect(command).toBe('db_query')
     const sql = String(args['sql']).toLowerCase()
+    expect(sql).toContain('with "lexical" as materialized')
     expect(sql).toContain('search_fts match')
-    // Exact-title rank leads, then title-boosted bm25, then the deterministic
-    // pinned/recency/path tiebreakers — in that order.
-    expect(sql).toContain('case when "notes"."title_key" =')
+    expect(sql).toContain('highlight(search_fts, 1')
+    // Exact/prefix/all-terms title rank leads, then title-boosted bm25 and the
+    // deterministic pinned/recency/path tiebreakers.
+    expect(sql).toContain('when "filtered_notes"."title_key" =')
+    expect(sql).toContain('instr("filtered_notes"."title_key"')
+    // Term needles probe a space-prefixed title key — word-start anchoring.
+    expect(sql).toContain(`instr(' ' || "filtered_notes"."title_key"`)
     expect(sql).toContain('bm25(search_fts, 0, 10.0, 1.0)')
-    expect(sql).toContain('"notes"."is_pinned" desc')
-    expect(sql).toContain('"notes"."mtime" desc')
-    expect(sql).toContain('"notes"."path" asc')
+    expect(sql).toContain('"filtered_notes"."is_pinned" desc')
+    expect(sql).toContain('"filtered_notes"."mtime" desc')
+    expect(sql).toContain('"filtered_notes"."path" asc')
 
     const params = args['params'] as unknown[]
-    // The folded exact-title key and the literal FTS match expression.
+    // The folded exact-title key, the literal FTS match expression, and the
+    // word-start-anchored recall needle.
     expect(params).toContain('quokka')
     expect(params).toContain('"quokka"')
+    expect(params).toContain(' quokka')
   })
 
   it('folds the exact-title key the way titles were indexed', async () => {

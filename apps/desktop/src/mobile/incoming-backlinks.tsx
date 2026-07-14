@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react'
 import { ChevronRight } from 'lucide-react'
+import { BacklinkLoadMore } from '@/components/backlink-load-more'
 import { useBacklinkNavigation } from '@/hooks/use-backlink-navigation'
 import { useBacklinkSources } from '@/hooks/use-backlink-sources'
 import { useBacklinksExpanded } from '@/hooks/use-backlinks-expanded'
@@ -23,12 +24,21 @@ interface IncomingBacklinksProps {
  * storage too). Tapping a source that is a daily note swipes the day carousel
  * to that date — the daily surface stays mounted and follows the route —
  * while other sources open the note screen (without focusing the editor, so
- * the keyboard stays down). Renders nothing when the note has no inbound
- * links; a failed query surfaces as an alert, because a failing query means
- * the index is broken, not that the note is unlinked.
+ * the keyboard stays down). Source-note pages load as the shared sentinel
+ * nears the viewport. Renders nothing when the note has no inbound links; a
+ * failed query surfaces as an alert, because a failing query means the index
+ * is broken, not that the note is unlinked.
  */
 export function IncomingBacklinks({ path, className }: IncomingBacklinksProps): ReactElement | null {
-  const { groups, count, isError } = useBacklinkSources(path)
+  const {
+    groups,
+    count,
+    isError,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    loadMore,
+  } = useBacklinkSources(path)
   const [expanded, setExpanded] = useBacklinksExpanded()
   const { openSource, onWikilinkClick, resolveImageUrl } = useBacklinkNavigation()
 
@@ -82,6 +92,14 @@ export function IncomingBacklinks({ path, className }: IncomingBacklinksProps): 
             resolveImageUrl={resolveImageUrl}
           />
         ))}
+        <BacklinkLoadMore
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          isFetchNextPageError={isFetchNextPageError}
+          loadMore={loadMore}
+          className="py-2"
+          buttonClassName="-ml-2 min-h-11"
+        />
       </div>
     </section>
   )

@@ -35,11 +35,19 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 interface FakeOptions {
   auth?: string | null
+  /** Hold the direct index write until `releaseIndexApply()` (the convergence barrier). */
+  gateIndexApply?: boolean
+  /** Make every direct index write throw (the projection-failure path). */
+  failIndexApply?: boolean
   /** Hold the listen promise until `release()` (the teardown-race window). */
   gateListen?: boolean
   failStatus?: boolean
   /** Scripted `git_merge_remote` outcome (defaults to up-to-date). */
   mergeOutcome?: unknown
+  /** Per-call merge outcomes for retry/convergence tests. */
+  mergeOutcomes?: unknown[]
+  /** Per-call push outcomes for retry/convergence tests. */
+  pushOutcomes?: unknown[]
   /** The graph's origin (defaults to a GitHub HTTPS remote; null = none). */
   remoteUrl?: string | null
   /** Whether the graph already has a repository (defaults to true). */
@@ -63,6 +71,10 @@ function fakeBridge(options: FakeOptions = {}) {
     inProgress: false,
   }
   let releaseListen: (() => void) | null = null
+  let releaseIndexApply: (() => void) | null = null
+  let indexApplyCount = 0
+  const mergeOutcomes = [...(options.mergeOutcomes ?? [])]
+  const pushOutcomes = [...(options.pushOutcomes ?? [])]
   setBridge({
     invoke: async (command, args) => {
       calls.push(command)
@@ -87,9 +99,30 @@ function fakeBridge(options: FakeOptions = {}) {
         case 'git_fetch':
           return { ahead: 0, behind: 0 }
         case 'git_merge_remote':
-          return options.mergeOutcome ?? UP_TO_DATE
+          return mergeOutcomes.shift() ?? options.mergeOutcome ?? UP_TO_DATE
         case 'git_push':
-          return { pushed: true, nonFastForward: false, rejectionMessage: null }
+          return (
+            pushOutcomes.shift() ?? {
+              pushed: true,
+              nonFastForward: false,
+              rejectionMessage: null,
+            }
+          )
+        case 'db_query':
+          return []
+        case 'note_read':
+          return '# Remote note\n'
+        case 'index_apply_batch':
+          indexApplyCount += 1
+          if (options.failIndexApply === true) {
+            throw { kind: 'io', message: 'index write failed' }
+          }
+          if (options.gateIndexApply === true && indexApplyCount === 1) {
+            await new Promise<void>((resolve) => {
+              releaseIndexApply = resolve
+            })
+          }
+          return null
         case 'git_disconnect':
           status.remoteUrl = null
           return status
@@ -106,7 +139,13 @@ function fakeBridge(options: FakeOptions = {}) {
       return () => {}
     },
   })
-  return { calls, invocations, status, releaseListen: () => releaseListen?.() }
+  return {
+    calls,
+    invocations,
+    status,
+    releaseListen: () => releaseListen?.(),
+    releaseIndexApply: () => releaseIndexApply?.(),
+  }
 }
 
 function trackStates(controller: ReturnType<typeof createBackupController>): BackupState[] {
@@ -563,6 +602,159 @@ describe('createBackupController', () => {
     ])
     controller.dispose()
     unlisten()
+  })
+
+  it('fans retry-merge batches immediately while serializing direct indexing', async () => {
+    const firstChange: FileChange = {
+      path: 'notes/from-remote-1.md',
+      kind: 'upsert',
+      modifiedMs: 123,
+    }
+    const secondChange: FileChange = {
+      path: 'notes/from-remote-2.md',
+      kind: 'upsert',
+      modifiedMs: 456,
+    }
+    const { calls, releaseIndexApply } = fakeBridge({
+      gateIndexApply: true,
+      mergeOutcomes: [
+        { kind: 'merged', conflictedPaths: [], changedFiles: [firstChange] },
+        { kind: 'merged', conflictedPaths: [], changedFiles: [secondChange] },
+      ],
+      pushOutcomes: [
+        { pushed: false, nonFastForward: true, rejectionMessage: 'fetch first' },
+        { pushed: true, nonFastForward: false, rejectionMessage: null },
+      ],
+    })
+    const batches: FileChange[][] = []
+    const unlisten = await subscribeFileChanges((changes) => batches.push(changes))
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+
+    try {
+      await vi.waitFor(() => {
+        expect(calls.filter((command) => command === 'git_push')).toHaveLength(2)
+        expect(batches).toEqual([[firstChange], [secondChange]])
+      })
+      // The second callback already fanned out synchronously, but its direct
+      // index write is queued behind the first gated batch.
+      expect(calls.filter((command) => command === 'index_apply_batch')).toHaveLength(1)
+      expect(controller.getState()).toMatchObject({
+        phase: 'connected',
+        status: { state: 'syncing' },
+      })
+
+      releaseIndexApply()
+      await vi.waitFor(() => {
+        expect(calls.filter((command) => command === 'index_apply_batch')).toHaveLength(2)
+        expect(controller.getState()).toMatchObject({
+          phase: 'connected',
+          status: { state: 'idle' },
+        })
+      })
+    } finally {
+      controller.dispose()
+      unlisten()
+    }
+  })
+
+  it('does not start queued direct indexing after controller teardown', async () => {
+    const { calls, releaseIndexApply } = fakeBridge({
+      gateIndexApply: true,
+      mergeOutcomes: [
+        {
+          kind: 'merged',
+          conflictedPaths: [],
+          changedFiles: [
+            { path: 'notes/from-remote-1.md', kind: 'upsert', modifiedMs: 123 },
+          ],
+        },
+        {
+          kind: 'merged',
+          conflictedPaths: [],
+          changedFiles: [
+            { path: 'notes/from-remote-2.md', kind: 'upsert', modifiedMs: 456 },
+          ],
+        },
+      ],
+      pushOutcomes: [
+        { pushed: false, nonFastForward: true, rejectionMessage: 'fetch first' },
+        { pushed: true, nonFastForward: false, rejectionMessage: null },
+      ],
+    })
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+
+    await vi.waitFor(() => {
+      expect(calls.filter((command) => command === 'git_push')).toHaveLength(2)
+      expect(calls.filter((command) => command === 'index_apply_batch')).toHaveLength(1)
+    })
+
+    controller.dispose()
+    releaseIndexApply()
+    // The first, already-running apply can finish. The second task then reaches
+    // the controller-owned tail, observes the teardown epoch, and must exit
+    // before touching the index bridge.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(calls.filter((command) => command === 'index_apply_batch')).toHaveLength(1)
+  })
+
+  it('keeps launch sync active until pulled notes finish direct indexing', async () => {
+    const { calls, releaseIndexApply } = fakeBridge({
+      gateIndexApply: true,
+      mergeOutcome: {
+        kind: 'fastForward',
+        conflictedPaths: [],
+        changedFiles: [{ path: 'notes/from-remote.md', kind: 'upsert', modifiedMs: 123 }],
+      },
+    })
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+
+    await vi.waitFor(() => {
+      expect(calls).toContain('index_apply_batch')
+    })
+    expect(controller.getState()).toMatchObject({
+      phase: 'connected',
+      status: { state: 'syncing' },
+    })
+
+    releaseIndexApply()
+    await vi.waitFor(() => {
+      expect(controller.getState()).toMatchObject({
+        phase: 'connected',
+        status: { state: 'idle' },
+      })
+    })
+    controller.dispose()
+  })
+
+  it('still settles to idle when direct indexing fails — projection health never blocks backup', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { calls } = fakeBridge({
+      failIndexApply: true,
+      mergeOutcome: {
+        kind: 'fastForward',
+        conflictedPaths: [],
+        changedFiles: [{ path: 'notes/from-remote.md', kind: 'upsert', modifiedMs: 123 }],
+      },
+    })
+    const controller = createBackupController({ graph: GRAPH, indexGeneration: 1 })
+    await controller.start()
+
+    await vi.waitFor(() => {
+      expect(controller.getState()).toMatchObject({
+        phase: 'connected',
+        status: { state: 'idle' },
+      })
+    })
+    expect(calls).toContain('index_apply_batch')
+    // The failure is reported (which layer logs it is incidental), never thrown
+    // into the sync cycle — the projection is rebuildable, the push is not.
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+    controller.dispose()
   })
 
   it('defers a pulled note direct-index apply while the mobile app is hidden', async () => {

@@ -7,16 +7,19 @@ import {
 } from '@meowdown/react'
 import {
   contactLinkSuggestions,
-  createNoteWithTitle,
+  errorMessage,
   hasBridge,
   isContactsReadable,
+  resolveOrCreateNoteWithTitle,
   suggestTags,
   suggestWikiTargets,
 } from '@reflect/core'
+import { reportAmbiguousNoteTitle } from '@/editor/ambiguous-note-feedback'
 import { buildAutocompleteEntries } from '@/editor/wiki-autocomplete-entries'
 import { useContactsAuthorization } from '@/hooks/use-contacts-authorization'
 import { formatDayLabel, todayIso } from '@/lib/dates'
 import { createPersonNoteFromContact } from '@/lib/note-contact'
+import { startOperation } from '@/lib/operations'
 import { useGraph } from '@/providers/graph-provider'
 import { useSettings } from '@/providers/settings-provider'
 
@@ -50,12 +53,20 @@ export function useEditorAutocomplete(): EditorAutocomplete {
   const contactsInMenu =
     settings.contactsEnabled && authorization !== null && isContactsReadable(authorization)
 
-  // The `[[` autocomplete's create row: make the file; the menu inserts the
-  // link text either way (a failed create just leaves an unresolved link).
-  const createFromAutocomplete = useCallback(
+  // The `[[` autocomplete's create row: re-resolve and inspect the title's
+  // on-disk slug family before creating. The menu inserts the link text either
+  // way; an ambiguous, unavailable, or failed create leaves it unresolved.
+  const resolveOrCreateFromAutocomplete = useCallback(
     async (title: string) => {
       if (generation !== null) {
-        await createNoteWithTitle(title, generation)
+        const outcome = await resolveOrCreateNoteWithTitle(title, generation)
+        if (outcome.kind === 'ambiguous') {
+          reportAmbiguousNoteTitle('Creating note', title)
+        } else if (outcome.kind === 'unavailable') {
+          startOperation('Creating note').fail(
+            `Couldn’t create “${title}” while a potentially matching note is unavailable. Try again when it is available on this device.`,
+          )
+        }
       }
     },
     [generation],
@@ -92,8 +103,9 @@ export function useEditorAutocomplete(): EditorAutocomplete {
             // Insert happens in the menu; create the note in the background.
             // Best-effort: a failed create just leaves an unresolved link.
             onSelect: () => {
-              void createFromAutocomplete(entry.title).catch((error: unknown) => {
+              void resolveOrCreateFromAutocomplete(entry.title).catch((error: unknown) => {
                 console.error('create-from-autocomplete failed:', error)
+                startOperation('Creating note').fail(errorMessage(error))
               })
             },
           }
@@ -139,7 +151,7 @@ export function useEditorAutocomplete(): EditorAutocomplete {
       graph,
       settings.dateFormat,
       settings.weekStartDay,
-      createFromAutocomplete,
+      resolveOrCreateFromAutocomplete,
       contactsInMenu,
       generation,
     ],

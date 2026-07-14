@@ -1,20 +1,21 @@
-import type { Database } from '@reflect/db'
-import { sql, type Selectable } from 'kysely'
+import { sql } from 'kysely'
 import {
   foldEmail,
-  foldKey,
   foldTag,
+  normalizeWikiTarget,
   resolveWikiLinkAsync,
   type Resolution,
 } from '../markdown'
 import { db } from './db'
 import { inClauseChunks } from './query-utils'
-import { buildFtsMatch } from './search-query'
 export {
   getBacklinks,
   getBacklinksWithContext,
   type Backlink,
   type BacklinkContext,
+  type BacklinkContextPage,
+  type BacklinkContextPageOptions,
+  type BacklinkSourceCursor,
 } from './queries-backlinks'
 export { getCompletedTasks, getOpenTasks, type OpenTask } from './queries-tasks'
 export {
@@ -247,39 +248,6 @@ export async function getIndexMeta(key: string): Promise<string | null> {
   return row?.value ?? null
 }
 
-/** A full-text search result: the note's path and title. */
-export type SearchHit = Pick<Selectable<Database['searchFts']>, 'path' | 'title'>
-
-/**
- * Full-text search over title + body (FTS5 `MATCH`), ranked like the palette's
- * lexical search (`searchWithFilters` in `filtered-search.ts`): an exact title
- * match leads, then title-boosted bm25, then pinned and recency as
- * deterministic tiebreakers, with `path` as the stable final fallback. The
- * `notes` join supplies the title-rank/pinned/recency columns; the exact-title
- * key is folded the same way titles were at index time so it can't drift from
- * the stored `notes.title_key`.
- */
-export async function searchNotes(query: string, limit = 50): Promise<SearchHit[]> {
-  const match = buildFtsMatch(query)
-  if (match === null) {
-    return [] // nothing to search (FTS5 also errors on an empty MATCH).
-  }
-  const titleKey = foldKey(query)
-  return db
-    .selectFrom('searchFts')
-    .innerJoin('notes', 'notes.path', 'searchFts.path')
-    .where('notes.kind', '!=', 'template')
-    .select(['searchFts.path', 'searchFts.title'])
-    .where(sql<boolean>`search_fts MATCH ${match}`)
-    .orderBy(sql`case when "notes"."title_key" = ${titleKey} then 0 else 1 end`)
-    .orderBy(sql`bm25(search_fts, 0, 10.0, 1.0)`)
-    .orderBy('notes.isPinned', 'desc')
-    .orderBy('notes.mtime', 'desc')
-    .orderBy('notes.path', 'asc')
-    .limit(limit)
-    .execute()
-}
-
 /** What a pass knows about an indexed note without reading its file. */
 export interface IndexedFileFacts {
   /** Content hash the row was built from — the authority for "changed". */
@@ -372,6 +340,69 @@ export async function noteTitleOwningEmail(email: string): Promise<string | null
     .orderBy('notes.path')
     .executeTakeFirst()
   return owner?.title ?? null
+}
+
+/** Exact indexed date/title/alias candidates, preserving ambiguity within the winning tier. */
+export type ExactWikiTargetMatch =
+  | { readonly kind: 'date'; readonly paths: readonly string[] }
+  | { readonly kind: 'title'; readonly paths: readonly string[] }
+  | { readonly kind: 'alias'; readonly paths: readonly string[] }
+  | { readonly kind: 'missing'; readonly paths: readonly [] }
+
+/**
+ * Find every indexed path that exactly claims `target`, with ordinary wiki
+ * resolution precedence: calendar date, then title, then alias. Unlike
+ * {@link resolveWikiTarget}, this does not collapse a tier to its first path;
+ * callers that may create on a miss need to distinguish one existing note
+ * from several notes claiming the same spelling.
+ */
+export async function findExactWikiTargetMatches(
+  target: string,
+): Promise<ExactWikiTargetMatch> {
+  const normalized = normalizeWikiTarget(target)
+  if (normalized.key === '') {
+    return { kind: 'missing', paths: [] }
+  }
+
+  if (normalized.date !== undefined) {
+    const dateRows = await db
+      .selectFrom('notes')
+      .where('dailyDate', '=', normalized.date)
+      .where('kind', '!=', 'template')
+      .select('path')
+      .distinct()
+      .orderBy('path')
+      .execute()
+    if (dateRows.length > 0) {
+      return { kind: 'date', paths: dateRows.map((row) => row.path) }
+    }
+  }
+
+  const titleRows = await db
+    .selectFrom('notes')
+    .where('titleKey', '=', normalized.key)
+    .where('kind', '!=', 'template')
+    .select('path')
+    .distinct()
+    .orderBy('path')
+    .execute()
+  if (titleRows.length > 0) {
+    return { kind: 'title', paths: titleRows.map((row) => row.path) }
+  }
+
+  const aliasRows = await db
+    .selectFrom('aliases')
+    .innerJoin('notes', 'notes.path', 'aliases.notePath')
+    .where('aliasKey', '=', normalized.key)
+    .where('notes.kind', '!=', 'template')
+    .select('notePath')
+    .distinct()
+    .orderBy('notePath')
+    .execute()
+  if (aliasRows.length > 0) {
+    return { kind: 'alias', paths: aliasRows.map((row) => row.notePath) }
+  }
+  return { kind: 'missing', paths: [] }
 }
 
 /**

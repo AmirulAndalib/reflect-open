@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenTask } from '@reflect/core'
 import { useEffect, useState, type MutableRefObject, type ReactNode } from 'react'
 import { INDEX_QUERY_SCOPE } from '@/lib/query-client'
+import { makeOpenTask as task } from '@/lib/tasks/open-task-fixture'
 import { resetRecentlyCompleted } from '@/lib/tasks/recently-completed'
 import { RouterProvider, useRouter } from '@/routing/router'
 import { TasksScreen } from './tasks-screen'
@@ -15,11 +16,16 @@ Element.prototype.scrollIntoView = scrollIntoView
 
 const getOpenTasks = vi.hoisted(() => vi.fn())
 const getCompletedTasks = vi.hoisted(() => vi.fn())
+const openRouteInNewWindow = vi.hoisted(() => vi.fn<() => Promise<boolean>>())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   hasBridge: () => true,
   getOpenTasks,
   getCompletedTasks,
+}))
+vi.mock('@/lib/windows/open-in-new-window', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/windows/open-in-new-window')>()),
+  openRouteInNewWindow,
 }))
 vi.mock('@/providers/graph-provider', () => ({
   useGraph: () => ({ graph: { root: '/g', name: 'g', generation: 1 } }),
@@ -54,12 +60,14 @@ const toggleTask = vi.hoisted(() => vi.fn())
 const deleteTask = vi.hoisted(() => vi.fn())
 const editTask = vi.hoisted(() => vi.fn())
 const insertTask = vi.hoisted(() => vi.fn())
+const continueTaskInContext = vi.hoisted(() => vi.fn())
 const convertTaskToBullet = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/note-task', () => ({
   toggleTask,
   deleteTask,
   editTask,
   insertTask,
+  continueTaskInContext,
   convertTaskToBullet,
 }))
 
@@ -178,26 +186,6 @@ vi.mock('@/lib/operations', async (importOriginal) => ({
   startOperation,
 }))
 
-function task(overrides: Partial<OpenTask> = {}): OpenTask {
-  const text = overrides.text ?? 'do it'
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    // The row renders `raw`; default it to the marker line for `text` so display
-    // assertions match unless a case overrides `raw` explicitly.
-    raw: `[ ] ${text}`,
-    checked: false,
-    text,
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...overrides,
-  }
-}
-
 function RouteProbe(): ReactNode {
   const { route } = useRouter()
   return <output data-testid="route">{JSON.stringify(route)}</output>
@@ -221,11 +209,17 @@ beforeEach(() => {
   getOpenTasks.mockReset()
   getCompletedTasks.mockReset()
   getCompletedTasks.mockResolvedValue([])
+  openRouteInNewWindow.mockReset().mockResolvedValue(true)
   toggleTask.mockReset()
   deleteTask.mockReset()
   editTask.mockReset()
   insertTask.mockReset()
   insertTask.mockResolvedValue(0)
+  continueTaskInContext.mockReset()
+  continueTaskInContext.mockResolvedValue({
+    created: { markerOffset: 0, raw: '[ ] ' },
+    offsetChanges: [],
+  })
   convertTaskToBullet.mockReset()
   convertTaskToBullet.mockResolvedValue(undefined)
   startOperation.mockClear()
@@ -324,15 +318,119 @@ describe('TasksScreen', () => {
     view.unmount()
   })
 
-  it('opens a task’s source note via the open arrow', async () => {
+  it('renders one breadcrumb per consecutive task context and selects that context', async () => {
     getOpenTasks.mockResolvedValue([
-      task({ notePath: 'notes/p.md', dailyDate: null, text: 'project task', noteTitle: 'Project' }),
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 2,
+        text: 'first',
+        noteTitle: 'Project',
+        breadcrumbs: ['StartupToolbox', 'Reflections'],
+      }),
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 20,
+        text: 'second',
+        noteTitle: 'Project',
+        breadcrumbs: ['StartupToolbox', 'Reflections'],
+      }),
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 40,
+        text: 'third',
+        noteTitle: 'Project',
+        breadcrumbs: ['StartupToolbox', 'Later'],
+      }),
+    ])
+    const view = renderScreen()
+
+    const context = await view.findByRole('button', {
+      name: 'StartupToolbox → Reflections',
+    })
+    expect(view.getAllByText('StartupToolbox → Reflections')).toHaveLength(1)
+    view.getByText('StartupToolbox → Later')
+
+    await userEvent.click(context)
+    expect(view.getByRole('button', { name: 'Convert to bullet 2' })).toBeDefined()
+    view.unmount()
+  })
+
+  it('hides a lone generic task breadcrumb', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        markerOffset: 2,
+        text: 'project task',
+        noteTitle: 'Project',
+        breadcrumbs: ['Tasks:'],
+      }),
     ])
     const view = renderScreen()
 
     await view.findByText('project task')
-    await userEvent.click(view.getByRole('button', { name: 'Open Project' }))
+    expect(view.queryByText('Tasks:')).toBeNull()
+    view.unmount()
+  })
+
+  it('opens a task’s source note from its title without an arrow', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        dailyDate: null,
+        dueDate: '2026-06-10',
+        text: 'project task',
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    const sourceLink = await view.findByRole('button', { name: 'Project' })
+    expect(sourceLink.querySelector('svg')).toBeNull()
+    await userEvent.click(sourceLink)
     expect(view.getByTestId('route').textContent).toContain('notes/p.md')
+    view.unmount()
+  })
+
+  it('opens a modifier-clicked task source in a new window without selecting the row', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/p.md',
+        dailyDate: null,
+        dueDate: '2026-06-10',
+        text: 'project task',
+        noteTitle: 'Project',
+      }),
+    ])
+    const view = renderScreen()
+
+    fireEvent.click(await view.findByRole('button', { name: 'Project' }), { metaKey: true })
+
+    await waitFor(() =>
+      expect(openRouteInNewWindow).toHaveBeenCalledWith({
+        kind: 'note',
+        path: 'notes/p.md',
+      }),
+    )
+    expect(view.getByTestId('route').textContent).toBe('{"kind":"today"}')
+    expect(view.queryByTestId('task-editor')).toBeNull()
+    view.unmount()
+  })
+
+  it('opens a modifier-clicked note-group title in a new window', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({ notePath: 'notes/p.md', text: 'project task', noteTitle: 'Project' }),
+    ])
+    const view = renderScreen()
+
+    fireEvent.click(await view.findByRole('button', { name: 'Project' }), { metaKey: true })
+
+    await waitFor(() =>
+      expect(openRouteInNewWindow).toHaveBeenCalledWith({
+        kind: 'note',
+        path: 'notes/p.md',
+      }),
+    )
+    expect(view.getByTestId('route').textContent).toBe('{"kind":"today"}')
     view.unmount()
   })
 
@@ -564,6 +662,7 @@ describe('TasksScreen', () => {
     // userEvent's held modifiers don't reach its synthetic click).
     fireEvent.click(view.getByRole('button', { name: 'third' }), { metaKey: true })
     expect([pressed('first'), pressed('second'), pressed('third')]).toEqual([true, false, true])
+    expect(openRouteInNewWindow).not.toHaveBeenCalled()
 
     // Shift-click from the anchor (third) back to first selects the whole range.
     fireEvent.click(view.getByRole('button', { name: 'first' }), { shiftKey: true })
@@ -754,6 +853,119 @@ describe('TasksScreen', () => {
     // Persists this row's edit, then appends the next task in the same note.
     await waitFor(() => expect(editTask).toHaveBeenCalled())
     await waitFor(() => expect(insertTask).toHaveBeenCalledWith('notes/a.md', 1))
+    view.unmount()
+  })
+
+  it('Enter in a grouped task keeps the new row in that breadcrumb context', async () => {
+    continueTaskInContext.mockResolvedValue({
+      created: { markerOffset: 40, raw: '[ ] ' },
+      offsetChanges: [
+        {
+          from: 40,
+          fromRaw: '[ ] later',
+          marker: { markerOffset: 56, raw: '[ ] later' },
+        },
+      ],
+    })
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/a.md',
+        markerOffset: 2,
+        raw: '[ ] first',
+        text: 'first',
+        noteTitle: 'A',
+        breadcrumbs: ['StartupToolbox', 'Reflections'],
+      }),
+      task({
+        notePath: 'notes/a.md',
+        markerOffset: 40,
+        raw: '[ ] later',
+        text: 'later',
+        noteTitle: 'A',
+        breadcrumbs: ['StartupToolbox', 'Later'],
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByRole('button', { name: 'continue-edit' }))
+
+    await waitFor(() =>
+      expect(continueTaskInContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          notePath: 'notes/a.md',
+          breadcrumbs: ['StartupToolbox', 'Reflections'],
+        }),
+        'edited content',
+        1,
+      ),
+    )
+    expect(insertTask).not.toHaveBeenCalled()
+    await view.findByTestId('task-editor')
+    expect(view.getByText('later')).toBeDefined()
+
+    await userEvent.click(
+      view.getByRole('button', { name: 'StartupToolbox → Reflections' }),
+    )
+    expect(view.getByRole('button', { name: 'Convert to bullet 2' })).toBeDefined()
+    view.unmount()
+  })
+
+  it('preserves a grouped task draft when contextual insertion is refused', async () => {
+    continueTaskInContext.mockRejectedValue(new Error('This note is open.'))
+    editTask.mockResolvedValue(undefined)
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/a.md',
+        markerOffset: 2,
+        raw: '[ ] first',
+        text: 'first',
+        noteTitle: 'A',
+        breadcrumbs: ['Project'],
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'first' }))
+    await userEvent.click(view.getByRole('button', { name: 'continue-edit' }))
+
+    await waitFor(() =>
+      expect(editTask).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/a.md', raw: '[ ] first' }),
+        'edited content',
+        1,
+      ),
+    )
+    expect(insertTask).not.toHaveBeenCalled()
+    expect(await view.findByRole('button', { name: 'edited content' })).toBeDefined()
+    expect(fail).toHaveBeenCalledWith('This note is open.')
+    view.unmount()
+  })
+
+  it('Enter continues a scheduled grouped task despite its aggregate date bucket', async () => {
+    getOpenTasks.mockResolvedValue([
+      task({
+        notePath: 'notes/a.md',
+        markerOffset: 2,
+        raw: '[ ] scheduled',
+        text: 'scheduled',
+        noteTitle: 'A',
+        breadcrumbs: ['Project'],
+        dueDate: '2026-07-01',
+      }),
+    ])
+    const view = renderScreen()
+
+    await userEvent.click(await view.findByRole('button', { name: 'scheduled' }))
+    await userEvent.click(view.getByRole('button', { name: 'continue-unchanged' }))
+
+    await waitFor(() =>
+      expect(continueTaskInContext).toHaveBeenCalledWith(
+        expect.objectContaining({ notePath: 'notes/a.md', breadcrumbs: ['Project'] }),
+        null,
+        1,
+      ),
+    )
     view.unmount()
   })
 

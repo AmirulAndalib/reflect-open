@@ -6,11 +6,20 @@ uses Tauri's iOS command rather than a separate app package.
 From the repo root:
 
 ```bash
-pnpm tauri ios dev "iPhone 17 Pro"
+pnpm tauri:ios:dev "iPhone 17 Pro"
 ```
 
-The root `tauri` script delegates to `apps/desktop`, so the command runs the
-usual sidecar step and starts Vite through Tauri's `beforeDevCommand`.
+The root `tauri:ios:dev` script delegates to `apps/desktop`, so the command
+runs the usual sidecar step and starts Vite through Tauri's
+`beforeDevCommand`. On a physical device, run `pnpm tauri:ios:dev --host`
+instead.
+
+The script applies `src-tauri/tauri.ios.dev.conf.json`, and debug builds are
+the dev flavor: they install as `Reflect Dev` (`app.reflect.ios.dev`, own
+icon, own `group.app.reflect.dev` App Group, no iCloud), so they coexist with
+the TestFlight/App Store app instead of colliding with its install record.
+Plain `tauri ios dev` no longer works on its own: it would build the dev
+bundle id but try to launch `app.reflect.ios`.
 
 To see simulator names:
 

@@ -57,6 +57,23 @@ markers in markdown, AI task extraction (later, over this projection), CLI
 - **The `tasks` table is a pure projection** (rebuildable, wiped + rebuilt on schema
   bump), keyed by `notes(path)` with `ON UPDATE CASCADE ON DELETE CASCADE` like the
   other child tables — so Plan 17 moves and deletes need zero new handling.
+- **Task context breadcrumbs are ancestor-list labels** (added post-release, PR #685).
+  Each projected task carries the rendered text of its ancestor `ListItem` nodes,
+  outermost first (`markdown/task-breadcrumbs.ts`); the Tasks view shows one
+  `Parent → Child` row above each consecutive run of same-context rows — V1's
+  context-row behavior, not a per-row label (the reverted #660 got this wrong). A
+  label is the item's lead textblock (first paragraph, or the task line itself for a
+  parent task) rendered through the same plain-text pass as task text, so formatting
+  is stripped and wrapped lines stay one label. Only list ancestry counts: headings
+  and sibling items are never context; a parent task labels its nested subtasks.
+  A lone generic parent (`Tasks:`, `TODO`, … in any spacing/punctuation) is hidden at
+  display time (`visibleTaskBreadcrumbs`) — the stored array keeps it. Storage is
+  derived projection data: `tasks.breadcrumbs` holds one JSON string array written
+  and read only through `encodeTaskBreadcrumbs`/`decodeTaskBreadcrumbs` (mirrored by
+  `write.rs`). Task search matches task text, note title, and breadcrumb labels.
+  Both desktop and mobile render the same context runs. Clicking a desktop breadcrumb
+  selects exactly the rows it labels; mobile renders the breadcrumb as a read-only
+  grouping label because its Tasks tab has no multi-select mode.
 - **Write-back is surgical and guarded.** Toggling from the Tasks view replaces
   exactly the three-character marker (`[ ]` ↔ `[x]`) at the indexed position **only
   if** the surrounding item text still matches what the index recorded. On mismatch

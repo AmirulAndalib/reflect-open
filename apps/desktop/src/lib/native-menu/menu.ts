@@ -6,6 +6,7 @@ import {
   type PredefinedMenuItemOptions,
 } from '@tauri-apps/api/menu'
 import { APP_COMMANDS } from '@/lib/commands/app-commands'
+import { isMainWindow } from '@/lib/windows/window-role'
 import { bindingToAccelerator } from './accelerator'
 import { dispatchMenuCommand } from './dispatch'
 
@@ -35,6 +36,13 @@ export interface AppSubmenuLayout {
    */
   nsAppRole?: 'windows' | 'help'
   entries: AppMenuEntry[]
+}
+
+let nativeMenuInstalled = false
+
+/** Whether this webview has successfully installed the native app menu. */
+export function isNativeMenuInstalled(): boolean {
+  return nativeMenuInstalled
 }
 
 function command(commandId: string, text?: string): AppMenuEntry {
@@ -112,6 +120,8 @@ export function appMenuLayout(): AppSubmenuLayout[] {
       text: 'Window',
       nsAppRole: 'windows',
       entries: [
+        command('note.openInNewWindow'),
+        separator(),
         predefined('Minimize'),
         predefined('Maximize', 'Zoom'),
         separator(),
@@ -167,12 +177,17 @@ function isMacosDesktop(): boolean {
  *
  * macOS-only for now: other desktop platforms would render an in-window
  * menubar we haven't designed for, and every shortcut already works there
- * through the keydown path. Keyboard equivalents the webview handles are
+ * through the keydown path. Most keyboard equivalents the webview handles are
  * consumed before the menu sees them (`useAppShortcuts` prevents the default),
- * so a focused webview never double-fires a command.
+ * so a focused webview never double-fires a command. The sidebar toggle is
+ * deliberately exempted there so its key equivalent belongs to this native
+ * macOS application menu.
  */
 export async function installNativeMenu(): Promise<void> {
-  if (!isMacosDesktop()) {
+  // Menu actions use channels owned by the webview that created them. A note
+  // window has no command dispatcher, so it must not replace the app-wide
+  // menu installed by the main workspace with an inert copy.
+  if (!isMacosDesktop() || !isMainWindow()) {
     return
   }
   const layouts = appMenuLayout()
@@ -186,6 +201,7 @@ export async function installNativeMenu(): Promise<void> {
   )
   const menu = await Menu.new({ items: submenus })
   await menu.setAsAppMenu()
+  nativeMenuInstalled = true
   // NSApp roles must be assigned after setAsAppMenu: attaching the menu
   // clones each submenu's NSMenu, and muda resolves the role against the
   // instance inside the installed main menu — assigned earlier, the role

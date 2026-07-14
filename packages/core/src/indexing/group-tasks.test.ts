@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupTasks, taskDateBucket } from './group-tasks'
+import { groupTaskContexts, groupTasks, taskDateBucket, visibleTaskBreadcrumbs } from './group-tasks'
 import type { OpenTask } from './queries'
 
 const TODAY = '2026-06-14'
@@ -14,6 +14,7 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
     raw: '[ ] do it',
     checked: false,
     text: 'do it',
+    breadcrumbs: [],
     noteTitle: 'N',
     dueDate: null,
     dailyDate: null,
@@ -23,6 +24,57 @@ function task(overrides: Partial<OpenTask> = {}): OpenTask {
     ...overrides,
   }
 }
+
+describe('visibleTaskBreadcrumbs', () => {
+  it('trims empty breadcrumb entries', () => {
+    expect(visibleTaskBreadcrumbs(['', ' Project ', '  '])).toEqual(['Project'])
+  })
+
+  it('hides common single task headings', () => {
+    for (const heading of ['Task', 'Tasks:', 'todo', 'TODOs', 'To Do', "To Do's: "]) {
+      expect(visibleTaskBreadcrumbs([heading])).toEqual([])
+    }
+  })
+
+  it('keeps multi-part breadcrumbs even when one part is common', () => {
+    expect(visibleTaskBreadcrumbs(['Tasks', 'Project'])).toEqual(['Tasks', 'Project'])
+  })
+})
+
+describe('groupTaskContexts', () => {
+  it('groups only consecutive tasks with the same breadcrumbs', () => {
+    const tasks = [
+      task({ markerOffset: 1, breadcrumbs: ['Project', 'Phase one'] }),
+      task({ markerOffset: 2, breadcrumbs: ['Project', 'Phase one'] }),
+      task({ markerOffset: 3, breadcrumbs: ['Project', 'Phase two'] }),
+      task({ markerOffset: 4, breadcrumbs: ['Project', 'Phase one'] }),
+    ]
+
+    const contexts = groupTaskContexts(tasks)
+    expect(contexts.map((context) => context.tasks.map((entry) => entry.markerOffset))).toEqual([
+      [1, 2],
+      [3],
+      [4],
+    ])
+    expect(contexts.map((context) => context.breadcrumbs)).toEqual([
+      ['Project', 'Phase one'],
+      ['Project', 'Phase two'],
+      ['Project', 'Phase one'],
+    ])
+  })
+
+  it('labels each context with its visible breadcrumbs', () => {
+    const contexts = groupTaskContexts([
+      task({ markerOffset: 1, breadcrumbs: [' Project '] }),
+      task({ markerOffset: 2, breadcrumbs: ['Tasks:'] }),
+    ])
+    expect(contexts.map((context) => context.visibleBreadcrumbs)).toEqual([['Project'], []])
+  })
+
+  it('returns no contexts for no tasks', () => {
+    expect(groupTaskContexts([])).toEqual([])
+  })
+})
 
 describe('taskDateBucket', () => {
   it('classifies one task by the same rules as the grouping', () => {

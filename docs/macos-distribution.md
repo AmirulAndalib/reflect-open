@@ -89,12 +89,17 @@ pnpm release:macos --target=x86_64-apple-darwin  # build + notarize + verify for
 pnpm release:macos setup           # store Apple ID + app-specific password in the keychain
 pnpm release:macos verify          # re-run all checks on already-built bundles
 pnpm release:macos publish         # build + notarize + verify, then create a GitHub release
+pnpm release:macos sync-beta-feed  # retry moving beta downloads/feed from the tagged release
 pnpm release:macos publish --draft # same, but leave the release as a draft for review
 pnpm release:macos --no-notarize   # signed-only build (runs locally; Gatekeeper rejects it elsewhere)
 ```
 
 CI uses `build --target=<triple> --artifact-dir=<dir>` for each architecture, then
-`publish --from-artifacts=<dir>` after downloading both artifact sets.
+`publish --defer-beta-feed --from-artifacts=<dir>` after downloading both artifact
+sets. A separate `sync-beta-feed` job refreshes moving beta downloads after the tagged
+release is published, so that final step can be retried without rebuilding or
+republishing. Local `publish` runs the same sync before returning unless explicitly
+deferred.
 
 ## Cutting a release (Release PRs)
 
@@ -108,23 +113,30 @@ channel changelog (`apps/desktop/CHANGELOG.beta.md` on `next`,
 `apps/desktop/CHANGELOG.md` on `master`) from the conventional-commit PR titles landed
 since the last release.
 
-**Merging the Release PR is the release.** release-please then creates a draft GitHub
-release (with its `v<version>` tag — `force-tag-creation`, so later release-please
-runs can always anchor on the previous release) and hands the tag name to the Release
-workflow, which builds, signs, notarizes, uploads the assets, and undrafts the
-release. Nothing is visible to users (and `releases/latest` does not move) until
-every asset is in place.
+**Merging the Release PR is the technical release boundary.** release-please then
+creates a draft GitHub release (with its `v<version>` tag — `force-tag-creation`, so
+later release-please runs can always anchor on the previous release) and hands the tag
+name to the Release workflow, which builds, signs, notarizes, uploads the assets, and
+undrafts the release. Humans merge beta Release PRs and Release PRs for stable
+hotfixes. In the normal stable-promotion path, the workflow mechanically merges the
+stable Release PR after a human approves the promotion PR. Nothing is visible to users
+(and `releases/latest` does not move) until every asset is in place. The caller resolves
+the release tag to its immutable commit once; macOS, TestFlight, promotion, feed sync,
+and back-merge jobs all check out that SHA rather than resolving a tag name independently.
 
 Merge methods matter:
 
-- **Release PRs: squash** (the default).
-- **Promote and back-merge PRs: "Create a merge commit"** — squashing one collapses a
+- **Release PRs: squash** (the default, including the mechanically merged stable one).
+- **Promotion and back-merge PRs: "Create a merge commit"** — squashing one collapses a
   whole branch's history into a single non-conventional commit, blinding the other
   channel's version calculation and changelog, and the two branches' histories diverge
   for good.
 
-Bot-created PRs (the Release PR and the post-stable back-merge PR) do not run CI
-automatically; use the run-checks button on the PR before merging.
+PRs created with `GITHUB_TOKEN` do not start `pull_request` workflows, so checks do not
+appear automatically on the bot-created Release, promotion, and post-stable back-merge
+PRs. Use the run-checks button before a human merge. The stable Release PR in the normal
+promotion path is not a second review point: it contains generated release metadata for
+the already-approved snapshot and the workflow squash-merges it mechanically.
 
 ### Beta (the everyday release, on `next`)
 
@@ -134,25 +146,51 @@ automatically; use the run-checks button on the PR before merging.
    new commits land, so polish last), and **merge it**.
 3. Everything else is automatic, ending with the `updater-beta` feed refresh. Installed
    Reflect Beta apps pick up the update.
+4. Only after the GitHub/macOS release and TestFlight upload both succeed, the workflow
+   creates or advances the open promotion PR. Its head is a bot-owned snapshot pinned
+   to that beta tag, not the moving `next` branch. Commits that land on `next` after the
+   tag are therefore excluded until a newer beta publishes successfully. A failed beta
+   leaves the promotion PR at the last fully published beta; rerun the failed publishing
+   job to advance it.
 
 ### Stable
 
-1. **Promote**: open a PR with base `master`, compare `next`, titled
-   `chore: promote next to master`, and merge it with a **merge commit**. In the normal
-   cycle it merges clean; if a hotfix shipped since the last back-merge, the only
-   conflict is the `version` line in `apps/desktop/package.json` — take either side,
-   the next Release PR rewrites it from the manifest.
-2. **Merge the stable Release PR** (`chore: release X.Y.Z`) that appears on `master`.
-3. **Merge the post-stable PR** (`chore: merge master back into next`), which the
-   workflow opens automatically: it back-merges master and advances the beta manifest
-   so the next beta cycle starts above the released version. **Merge commit, not
-   squash.**
+1. Review the bot-maintained promotion PR (`chore: promote vX.Y.Z-beta.N to stable
+   X.Y.Z`). It targets `master` from the exact commit tagged by the latest fully
+   published beta, so its diff cannot acquire newer, unshipped work from `next` while it
+   waits for review. Newer successful betas advance the same open PR.
+2. Run its checks, then merge it with a **merge commit**. This is the sole human release
+   approval. The automation only advances the promotion PR when `master` is already an
+   ancestor of the published beta snapshot, so this merge stays conflict-free. If a
+   hotfix shipped, merge its post-stable back-merge into `next` before publishing the
+   next beta; otherwise promotion stops instead of offering a conflicted snapshot.
+3. The workflow waits for release-please to create the stable Release PR on `master`,
+   pins its version to the stable base of the approved beta tag, then squash-merges that
+   generated PR mechanically. Its merge creates the stable tag and draft release and
+   starts the macOS/GitHub and TestFlight publishing workflows; there is no second
+   human approval. The explicit version pin means a major beta such as
+   `v1.0.0-beta.4` promotes directly to `v1.0.0` rather than relying on conventional
+   commits to infer the major bump.
+4. After the stable release is healthy, merge the post-stable PR
+   (`chore: merge master back into next`) with a **merge commit**. The workflow opens it
+   automatically to back-merge `master` and advance the beta manifest so the next beta
+   cycle starts above the released version.
+
+If stable Release PR creation or its mechanical merge fails after the promotion merge,
+rerun the failed Release PR workflow rather than opening or merging another promotion.
+If macOS publishing or TestFlight fails after the stable Release PR merged, the stable
+tag and GitHub release record already exist (the release may still be a draft): rerun
+**Actions → Release** or **Actions → TestFlight** on the stable commit as appropriate.
+Leave the post-stable back-merge PR unmerged until both publishing paths are healthy.
 
 ### Hotfix (directly on `master`)
 
 1. Branch from `master`, fix, PR back to `master` with a `fix:` title.
-2. Merge the stable Release PR (`chore: release X.Y.Z`) that appears on `master`.
-3. Merge the auto-opened post-stable back-merge PR into `next`.
+2. Merge the stable Release PR (`chore: release X.Y.Z`) that appears on `master`
+   manually. A direct hotfix has no approved promotion snapshot, so the workflow does
+   not auto-merge its Release PR.
+3. After publishing succeeds, merge the auto-opened post-stable back-merge PR into
+   `next` with a merge commit.
 
 ### Release automation files
 
@@ -173,15 +211,19 @@ file both channels write is `apps/desktop/package.json` (`version`); on a merge
 conflict, take either side — the next Release PR rewrites it. Do not hand-edit the
 changelogs or manifests outside the flows above.
 
-All version interventions go through the manifest files. **Never use `Release-As:`
-commit footers**: they stay in `next`'s history and leak into `master`'s version
-calculation at the next promote. The first beta of a new cycle is tagged without a
-number (`v0.6.0-beta`, then `-beta.1`, `-beta.2`, …) — a release-please naming quirk,
-not a bug.
+In normal release-please flows, human version interventions go through the manifest
+files; the no-Release-PR fallback below is the explicit exception. **Never use
+`Release-As:` commit footers**: they stay in `next`'s history and leak into `master`'s
+version calculation at the next promote. The promotion workflow does supply an
+ephemeral `release-as` CLI override derived from the approved beta tag; it does not
+enter Git history and guarantees that `vX.Y.Z-beta.N` becomes stable `vX.Y.Z`. The
+first beta of a new cycle is tagged without a number (`v0.6.0-beta`, then `-beta.1`,
+`-beta.2`, …) — a release-please naming quirk, not a bug.
 
 ### Manual fallback (no Release PR)
 
-Merge a PR that sets `version` in `apps/desktop/package.json`, then run
+For this exceptional recovery path, merge a PR that sets `version` in
+`apps/desktop/package.json`, then run
 **Actions → Release → Run workflow** on that branch. The workflow derives the tag from
 the version, and publish creates the release (and its tag) itself via
 `gh release create`. Afterwards, sync that channel's manifest file with a follow-up PR
@@ -197,6 +239,10 @@ release-please created when the Release PR merged, or — when no release exists
 creating one itself. The release carries two notarized DMGs, two
 updater archives (one per architecture, each with its `.sig`), and a single
 `latest.json` manifest with both `darwin-aarch64` and `darwin-x86_64` platform entries.
+Published DMGs use fixed names (`Reflect_aarch64.dmg` and `Reflect_x86_64.dmg`
+for stable) because the release tag already identifies the version. That keeps
+`releases/latest/download/<asset>` stable across releases. Updater archives remain
+versioned because each manifest points at an immutable release payload.
 Stable installs poll `releases/latest/download/latest.json`; beta installs poll
 `releases/download/updater-beta/latest.json`, a moving feed release that points at the
 newest published beta. Publish requires the updater key and always attaches the
@@ -227,10 +273,16 @@ Development happens on `next` (the repo default branch); `master` only advances 
 turns that suffix into a GitHub **pre-release** automatically. `releases/latest` ignores
 pre-releases, so stable installs never see a beta.
 
-Beta builds use the dedicated `updater-beta` feed instead. Every non-draft beta publish
-uploads the beta's `latest.json` to that fixed release with `--clobber`; the manifest
-still points at the immutable versioned release artifacts for the actual download. Draft
-beta releases do not update the feed.
+Beta builds use the dedicated `updater-beta` release instead. Every non-draft beta
+publish replaces its `latest.json`, `Reflect.Beta_aarch64.dmg`, and
+`Reflect.Beta_x86_64.dmg` assets with `--clobber`. The fixed DMG names give the README
+permanent fresh-install links, while the manifest still points installed apps at the
+immutable versioned updater archives. Draft beta releases do not update the moving
+assets. The DMGs are replaced before `latest.json`; if that downstream job fails, rerun
+only **Sync beta downloads and updater feed** to recover from the tagged release. The
+sync compares its source with the immutable published beta releases: same-version
+retries repair partial uploads, while a retry for an older release becomes a no-op
+rather than rolling the channel back.
 
 The channel is picked by the version string alone: a `-beta.N` prerelease publishes to
 the beta feed, a plain version to the stable feed. The beta and dev flavor overlays pin
@@ -238,7 +290,7 @@ their own feeds, and `release-macos.mjs` pins the stable feed into stable builds
 build time, so releases are branch-independent.
 
 Cutting a beta is the normal Release PR flow on `next`; a stable release is the
-promote + Release PR flow on `master` (see
+single-approval promotion flow into `master` (see
 [Cutting a release](#cutting-a-release-release-prs) above).
 
 ## Build flavors (Reflect / Reflect Beta / Reflect Dev)
@@ -301,8 +353,11 @@ Each build job runs the same DMG notarization, Gatekeeper checks, and updater ar
 signing as a local release, then uploads its artifacts to the workflow. A final publish
 job downloads both sets, writes the combined `latest.json`, and fills the release-please
 draft release: it keeps the changelog body, appends the Mac download chooser that maps
-Apple Silicon to `_aarch64.dmg` and Intel to `_x86_64.dmg`, and undrafts the release as
-its last step. The workflow normally runs via `workflow_call` from
+Apple Silicon to `Reflect_aarch64.dmg` and Intel to `Reflect_x86_64.dmg` (with
+`Reflect.Beta` names for beta releases), and undrafts the release as its last step. The
+downstream beta-sync job then downloads the canonical DMGs and manifest from that
+tagged release before refreshing `updater-beta`. The workflow normally runs via
+`workflow_call` from
 `.github/workflows/release-please.yml` when a Release PR merges. The manual fallback is
 **Actions → Release → Run workflow** (tick *draft* to review the release before
 publishing) on a branch whose `apps/desktop/package.json` version was already bumped by

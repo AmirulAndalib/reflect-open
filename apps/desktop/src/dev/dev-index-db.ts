@@ -1,5 +1,5 @@
 import sqlite3InitModule, { type Database, type SqlValue } from '@sqlite.org/sqlite-wasm'
-import { ReflectError, type IndexedNote } from '@reflect/core'
+import { encodeTaskBreadcrumbs, ReflectError, type IndexedNote } from '@reflect/core'
 
 /**
  * The dev bridge's SQLite index: the real `crates/index-schema` migrations
@@ -168,8 +168,16 @@ export async function createDevIndexDb(): Promise<DevIndexDb> {
       for (const task of note.tasks) {
         run(
           db,
-          'INSERT INTO tasks(note_path, marker_offset, text, raw, checked, due_date) VALUES(?, ?, ?, ?, ?, ?)',
-          [note.path, task.markerOffset, task.text, task.raw, task.checked, task.dueDate],
+          'INSERT INTO tasks(note_path, marker_offset, text, breadcrumbs, raw, checked, due_date) VALUES(?, ?, ?, ?, ?, ?, ?)',
+          [
+            note.path,
+            task.markerOffset,
+            task.text,
+            encodeTaskBreadcrumbs(task.breadcrumbs),
+            task.raw,
+            task.checked,
+            task.dueDate,
+          ],
         )
       }
       const searchBody = note.assetText === '' ? note.text : `${note.text}\n${note.assetText}`

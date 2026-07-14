@@ -6,10 +6,12 @@ import { useDayCarousel } from '@/mobile/use-day-carousel'
 interface DayCarouselProps {
   /** The selected day (from the route). Drives the carousel position. */
   date: string
+  /** Identity of the route arrival that owns the selected day. */
+  navigationKey: string
   /** Today's live ISO date — tints today's date heading, as on desktop. */
   today: string
   /**
-   * Bumped on an explicit re-arrival at the shown day (Daily tab / title tap
+   * Bumped on an explicit re-arrival at the shown day (Daily tab / Today tap
    * while already there): the selected slide re-anchors to the top.
    */
   scrollResetSeq: number
@@ -22,9 +24,10 @@ interface DayCarouselProps {
   /**
    * A swipe's destination day, announced at pointer-up while the snap
    * animation still plays — for chrome (the calendar strip and its month
-   * title) that should move with the gesture, ahead of the route.
+   * title) that should move with the gesture, ahead of the route. The key
+   * identifies the source arrival so the receiver can reject stale updates.
    */
-  onTarget: (date: string) => void
+  onTarget: (date: string, navigationKey: string) => void
 }
 
 /** Slides within this many of the selection mount an editor; the rest are
@@ -41,6 +44,7 @@ const MOUNT_RADIUS = 1
  */
 export function DayCarousel({
   date,
+  navigationKey,
   today,
   scrollResetSeq,
   focusDate,
@@ -48,7 +52,12 @@ export function DayCarousel({
   onSelect,
   onTarget,
 }: DayCarouselProps): ReactElement {
-  const { emblaRef, dayWindow, selectedIndex } = useDayCarousel(date, onSelect, onTarget)
+  const { emblaRef, dayWindow, selectedIndex } = useDayCarousel(
+    date,
+    navigationKey,
+    onSelect,
+    onTarget,
+  )
   // One mutable map for the carousel's life; the identity never changes, so
   // holding it in state (read during render) rather than a ref is safe.
   const [scrollMemory] = useState(() => new Map<string, number>())

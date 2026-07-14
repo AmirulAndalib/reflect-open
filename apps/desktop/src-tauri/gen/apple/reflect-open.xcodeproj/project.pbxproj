@@ -74,6 +74,7 @@
 		05ABE058940EC4D96B7CA5D9 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		088536D8F462855DCFDA7B06 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		08B3817A23175E584BA6FD8D /* error.rs */ = {isa = PBXFileReference; path = error.rs; sourceTree = "<group>"; };
+		11AB73085CB07EA1B7A3533C /* reflect-open_iOS.dev.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "reflect-open_iOS.dev.entitlements"; sourceTree = "<group>"; };
 		152767D3A95549268E140D0F /* graph_gitignore.rs */ = {isa = PBXFileReference; path = graph_gitignore.rs; sourceTree = "<group>"; };
 		18A732A38CD75FF514E4CF86 /* settings.rs */ = {isa = PBXFileReference; path = settings.rs; sourceTree = "<group>"; };
 		1A3930E6E7AB28929B07A6D0 /* RecordingActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingActivityWidget.swift; sourceTree = "<group>"; };
@@ -140,6 +141,7 @@
 		C94374B175075AF3AA7DE586 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		CF582FB0094C95210BE919F7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D05B757D9AB841897576F256 /* merge3.rs */ = {isa = PBXFileReference; path = merge3.rs; sourceTree = "<group>"; };
+		D2398DBC3478C5F96CC89402 /* background_task.rs */ = {isa = PBXFileReference; path = background_task.rs; sourceTree = "<group>"; };
 		D29B88183661F5C1C960E074 /* RecordingIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIntents.swift; sourceTree = "<group>"; };
 		D357D2D54012FD394DF9423E /* CaptureInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureInbox.swift; sourceTree = "<group>"; };
 		D3691D8F671B7FA21D1E7BD7 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
@@ -279,6 +281,7 @@
 		55421F1EE94451C6C2F0F2F6 /* src */ = {
 			isa = PBXGroup;
 			children = (
+				D2398DBC3478C5F96CC89402 /* background_task.rs */,
 				772B62ED093A33BDCD1864D8 /* calendar.rs */,
 				2490DACB2171344E8D9A8807 /* capture.rs */,
 				ADB23521181EEB9EF095D4AB /* contacts.rs */,
@@ -400,6 +403,7 @@
 			isa = PBXGroup;
 			children = (
 				CF582FB0094C95210BE919F7 /* Info.plist */,
+				11AB73085CB07EA1B7A3533C /* reflect-open_iOS.dev.entitlements */,
 				3AE251E5F7E95CDEFDD3C8B4 /* reflect-open_iOS.entitlements */,
 			);
 			path = "reflect-open_iOS";
@@ -659,6 +663,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.reflect.ios.share;
 				PRODUCT_NAME = ShareExtension;
+				REFLECT_DISPLAY_NAME = Reflect;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -692,6 +697,7 @@
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = app.reflect.ios;
 				PRODUCT_NAME = Reflect;
+				REFLECT_DISPLAY_NAME = Reflect;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -765,7 +771,7 @@
 		A96125CC5A34976C051BA669 /* debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = RecordingWidget/RecordingWidget.entitlements;
+				CODE_SIGN_ENTITLEMENTS = RecordingWidget/RecordingWidget.dev.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 789ULN5MZB;
 				INFOPLIST_FILE = RecordingWidget/Info.plist;
@@ -775,8 +781,9 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.reflect.ios.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = app.reflect.ios.dev.widgets;
 				PRODUCT_NAME = RecordingWidget;
+				REFLECT_DISPLAY_NAME = "Reflect Dev";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -786,7 +793,7 @@
 		ABFF23DB75DCB9354EA41A14 /* debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.dev.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 789ULN5MZB;
 				INFOPLIST_FILE = ShareExtension/Info.plist;
@@ -795,8 +802,9 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.reflect.ios.share;
+				PRODUCT_BUNDLE_IDENTIFIER = app.reflect.ios.dev.share;
 				PRODUCT_NAME = ShareExtension;
+				REFLECT_DISPLAY_NAME = "Reflect Dev";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -818,6 +826,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.reflect.ios.widgets;
 				PRODUCT_NAME = RecordingWidget;
+				REFLECT_DISPLAY_NAME = Reflect;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -831,8 +840,8 @@
 				ARCHS = (
 					arm64,
 				);
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "reflect-open_iOS/reflect-open_iOS.entitlements";
+				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon-Dev";
+				CODE_SIGN_ENTITLEMENTS = "reflect-open_iOS/reflect-open_iOS.dev.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 789ULN5MZB;
@@ -849,8 +858,9 @@
 				);
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				PRODUCT_BUNDLE_IDENTIFIER = app.reflect.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = app.reflect.ios.dev;
 				PRODUCT_NAME = Reflect;
+				REFLECT_DISPLAY_NAME = "Reflect Dev";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

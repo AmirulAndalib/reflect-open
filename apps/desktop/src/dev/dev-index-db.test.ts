@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'vitest'
-import type { IndexedNote } from '@reflect/core'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  parseHighlights,
+  parseSearchQuery,
+  searchNotes,
+  searchWithFilters,
+  setBridge,
+  type IndexedNote,
+} from '@reflect/core'
 import { createDevIndexDb, type DevIndexDb } from '@/dev/dev-index-db'
+import {
+  buildAllNotesSearch,
+  EMPTY_ALL_NOTES_FILTERS,
+  searchPlanFor,
+} from '@/mobile/search-filters/filter-state'
 
 function sampleNote(overrides: Partial<IndexedNote> = {}): IndexedNote {
   return {
@@ -35,7 +47,16 @@ function sampleNote(overrides: Partial<IndexedNote> = {}): IndexedNote {
     aliases: [],
     emails: [{ email: 'Sample@Example.com', emailKey: 'sample@example.com' }],
     assets: [],
-    tasks: [{ markerOffset: 40, text: 'Do the thing', raw: '- [ ] Do the thing', checked: false, dueDate: null }],
+    tasks: [
+      {
+        markerOffset: 40,
+        text: 'Do the thing',
+        breadcrumbs: ['Project'],
+        raw: '- [ ] Do the thing',
+        checked: false,
+        dueDate: null,
+      },
+    ],
     ...overrides,
   }
 }
@@ -43,6 +64,28 @@ function sampleNote(overrides: Partial<IndexedNote> = {}): IndexedNote {
 async function openDb(): Promise<DevIndexDb> {
   return createDevIndexDb()
 }
+
+interface CapturedQuery {
+  readonly sql: string
+  readonly params: readonly unknown[]
+}
+
+function installQueryBridge(db: DevIndexDb, captured: CapturedQuery[] = []): void {
+  setBridge({
+    invoke: async (command, args) => {
+      if (command !== 'db_query') {
+        throw new Error(`Unexpected command: ${command}`)
+      }
+      const sql = String(args['sql'])
+      const params = (args['params'] as readonly unknown[]) ?? []
+      captured.push({ sql, params })
+      return db.query(sql, params)
+    },
+    listen: async () => () => {},
+  })
+}
+
+afterEach(() => setBridge(null))
 
 describe('createDevIndexDb', () => {
   it('applies the real migrations and answers db_query-style reads', async () => {
@@ -64,8 +107,8 @@ describe('createDevIndexDb', () => {
     const tags = db.query('SELECT tag FROM tags WHERE note_path = ?', ['notes/sample.md'])
     expect(tags).toEqual([{ tag: 'book' }])
 
-    const tasks = db.query('SELECT text, checked FROM tasks', [])
-    expect(tasks).toEqual([{ text: 'Do the thing', checked: 0 }])
+    const tasks = db.query('SELECT text, breadcrumbs, checked FROM tasks', [])
+    expect(tasks).toEqual([{ text: 'Do the thing', breadcrumbs: '["Project"]', checked: 0 }])
 
     const emails = db.query('SELECT email, email_key FROM note_emails', [])
     expect(emails).toEqual([
@@ -74,6 +117,241 @@ describe('createDevIndexDb', () => {
 
     const hits = db.query("SELECT path FROM search_fts WHERE search_fts MATCH 'sync'", [])
     expect(hits).toEqual([{ path: 'notes/sample.md' }])
+  })
+
+  it('finds a short Japanese term inside a title as well as a note body', async () => {
+    const db = await openDb()
+    db.applyNote(
+      sampleNote({
+        path: 'notes/tokyo-trip.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n91',
+        title: '来週の東京旅行計画',
+        titleKey: '来週の東京旅行計画',
+        isPinned: false,
+        text: 'An otherwise unrelated body.',
+        preview: 'An otherwise unrelated body.',
+        mtime: 100,
+      }),
+    )
+    db.applyNote(
+      sampleNote({
+        path: 'notes/body-hit.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n92',
+        title: '別のノート',
+        titleKey: '別のノート',
+        isPinned: true,
+        text: 'An otherwise unrelated 東京 body token.',
+        preview: 'An otherwise unrelated 東京 body token.',
+        mtime: 200,
+      }),
+    )
+    const captured: CapturedQuery[] = []
+    installQueryBridge(db, captured)
+
+    const hits = await searchWithFilters(parseSearchQuery('東京'))
+
+    expect(hits.map((hit) => hit.path)).toEqual([
+      'notes/tokyo-trip.md',
+      'notes/body-hit.md',
+    ])
+    expect(parseHighlights(hits[0]!.highlightedTitle)).toEqual([
+      { text: '来週の', highlighted: false },
+      { text: '東京', highlighted: true },
+      { text: '旅行計画', highlighted: false },
+    ])
+    expect(hits[1]!.highlightedTitle).toBe('別のノート')
+    expect(hits[0]!.snippet).toBeNull()
+    expect(hits[1]!.snippet).toContain('東京')
+    const plan = db.query(`EXPLAIN QUERY PLAN ${captured[0]!.sql}`, captured[0]!.params)
+    expect(plan.some((row) => String(row['detail']).includes('MATERIALIZE lexical'))).toBe(true)
+    await expect(searchNotes('東京')).resolves.toEqual([
+      { path: 'notes/tokyo-trip.md', title: '来週の東京旅行計画' },
+      { path: 'notes/body-hit.md', title: '別のノート' },
+    ])
+    const multiTermHits = await searchWithFilters(parseSearchQuery('東京 旅行'))
+    expect(multiTermHits).toMatchObject([
+      { path: 'notes/tokyo-trip.md', title: '来週の東京旅行計画', snippet: null },
+    ])
+    expect(parseHighlights(multiTermHits[0]!.highlightedTitle)).toEqual([
+      { text: '来週の', highlighted: false },
+      { text: '東京旅行', highlighted: true },
+      { text: '計画', highlighted: false },
+    ])
+
+    const filtered = await searchWithFilters(parseSearchQuery('is:pinned 東京'))
+    expect(filtered.map((hit) => hit.path)).toEqual(['notes/body-hit.md'])
+  })
+
+  it('matches Latin terms at title word starts only, never mid-word', async () => {
+    const db = await openDb()
+    db.applyNote(
+      sampleNote({
+        path: 'notes/car-log.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n93',
+        title: 'Car maintenance log',
+        titleKey: 'car maintenance log',
+        isPinned: false,
+        text: 'An otherwise unrelated body.',
+        preview: 'An otherwise unrelated body.',
+        tags: [],
+        mtime: 100,
+      }),
+    )
+    db.applyNote(
+      sampleNote({
+        path: 'notes/car-wash.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n94',
+        title: 'Weekend car wash',
+        titleKey: 'weekend car wash',
+        isPinned: false,
+        text: 'An otherwise unrelated body.',
+        preview: 'An otherwise unrelated body.',
+        tags: [],
+        mtime: 50,
+      }),
+    )
+    db.applyNote(
+      sampleNote({
+        path: 'notes/oscar.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n95',
+        title: 'Oscar party plans',
+        titleKey: 'oscar party plans',
+        isPinned: false,
+        text: 'An otherwise unrelated body.',
+        preview: 'An otherwise unrelated body.',
+        tags: [],
+        mtime: 300,
+      }),
+    )
+    db.applyNote(
+      sampleNote({
+        path: 'notes/garage.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n96',
+        title: 'Garage',
+        titleKey: 'garage',
+        isPinned: false,
+        text: 'The car needs new brakes.',
+        preview: 'The car needs new brakes.',
+        tags: [],
+        mtime: 200,
+      }),
+    )
+    installQueryBridge(db)
+
+    // Title-prefix (rank 1) leads, then the word-start title match (rank 2),
+    // then the FTS body hit (rank 3). `Oscar party plans` contains `car` only
+    // mid-word and must not surface at all.
+    const hits = await searchWithFilters(parseSearchQuery('car'))
+    expect(hits.map((hit) => hit.path)).toEqual([
+      'notes/car-log.md',
+      'notes/car-wash.md',
+      'notes/garage.md',
+    ])
+    expect(parseHighlights(hits[0]!.highlightedTitle)[0]).toEqual({
+      text: 'Car',
+      highlighted: true,
+    })
+    expect(parseHighlights(hits[1]!.highlightedTitle)).toContainEqual({
+      text: 'car',
+      highlighted: true,
+    })
+    expect(hits[2]!.highlightedTitle).toBe('Garage')
+  })
+
+  it('returns title markers from SQLite for tokenizer-normalized matches', async () => {
+    const db = await openDb()
+    db.applyNote(
+      sampleNote({
+        path: 'notes/cafe-alpha.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n90',
+        title: 'Café Alpha',
+        titleKey: 'café alpha',
+        text: 'An otherwise unrelated body.',
+        preview: 'An otherwise unrelated body.',
+        tags: [],
+      }),
+    )
+    db.applyNote(
+      sampleNote({
+        path: 'notes/car-punctuation.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n88',
+        title: 'Car, car',
+        titleKey: 'car, car',
+        text: 'An otherwise unrelated body.',
+        preview: 'An otherwise unrelated body.',
+        tags: [],
+      }),
+    )
+    installQueryBridge(db)
+
+    const accentHit = (await searchWithFilters(parseSearchQuery('cafe')))[0]!
+    expect(parseHighlights(accentHit.highlightedTitle)).toEqual([
+      { text: 'Café', highlighted: true },
+      { text: ' Alpha', highlighted: false },
+    ])
+
+    const punctuationHit = (await searchWithFilters(parseSearchQuery('alpha,')))[0]!
+    expect(parseHighlights(punctuationHit.highlightedTitle)).toEqual([
+      { text: 'Café ', highlighted: false },
+      { text: 'Alpha', highlighted: true },
+    ])
+
+    const mergedHit = (await searchWithFilters(parseSearchQuery('car,')))[0]!
+    expect(parseHighlights(mergedHit.highlightedTitle)).toEqual([
+      { text: 'Car,', highlighted: true },
+      { text: ' ', highlighted: false },
+      { text: 'car', highlighted: true },
+    ])
+  })
+
+  it('finds a partial multi-term title through the mobile All search plan', async () => {
+    const db = await openDb()
+    db.applyNote(
+      sampleNote({
+        path: 'notes/tim-maccaw.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n97',
+        title: 'Tim MacCaw',
+        titleKey: 'tim maccaw',
+        text: 'An otherwise unrelated body.',
+        preview: 'An otherwise unrelated body.',
+        tags: [],
+      }),
+    )
+    installQueryBridge(db)
+
+    const parsed = buildAllNotesSearch('Tim Mac', EMPTY_ALL_NOTES_FILTERS, null)
+    const hits = await searchWithFilters(parsed, searchPlanFor(parsed))
+    expect(hits).toMatchObject([
+      { path: 'notes/tim-maccaw.md', title: 'Tim MacCaw', snippet: null },
+    ])
+    expect(parseHighlights(hits[0]!.highlightedTitle)).toEqual([
+      { text: 'Tim Mac', highlighted: true },
+      { text: 'Caw', highlighted: false },
+    ])
+  })
+
+  it('keeps title-recall highlights when the body also creates an FTS hit', async () => {
+    const db = await openDb()
+    db.applyNote(
+      sampleNote({
+        path: 'notes/tim-maccaw.md',
+        id: '01hv3xq7c2dm8k4t9w5e6r1n89',
+        title: 'Tim MacCaw',
+        titleKey: 'tim maccaw',
+        text: 'The mac migration is documented here.',
+        preview: 'The mac migration is documented here.',
+        tags: [],
+      }),
+    )
+    installQueryBridge(db)
+
+    const hit = (await searchWithFilters(parseSearchQuery('mac')))[0]!
+    expect(hit.snippet).toContain('mac')
+    expect(parseHighlights(hit.highlightedTitle)).toEqual([
+      { text: 'Tim ', highlighted: false },
+      { text: 'Mac', highlighted: true },
+      { text: 'Caw', highlighted: false },
+    ])
   })
 
   it('re-applying a note replaces its rows instead of duplicating them', async () => {

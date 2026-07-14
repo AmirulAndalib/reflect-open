@@ -31,7 +31,7 @@ import { useRouter } from '@/routing/router'
 export function rowForHit(hit: FilteredSearchHit): NoteRowModel {
   return {
     path: hit.path,
-    title: hit.title,
+    titleSegments: parseHighlights(hit.highlightedTitle),
     mtime: hit.mtime,
     isPinned: hit.isPinned,
     snippet:
@@ -145,7 +145,7 @@ export function MobileAllNotes({
             placeholder="Search anything…"
             aria-label="Search notes"
             value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
+            onValueChange={onQueryChange}
           />
         </div>
         {pending !== null ? (

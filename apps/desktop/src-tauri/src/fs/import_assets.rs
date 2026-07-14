@@ -174,6 +174,7 @@ pub(super) fn rewrite_asset_paths(
 pub(super) async fn download_remote_assets(
     staging: &Path,
     urls: Vec<String>,
+    user_agent: &str,
     cancelled: Arc<AtomicBool>,
     on_progress: Arc<dyn Fn(usize, usize) + Send + Sync>,
 ) -> AppResult<HashMap<String, DownloadOutcome>> {
@@ -185,7 +186,7 @@ pub(super) async fn download_remote_assets(
         .redirect(reqwest::redirect::Policy::limited(5))
         .connect_timeout(CONNECT_TIMEOUT)
         .read_timeout(READ_TIMEOUT)
-        .user_agent(concat!("Reflect/", env!("CARGO_PKG_VERSION")))
+        .user_agent(user_agent)
         .build()
         .map_err(|err| AppError::io(err.to_string()))?;
 

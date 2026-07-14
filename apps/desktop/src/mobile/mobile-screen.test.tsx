@@ -55,7 +55,7 @@ const editorProbe = vi.hoisted(() => ({
 const hapticImpactLight = vi.hoisted(() => vi.fn())
 
 vi.mock('@/editor/note-editor', async () => {
-  const { useEffect } = await import('react')
+  const { useEffect, useRef } = await import('react')
   return {
     NoteEditor: ({
       initialContent,
@@ -66,10 +66,13 @@ vi.mock('@/editor/note-editor', async () => {
       onWikiLinkClick?: (target: string) => void
       handleRef?: (handle: import('@/editor/note-editor').NoteEditorHandle | null) => void
     }) => {
+      const markdownRef = useRef(initialContent)
       useEffect(() => {
         handleRef?.({
-          setMarkdown: () => {},
-          getMarkdown: () => '',
+          setMarkdown: (markdown) => {
+            markdownRef.current = markdown
+          },
+          getMarkdown: () => markdownRef.current,
           insertMarkdown: () => {},
           focus: () => {
             editorProbe.focusCalls += 1
@@ -104,7 +107,11 @@ vi.mock('@/mobile/haptics', () => ({
 }))
 
 const indexFns = vi.hoisted(() => ({
-  getBacklinksWithContext: vi.fn(async () => []),
+  getBacklinksWithContext: vi.fn(async () => ({
+    contexts: [],
+    nextCursor: null,
+    indexedLinkCount: 0,
+  })),
 }))
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
@@ -199,6 +206,21 @@ beforeEach(() => {
     }
     if (command === 'note_exists') {
       return (args as { path: string }).path in files
+    }
+    if (command === 'note_create') {
+      const { path, contents } = args as { path: string; contents: string }
+      if (path in files) {
+        return { kind: 'collision' }
+      }
+      files[path] = contents
+      return { kind: 'created', modifiedMs: 1 }
+    }
+    if (command === 'list_files') {
+      return Object.entries(files).map(([path, contents]) => ({
+        path,
+        size: contents.length,
+        modifiedMs: 1,
+      }))
     }
     if (command === 'db_query') {
       return []
@@ -615,7 +637,7 @@ describe('MobileShell', () => {
         capabilities: { canIndent: true, canDedent: false, canMoveUp: true, canMoveDown: true },
         commands: {
           toggleBulletList: vi.fn(),
-          toggleTaskList: vi.fn(),
+          cycleCheckableList: vi.fn(),
           indent: vi.fn(),
           dedent: vi.fn(),
           moveUp: vi.fn(),
@@ -638,6 +660,7 @@ describe('MobileShell', () => {
   })
 
   it('renders a search entry as the All tab with the query seeded', async () => {
+    const user = userEvent.setup()
     const view = mount({ kind: 'search', query: 'meeting' })
 
     const box = view.getByRole('searchbox', { name: 'Search notes' })
@@ -645,6 +668,11 @@ describe('MobileShell', () => {
       expect((box as HTMLInputElement).value).toBe('meeting')
     })
     expect(view.getByRole('button', { name: 'All' }).getAttribute('aria-current')).toBe('page')
+
+    await user.click(view.getByRole('button', { name: 'Clear search' }))
+
+    expect((box as HTMLInputElement).value).toBe('')
+    expect(view.queryByRole('button', { name: 'Clear search' })).toBeNull()
   })
 
   it('back from a cold note entry lands on today', async () => {

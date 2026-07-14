@@ -77,15 +77,19 @@ export function createDocumentBinding(): DocumentBinding {
   let unregister: (() => void) | null = null
 
   function teardown(target: NoteSession, owner: RenameCoordinator | null): void {
-    if (session === target) {
-      session = null
-      coordinator = null
-    }
     // Disposal flushes pending edits to the session's own (current) path —
     // the note-switch "final flush". The flush's landed save reaches the
     // rename tracker via onContent('saved'); settle after it so a just-edited
     // title still renames on the way out.
     const settled = target.flush()
+    // `flush()` may synchronously report reconciled editor input through the
+    // change callback. Keep the target discoverable for that re-entry, then
+    // release ownership before any asynchronous write settles or a replacement
+    // session binds.
+    if (session === target) {
+      session = null
+      coordinator = null
+    }
     target.dispose()
     if (owner) {
       void settled.then(() => {

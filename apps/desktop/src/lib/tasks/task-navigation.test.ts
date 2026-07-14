@@ -1,23 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { type OpenTask } from '@reflect/core'
+import { makeOpenTask } from './open-task-fixture'
 import { insertTargetForTask, previousTaskKey } from './task-navigation'
 import { taskKey } from './task-identity'
 
 function task(over: Partial<OpenTask> = {}): OpenTask {
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    raw: '[ ] x',
-    checked: false,
-    text: 'x',
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...over,
-  }
+  return makeOpenTask({ text: 'x', ...over })
 }
 
 describe('previousTaskKey', () => {

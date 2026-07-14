@@ -42,8 +42,10 @@
   /* Marketing glow — inset purple light on glass controls     */
   --glow-purple:  inset 0 0 12px rgba(191,151,255,.24); /* @kind shadow */
 
-  /* Layout widths */
-  --sidebar-width:    260px;
+  /* Layout widths — the sidebar values are fresh-install defaults; the app
+     overrides both on the root from the user's persisted widths. */
+  --sidebar-width:            260px;
+  --context-sidebar-width:    320px;
   --editor-measure:   46rem;  /* comfortable prose column       */
   --site-container:   1296px;
 

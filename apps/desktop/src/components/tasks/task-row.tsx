@@ -5,12 +5,13 @@ import {
   type MutableRefObject,
   type ReactElement,
 } from 'react'
-import { ArrowRight, Circle, CircleCheck } from 'lucide-react'
+import { Circle, CircleCheck } from 'lucide-react'
 import type { OpenTask } from '@reflect/core'
 import { formatDayLabel } from '@/lib/dates'
 import { taskKey } from '@/lib/tasks/task-identity'
 import { useTaskCheckboxToggle } from '@/lib/tasks/use-task-checkbox-toggle'
 import { cn } from '@/lib/utils'
+import type { NewWindowClickEvent } from '@/lib/windows/open-in-new-window'
 import { useSettings } from '@/providers/settings-provider'
 import { TaskEditor, type TaskNavigate } from './task-editor'
 import { TaskText } from './task-text'
@@ -53,14 +54,14 @@ interface TaskRowProps {
   onEditNavigate: TaskNavigate
   /** Holds the editing row's flush-then-convert trigger for the toolbar button. */
   convertControllerRef: MutableRefObject<(() => void) | null>
-  onOpen: (notePath: string) => void
+  onOpen: (notePath: string, event?: NewWindowClickEvent) => void
 }
 
 /**
  * One task row in the Tasks view (V1 design): a circle checkbox that toggles
  * the task (the guarded write-back, Plan 18), the task content with inline date
- * and link chips ({@link TaskText}), the source-note date on the right, and an
- * arrow that opens the source note. Clicking the row body **selects** it (V1's
+ * and link chips ({@link TaskText}), and a source-note link on the right.
+ * Clicking the row body **selects** it (V1's
  * multi-select); a plain click selects exclusively, ⌘/Ctrl toggles, Shift
  * extends a range. Completing optimistically drops the row; an archived
  * (completed) row shows struck through. A checkbox click on any selected row in
@@ -182,35 +183,21 @@ export function TaskRow({
           <TaskText task={task} />
         </div>
       )}
-      {showSource && task.dailyDate !== null ? (
+      {showSource ? (
         <button
           type="button"
           disabled={editing}
           onClick={(event) => {
             event.stopPropagation()
-            onOpen(task.notePath)
+            onOpen(task.notePath, event)
           }}
-          className="mt-0.5 shrink-0 whitespace-nowrap text-xs text-text-muted hover:underline focus-visible:underline focus-visible:outline-none"
+          className="flex h-6 shrink-0 items-center whitespace-nowrap text-xs text-text-muted transition-colors hover:text-accent focus-visible:text-accent focus-visible:outline-none"
         >
-          {formatDayLabel(task.dailyDate, settings.dateFormat)}
+          {task.dailyDate !== null
+            ? formatDayLabel(task.dailyDate, settings.dateFormat)
+            : task.noteTitle}
         </button>
       ) : null}
-      <button
-        type="button"
-        aria-label={`Open ${task.noteTitle}`}
-        // Hidden while editing: keep focus on the editor (Esc first to leave).
-        disabled={editing}
-        onClick={(event) => {
-          event.stopPropagation()
-          onOpen(task.notePath)
-        }}
-        className={cn(
-          'mt-0.5 shrink-0 text-text-muted/60 opacity-0 transition-opacity hover:text-text focus-visible:opacity-100 focus-visible:outline-none',
-          !editing && 'group-hover/task:opacity-100',
-        )}
-      >
-        <ArrowRight aria-hidden className="size-3.5" />
-      </button>
     </li>
   )
 }

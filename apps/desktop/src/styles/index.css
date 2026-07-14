@@ -360,7 +360,7 @@ html:root {
 /* The leading H1 is the document title: the regular-note subject, matching
    the daily date subject. H2 and H3 step down the type scale so a section
    heading reads as subordinate to the title, not a second one: auto-appended
-   sections (`## Links`, `## Audio memos`) land at H2, one size below the
+   sections (`## [[Links]]`, `## [[Audio memos]]`) land at H2, one size below the
    subject; H3 sits at body size, carried by weight rather than scale. */
 .reflect-editor h1 { @apply text-note-subject; } /* text-xl, 20px */
 .reflect-editor h2 { font-size: var(--text-lg, 1.125rem); } /* 18px */
@@ -386,6 +386,55 @@ html:root {
   font-family: var(--font-reading, var(--font-sans));
   font-weight: 650;
   letter-spacing: var(--tracking-snug, -0.01em);
+}
+
+/* Chrome for meowdown's wiki-link hover card (its `className`, passed from
+   note-editor.tsx). Reflect popovers outline with `ring-foreground/10` —
+   stronger than the `--border` hairline meowdown defaults to, which vanishes
+   against the dark canvas — and float on the same DS shadow. Unlayered plain
+   CSS on purpose: the card's CSS-module defaults are unlayered too, so
+   layered Tailwind utilities could not override them. */
+.reflect-hover-card {
+  border-color: color-mix(in oklab, var(--foreground) 10%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+/* The wiki-link hover card's compact body (wiki-link-hover-preview.tsx).
+   Meowdown's card is a 20 × 12rem glimpse; the editor's display sizes (20px
+   H1, rem-sized checkboxes) overwhelm its 12px body text, so the type ramp
+   re-scales here: the subject one step above body, section headings at body
+   size carried by weight — the same hierarchy, compressed. Unlayered, so
+   these win over meowdown's `@layer meowdown` theme rules. */
+.reflect-hover-preview .reflect-editor h1,
+.reflect-hover-preview .reflect-daily-subject {
+  font-size: var(--text-sm, 0.875rem);
+}
+.reflect-hover-preview .reflect-editor h2,
+.reflect-hover-preview .reflect-editor h3 {
+  font-size: var(--text-xs, 0.75rem);
+}
+.reflect-hover-preview .reflect-editor h1,
+.reflect-hover-preview .reflect-editor h2,
+.reflect-hover-preview .reflect-editor h3 {
+  margin: 1em 0 0.35em;
+}
+.reflect-hover-preview .reflect-editor h1:first-child {
+  margin-top: 0;
+}
+.reflect-hover-preview .reflect-editor input[type='checkbox'] {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+.reflect-hover-preview .reflect-editor img {
+  max-height: 7rem;
+  width: auto;
+  border-radius: var(--radius-sm, 0.25rem);
+}
+/* A body taller than the card fades out at the clipped edge instead of
+   slicing a line of text in half. Applied only while actually overflowing,
+   so a short note keeps its last line at full strength. */
+.reflect-hover-preview-overflowing {
+  mask-image: linear-gradient(to bottom, black calc(100% - 2.5rem), transparent);
 }
 
 /* NotePane's loading placeholder: hold the editor's reserved space silently,

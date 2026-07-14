@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { OpenTask } from '@reflect/core'
 import type { TaskFilters } from '@/lib/tasks/task-filters'
+import { makeOpenTask as task } from '@/lib/tasks/open-task-fixture'
 import { composeVisibleTaskGroups, visibleGroups } from '@/lib/tasks/task-visibility'
 
 const TODAY = '2026-06-14'
@@ -12,24 +12,6 @@ const ALL_ON: TaskFilters = {
   upcoming: true,
   other: true,
   archived: false,
-}
-
-function task(overrides: Partial<OpenTask> = {}): OpenTask {
-  const text = overrides.text ?? 'do it'
-  return {
-    notePath: 'notes/n.md',
-    markerOffset: 2,
-    raw: `[ ] ${text}`,
-    checked: false,
-    text,
-    noteTitle: 'N',
-    dueDate: null,
-    dailyDate: null,
-    isPinned: false,
-    pinnedOrder: null,
-    updatedAt: 0,
-    ...overrides,
-  }
 }
 
 describe('composeVisibleTaskGroups', () => {
@@ -123,6 +105,38 @@ describe('composeVisibleTaskGroups', () => {
     })
     const rows = groups.flatMap((group) => group.tasks)
     expect(rows.map((row) => row.text)).toEqual(['buy milk'])
+  })
+
+  it('filters by breadcrumb context', () => {
+    const groups = composeVisibleTaskGroups({
+      open: [
+        task({ text: 'ship', markerOffset: 0, breadcrumbs: ['StartupToolbox', 'Reflections'] }),
+        task({ text: 'buy milk', markerOffset: 10, breadcrumbs: ['Personal'] }),
+      ],
+      completed: undefined,
+      recentlyCompleted: [],
+      filters: ALL_ON,
+      needle: 'startup',
+      today: TODAY,
+    })
+    const rows = groups.flatMap((group) => group.tasks)
+    expect(rows.map((row) => row.text)).toEqual(['ship'])
+  })
+
+  it('filters by source-note title', () => {
+    const groups = composeVisibleTaskGroups({
+      open: [
+        task({ text: 'ship it', markerOffset: 0, noteTitle: 'Desktop launch' }),
+        task({ text: 'buy milk', markerOffset: 10, noteTitle: 'Home' }),
+      ],
+      completed: undefined,
+      recentlyCompleted: [],
+      filters: ALL_ON,
+      needle: 'desktop',
+      today: TODAY,
+    })
+    const rows = groups.flatMap((group) => group.tasks)
+    expect(rows.map((row) => row.text)).toEqual(['ship it'])
   })
 })
 

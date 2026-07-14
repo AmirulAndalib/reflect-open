@@ -1,12 +1,14 @@
-import type { MutableRefObject, ReactElement } from 'react'
+import { Fragment, type MutableRefObject, type ReactElement } from 'react'
 import { Plus } from 'lucide-react'
-import type { OpenTask, TaskGroup } from '@reflect/core'
+import { groupTaskContexts, type OpenTask, type TaskGroup } from '@reflect/core'
 import { addTargetForGroup, taskGroupHeaderStyle } from '@/lib/tasks/task-group-presentation'
 import type { InsertTaskTarget } from '@/lib/tasks/task-insert-target'
 import { taskKey } from '@/lib/tasks/task-identity'
 import type { TaskSelection } from '@/lib/tasks/use-task-selection'
 import type { TaskRowEditHandlers } from '@/lib/tasks/use-task-row-handlers'
 import { cn } from '@/lib/utils'
+import type { NewWindowClickEvent } from '@/lib/windows/open-in-new-window'
+import { TaskBreadcrumbs } from './task-breadcrumbs'
 import { TaskRow } from './task-row'
 
 interface TaskGroupSectionProps {
@@ -24,7 +26,7 @@ interface TaskGroupSectionProps {
   onAdd: (target: InsertTaskTarget) => void
   /** Holds the editing row's flush-then-convert trigger for the toolbar button. */
   convertControllerRef: MutableRefObject<(() => void) | null>
-  onOpen: (notePath: string) => void
+  onOpen: (notePath: string, event?: NewWindowClickEvent) => void
 }
 
 /**
@@ -48,6 +50,7 @@ export function TaskGroupSection({
   const { notePath } = group
   const { icon, colorClass } = taskGroupHeaderStyle(group)
   const addTarget = addTargetForGroup(group, today)
+  const contexts = groupTaskContexts(group.tasks)
 
   return (
     <section>
@@ -57,7 +60,7 @@ export function TaskGroupSection({
           {group.kind === 'note' && notePath !== null ? (
             <button
               type="button"
-              onClick={() => onOpen(notePath)}
+              onClick={(event) => onOpen(notePath, event)}
               className="truncate hover:underline focus-visible:underline focus-visible:outline-none"
             >
               {group.label}
@@ -82,24 +85,35 @@ export function TaskGroupSection({
         {group.tasks.length === 0 ? (
           <li className="px-4 py-1.5 text-sm text-text-muted lg:px-12">No tasks</li>
         ) : (
-          group.tasks.map((task) => {
-            const key = taskKey(task)
-            const selected = selection.isSelected(key)
+          contexts.map((context) => {
+            const firstTask = context.tasks[0]!
             return (
-              <TaskRow
-                key={key}
-                task={task}
-                showSource={showSource}
-                selected={selected}
-                editing={selection.isSoleSelected(key)}
-                taskActionPending={taskActionPending}
-                togglesSelection={selected && selection.selectedCount > 1}
-                onSelect={(event) => selection.clickSelect(key, event)}
-                onSelectionCheckboxToggle={() => onSelectionCheckboxToggle(task)}
-                {...editHandlers(task)}
-                convertControllerRef={convertControllerRef}
-                onOpen={onOpen}
-              />
+              <Fragment key={taskKey(firstTask)}>
+                <TaskBreadcrumbs
+                  breadcrumbs={context.visibleBreadcrumbs}
+                  onSelect={() => selection.select(context.tasks.map(taskKey))}
+                />
+                {context.tasks.map((task) => {
+                  const key = taskKey(task)
+                  const selected = selection.isSelected(key)
+                  return (
+                    <TaskRow
+                      key={key}
+                      task={task}
+                      showSource={showSource}
+                      selected={selected}
+                      editing={selection.isSoleSelected(key)}
+                      taskActionPending={taskActionPending}
+                      togglesSelection={selected && selection.selectedCount > 1}
+                      onSelect={(event) => selection.clickSelect(key, event)}
+                      onSelectionCheckboxToggle={() => onSelectionCheckboxToggle(task)}
+                      {...editHandlers(task)}
+                      convertControllerRef={convertControllerRef}
+                      onOpen={onOpen}
+                    />
+                  )
+                })}
+              </Fragment>
             )
           })
         )}

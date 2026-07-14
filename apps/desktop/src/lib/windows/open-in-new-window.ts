@@ -5,11 +5,11 @@ import { isMobileSurface } from '@/lib/platform-surface'
 import type { Route } from '@/routing/route'
 
 /**
- * ⌘-click → open the target in a secondary note window (Plan 06). The
- * helpers resolve a route or an in-note `reflect://` link to the shell's
- * `open_note_window` command; callers fall back to in-window navigation
- * whenever a helper answers false, so the modifier can never make a link do
- * nothing.
+ * Open a target in a secondary note window (Plan 06). Modifier-click callers
+ * and the selected-note command resolve a route or an in-note `reflect://`
+ * link to the shell's `open_note_window` command. Modifier-click callers fall
+ * back to in-window navigation whenever a helper answers false, so the
+ * modifier can never make a link do nothing.
  */
 
 /** The modifier shape shared by native and React synthetic mouse events. */
@@ -18,6 +18,9 @@ export interface NewWindowClickEvent {
   ctrlKey: boolean
   type: string
 }
+
+/** Coalesce double-clicks before the shell has registered its content-addressed window label. */
+const pendingWindowOpens = new Map<string, Promise<boolean>>()
 
 /**
  * Whether a link click asked for a new window (⌘-click; ctrl-click off mac).
@@ -35,8 +38,8 @@ export function isNewWindowClick(event: NewWindowClickEvent | undefined): boolea
 /**
  * Open `route` in a secondary note window. False — never a throw — when this
  * surface can't (no shell, mobile, a route the deep-link grammar doesn't
- * name, or a failed command): the caller then navigates in place, so a
- * modifier click degrades to a plain one instead of doing nothing.
+ * name, or a failed command). Modifier-click callers then navigate in place,
+ * so the gesture degrades to a plain click instead of doing nothing.
  */
 export async function openRouteInNewWindow(route: Route): Promise<boolean> {
   if (!hasBridge() || isMobileSurface()) {
@@ -67,11 +70,25 @@ export async function openDeepLinkInNewWindow(href: string): Promise<boolean> {
 }
 
 async function openWindowFor(link: string): Promise<boolean> {
-  try {
-    await openNoteWindow(link)
-    return true
-  } catch (cause) {
-    console.error('open in new window failed:', errorMessage(cause))
-    return false
+  const pending = pendingWindowOpens.get(link)
+  if (pending !== undefined) {
+    return pending
   }
+
+  const opening = (async (): Promise<boolean> => {
+    try {
+      await openNoteWindow(link)
+      return true
+    } catch (cause) {
+      console.error('open in new window failed:', errorMessage(cause))
+      return false
+    }
+  })()
+  pendingWindowOpens.set(link, opening)
+  void opening.finally(() => {
+    if (pendingWindowOpens.get(link) === opening) {
+      pendingWindowOpens.delete(link)
+    }
+  })
+  return opening
 }

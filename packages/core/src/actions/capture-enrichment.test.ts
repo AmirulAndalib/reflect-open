@@ -20,6 +20,8 @@ import {
 } from './capture-harness'
 import type { CaptureEnvelope } from './capture-envelope'
 
+const ensureBacklinkTargetMock = vi.hoisted(() => vi.fn())
+
 vi.mock('../graph/commands', () => ({
   captureInboxList: vi.fn(),
   captureInboxRead: vi.fn(),
@@ -41,9 +43,13 @@ vi.mock('../ai/describe-page', async (importOriginal) => ({
 vi.mock('../secrets/keychain', () => ({
   getSecret: vi.fn(),
 }))
+vi.mock('./backlink-target', () => ({
+  ensureBacklinkTarget: ensureBacklinkTargetMock,
+}))
 
 beforeEach(() => {
   wireCaptureMocks()
+  ensureBacklinkTargetMock.mockResolvedValue('Links')
 })
 
 describe('reconcileCaptureEnrichment', () => {

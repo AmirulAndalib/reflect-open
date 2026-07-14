@@ -39,12 +39,17 @@ const loadChatGraphContext = vi.hoisted(() =>
     (graphName: string, deps?: GraphContextDeps) => Promise<CloudSafe<CloudGraphContext>>
   >(),
 )
+const openRouteInNewWindow = vi.hoisted(() => vi.fn<() => Promise<boolean>>())
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   streamChat,
   getSecret,
   resolveWikiTarget,
   loadChatGraphContext,
+}))
+vi.mock('@/lib/windows/open-in-new-window', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/windows/open-in-new-window')>()),
+  openRouteInNewWindow,
 }))
 
 const settingsState = vi.hoisted(() => ({
@@ -89,7 +94,7 @@ vi.mock('@/editor/markdown-preview', () => ({
     onWikiLinkClick,
   }: {
     content: string
-    onWikiLinkClick?: (target: string) => void
+    onWikiLinkClick?: (target: string, event?: MouseEvent | KeyboardEvent) => void
   }) => {
     const wikiTargets = Array.from(content.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)).map(
       (match) => match[1]!,
@@ -98,7 +103,11 @@ vi.mock('@/editor/markdown-preview', () => ({
       <div data-testid="markdown-preview">
         {content}
         {wikiTargets.map((target) => (
-          <button key={target} type="button" onClick={() => onWikiLinkClick?.(target)}>
+          <button
+            key={target}
+            type="button"
+            onClick={(event) => onWikiLinkClick?.(target, event.nativeEvent)}
+          >
             Open {target}
           </button>
         ))}
@@ -142,6 +151,7 @@ beforeEach(() => {
     kind: 'resolved',
     ref: `notes/${target.toLowerCase()}.md`,
   }))
+  openRouteInNewWindow.mockReset().mockResolvedValue(true)
 })
 
 const MODEL: AiProviderConfig = { id: 'm1', provider: 'openai', model: 'gpt-5.1', keyHint: '12345' }
@@ -242,6 +252,48 @@ describe('ChatScreen', () => {
     expect(options?.messages.at(-1)).toEqual({ role: 'user', content: 'when does atlas ship?' })
   })
 
+  it('opens ⌘-clicked tool-result and read-note links in new windows', async () => {
+    configureModel()
+    scriptTurn([
+      { type: 'tool-call', call: { tool: 'search', toolCallId: 'tool-1', query: 'atlas' } },
+      {
+        type: 'tool-result',
+        result: {
+          tool: 'search',
+          toolCallId: 'tool-1',
+          query: 'atlas',
+          hits: [{ path: 'notes/atlas.md', title: 'Atlas' }],
+        },
+      },
+      {
+        type: 'tool-call',
+        call: { tool: 'read', toolCallId: 'tool-2', paths: ['notes/brief.md'] },
+      },
+      {
+        type: 'tool-result',
+        result: {
+          tool: 'read',
+          toolCallId: 'tool-2',
+          notes: [{ path: 'notes/brief.md', title: 'Brief', error: null }],
+        },
+      },
+      { type: 'complete', messages: [{ role: 'assistant', content: 'Done.' }] },
+    ])
+    const view = renderChat()
+
+    await userEvent.type(view.getByLabelText('Chat message'), 'open the source notes{Enter}')
+    fireEvent.click(await view.findByRole('button', { name: 'Atlas' }), { metaKey: true })
+    fireEvent.click(await view.findByRole('button', { name: 'Brief' }), { metaKey: true })
+
+    await waitFor(() =>
+      expect(openRouteInNewWindow.mock.calls).toEqual([
+        [{ kind: 'note', path: 'notes/atlas.md' }],
+        [{ kind: 'note', path: 'notes/brief.md' }],
+      ]),
+    )
+    expect(probedRoute).toEqual({ kind: 'today' })
+  })
+
   it('opens cited wiki links from settled chat markdown', async () => {
     configureModel()
     scriptTurn([
@@ -259,6 +311,29 @@ describe('ChatScreen', () => {
     await waitFor(() => expect(probedRoute).toEqual({ kind: 'note', path: 'notes/atlas.md' }))
   })
 
+  it('opens ⌘-clicked cited wiki links in a new window', async () => {
+    configureModel()
+    scriptTurn([
+      { type: 'text-delta', text: 'See [[Atlas]].' },
+      {
+        type: 'complete',
+        messages: [{ role: 'assistant', content: 'See [[Atlas]].' }],
+      },
+    ])
+    const view = renderChat()
+
+    await userEvent.type(view.getByLabelText('Chat message'), 'what should I open?{Enter}')
+    fireEvent.click(await view.findByRole('button', { name: 'Open Atlas' }), { metaKey: true })
+
+    await waitFor(() =>
+      expect(openRouteInNewWindow).toHaveBeenCalledWith({
+        kind: 'note',
+        path: 'notes/atlas.md',
+      }),
+    )
+    expect(probedRoute).toEqual({ kind: 'today' })
+  })
+
   it('offers the provider catalog in the picker, keeping a custom model selectable', async () => {
     configureModel()
     const view = renderChat()
@@ -270,7 +345,16 @@ describe('ChatScreen', () => {
     expect(await screen.findByText('OpenAI')).toBeDefined()
     const labels = screen.getAllByRole('option').map((option) => option.textContent)
     // The full curated catalog plus the entry's custom configured model.
-    expect(labels).toEqual(['GPT-5.5', 'GPT-5.4', 'GPT-5.4 mini', 'GPT-5.4 nano', 'gpt-5.1'])
+    expect(labels).toEqual([
+      'GPT-5.6 Sol',
+      'GPT-5.6 Terra',
+      'GPT-5.6 Luna',
+      'GPT-5.5',
+      'GPT-5.4',
+      'GPT-5.4 mini',
+      'GPT-5.4 nano',
+      'gpt-5.1',
+    ])
   })
 
   it('routes the turn to the picked catalog model', async () => {
@@ -282,23 +366,23 @@ describe('ChatScreen', () => {
     const view = renderChat()
 
     fireEvent.keyDown(view.getByRole('combobox', { name: 'Model' }), { key: 'ArrowDown' })
-    fireEvent.keyDown(await screen.findByRole('option', { name: 'GPT-5.5' }), { key: 'Enter' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'GPT-5.6 Terra' }), { key: 'Enter' })
 
     await userEvent.type(view.getByLabelText('Chat message'), 'hi{Enter}')
 
     await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1))
     // Same entry (id → keychain key), with the picked model applied.
-    expect(streamChat.mock.lastCall?.[0].config).toEqual({ ...MODEL, model: 'gpt-5.5' })
+    expect(streamChat.mock.lastCall?.[0].config).toEqual({ ...MODEL, model: 'gpt-5.6-terra' })
   })
 
   it('starts the picker on the model persisted from the last session', async () => {
     configureModel()
-    settingsState.selection = { configId: 'm1', modelId: 'gpt-5.5' }
+    settingsState.selection = { configId: 'm1', modelId: 'gpt-5.6-luna' }
     const view = renderChat()
 
     fireEvent.keyDown(view.getByRole('combobox', { name: 'Model' }), { key: 'ArrowDown' })
 
-    const picked = await screen.findByRole('option', { name: 'GPT-5.5' })
+    const picked = await screen.findByRole('option', { name: 'GPT-5.6 Luna' })
     expect(picked.getAttribute('aria-selected')).toBe('true')
   })
 

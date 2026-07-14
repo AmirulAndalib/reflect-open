@@ -37,8 +37,18 @@ const embla = vi.hoisted(() => {
       handlers.get(event)?.delete(handler)
       return api
     },
-    scrollTo: vi.fn((index: number) => {
+    scrollTo: vi.fn((index: number, jump?: boolean) => {
+      const changed = selected !== index
+      // Embla 8.6's instant path renders (and can emit `settle`) before it
+      // updates the selected index and emits `select`. Model that re-entrancy:
+      // a Today sync must ignore the old arrival's settle callback.
+      if (changed && jump === true) {
+        emit('settle')
+      }
       selected = index
+      if (changed) {
+        emit('select')
+      }
     }),
     reInit: vi.fn((options?: { startIndex?: number }) => {
       if (options?.startIndex !== undefined) {
@@ -66,6 +76,10 @@ const embla = vi.hoisted(() => {
       emit('select')
       emit('settle')
     },
+    /** Fire settle at the carousel's current target. */
+    settle(): void {
+      emit('settle')
+    },
     reset(): void {
       handlers.clear()
       selected = 0
@@ -90,6 +104,7 @@ const base: ReconcileInput = {
   lastWindowStart: '2025-06-11',
   date: '2026-06-12',
   reported: '2026-06-01',
+  forceScroll: false,
 }
 
 describe('reconcileCarousel', () => {
@@ -103,6 +118,17 @@ describe('reconcileCarousel', () => {
     expect(reconcileCarousel({ ...base, date: '2026-06-01', reported: '2026-06-01' })).toEqual({
       action: 'none',
     })
+  })
+
+  it('forces a same-date arrival to cancel an in-flight swipe', () => {
+    expect(
+      reconcileCarousel({
+        ...base,
+        date: '2026-06-01',
+        reported: '2026-06-01',
+        forceScroll: true,
+      }),
+    ).toEqual({ action: 'scroll', index: 10 })
   })
 
   it('does nothing when the date is outside the window (a re-anchor is pending)', () => {
@@ -160,6 +186,7 @@ describe('useDayCarousel', () => {
   /** The anchor day sits at {@link CAROUSEL_RADIUS} — the window's center. */
   const DATE = '2026-06-12'
   const CENTER = CAROUSEL_RADIUS
+  const NAVIGATION_KEY = `0:0:${DATE}`
   const initialWindow = createDayWindow(DATE, {
     past: CAROUSEL_RADIUS,
     future: CAROUSEL_RADIUS,
@@ -168,9 +195,12 @@ describe('useDayCarousel', () => {
   function mountCarousel() {
     const onSelect = vi.fn()
     const onTarget = vi.fn()
-    const hook = renderHook(({ date }) => useDayCarousel(date, onSelect, onTarget), {
-      initialProps: { date: DATE },
-    })
+    const hook = renderHook(
+      ({ date, navigationKey }) => useDayCarousel(date, navigationKey, onSelect, onTarget),
+      {
+        initialProps: { date: DATE, navigationKey: NAVIGATION_KEY },
+      },
+    )
     return { ...hook, onSelect, onTarget }
   }
 
@@ -191,7 +221,7 @@ describe('useDayCarousel', () => {
 
     // The strip (and its month title) follow this while the snap animates;
     // the route only moves at settle.
-    expect(onTarget).toHaveBeenCalledExactlyOnceWith('2026-06-13')
+    expect(onTarget).toHaveBeenCalledExactlyOnceWith('2026-06-13', NAVIGATION_KEY)
     expect(onSelect).not.toHaveBeenCalled()
   })
 
@@ -208,7 +238,7 @@ describe('useDayCarousel', () => {
     const { rerender } = mountCarousel()
     act(() => embla.settleAt(CENTER + 1))
 
-    rerender({ date: '2026-06-13' })
+    rerender({ date: '2026-06-13', navigationKey: '1:1:2026-06-13' })
 
     expect(embla.api.scrollTo).not.toHaveBeenCalled()
     expect(embla.api.reInit).not.toHaveBeenCalled()
@@ -217,11 +247,36 @@ describe('useDayCarousel', () => {
   it('scrolls to an external in-window selection without reporting it back', () => {
     const { result, rerender, onSelect } = mountCarousel()
 
-    rerender({ date: '2026-06-20' })
+    rerender({ date: '2026-06-20', navigationKey: '1:1:2026-06-20' })
 
     expect(embla.api.scrollTo).toHaveBeenCalledExactlyOnceWith(CENTER + 8, true)
     expect(result.current.selectedIndex).toBe(CENTER + 8)
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('cancels a pending swipe when Today re-arrives at the unchanged route date', () => {
+    const { result, rerender, onSelect, onTarget } = mountCarousel()
+
+    // Pointer-up has aimed away from Today, but the route is still Today until
+    // Embla settles. This is the window in which the fading Today button can
+    // be tapped.
+    act(() => embla.selectAt(CENTER + 1))
+    expect(result.current.selectedIndex).toBe(CENTER + 1)
+
+    // The Today tap is a date-preserving router arrival. It must still issue
+    // an instant horizontal sync, superseding the pending snap.
+    rerender({ date: DATE, navigationKey: `0:1:${DATE}` })
+    expect(embla.api.scrollTo).toHaveBeenCalledExactlyOnceWith(CENTER, true)
+    expect(result.current.selectedIndex).toBe(CENTER)
+    // The instant jump emitted stale settle/select events through the old
+    // listener, but neither may publish another target or route selection.
+    expect(onTarget).toHaveBeenCalledTimes(1)
+    expect(onSelect).not.toHaveBeenCalled()
+
+    act(() => embla.settle())
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onTarget).toHaveBeenCalledTimes(1)
+    expect(result.current.selectedIndex).toBe(CENTER)
   })
 
   it('re-centers the window when a swipe settles near an edge', () => {
