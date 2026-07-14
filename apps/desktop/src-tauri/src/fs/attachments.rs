@@ -523,6 +523,7 @@ pub(super) fn revalidate_for_path_launch(
     })
 }
 
+#[cfg(any(target_os = "ios", target_os = "macos"))]
 fn placeholder_for(path: &Path) -> Option<PathBuf> {
     let name = path.file_name()?.to_str()?;
     Some(path.with_file_name(format!(".{name}.icloud")))
