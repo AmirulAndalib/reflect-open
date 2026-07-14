@@ -151,7 +151,6 @@ export {
   prepareNoteMoveRewrites,
   rewriteLinksForTitleChange,
   nextAliases,
-  type NoteMoveBacklink,
   type PreparedNoteMoveRewrite,
   type PreparedNoteMoveRewrites,
   type PrepareNoteMoveRewritesOptions,

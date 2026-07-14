@@ -17,6 +17,13 @@ export type MarkdownNoteLinkNavigation = (
   event?: MouseEvent | KeyboardEvent,
 ) => boolean
 
+/** Resolve a standard Markdown note link for an explicitly identified source note. */
+export type MarkdownNoteLinkNavigationFromSource = (
+  sourcePath: string,
+  href: string,
+  event?: MouseEvent | KeyboardEvent,
+) => boolean
+
 function reportMissingMarkdownNote(href: string): void {
   startOperation('Opening link').fail(`Couldn’t find a Markdown note matching “${href}”.`)
 }
@@ -32,15 +39,14 @@ function reportUnavailableMarkdownNote(href: string): void {
  * non-note hrefs are left unclaimed so the editor can continue through its
  * attachment, deep-link, and external-URL handlers.
  */
-export function useMarkdownLinkNavigation(
+export function useMarkdownLinkNavigationFromSource(
   generation: number | null,
-  sourcePath: string,
-): MarkdownNoteLinkNavigation {
+): MarkdownNoteLinkNavigationFromSource {
   const navigateNoteLink = useNoteLinkNavigation()
   const beginLinkIntent = useLinkIntentGuard()
 
   return useCallback(
-    (href, event) => {
+    (sourcePath, href, event) => {
       if (generation === null) {
         return false
       }
@@ -52,12 +58,21 @@ export function useMarkdownLinkNavigation(
       const isStale = beginLinkIntent()
       const fragment = reference.fragment
       const open = (path: string): void => {
+        const headingReveal = fragment === null ? undefined : { path, fragment }
         navigateNoteLink(
           routeForPath(path),
           event,
-          fragment === null
+          headingReveal === undefined
             ? undefined
-            : () => requestNoteHeadingReveal(path, fragment, generation),
+            : {
+                headingReveal,
+                beforeInWindowNavigate: () =>
+                  requestNoteHeadingReveal(
+                    headingReveal.path,
+                    headingReveal.fragment,
+                    generation,
+                  ),
+              },
         )
       }
 
@@ -84,12 +99,27 @@ export function useMarkdownLinkNavigation(
           }
           reportMissingMarkdownNote(href)
         } catch (cause) {
+          if (isStale()) {
+            return
+          }
           console.error('Markdown-link resolution failed:', cause)
           startOperation('Opening link').fail(errorMessage(cause))
         }
       })()
       return true
     },
-    [beginLinkIntent, generation, navigateNoteLink, sourcePath],
+    [beginLinkIntent, generation, navigateNoteLink],
+  )
+}
+
+/** Resolve local standard-Markdown note hrefs from one mounted note. */
+export function useMarkdownLinkNavigation(
+  generation: number | null,
+  sourcePath: string,
+): MarkdownNoteLinkNavigation {
+  const navigateFromSource = useMarkdownLinkNavigationFromSource(generation)
+  return useCallback(
+    (href, event) => navigateFromSource(sourcePath, href, event),
+    [navigateFromSource, sourcePath],
   )
 }

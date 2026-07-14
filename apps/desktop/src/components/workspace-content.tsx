@@ -6,7 +6,6 @@ import { DailyContextSidebar } from '@/components/context-sidebar/daily-context-
 import { NoteContextSidebar } from '@/components/context-sidebar/note-context-sidebar'
 import { type ContextSidebarTarget } from '@/components/context-sidebar/sidebar-route'
 import { EmbeddingsSync } from '@/components/embeddings-sync'
-import { AmbiguousNoteChooser } from '@/editor/ambiguous-note-chooser'
 import { RouteContent } from '@/components/route-content'
 import { ShortcutsDialog } from '@/components/shortcuts-dialog'
 import { Sidebar } from '@/components/sidebar/sidebar'
@@ -66,7 +65,6 @@ export function WorkspaceContent({ graph }: WorkspaceContentProps): ReactElement
         <ShortcutsDialog />
         <TemplatePicker context={commandContext} />
         <TemplateCreateDialog context={commandContext} />
-        <AmbiguousNoteChooser />
         <EmbeddingsSync />
       </div>
     </AppShell>

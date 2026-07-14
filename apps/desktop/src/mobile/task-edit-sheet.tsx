@@ -95,7 +95,7 @@ export function MobileTaskEditSheet({
   const navigateWikiLink = useWikiLinkNavigation(generation, task.notePath)
   const navigateMarkdownLink = useMarkdownLinkNavigation(generation, task.notePath)
   const navigateTag = useTagNavigation()
-  const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()
+  const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete(generation)
   const [showCalendar, setShowCalendar] = useState(false)
   // The editor is uncontrolled; a reopen reseeds the draft (the row may have
   // been rewritten by an action), so remount it via this seed to re-read it.

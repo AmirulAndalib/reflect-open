@@ -213,6 +213,48 @@ describe('resolveAssetFileLink', () => {
 })
 
 describe('useAssetPersistence catalog resolution', () => {
+  it('hands a just-saved path back to the catalog after its first manifest refresh', async () => {
+    let files: readonly FileMeta[] = []
+    const invoke = vi.fn(async (command: string, args: Record<string, unknown>) => {
+      if (command === 'list_attachments') {
+        return files
+      }
+      if (command === 'asset_upload_begin') {
+        return 'upload-1'
+      }
+      if (command === 'asset_upload_commit') {
+        const path = `assets/${args['desiredName'] as string}`
+        files = [{ path, size: 16, modifiedMs: 1 }]
+        return path
+      }
+      return null
+    })
+    setBridge({ invoke, invokeBinary: async () => null, listen: async () => () => {} })
+    render(
+      <AttachmentCatalogProvider generation={7}>
+        <Host generation={7} />
+      </AttachmentCatalogProvider>,
+    )
+
+    let href: string | null = null
+    await act(async () => {
+      href = await persistence!.saveFile(fileOf('Q3 Report.pdf', 'application/pdf'))
+    })
+    expect(href).toBe('../assets/q3-report.pdf')
+    const savedHref = href
+    if (savedHref === null) {
+      throw new Error('expected the attachment save to return an href')
+    }
+    act(() => emitFileChanges([{ path: 'assets/q3-report.pdf', kind: 'upsert' }]))
+    await waitFor(() => expect(persistence!.attachmentCatalogRevision).toBe(1))
+    expect(persistence!.resolveFileLink(fileLink(savedHref))).toBe(true)
+
+    files = []
+    act(() => emitFileChanges([{ path: 'assets/q3-report.pdf', kind: 'remove' }]))
+    await waitFor(() => expect(persistence!.attachmentCatalogRevision).toBe(2))
+    expect(persistence!.resolveFileLink(fileLink(savedHref))).toBe(false)
+  })
+
   it('resolves nested Markdown paths and unique wiki embeds through the graph catalog', async () => {
     const invoke = vi.fn(async (command: string) => {
       if (command === 'list_attachments') {

@@ -21,6 +21,8 @@ interface BridgeBehavior {
   indexedFiles?: Record<string, string>
   /** Evicted files whose title cannot currently be inspected. */
   placeholders?: string[]
+  /** Evicted files that still have an older derived-index row. */
+  indexedPlaceholders?: string[]
   /** Listed files whose contents fail to read. */
   readErrors?: string[]
   /** Optional exact control over an index query's result rows. */
@@ -38,6 +40,7 @@ function bindBridge({
   files = {},
   indexedFiles = {},
   placeholders = [],
+  indexedPlaceholders = [],
   readErrors = [],
   query,
   create,
@@ -47,6 +50,7 @@ function bindBridge({
     ...Object.keys(files),
     ...Object.keys(indexedFiles),
     ...placeholders,
+    ...indexedPlaceholders,
     ...readErrors,
   ])
   const unreadable = new Set(readErrors)
@@ -55,7 +59,7 @@ function bindBridge({
       const sql = String(args?.['sql'] ?? '')
       const params = (args?.['params'] as unknown[]) ?? []
       if (sql.includes('"file_hash"') && sql.includes('"mtime"')) {
-        return Object.keys(indexedFiles).map((path) => ({
+        return [...Object.keys(indexedFiles), ...indexedPlaceholders].map((path) => ({
           path,
           file_hash: `hash:${path}`,
           mtime: 1,
@@ -81,6 +85,12 @@ function bindBridge({
         })),
         ...Object.keys(files).map((path) => ({ path, size: files[path]!.length, modifiedMs: 1 })),
         ...placeholders.map((path) => ({
+          path,
+          size: 0,
+          modifiedMs: 1,
+          placeholder: true,
+        })),
+        ...indexedPlaceholders.map((path) => ({
           path,
           size: 0,
           modifiedMs: 1,
@@ -410,6 +420,16 @@ describe('resolveOrCreateNoteWithTitle', () => {
     await expect(resolveOrCreateNoteWithTitle('Business ideas', 7)).resolves.toEqual({
       kind: 'unavailable',
       paths: ['notes/business-ideas-3.md'],
+    })
+    expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
+  })
+
+  it('does not create while an indexed placeholder may have new remote keys', async () => {
+    const invoke = bindBridge({ indexedPlaceholders: ['Cloud/remote.md'] })
+
+    await expect(resolveOrCreateNoteWithTitle('New remote title', 7)).resolves.toEqual({
+      kind: 'unavailable',
+      paths: ['Cloud/remote.md'],
     })
     expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
   })

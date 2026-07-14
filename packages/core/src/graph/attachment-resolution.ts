@@ -101,7 +101,16 @@ export interface PreparedAttachmentCatalog {
   readonly metadataForPath: (path: string) => AttachmentFileMeta | undefined
 }
 
+/** Catalog-independent candidates derived from one authored attachment reference. */
+export interface AttachmentReferenceCandidates {
+  /** Exact graph-relative paths the syntax can mean, in resolution order. */
+  readonly exactPaths: readonly string[]
+  /** ASCII-case-insensitive filename lookup used only by a bare wiki embed. */
+  readonly basename: string | null
+}
+
 const IMAGE_EXTENSIONS = new Set(['avif', 'bmp', 'gif', 'jpeg', 'jpg', 'png', 'svg', 'webp'])
+const URI_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i
 
 function asciiLower(value: string): string {
   return value.replace(/[A-Z]/g, (character) => character.toLowerCase())
@@ -181,6 +190,56 @@ function sourceDirectory(sourcePath: string): readonly string[] | null {
   return components
 }
 
+function uniquePaths(paths: readonly (string | null)[]): string[] {
+  return [...new Set(paths.filter((path): path is string => path !== null))]
+}
+
+/**
+ * Derive the complete candidate set without consulting the filesystem. The
+ * index uses this exact helper to retain conservative privacy candidates, and
+ * live resolution then intersects the same candidates with the current
+ * generation-scoped attachment catalog.
+ */
+export function attachmentReferenceCandidates(
+  reference: AttachmentReference,
+): AttachmentReferenceCandidates | null {
+  const parsed = attachmentReferenceSchema.safeParse(reference)
+  if (!parsed.success) {
+    return null
+  }
+  const sourceDir = sourceDirectory(parsed.data.sourcePath)
+  const decoded = decodeReference(parsed.data.reference)
+  if (sourceDir === null || decoded === null || URI_SCHEME_RE.test(decoded)) {
+    return null
+  }
+
+  if (parsed.data.referenceKind === 'wikiEmbed') {
+    if (!decoded.includes('/')) {
+      return isAttachmentPath(decoded)
+        ? { exactPaths: [], basename: asciiLower(decoded) }
+        : null
+    }
+    const authored = decoded.startsWith('/') ? explicitVaultReference(decoded) : decoded
+    const path = authored === null ? null : normalizeReference([], authored)
+    return path === null ? null : { exactPaths: [path], basename: null }
+  }
+
+  if (decoded.startsWith('/')) {
+    const relative = explicitVaultReference(decoded)
+    const path = relative === null ? null : normalizeReference([], relative)
+    return path === null ? null : { exactPaths: [path], basename: null }
+  }
+  if (decoded.startsWith('./') || decoded.startsWith('../')) {
+    const path = normalizeReference(sourceDir, decoded)
+    return path === null ? null : { exactPaths: [path], basename: null }
+  }
+  const exactPaths = uniquePaths([
+    normalizeReference(sourceDir, decoded),
+    normalizeReference([], decoded),
+  ])
+  return exactPaths.length === 0 ? null : { exactPaths, basename: null }
+}
+
 function indexCatalog(catalog: readonly FileMeta[]): AttachmentCatalogIndex {
   const byPath = new Map<string, AttachmentCatalogEntry>()
   const metadataByPath = new Map<string, AttachmentFileMeta>()
@@ -252,55 +311,23 @@ function outcomeForCandidates(
     : { kind: 'resolved', path, renderKind }
 }
 
-function resolveMarkdownReference(
-  sourceDir: readonly string[],
-  reference: string,
+function resolveExactCandidates(
+  candidates: AttachmentReferenceCandidates,
   index: AttachmentCatalogIndex,
 ): AttachmentCatalogResolveOutcome {
-  if (reference.startsWith('/')) {
-    const relative = explicitVaultReference(reference)
-    const path = relative === null ? null : normalizeReference([], relative)
-    return path === null
-      ? { kind: 'invalid' }
-      : outcomeForCandidates([{ path, presence: presenceForPath(index, path) }])
+  const resolved: { path: string; presence: CandidatePresence }[] = []
+  for (const path of candidates.exactPaths) {
+    resolved.push({ path, presence: presenceForPath(index, path) })
   }
-
-  if (reference.startsWith('./') || reference.startsWith('../')) {
-    const path = normalizeReference(sourceDir, reference)
-    return path === null
-      ? { kind: 'invalid' }
-      : outcomeForCandidates([{ path, presence: presenceForPath(index, path) }])
-  }
-
-  const sourceRelative = normalizeReference(sourceDir, reference)
-  const vaultRelative = normalizeReference([], reference)
-  if (sourceRelative === null || vaultRelative === null) {
-    return { kind: 'invalid' }
-  }
-  return outcomeForCandidates([
-    { path: sourceRelative, presence: presenceForPath(index, sourceRelative) },
-    { path: vaultRelative, presence: presenceForPath(index, vaultRelative) },
-  ])
+  return outcomeForCandidates(resolved)
 }
 
-function resolveWikiEmbedReference(
-  reference: string,
+function resolveBasenameCandidate(
+  basename: string,
   index: AttachmentCatalogIndex,
 ): AttachmentCatalogResolveOutcome {
-  if (reference.includes('/')) {
-    const authored = reference.startsWith('/') ? explicitVaultReference(reference) : reference
-    const path = authored === null ? null : normalizeReference([], authored)
-    return path === null
-      ? { kind: 'invalid' }
-      : outcomeForCandidates([{ path, presence: presenceForPath(index, path) }])
-  }
-  if (!isAttachmentPath(reference)) {
-    return { kind: 'invalid' }
-  }
-
-  const requestedName = asciiLower(reference)
   return outcomeForCandidates(
-    (index.byBasename.get(requestedName) ?? []).map((entry) => ({
+    (index.byBasename.get(basename) ?? []).map((entry) => ({
       path: entry.path,
       presence: entry.presence,
     })),
@@ -311,18 +338,13 @@ function resolveIndexedAttachment(
   reference: AttachmentReference,
   index: AttachmentCatalogIndex,
 ): AttachmentCatalogResolveOutcome {
-  const parsed = attachmentReferenceSchema.safeParse(reference)
-  if (!parsed.success) {
+  const candidates = attachmentReferenceCandidates(reference)
+  if (candidates === null) {
     return { kind: 'invalid' }
   }
-  const sourceDir = sourceDirectory(parsed.data.sourcePath)
-  const decoded = decodeReference(parsed.data.reference)
-  if (sourceDir === null || decoded === null) {
-    return { kind: 'invalid' }
-  }
-  return parsed.data.referenceKind === 'markdown'
-    ? resolveMarkdownReference(sourceDir, decoded, index)
-    : resolveWikiEmbedReference(decoded, index)
+  return candidates.basename === null
+    ? resolveExactCandidates(candidates, index)
+    : resolveBasenameCandidate(candidates.basename, index)
 }
 
 /** Build path and basename indexes once for a generation-scoped manifest. */

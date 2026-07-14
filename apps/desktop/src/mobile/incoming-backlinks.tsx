@@ -43,6 +43,7 @@ export function IncomingBacklinks({ path, className }: IncomingBacklinksProps): 
   const {
     openSource,
     onWikilinkClick,
+    onMarkdownLinkClick,
     resolveImageUrl,
     resolveFileLink,
     resolveWikiEmbed,
@@ -98,6 +99,7 @@ export function IncomingBacklinks({ path, className }: IncomingBacklinksProps): 
             expanded={expanded}
             onOpen={openSource}
             onWikilinkClick={onWikilinkClick}
+            onMarkdownLinkClick={onMarkdownLinkClick}
             resolveImageUrl={resolveImageUrl}
             resolveFileLink={resolveFileLink}
             resolveWikiEmbed={resolveWikiEmbed}

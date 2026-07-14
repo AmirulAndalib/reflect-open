@@ -568,9 +568,17 @@ describe('suggestWikiTargets', () => {
   it('keeps an exact title match above the generated date (folded key threaded into the merge)', async () => {
     mockInvoke.mockImplementation(async (_command, args) => {
       const sql = String(args['sql'])
-      if (sql.includes('from "notes"') && sql.includes('title_key LIKE')) {
+      if (sql.includes('from "notes"') && sql.includes('authored_title_key LIKE')) {
         return [
-          { path: 'notes/today.md', title: 'Today', title_key: 'today', daily_date: null, mtime: 1 },
+          {
+            path: 'notes/today.md',
+            title: 'Today',
+            title_key: 'today',
+            authored_title_key: 'today',
+            basename_key: 'today',
+            daily_date: null,
+            mtime: 1,
+          },
         ]
       }
       if (sql.includes('from "note_keys"')) {
@@ -586,6 +594,351 @@ describe('suggestWikiTargets', () => {
     expect(result[1]).toMatchObject({ date: '2020-01-01', generated: { phrase: 'Today' }, path: null })
   })
 
+  it('qualifies duplicate title owners and marks them for path detail', async () => {
+    mockInvoke.mockImplementation(async (_command, args) => {
+      const sql = String(args['sql'])
+      if (sql.includes('from "notes"') && sql.includes('authored_title_key LIKE')) {
+        return [
+          {
+            path: 'Clients/Acme/Plan.md',
+            title: 'Plan',
+            title_key: 'plan',
+            authored_title_key: 'plan',
+            basename_key: 'plan',
+            daily_date: null,
+            mtime: 2,
+          },
+          {
+            path: 'Projects/Plan.md',
+            title: 'Plan',
+            title_key: 'plan',
+            authored_title_key: 'plan',
+            basename_key: 'plan',
+            daily_date: null,
+            mtime: 1,
+          },
+        ]
+      }
+      if (sql.includes('from "note_keys"')) {
+        return [
+          { key: 'plan', note_path: 'Clients/Acme/Plan.md', priority: 2 },
+          { key: 'plan', note_path: 'Projects/Plan.md', priority: 2 },
+        ]
+      }
+      return []
+    })
+
+    await expect(suggestWikiTargets('plan')).resolves.toEqual([
+      {
+        target: 'Clients/Acme/Plan',
+        path: 'Clients/Acme/Plan.md',
+        title: 'Plan',
+        alias: null,
+        date: null,
+        disambiguated: true,
+      },
+      {
+        target: 'Projects/Plan',
+        path: 'Projects/Plan.md',
+        title: 'Plan',
+        alias: null,
+        date: null,
+        disambiguated: true,
+      },
+    ])
+  })
+
+  it('path-qualifies an indexed title when a live unindexed duplicate appears', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'list_files') {
+        return [
+          { path: 'Projects/Plan.md', size: 6, modifiedMs: 1 },
+          { path: 'Imported/Plan.md', size: 6, modifiedMs: 1 },
+        ]
+      }
+      if (command === 'note_read') {
+        expect(args['path']).toBe('Imported/Plan.md')
+        expect(args['generation']).toBe(7)
+        return '# Plan'
+      }
+      const sql = String(args['sql'])
+      if (sql.includes('from "notes"') && sql.includes('authored_title_key LIKE')) {
+        return [
+          {
+            path: 'Projects/Plan.md',
+            title: 'Plan',
+            title_key: 'plan',
+            authored_title_key: 'plan',
+            basename_key: 'plan',
+            daily_date: null,
+            mtime: 1,
+          },
+        ]
+      }
+      if (sql.includes('"file_hash"') && sql.includes('"mtime"')) {
+        return [{ path: 'Projects/Plan.md', file_hash: 'indexed', mtime: 1 }]
+      }
+      if (sql.includes('"authored_title_key" = ?')) {
+        return [{ path: 'Projects/Plan.md' }]
+      }
+      return []
+    })
+
+    await expect(suggestWikiTargets('Plan', 8, undefined, 7)).resolves.toEqual([
+      {
+        target: 'Projects/Plan',
+        path: 'Projects/Plan.md',
+        title: 'Plan',
+        alias: null,
+        date: null,
+        disambiguated: true,
+      },
+    ])
+    expect(mockInvoke).toHaveBeenCalledWith('list_files', { generation: 7 })
+    expect(mockInvoke.mock.calls.filter(([command]) => command === 'note_read')).toHaveLength(1)
+    for (const [, args] of mockInvoke.mock.calls.filter(([command]) => command === 'db_query')) {
+      expect(args['graphGeneration']).toBe(7)
+    }
+  })
+
+  it('drops an indexed suggestion whose file is absent from the live manifest', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'list_files') {
+        return []
+      }
+      const sql = String(args['sql'])
+      if (sql.includes('from "notes"') && sql.includes('authored_title_key LIKE')) {
+        return [
+          {
+            path: 'Deleted/Plan.md',
+            title: 'Plan',
+            title_key: 'plan',
+            authored_title_key: 'plan',
+            basename_key: 'plan',
+            daily_date: null,
+            mtime: 1,
+          },
+        ]
+      }
+      if (sql.includes('"file_hash"') && sql.includes('"mtime"')) {
+        return [{ path: 'Deleted/Plan.md', file_hash: 'indexed', mtime: 1 }]
+      }
+      if (sql.includes('"authored_title_key" = ?')) {
+        return [{ path: 'Deleted/Plan.md' }]
+      }
+      return []
+    })
+
+    await expect(suggestWikiTargets('Plan', 8, undefined, 7)).resolves.toEqual([])
+  })
+
+  it('keeps a live title owner while dropping a deleted duplicate owner', async () => {
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'list_files') {
+        return [{ path: 'Projects/Plan.md', size: 6, modifiedMs: 1 }]
+      }
+      const sql = String(args['sql'])
+      if (sql.includes('from "notes"') && sql.includes('authored_title_key LIKE')) {
+        return [
+          {
+            path: 'Projects/Plan.md',
+            title: 'Plan',
+            title_key: 'plan',
+            authored_title_key: 'plan',
+            basename_key: 'plan',
+            daily_date: null,
+            mtime: 2,
+          },
+          {
+            path: 'Deleted/Plan.md',
+            title: 'Plan',
+            title_key: 'plan',
+            authored_title_key: 'plan',
+            basename_key: 'plan',
+            daily_date: null,
+            mtime: 1,
+          },
+        ]
+      }
+      if (sql.includes('"file_hash"') && sql.includes('"mtime"')) {
+        return [
+          { path: 'Projects/Plan.md', file_hash: 'indexed', mtime: 1 },
+          { path: 'Deleted/Plan.md', file_hash: 'indexed', mtime: 1 },
+        ]
+      }
+      if (sql.includes('"authored_title_key" = ?')) {
+        return [{ path: 'Deleted/Plan.md' }, { path: 'Projects/Plan.md' }]
+      }
+      return []
+    })
+
+    await expect(suggestWikiTargets('Plan', 8, undefined, 7)).resolves.toEqual([
+      {
+        target: 'Plan',
+        path: 'Projects/Plan.md',
+        title: 'Plan',
+        alias: null,
+        date: null,
+      },
+    ])
+  })
+
+  it('does not start a vault scan when the index produced no live candidates', async () => {
+    mockInvoke.mockResolvedValue([])
+
+    await expect(suggestWikiTargets('Missing', 8, undefined, 7)).resolves.toEqual([])
+    expect(mockInvoke.mock.calls.some(([command]) => command === 'list_files')).toBe(false)
+    for (const [, args] of mockInvoke.mock.calls.filter(([command]) => command === 'db_query')) {
+      expect(args['graphGeneration']).toBe(7)
+    }
+  })
+
+  it('finds an authored note by filename stem and keeps a unique basename bare', async () => {
+    mockInvoke.mockImplementation(async (_command, args) => {
+      const sql = String(args['sql'])
+      if (sql.includes('from "notes"') && sql.includes('basename_key LIKE')) {
+        return [
+          {
+            path: 'Projects/Plan.md',
+            title: 'Quarterly roadmap',
+            title_key: 'quarterly roadmap',
+            authored_title_key: 'quarterly roadmap',
+            basename_key: 'plan',
+            daily_date: null,
+            mtime: 1,
+          },
+        ]
+      }
+      if (sql.includes('from "note_keys"')) {
+        return [{ key: 'plan', note_path: 'Projects/Plan.md', priority: 4 }]
+      }
+      return []
+    })
+
+    await expect(suggestWikiTargets('Plan')).resolves.toEqual([
+      {
+        target: 'Plan',
+        path: 'Projects/Plan.md',
+        title: 'Quarterly roadmap',
+        alias: null,
+        date: null,
+      },
+    ])
+
+    const noteQuery = mockInvoke.mock.calls.find(([, args]) =>
+      String(args['sql']).includes('from "notes"'),
+    )
+    expect(noteQuery).toBeDefined()
+    expect(String(noteQuery![1]['sql'])).toContain('basename_key LIKE')
+  })
+
+  it('path-qualifies duplicate filename-stem matches', async () => {
+    mockInvoke.mockImplementation(async (_command, args) => {
+      const sql = String(args['sql'])
+      if (sql.includes('from "notes"') && sql.includes('basename_key LIKE')) {
+        return [
+          {
+            path: 'Projects/Plan.md',
+            title: 'Quarterly roadmap',
+            title_key: 'quarterly roadmap',
+            authored_title_key: 'quarterly roadmap',
+            basename_key: 'plan',
+            daily_date: null,
+            mtime: 2,
+          },
+          {
+            path: 'Archive/Plan.md',
+            title: 'Archived launch plan',
+            title_key: 'archived launch plan',
+            authored_title_key: 'archived launch plan',
+            basename_key: 'plan',
+            daily_date: null,
+            mtime: 1,
+          },
+        ]
+      }
+      if (sql.includes('from "note_keys"')) {
+        return [
+          { key: 'plan', note_path: 'Archive/Plan.md', priority: 4 },
+          { key: 'plan', note_path: 'Projects/Plan.md', priority: 4 },
+        ]
+      }
+      return []
+    })
+
+    await expect(suggestWikiTargets('Plan')).resolves.toEqual([
+      {
+        target: 'Projects/Plan',
+        path: 'Projects/Plan.md',
+        title: 'Quarterly roadmap',
+        alias: null,
+        date: null,
+        disambiguated: true,
+      },
+      {
+        target: 'Archive/Plan',
+        path: 'Archive/Plan.md',
+        title: 'Archived launch plan',
+        alias: null,
+        date: null,
+        disambiguated: true,
+      },
+    ])
+  })
+
+  it('keeps an authored-title owner bare and qualifies a lower-precedence basename owner', async () => {
+    mockInvoke.mockImplementation(async (_command, args) => {
+      const sql = String(args['sql'])
+      if (sql.includes('from "notes"') && sql.includes('basename_key LIKE')) {
+        return [
+          {
+            path: 'notes/title-owner.md',
+            title: 'Plan',
+            title_key: 'plan',
+            authored_title_key: 'plan',
+            basename_key: 'title-owner',
+            daily_date: null,
+            mtime: 1,
+          },
+          {
+            path: 'Projects/Plan.md',
+            title: 'Quarterly roadmap',
+            title_key: 'quarterly roadmap',
+            authored_title_key: 'quarterly roadmap',
+            basename_key: 'plan',
+            daily_date: null,
+            mtime: 2,
+          },
+        ]
+      }
+      if (sql.includes('from "note_keys"')) {
+        return [
+          { key: 'plan', note_path: 'notes/title-owner.md', priority: 2 },
+          { key: 'plan', note_path: 'Projects/Plan.md', priority: 4 },
+        ]
+      }
+      return []
+    })
+
+    await expect(suggestWikiTargets('Plan')).resolves.toEqual([
+      {
+        target: 'Plan',
+        path: 'notes/title-owner.md',
+        title: 'Plan',
+        alias: null,
+        date: null,
+      },
+      {
+        target: 'Projects/Plan',
+        path: 'Projects/Plan.md',
+        title: 'Quarterly roadmap',
+        alias: null,
+        date: null,
+        disambiguated: true,
+      },
+    ])
+  })
+
   it('does not synthesise dates without a clock (legacy callers unchanged)', async () => {
     mockInvoke.mockResolvedValue([])
     await expect(suggestWikiTargets('today')).resolves.toEqual([])
@@ -598,7 +951,7 @@ describe('suggestWikiTargets', () => {
     ])
   })
 
-  it('excludes templates from both the title and alias candidate queries', async () => {
+  it('excludes templates from both the note-key and alias candidate queries', async () => {
     mockInvoke.mockResolvedValue([])
 
     await suggestWikiTargets('journal')

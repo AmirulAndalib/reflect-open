@@ -2,8 +2,7 @@ import { indexMarkdownNoteReference, notePathKey, wikiNotePath } from '../graph/
 import { renameWikiLink } from '../markdown/edit'
 import { parseNote } from '../markdown/extract'
 import { foldKey } from '../markdown/keys'
-import { parseInlineLink } from '../markdown/link-syntax'
-import type { Resolution } from '../markdown/resolve'
+import type { ExistingWikiTargetResolution } from '../graph/resolve-existing-wiki-target'
 
 /**
  * The rename-rewrite pipeline (Plan 07b): when a note's settled title changes,
@@ -20,7 +19,8 @@ export interface RenameIo {
   read: (path: string) => Promise<string>
   /** Write with the graph generation pre-bound (stale → loud rejection). */
   write: (path: string, content: string) => Promise<void>
-  resolve: (target: string) => Promise<Resolution>
+  /** Resolve without collapsing duplicate owners to an arbitrary first match. */
+  resolve: (target: string) => Promise<ExistingWikiTargetResolution>
 }
 
 export interface TitleRenameRewriteOptions {
@@ -41,13 +41,6 @@ export interface TitleRenameRewriteResult {
   collision: boolean
 }
 
-/** One indexed backlink row used to rewrite an exact local-path reference. */
-export interface NoteMoveBacklink {
-  readonly sourcePath: string
-  readonly kind: 'wiki' | 'md'
-  readonly targetRaw: string
-}
-
 /** A source rewrite prepared before the managed note is moved. */
 export interface PreparedNoteMoveRewrite {
   readonly path: string
@@ -58,7 +51,8 @@ export interface PreparedNoteMoveRewrite {
 export interface PrepareNoteMoveRewritesOptions {
   readonly fromPath: string
   readonly toPath: string
-  readonly backlinks: readonly NoteMoveBacklink[]
+  /** Generation-pinned live note manifest: every path is read and parsed. */
+  readonly notePaths: readonly string[]
   readonly read: (path: string) => Promise<string>
 }
 
@@ -113,6 +107,9 @@ function relativePath(fromFile: string, toFile: string): string {
 
 function markdownHrefAfterMove(href: string, sourcePath: string, toPath: string): string {
   const authored = splitFragment(href)
+  if (authored.path === '') {
+    return href
+  }
   const keepExtension = /\.md$/i.test(authored.path)
   const rootRelative = authored.path.startsWith('/')
   const target = keepExtension ? toPath : stripMarkdownExtension(toPath)
@@ -121,28 +118,21 @@ function markdownHrefAfterMove(href: string, sourcePath: string, toPath: string)
   return `${explicitSameDirectory ? `./${path}` : path}${authored.fragment}`
 }
 
-function replaceInlineHref(raw: string, currentHref: string, nextHref: string): string | null {
-  const parsed = parseInlineLink(raw)
-  if (parsed === null || parsed.href !== currentHref) {
+function markdownReferenceMatchesLiveTarget(
+  pathKey: string,
+  alternatePathKey: string | null,
+  targetPathKey: string,
+  livePathKeys: ReadonlySet<string>,
+): boolean | null {
+  const candidates = [...new Set([pathKey, alternatePathKey].filter((key) => key !== null))]
+  if (!candidates.includes(targetPathKey)) {
+    return false
+  }
+  const liveCandidates = candidates.filter((key) => livePathKeys.has(key))
+  if (liveCandidates.length !== 1) {
     return null
   }
-  const linkStart = raw.indexOf('](')
-  if (linkStart === -1) {
-    return null
-  }
-  const bracketed = `<${currentHref}>`
-  const bracketedAt = raw.indexOf(bracketed, linkStart + 2)
-  if (bracketedAt !== -1) {
-    return `${raw.slice(0, bracketedAt + 1)}${nextHref}${raw.slice(bracketedAt + bracketed.length - 1)}`
-  }
-  const hrefAt = raw.indexOf(currentHref, linkStart + 2)
-  return hrefAt === -1
-    ? null
-    : `${raw.slice(0, hrefAt)}${nextHref}${raw.slice(hrefAt + currentHref.length)}`
-}
-
-function referenceCountKey(kind: 'wiki' | 'md', targetRaw: string): string {
-  return `${kind}\u0000${targetRaw}`
+  return liveCandidates[0] === targetPathKey
 }
 
 function sourceRewrite(
@@ -150,37 +140,19 @@ function sourceRewrite(
   source: string,
   fromPath: string,
   toPath: string,
-  backlinks: readonly NoteMoveBacklink[],
+  livePathKeys: ReadonlySet<string>,
 ): string | null {
   const fromKey = notePathKey(fromPath)
-  const expected = new Map<string, number>()
-  for (const backlink of backlinks) {
-    let exact: boolean
-    if (backlink.kind === 'wiki') {
-      const path = wikiNotePath(backlink.targetRaw)
-      exact = path !== null && notePathKey(path) === fromKey
-    } else {
-      const reference = indexMarkdownNoteReference(sourcePath, backlink.targetRaw)
-      exact =
-        reference !== null && [reference.pathKey, reference.alternatePathKey].includes(fromKey)
-    }
-    if (!exact) {
-      continue
-    }
-    const key = referenceCountKey(backlink.kind, backlink.targetRaw)
-    expected.set(key, (expected.get(key) ?? 0) + 1)
-  }
-  if (expected.size === 0) {
-    return source
-  }
-
   const parsed = parseNote({ path: sourcePath, source })
   const splices: SourceSplice[] = []
+  const markdownDestinationSplices = new Map<string, SourceSplice>()
   for (const link of parsed.wikiLinks) {
-    const key = referenceCountKey('wiki', link.target)
-    const remaining = expected.get(key) ?? 0
     const targetPath = wikiNotePath(link.target)
-    if (remaining === 0 || targetPath === null || notePathKey(targetPath) !== fromKey) {
+    if (
+      targetPath === null ||
+      notePathKey(targetPath) !== fromKey ||
+      !livePathKeys.has(fromKey)
+    ) {
       continue
     }
     const target = wikiTargetAfterMove(link.target, toPath)
@@ -189,60 +161,75 @@ function sourceRewrite(
       to: link.to,
       text: link.alias === undefined ? `[[${target}]]` : `[[${target}|${link.alias}]]`,
     })
-    expected.set(key, remaining - 1)
   }
 
   const markdownSourcePath = sourcePath === fromPath ? toPath : sourcePath
   for (const link of parsed.links) {
-    const key = referenceCountKey('md', link.href)
-    const remaining = expected.get(key) ?? 0
-    if (remaining === 0) {
-      continue
-    }
     const reference = indexMarkdownNoteReference(sourcePath, link.href)
-    if (reference === null || ![reference.pathKey, reference.alternatePathKey].includes(fromKey)) {
+    if (reference === null || reference.pathKey === null) {
       continue
     }
-    const raw = source.slice(link.from, link.to)
-    const replacement = replaceInlineHref(
-      raw,
-      link.href,
-      markdownHrefAfterMove(link.href, markdownSourcePath, toPath),
+    const match = markdownReferenceMatchesLiveTarget(
+      reference.pathKey,
+      reference.alternatePathKey,
+      fromKey,
+      livePathKeys,
     )
-    if (replacement === null) {
+    if (match === null) {
       return null
     }
-    splices.push({ from: link.from, to: link.to, text: replacement })
-    expected.set(key, remaining - 1)
+    if (!match) {
+      continue
+    }
+    if (link.reference?.duplicate === true) {
+      return null
+    }
+    const replacement = markdownHrefAfterMove(link.href, markdownSourcePath, toPath)
+    const destination = link.destination
+    if (
+      destination.from < 0 ||
+      destination.to < destination.from ||
+      destination.to > source.length
+    ) {
+      return null
+    }
+    const spliceKey = `${destination.from}:${destination.to}`
+    const existing = markdownDestinationSplices.get(spliceKey)
+    if (existing !== undefined && existing.text !== replacement) {
+      return null
+    }
+    if (existing === undefined) {
+      markdownDestinationSplices.set(spliceKey, {
+        from: destination.from,
+        to: destination.to,
+        text: replacement,
+      })
+    }
   }
 
-  return [...expected.values()].some((remaining) => remaining !== 0)
-    ? null
-    : applySourceSplices(source, splices)
+  splices.push(...markdownDestinationSplices.values())
+  return applySourceSplices(source, splices)
 }
 
 /**
  * Read and prepare every exact wiki/Markdown path rewrite for a managed note
- * move. Nothing is written here: the desktop can refuse the move if any source
- * is unreadable or its indexed references no longer match current bytes.
+ * move. The generation-pinned manifest, rather than backlink rows, is the
+ * source of candidates: this catches brand-new/unindexed links and every live
+ * occurrence. Nothing is written here, and one unreadable live note fails the
+ * move closed because its references cannot be ruled out safely.
  */
 export async function prepareNoteMoveRewrites(
   options: PrepareNoteMoveRewritesOptions,
 ): Promise<PreparedNoteMoveRewrites> {
-  const backlinksBySource = new Map<string, NoteMoveBacklink[]>()
-  for (const backlink of options.backlinks) {
-    const rows = backlinksBySource.get(backlink.sourcePath) ?? []
-    rows.push(backlink)
-    backlinksBySource.set(backlink.sourcePath, rows)
-  }
+  const livePathKeys = new Set(options.notePaths.map(notePathKey))
   const rewrites: PreparedNoteMoveRewrite[] = []
   const failed: string[] = []
-  for (const [path, backlinks] of [...backlinksBySource].sort(([left], [right]) =>
+  for (const path of [...new Set(options.notePaths)].sort((left, right) =>
     left.localeCompare(right),
   )) {
     try {
       const before = await options.read(path)
-      const after = sourceRewrite(path, before, options.fromPath, options.toPath, backlinks)
+      const after = sourceRewrite(path, before, options.fromPath, options.toPath, livePathKeys)
       if (after === null) {
         failed.push(path)
       } else if (after !== before) {
@@ -275,11 +262,16 @@ export async function rewriteLinksForTitleChange(
   // resolution stays deterministic and the alias still lands, so nothing
   // breaks; the late-created note simply wins future resolutions.
   const resolution = await io.resolve(from)
-  if (resolution.kind === 'resolved' && resolution.ref !== path) {
+  if (
+    resolution.kind === 'ambiguous' ||
+    resolution.kind === 'unavailable' ||
+    resolution.kind === 'invalid' ||
+    (resolution.kind === 'resolved' && resolution.path !== path)
+  ) {
     return { rewritten: [], failed: [], collision: true }
   }
 
-  const sources = (await io.sources(foldKey(from))).filter((source) => source !== path)
+  const sources = await io.sources(foldKey(from))
   const rewritten: string[] = []
   const failed: string[] = []
   let done = 0

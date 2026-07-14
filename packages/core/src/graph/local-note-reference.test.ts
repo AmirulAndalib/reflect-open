@@ -37,11 +37,24 @@ describe('local note references', () => {
     expect(wikiNotePath('Projects/Launch%20Plan#Scope')).toBe('Projects/Launch Plan.md')
     expect(wikiNotePath('../outside')).toBeNull()
     expect(wikiNotePath('assets/secret')).toBeNull()
+    expect(wikiNotePath('/absolute/secret')).toBeNull()
+    expect(wikiNotePath('//server/share')).toBeNull()
+    expect(wikiNotePath('C:/Users/secret')).toBeNull()
+    expect(wikiNotePath('file:///private/secret')).toBeNull()
+    expect(wikiNotePath('https://example.com/secret')).toBeNull()
+    expect(wikiNotePath('https%3A%2F%2Fexample.com/secret')).toBeNull()
+    expect(wikiNotePath('%2Fabsolute/secret')).toBeNull()
+    expect(wikiNotePath('Projects/%2Ehidden/secret')).toBeNull()
   })
 
   it('returns a decoded bare title without extension or fragment', () => {
     expect(bareWikiTitle('Launch%20Plan.md#Scope')).toBe('Launch Plan')
     expect(bareWikiTitle('Projects/Plan')).toBeNull()
+    expect(bareWikiTitle('C:relative.md')).toBe('C:relative')
+    expect(bareWikiTitle('https:')).toBe('https:')
+    expect(bareWikiTitle('.NET')).toBe('.NET')
+    expect(bareWikiTitle('mailto:foo')).toBe('mailto:foo')
+    expect(bareWikiTitle('Project:Alpha')).toBe('Project:Alpha')
   })
 
   it('indexes same-note wiki heading links', () => {
@@ -96,5 +109,8 @@ describe('local note references', () => {
     expect(indexWikiNoteReference('Today.md', '../outside')).toBeNull()
     expect(indexWikiNoteReference('Today.md', '.obsidian/secret')).toBeNull()
     expect(indexWikiNoteReference('Today.md', 'Projects/report.pdf')).toBeNull()
+    expect(indexWikiNoteReference('Today.md', 'C:relative.md')?.targetKey).toBe('c:relative')
+    expect(indexWikiNoteReference('Today.md', 'https://example.com/secret')).toBeNull()
+    expect(indexWikiNoteReference('Today.md', 'Projects/%00secret')).toBeNull()
   })
 })

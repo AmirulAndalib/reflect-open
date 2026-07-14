@@ -52,11 +52,44 @@ describe('resolveOrCreateWikiTarget', () => {
     )
   })
 
+  it.each(['.NET', 'C:', 'mailto:foo', 'Project:Alpha', 'https:'])(
+    'creates the bare title %s only through a safe notes slug',
+    async (title) => {
+      resolveExistingWikiTargetMock.mockResolvedValue({ kind: 'missing' })
+      createNoteIfAbsentMock.mockResolvedValue({ kind: 'created', modifiedMs: 42 })
+
+      const outcome = await resolveOrCreateWikiTarget(title, 'Inbox.md', 7)
+
+      expect(outcome.kind).toBe('created')
+      const createdPath = createNoteIfAbsentMock.mock.calls[0]?.[0]
+      expect(createdPath).toMatch(/^notes\/[a-z0-9-]+\.md$/)
+      expect(createdPath).not.toContain(':')
+    },
+  )
+
   it('returns invalid for a traversal target', async () => {
     resolveExistingWikiTargetMock.mockResolvedValue({ kind: 'invalid' })
 
     await expect(
       resolveOrCreateWikiTarget('../Secret', 'Projects/Plan.md', 7),
+    ).resolves.toEqual({ kind: 'invalid' })
+    expect(createNoteIfAbsentMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    '/absolute/secret',
+    '//server/share',
+    '\\\\server\\share',
+    'C:/Users/secret',
+    'file:///private/secret',
+    'https://example.com/secret',
+    '.obsidian/secret',
+    'Projects/%00secret',
+  ])('never creates an unsafe authored target: %s', async (target) => {
+    resolveExistingWikiTargetMock.mockResolvedValue({ kind: 'missing' })
+
+    await expect(
+      resolveOrCreateWikiTarget(target, 'Projects/Plan.md', 7),
     ).resolves.toEqual({ kind: 'invalid' })
     expect(createNoteIfAbsentMock).not.toHaveBeenCalled()
   })

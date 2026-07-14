@@ -7,10 +7,19 @@ const DEFAULT_SAVE_DEBOUNCE_MS = 800
 
 /** Create the document session for one note. See note-session.ts for semantics. */
 export function createNoteSession(options: NoteSessionOptions): NoteSession {
-  const { io, classify, onSnapshot, applyContent, onContent, reconcilePendingEditorInput } = options
+  const {
+    io,
+    classify,
+    onSnapshot,
+    applyContent,
+    onContent,
+    reconcilePendingEditorInput,
+    onInitialCreateConsumed,
+  } = options
   /** Mutable: a rename retargets the session in place (Plan 17). */
   let path = options.path
   const createIfMissing = options.createIfMissing ?? false
+  let recreateAfterRemoval = options.recreateAfterRemoval ?? false
   const missingSeed = options.missingSeed
   const saveDebounceMs = options.saveDebounceMs ?? DEFAULT_SAVE_DEBOUNCE_MS
 
@@ -44,12 +53,22 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
   let applyingContent = false
   /** True while the initial `load()` read is in flight. */
   let loading = false
-  /** A watcher event arrived during the load; replay reconciliation after it. */
-  let missedChange = false
+  /** The last watcher event during load; replay it after the initial read settles. */
+  let missedChange: 'upsert' | 'remove' | null = null
   let disposed = false
   // Set by `discard` — tells `dispose` to skip its flush (the file is being
   // deleted, so rewriting it would recreate it).
   let discarded = false
+  /**
+   * An existing non-lazy note was removed outside Reflect. Keep its buffer but
+   * refuse every write until a successful read proves the path exists again.
+   */
+  let writeParkedForRemoval = false
+  /** A fresh missing route may claim its path once; landing or retargeting revokes it. */
+  let initialMissingCreateAvailable = false
+  let initialCreateConsumptionReported = false
+  /** Successful conditional writes, used by transactional out-of-editor edits. */
+  let landedWriteCount = 0
 
   let lastEmitted: NoteSessionSnapshot | null = null
 
@@ -63,6 +82,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
       protected: isProtected,
       dirty,
       missing,
+      saveBlockedByRemoval: writeParkedForRemoval,
       conflict,
       error,
     }
@@ -73,6 +93,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
       lastEmitted.protected === next.protected &&
       lastEmitted.dirty === next.dirty &&
       lastEmitted.missing === next.missing &&
+      lastEmitted.saveBlockedByRemoval === next.saveBlockedByRemoval &&
       lastEmitted.conflict === next.conflict &&
       lastEmitted.error === next.error
     ) {
@@ -82,6 +103,14 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     onSnapshot(next)
   }
 
+  function consumeInitialCreateCapability(): void {
+    initialMissingCreateAvailable = false
+    if (!initialCreateConsumptionReported) {
+      initialCreateConsumptionReported = true
+      onInitialCreateConsumed?.()
+    }
+  }
+
   function save(): void {
     // A discarded session never writes: its file is being deleted, so any
     // save — including a teardown `flush()` (the pane unmounts via flush →
@@ -89,7 +118,14 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     // conflict likewise pauses all saves: writing the buffer before the user
     // chooses Keep mine / Load theirs would clobber the external change and
     // defeat the non-destructive flow.
-    if (discarded || io.write === null || !dirty || isProtected || conflict !== null) {
+    if (
+      discarded ||
+      writeParkedForRemoval ||
+      io.write === null ||
+      !dirty ||
+      isProtected ||
+      conflict !== null
+    ) {
       return
     }
     const write = io.write
@@ -100,25 +136,71 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
         // have reverted or kept typing, or the session may have been discarded
         // for a delete. (After dispose the buffer is frozen, so this same step
         // doubles as the final flush.)
-        if (discarded || !dirty || isProtected || conflict !== null) {
+        if (
+          discarded ||
+          writeParkedForRemoval ||
+          !dirty ||
+          isProtected ||
+          conflict !== null
+        ) {
           return
         }
         const content = header + buffer
+        const expected = missing ? null : disk
+        if (expected === null && !initialMissingCreateAvailable && !recreateAfterRemoval) {
+          // The fresh route already spent its one claim (possibly in a command
+          // whose response was lost). Never retry an absent-path write: the
+          // earlier command may have landed and the file may since have been
+          // removed, which would turn an innocent retry into recreation.
+          writeParkedForRemoval = true
+          cancelScheduledSave()
+          emit()
+          return
+        }
+        // Dispatching the first create consumes the fresh-route capability.
+        // The native write may land before its IPC response; if a newer remove
+        // event arrives in that window, `externalRemoved()` must park the
+        // buffer instead of treating the route as never created and allowing
+        // a later flush to recreate it.
+        if (expected === null && initialMissingCreateAvailable) {
+          consumeInitialCreateCapability()
+        }
         inFlightWrite = content
         try {
-          await write(path, content)
+          const written = await write(path, content, expected)
+          if (!written) {
+            await reconcileConditionalWriteRefusal(expected === null)
+            return
+          }
           disk = content
-          dirty = header + buffer !== content
-          missing = false // the landed write created the file if it was missing
+          landedWriteCount += 1
+          consumeInitialCreateCapability()
+          // A remove can arrive while this write is already in flight. Its
+          // successful return does not overrule that newer filesystem fact:
+          // keep the buffer dirty and parked until an upsert can be read.
+          dirty = writeParkedForRemoval || header + buffer !== content
+          if (!writeParkedForRemoval) {
+            missing = false // the landed write created the file if it was missing
+          }
           error = null // a previous save failure is resolved by this success
           emit()
-          onContent?.(content, 'saved')
+          if (!writeParkedForRemoval) {
+            onContent?.(content, 'saved')
+          }
         } finally {
           inFlightWrite = null
         }
       })
       .catch((cause) => {
         console.error('failed to save note:', cause)
+        if (missing && !initialMissingCreateAvailable && !recreateAfterRemoval) {
+          // The first absent-path command has been dispatched, so transport
+          // failure is ambiguous: it may have landed before the response was
+          // lost. Park immediately rather than promising a retry that could
+          // recreate a subsequently removed file.
+          writeParkedForRemoval = true
+          cancelScheduledSave()
+        }
         error = errorMessage(cause)
         emit()
       })
@@ -171,7 +253,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
       dirty = false
     }
     emit()
-    if (dirty) {
+    if (dirty && !writeParkedForRemoval) {
       scheduleSave()
     }
   }
@@ -212,6 +294,53 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     onContent?.(content, 'external')
   }
 
+  /** Reconcile a native compare-and-swap refusal without issuing another write. */
+  async function reconcileConditionalWriteRefusal(expectedAbsent: boolean): Promise<void> {
+    let content: string
+    try {
+      content = await io.read(path)
+    } catch (cause) {
+      if (disposed) {
+        return
+      }
+      if (isAppError(cause) && cause.kind === 'notFound') {
+        missing = true
+        conflict = null
+        const mayCreate =
+          recreateAfterRemoval || (expectedAbsent && initialMissingCreateAvailable)
+        writeParkedForRemoval = !mayCreate
+        cancelScheduledSave()
+        emit()
+        return
+      }
+      error = errorMessage(cause)
+      emit()
+      return
+    }
+    if (disposed) {
+      return
+    }
+    consumeInitialCreateCapability()
+    writeParkedForRemoval = false
+    missing = false
+    disk = content
+    error = null
+    if (content === header + buffer) {
+      dirty = false
+      conflict = null
+      emit()
+      onContent?.(content, 'external')
+      return
+    }
+    // The attempted write did not land, and these are the winner's exact
+    // bytes. Park them as the conflict baseline; Keep mine will conditionally
+    // replace this version and must fail again if it changes once more.
+    dirty = true
+    conflict = content
+    cancelScheduledSave()
+    emit()
+  }
+
   /**
    * Re-read the note and reconcile the buffer with what's on disk (the
    * external-change path).
@@ -226,15 +355,35 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     if (disposed) {
       return
     }
+    const wasParkedForRemoval = writeParkedForRemoval
+    writeParkedForRemoval = false
+    consumeInitialCreateCapability()
+    missing = false
     if (content === disk || content === inFlightWrite) {
       // Nothing to reconcile (stale, or an echo of our own possibly
       // still-settling save) — but a successful read of a previously-missing
       // note means the file exists now (e.g. another device wrote the seed
       // verbatim), so record that transition before skipping.
-      if (missing) {
-        missing = false
-        emit()
+      if (content === header + buffer) {
+        dirty = false
       }
+      emit()
+      if (wasParkedForRemoval && dirty) {
+        scheduleSave()
+      }
+      return
+    }
+    if (wasParkedForRemoval && content === header + buffer) {
+      // A write can land before its IPC response is lost. The watcher then
+      // supplies the only trustworthy acknowledgement: identical live bytes
+      // mean the editor and disk already agree, not that two versions need a
+      // conflict choice.
+      disk = content
+      dirty = false
+      conflict = null
+      error = null
+      emit()
+      onContent?.(content, 'external')
       return
     }
     if (dirty) {
@@ -242,6 +391,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
       // save pipeline (cancel any pending debounce) until the user chooses; a
       // save landing now would overwrite "theirs" first.
       cancelScheduledSave()
+      disk = content
       conflict = content
       emit()
       return
@@ -263,7 +413,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
 
   function load(): void {
     loading = true
-    missedChange = false
+    missedChange = null
     status = 'loading'
     conflict = null
     error = null
@@ -284,6 +434,10 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
         disk = adopted
         dirty = false
         missing = fileMissing
+        initialMissingCreateAvailable = fileMissing
+        if (!fileMissing) {
+          consumeInitialCreateCapability()
+        }
         // The data-loss gate: a note the editor can't reproduce opens read-only.
         isProtected = classify(doc.body) === 'lossy'
         initialContent = isProtected ? adopted : doc.body
@@ -304,8 +458,11 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
           // A change event during the load was deferred (reconciling mid-load
           // could be overwritten by this load's older read committing later);
           // replay it now against the committed state.
-          if (missedChange) {
-            missedChange = false
+          const pendingChange = missedChange
+          missedChange = null
+          if (pendingChange === 'remove') {
+            externalRemoved()
+          } else if (pendingChange === 'upsert') {
             void reconcileFromDisk()
           }
         }
@@ -318,10 +475,35 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
       return
     }
     if (loading) {
-      missedChange = true // deferred; replayed when the load commits
+      missedChange = 'upsert' // deferred; replayed when the load commits
       return
     }
     void reconcileFromDisk()
+  }
+
+  function externalRemoved(): void {
+    if (disposed) {
+      return
+    }
+    if (loading) {
+      missedChange = 'remove'
+      return
+    }
+    missing = true
+    // A previously parked external version is no longer on disk, so it is not
+    // a meaningful "theirs" choice after the newer remove event.
+    conflict = null
+    if (!initialMissingCreateAvailable && !recreateAfterRemoval) {
+      // Preserve the editor buffer, including pending changes, but stop both
+      // its debounce and every later flush from recreating an adopted path.
+      writeParkedForRemoval = true
+      cancelScheduledSave()
+    } else if (dirty) {
+      // An as-yet-uncreated fresh route, or a daily route with durable
+      // recreation, may still claim the absent path without clobbering.
+      scheduleSave()
+    }
+    emit()
   }
 
   function keepMine(): void {
@@ -343,7 +525,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
   }
 
   function updateFrontmatter(patch: FrontmatterPatch): boolean {
-    if (disposed || isProtected || status !== 'ready') {
+    if (disposed || writeParkedForRemoval || isProtected || status !== 'ready') {
       return false
     }
     header = splitDoc(upsertFrontmatter(header + buffer, frontmatterPatchToYaml(patch))).header
@@ -356,6 +538,11 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
   }
 
   async function commitFrontmatter(patch: FrontmatterPatch): Promise<boolean> {
+    if (writeParkedForRemoval) {
+      // Throw instead of returning false: frontmatter callers use false to
+      // select their disk fallback, which could otherwise recreate this path.
+      throw new Error('This note was removed from disk. Restore it before saving changes.')
+    }
     // No write channel (no graph generation yet) means the patch can't land —
     // say so, rather than riding `updateFrontmatter`'s in-memory success while
     // `save()` silently no-ops. A `true` here would let publish/pin/private
@@ -375,12 +562,105 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     // content and write it through. The park refreshes in place, so "load
     // theirs" adopts the patched bytes, and recording the write in `disk`
     // makes the watcher's echo a recognized no-op.
-    const patched = upsertFrontmatter(conflict, frontmatterPatchToYaml(patch))
-    if (patched !== conflict) {
-      await io.write(path, patched)
+    const contested = conflict
+    const patched = upsertFrontmatter(contested, frontmatterPatchToYaml(patch))
+    if (patched !== contested) {
+      const written = await io.write(path, patched, contested)
+      if (!written) {
+        await reconcileConditionalWriteRefusal(false)
+        throw new Error('This note changed again before the frontmatter update landed.')
+      }
+      landedWriteCount += 1
+      initialMissingCreateAvailable = false
       conflict = patched
       disk = patched
       emit()
+    }
+    return true
+  }
+
+  /**
+   * Compare-and-swap a prepared move rewrite through the live editor. The
+   * precondition and in-memory replacement happen without an await between
+   * them, so an editor change cannot slip between the equality check and the
+   * update. Rollback uses the same path with `after` as the expected content.
+   */
+  async function commitExactContentReplacement(
+    expected: string,
+    replacement: string,
+  ): Promise<boolean> {
+    function unavailable(): boolean {
+      return (
+        io.write === null ||
+        disposed ||
+        writeParkedForRemoval ||
+        isProtected ||
+        status !== 'ready' ||
+        dirty ||
+        missing ||
+        conflict !== null
+      )
+    }
+
+    if (unavailable()) {
+      return false
+    }
+    // Native input can be ahead of the serialized editor buffer. Pull it in
+    // before comparing, then re-check every guard because reconciliation may
+    // synchronously mark the session dirty.
+    reconcilePendingEditorInput?.()
+    if (unavailable() || header + buffer !== expected) {
+      return false
+    }
+    if (replacement === expected) {
+      return true
+    }
+
+    const next = splitDoc(replacement)
+    // A link rewrite cannot legitimately reduce round-trip fidelity. Refuse
+    // instead of putting newly lossy syntax into an editable session.
+    if (classify(next.body) === 'lossy') {
+      return false
+    }
+    const previousHeader = header
+    const previousBuffer = buffer
+    header = next.header
+    buffer = next.body
+    applyToEditor(next.body)
+    // `applyContent` may synchronously serialize a normalized document back
+    // through `editorChanged`. A prepared rewrite and its inverse require the
+    // exact bytes, so put the previous clean document back if that happened.
+    if (header + buffer !== replacement) {
+      header = previousHeader
+      buffer = previousBuffer
+      applyToEditor(previousBuffer)
+      return false
+    }
+
+    dirty = header + buffer !== disk
+    const shouldPersist = dirty
+    const landedBefore = landedWriteCount
+    emit()
+    cancelScheduledSave()
+    save()
+    await saveChain
+    // The save pipeline records failures in snapshot state instead of
+    // rejecting. Restore the live document so persistence is all-or-nothing,
+    // matching the other transactional session edits.
+    if (shouldPersist && landedWriteCount === landedBefore) {
+      const message = error
+      header = previousHeader
+      buffer = previousBuffer
+      applyToEditor(previousBuffer)
+      dirty = header + buffer !== disk
+      if (message !== null) {
+        error = null
+      }
+      emit()
+      if (message !== null) {
+        throw new Error(message)
+      }
+      return false
     }
     return true
   }
@@ -399,7 +679,14 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
    * can't diverge, then re-throws the failure.
    */
   async function commitBodyEdit(transform: (full: string) => string): Promise<boolean> {
-    if (io.write === null || disposed || isProtected || status !== 'ready' || conflict !== null) {
+    if (
+      io.write === null ||
+      disposed ||
+      writeParkedForRemoval ||
+      isProtected ||
+      status !== 'ready' ||
+      conflict !== null
+    ) {
       return false
     }
     const previousHeader = header
@@ -412,19 +699,25 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     // A no-op edit (transform changed nothing) writes nothing, so a *prior*
     // surfaced save error must not be mistaken for this edit's failure.
     const shouldPersist = dirty
+    const landedBefore = landedWriteCount
     emit()
     await flush()
     // `flush()` resolves even when the write failed (captured in `error`, not
     // thrown). Revert and surface the failure: it persists, or nothing changes.
-    if (shouldPersist && error !== null) {
+    if (shouldPersist && landedWriteCount === landedBefore) {
       const message = error
       header = previousHeader
       buffer = previousBuffer
       applyToEditor(previousBuffer)
       dirty = header + buffer !== disk
-      error = null
+      if (message !== null) {
+        error = null
+      }
       emit()
-      throw new Error(message)
+      if (message !== null) {
+        throw new Error(message)
+      }
+      return false
     }
     return true
   }
@@ -475,10 +768,17 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     },
     retarget: (to: string) => {
       path = to
+      consumeInitialCreateCapability()
+      recreateAfterRemoval = false
+      if (missing) {
+        writeParkedForRemoval = true
+        cancelScheduledSave()
+      }
     },
     load,
     editorChanged,
     externalChanged,
+    externalRemoved,
     flush,
     keepMine,
     loadTheirs,
@@ -487,6 +787,7 @@ export function createNoteSession(options: NoteSessionOptions): NoteSession {
     isDirty: () => dirty,
     updateFrontmatter,
     commitFrontmatter,
+    commitExactContentReplacement,
     commitTaskToggle,
     commitTaskEdit,
     commitTaskRemove,

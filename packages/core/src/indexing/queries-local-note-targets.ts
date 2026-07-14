@@ -1,18 +1,18 @@
 import { foldFallbackTitleKey } from '../markdown'
-import { db } from './db'
+import { db, type IndexDatabase } from './db'
 
 /** Every indexed note matching either exact path key, sorted and deduplicated. */
 export async function findExactNotePathMatches(
   pathKeys: readonly string[],
+  database: IndexDatabase = db,
 ): Promise<readonly string[]> {
   const keys = [...new Set(pathKeys.filter((key) => key !== ''))]
   if (keys.length === 0) {
     return []
   }
-  const rows = await db
+  const rows = await database
     .selectFrom('notes')
     .where('pathKey', 'in', keys)
-    .where('kind', '!=', 'template')
     .select('path')
     .distinct()
     .orderBy('path')
@@ -34,6 +34,7 @@ export interface WikiTargetFallbackTiers {
  */
 export async function findWikiTargetFallbackTiers(
   target: string,
+  database: IndexDatabase = db,
 ): Promise<WikiTargetFallbackTiers> {
   const fallbackKey = foldFallbackTitleKey(target)
   if (fallbackKey === '') {
@@ -41,14 +42,14 @@ export async function findWikiTargetFallbackTiers(
   }
 
   const [titleRows, aliasRows] = await Promise.all([
-    db
+    database
       .selectFrom('notes')
       .where('authoredTitleKey', 'is not', null)
       .where('kind', '!=', 'template')
       .select(['path', 'title'])
       .orderBy('path')
       .execute(),
-    db
+    database
       .selectFrom('aliases')
       .innerJoin('notes', 'notes.path', 'aliases.notePath')
       .where('notes.kind', '!=', 'template')

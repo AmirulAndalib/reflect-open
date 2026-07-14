@@ -1,4 +1,5 @@
 import { foldKey } from '../markdown/keys'
+import { isSafeVisibleGraphPath } from './paths'
 
 /** A note-link target reduced to the keys stored in the derived index. */
 export interface IndexedNoteReference {
@@ -112,11 +113,20 @@ export function wikiNotePath(target: string): string | null {
     return null
   }
   const authoredPath = split.path.trim()
-  if (!authoredPath.includes('/') || hasNonMarkdownExtension(authoredPath)) {
+  if (
+    !authoredPath.includes('/') ||
+    authoredPath.startsWith('/') ||
+    URI_SCHEME_RE.test(authoredPath) ||
+    hasNonMarkdownExtension(authoredPath)
+  ) {
     return null
   }
   const normalized = normalizeSegments(withMarkdownExtension(authoredPath), [])
-  return normalized === null || isReservedNotePath(normalized) ? null : normalized
+  return normalized === null ||
+    !isSafeVisibleGraphPath(normalized) ||
+    isReservedNotePath(normalized)
+    ? null
+    : normalized
 }
 
 /** Decoded display title of a bare wiki target, excluding `.md` and fragment. */
@@ -126,7 +136,7 @@ export function bareWikiTitle(target: string): string | null {
     return null
   }
   const authored = split.path.trim()
-  if (authored === '' || authored.includes('/')) {
+  if (authored === '' || authored.includes('/') || authored.includes('\\')) {
     return null
   }
   return authored.replace(MARKDOWN_EXTENSION_RE, '')
@@ -172,8 +182,12 @@ export function indexWikiNoteReference(
     }
   }
 
+  const title = bareWikiTitle(target)
+  if (title === null) {
+    return null
+  }
   return {
-    targetKey: foldKey(authoredPath.replace(MARKDOWN_EXTENSION_RE, '')),
+    targetKey: foldKey(title),
     pathKey: null,
     alternatePathKey: null,
     fragment: split.fragment,

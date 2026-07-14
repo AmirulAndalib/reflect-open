@@ -3,6 +3,7 @@ import { setBridge } from '../ipc/bridge'
 import {
   resolveExistingMarkdownTarget,
   resolveExistingWikiTarget,
+  resolveExistingWikiTargets,
 } from './resolve-existing-wiki-target'
 
 interface IndexedFact {
@@ -116,8 +117,42 @@ describe('resolveExistingWikiTarget', () => {
     })
   })
 
-  it('uses a unique indexed leading-emoji title only after normal tiers miss', async () => {
+  it('shares one live manifest and one stale-file read across a target batch', async () => {
+    const invoke = bindBridge({
+      files: {
+        'Imported/Plan.md': '---\naliases: [Roadmap]\n---\n# Plan',
+      },
+    })
+
+    await expect(resolveExistingWikiTargets(['Plan', 'Roadmap'], 7)).resolves.toEqual([
+      { kind: 'resolved', path: 'Imported/Plan.md' },
+      { kind: 'resolved', path: 'Imported/Plan.md' },
+    ])
+    expect(invoke.mock.calls.filter(([command]) => command === 'list_files')).toHaveLength(1)
+    expect(invoke.mock.calls.filter(([command]) => command === 'note_read')).toHaveLength(1)
+  })
+
+  it('does not give an impossible date-shaped path daily precedence over a title', async () => {
     bindBridge({
+      files: {
+        'daily/2026-02-31.md': 'Not a real daily note',
+        'Notes/impossible-date.md': '# 2026-02-31',
+      },
+      indexed: [{ path: 'Notes/impossible-date.md', mtime: 1 }],
+      query: (sql) =>
+        sql.includes('"authored_title_key"')
+          ? [pathRow('Notes/impossible-date.md')]
+          : [],
+    })
+
+    await expect(resolveExistingWikiTarget('2026-02-31', 7)).resolves.toEqual({
+      kind: 'resolved',
+      path: 'Notes/impossible-date.md',
+    })
+  })
+
+  it('uses a unique indexed leading-emoji title only after normal tiers miss', async () => {
+    const invoke = bindBridge({
       files: { 'notes/business-ideas.md': '# 🧠 Business ideas' },
       indexed: [{ path: 'notes/business-ideas.md', mtime: 1 }],
       query: (sql) =>
@@ -130,6 +165,9 @@ describe('resolveExistingWikiTarget', () => {
       kind: 'resolved',
       path: 'notes/business-ideas.md',
     })
+    for (const [, args] of invoke.mock.calls.filter(([command]) => command === 'db_query')) {
+      expect(args?.['graphGeneration']).toBe(7)
+    }
   })
 
   it('keeps basename precedence above the leading-emoji compatibility fallback', async () => {
@@ -232,6 +270,29 @@ describe('resolveExistingWikiTarget', () => {
     ).resolves.toEqual({ kind: 'resolved', path: 'Projects/Plan.md', fragment: 'Next' })
   })
 
+  it('resolves explicit template paths consistently before and after indexing', async () => {
+    bindBridge({ files: { 'templates/meeting.md': '# Meeting template' } })
+    await expect(resolveExistingWikiTarget('templates/meeting', 7)).resolves.toEqual({
+      kind: 'resolved',
+      path: 'templates/meeting.md',
+    })
+
+    bindBridge({
+      files: { 'templates/meeting.md': '# Meeting template' },
+      indexed: [{ path: 'templates/meeting.md', mtime: 1 }],
+      query: (sql) => sql.includes('"path_key" in') ? [pathRow('templates/meeting.md')] : [],
+    })
+    await expect(resolveExistingWikiTarget('templates/meeting', 7)).resolves.toEqual({
+      kind: 'resolved',
+      path: 'templates/meeting.md',
+    })
+  })
+
+  it('does not let an unindexed template placeholder block bare-title resolution', async () => {
+    bindBridge({ placeholders: ['templates/meeting.md'] })
+    await expect(resolveExistingWikiTarget('Missing', 7)).resolves.toEqual({ kind: 'missing' })
+  })
+
   it('resolves a same-note heading target', async () => {
     bindBridge({
       files: { 'Projects/Plan.md': '# Plan\n\n## Next' },
@@ -278,7 +339,22 @@ describe('resolveExistingWikiTarget', () => {
     })
   })
 
-  it('fails closed for an unreadable candidate or unindexed placeholder', async () => {
+  it('identifies stale index owners that are absent from the live manifest', async () => {
+    bindBridge({
+      indexed: [{ path: 'Deleted/Plan.md', mtime: 1 }],
+      query: (sql) => sql.includes('"authored_title_key" = ?')
+        ? [{ path: 'Deleted/Plan.md' }]
+        : [],
+    })
+
+    await expect(resolveExistingWikiTarget('Plan', 7)).resolves.toEqual({
+      kind: 'unavailable',
+      paths: ['Deleted/Plan.md'],
+      orphanedPaths: ['Deleted/Plan.md'],
+    })
+  })
+
+  it('fails closed for an unreadable candidate or any placeholder', async () => {
     bindBridge({ readErrors: ['Imported/locked.md'] })
     await expect(resolveExistingWikiTarget('Missing', 7)).resolves.toEqual({
       kind: 'unavailable',
@@ -290,6 +366,17 @@ describe('resolveExistingWikiTarget', () => {
       kind: 'unavailable',
       paths: ['Cloud/evicted.md'],
     })
+
+    // The remote contents may have changed since this row was indexed. Its
+    // stale title/alias keys cannot prove that a different bare title is free.
+    bindBridge({
+      placeholders: ['Cloud/indexed.md'],
+      indexed: [{ path: 'Cloud/indexed.md', mtime: 1 }],
+    })
+    await expect(resolveExistingWikiTarget('New remote title', 7)).resolves.toEqual({
+      kind: 'unavailable',
+      paths: ['Cloud/indexed.md'],
+    })
   })
 
   it('returns missing only after a settled manifest and index both miss', async () => {
@@ -297,10 +384,24 @@ describe('resolveExistingWikiTarget', () => {
     await expect(resolveExistingWikiTarget('Absent', 7)).resolves.toEqual({ kind: 'missing' })
   })
 
-  it('rejects hidden and escaping wiki targets', async () => {
-    bindBridge()
-    await expect(resolveExistingWikiTarget('../outside', 7)).resolves.toEqual({ kind: 'invalid' })
-    await expect(resolveExistingWikiTarget('.obsidian/secret', 7)).resolves.toEqual({ kind: 'invalid' })
+  it('rejects hidden, absolute, drive, UNC, and scheme-like wiki targets', async () => {
+    const invoke = bindBridge()
+    const unsafeTargets = [
+      '../outside',
+      '.obsidian/secret',
+      '/absolute/secret',
+      '//server/share',
+      '\\\\server\\share',
+      'C:/Users/secret',
+      'file:///private/secret',
+      'https://example.com/secret',
+      'Projects/%00secret',
+    ]
+
+    for (const target of unsafeTargets) {
+      await expect(resolveExistingWikiTarget(target, 7)).resolves.toEqual({ kind: 'invalid' })
+    }
+    expect(invoke).not.toHaveBeenCalled()
   })
 })
 

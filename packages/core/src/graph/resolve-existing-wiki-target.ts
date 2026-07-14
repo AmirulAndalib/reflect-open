@@ -7,10 +7,12 @@ import {
   findExactNotePathMatches,
   findWikiTargetFallbackTiers,
 } from '../indexing/queries-local-note-targets'
+import { dbForGraphGeneration, type IndexDatabase } from '../indexing/db'
 import {
   foldKey,
   foldFallbackTitleKey,
   hasAuthoredTitle,
+  normalizeWikiTarget,
   parseNote,
   subjectAliases,
 } from '../markdown'
@@ -24,13 +26,18 @@ import {
 import { dateFromDailyPath, isTemplatePath } from './paths'
 import { listFiles, readNote } from './commands'
 
-/** The side-effect-free outcome of resolving one existing local note target. */
-export type ExistingWikiTargetResolution =
+type ExistingWikiTargetOutcome =
   | { readonly kind: 'resolved'; readonly path: string; readonly fragment?: string }
   | { readonly kind: 'ambiguous'; readonly paths: readonly string[] }
   | { readonly kind: 'unavailable'; readonly paths: readonly string[] }
   | { readonly kind: 'invalid' }
   | { readonly kind: 'missing' }
+
+/** The side-effect-free outcome of resolving one existing local note target. */
+export type ExistingWikiTargetResolution = ExistingWikiTargetOutcome & {
+  /** Indexed paths proven absent from the generation-pinned manifest. */
+  readonly orphanedPaths?: readonly string[]
+}
 
 interface MutableMatchTiers {
   readonly date: Set<string>
@@ -44,8 +51,13 @@ interface MutableMatchTiers {
 interface ManifestDelta {
   readonly candidates: readonly string[]
   readonly placeholders: ReadonlySet<string>
-  readonly unindexedPlaceholders: readonly string[]
   readonly orphans: readonly string[]
+}
+
+interface LiveResolutionContext {
+  readonly delta: Promise<ManifestDelta>
+  readonly sources: Map<string, Promise<string>>
+  readonly database: IndexDatabase
 }
 
 const MTIME_TRUST_AGE_MS = 5_000
@@ -79,6 +91,15 @@ function sortedPaths(paths: ReadonlySet<string>): string[] {
   return [...paths].sort()
 }
 
+function withOrphanedPaths(
+  resolution: ExistingWikiTargetResolution,
+  orphanedPaths: readonly string[],
+): ExistingWikiTargetResolution {
+  return orphanedPaths.length === 0
+    ? resolution
+    : { ...resolution, orphanedPaths }
+}
+
 function outcomeForPaths(
   paths: readonly string[],
   placeholders: ReadonlySet<string>,
@@ -99,8 +120,14 @@ function outcomeForPaths(
     : { kind: 'resolved', path: paths[0]!, fragment }
 }
 
-async function manifestDelta(generation: number): Promise<ManifestDelta> {
-  const [files, indexed] = await Promise.all([listFiles(generation), getIndexedFileFacts()])
+async function manifestDelta(
+  generation: number,
+  database: IndexDatabase,
+): Promise<ManifestDelta> {
+  const [files, indexed] = await Promise.all([
+    listFiles(generation),
+    getIndexedFileFacts(database),
+  ])
   const onDisk = new Set(files.map((file) => file.path))
   const placeholders = new Set(
     files.filter((file) => file.placeholder === true).map((file) => file.path),
@@ -113,12 +140,37 @@ async function manifestDelta(generation: number): Promise<ManifestDelta> {
       }
       const facts = indexed.get(file.path)
       const settled = now - file.modifiedMs >= MTIME_TRUST_AGE_MS
-      return !settled || facts === undefined || facts.mtime !== file.modifiedMs
+      return !settled ||
+        facts === undefined ||
+        facts.fileHash === '' ||
+        facts.mtime !== file.modifiedMs
     })
     .map((file) => file.path)
   const orphans = [...indexed.keys()].filter((path) => !onDisk.has(path)).sort()
-  const unindexedPlaceholders = [...placeholders].filter((path) => !indexed.has(path)).sort()
-  return { candidates, placeholders, unindexedPlaceholders, orphans }
+  return { candidates, placeholders, orphans }
+}
+
+function liveResolutionContext(generation: number): LiveResolutionContext {
+  const database = dbForGraphGeneration(generation)
+  return {
+    delta: manifestDelta(generation, database),
+    sources: new Map(),
+    database,
+  }
+}
+
+function readCandidate(
+  context: LiveResolutionContext,
+  path: string,
+  generation: number,
+): Promise<string> {
+  const existing = context.sources.get(path)
+  if (existing !== undefined) {
+    return existing
+  }
+  const source = readNote(path, generation)
+  context.sources.set(path, source)
+  return source
 }
 
 function addParsedBareMatch(
@@ -159,16 +211,16 @@ function addParsedBareMatch(
 async function resolveReference(
   reference: IndexedNoteReference,
   generation: number,
+  context: LiveResolutionContext,
 ): Promise<ExistingWikiTargetResolution> {
   const exactPathKeys = [reference.pathKey, reference.alternatePathKey].filter(
     (key): key is string => key !== null,
   )
   const bareTarget = reference.targetKey
-  const deltaPromise = manifestDelta(generation)
   const indexedPromise = exactPathKeys.length > 0
-    ? findExactNotePathMatches(exactPathKeys)
-    : findWikiTargetMatchTiers(bareTarget)
-  const [delta, indexed] = await Promise.all([deltaPromise, indexedPromise])
+    ? findExactNotePathMatches(exactPathKeys, context.database)
+    : findWikiTargetMatchTiers(bareTarget, context.database)
+  const [delta, indexed] = await Promise.all([context.delta, indexedPromise])
   const unstable = new Set([...delta.candidates, ...delta.orphans])
 
   if (exactPathKeys.length > 0) {
@@ -182,7 +234,7 @@ async function resolveReference(
         continue
       }
       try {
-        await readNote(path, generation)
+        await readCandidate(context, path, generation)
         paths.add(path)
       } catch {
         unreadable.push(path)
@@ -199,18 +251,23 @@ async function resolveReference(
       return resolved
     }
   } else {
+    const bareCandidates = delta.candidates.filter((path) => !isTemplatePath(path))
+    const bareOrphans = delta.orphans.filter((path) => !isTemplatePath(path))
+    const barePlaceholders = [...delta.placeholders].filter(
+      (path) => !isTemplatePath(path),
+    )
     const indexedTiers = indexed as WikiTargetMatchTiers
     const tiers = emptyTiers()
     addIndexedTiers(tiers, indexedTiers, unstable)
     const unreadable: string[] = []
-    const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(bareTarget) ? bareTarget : undefined
+    const targetDate = normalizeWikiTarget(bareTarget).date
     const fallbackTargetKey = foldFallbackTitleKey(bareTarget)
-    for (const path of delta.candidates) {
+    for (const path of bareCandidates) {
       try {
         addParsedBareMatch(
           tiers,
           path,
-          await readNote(path, generation),
+          await readCandidate(context, path, generation),
           bareTarget,
           fallbackTargetKey,
           targetDate,
@@ -219,20 +276,26 @@ async function resolveReference(
         unreadable.push(path)
       }
     }
-    if (unreadable.length > 0 || delta.unindexedPlaceholders.length > 0) {
-      return {
-        kind: 'unavailable',
-        paths: [...new Set([...unreadable, ...delta.unindexedPlaceholders])].sort(),
-      }
+    if (unreadable.length > 0 || barePlaceholders.length > 0) {
+      return withOrphanedPaths(
+        {
+          kind: 'unavailable',
+          paths: [...new Set([...unreadable, ...barePlaceholders])].sort(),
+        },
+        bareOrphans,
+      )
     }
     for (const kind of ['date', 'title', 'alias', 'basename'] as const) {
       const resolved = outcomeForPaths(sortedPaths(tiers[kind]), delta.placeholders, reference.fragment)
       if (resolved !== null) {
-        return resolved
+        return withOrphanedPaths(resolved, bareOrphans)
       }
     }
 
-    const indexedFallback = await findWikiTargetFallbackTiers(bareTarget)
+    const indexedFallback = await findWikiTargetFallbackTiers(
+      bareTarget,
+      context.database,
+    )
     for (const path of indexedFallback.title) {
       if (!unstable.has(path)) {
         tiers.fallbackTitle.add(path)
@@ -246,16 +309,19 @@ async function resolveReference(
     for (const kind of ['fallbackTitle', 'fallbackAlias'] as const) {
       const resolved = outcomeForPaths(sortedPaths(tiers[kind]), delta.placeholders, reference.fragment)
       if (resolved !== null) {
-        return resolved
+        return withOrphanedPaths(resolved, bareOrphans)
       }
     }
+
+    const unsettled = [...new Set([...bareCandidates, ...bareOrphans])].sort()
+    return unsettled.length > 0
+      ? withOrphanedPaths({ kind: 'unavailable', paths: unsettled }, bareOrphans)
+      : { kind: 'missing' }
   }
 
-  // A non-empty delta means the index is still converging. Even though the
-  // current candidates did not match, creating now could duplicate a note
-  // whose move/edit has not settled into the projection yet.
-  const unsettled = [...new Set([...delta.candidates, ...delta.orphans])].sort()
-  return unsettled.length > 0 ? { kind: 'unavailable', paths: unsettled } : { kind: 'missing' }
+  // Exact references are proven by the generation-pinned manifest itself;
+  // unrelated stale files cannot become the requested path.
+  return { kind: 'missing' }
 }
 
 /**
@@ -276,7 +342,35 @@ export async function resolveExistingWikiTarget(
   if (reference === null || (reference.pathKey === notePathKey('') && sourcePath === '')) {
     return { kind: 'invalid' }
   }
-  return resolveReference(reference, generation)
+  return resolveReference(reference, generation, liveResolutionContext(generation))
+}
+
+/**
+ * Resolve several autocomplete targets against one generation-pinned manifest.
+ * Missing/stale candidates are parsed at most once for the whole batch, so a
+ * just-added duplicate can make every affected suggestion path-qualified
+ * without turning each menu row into another vault walk.
+ */
+export async function resolveExistingWikiTargets(
+  targets: readonly string[],
+  generation: number,
+): Promise<ExistingWikiTargetResolution[]> {
+  if (targets.length === 0) {
+    return []
+  }
+  const context = liveResolutionContext(generation)
+  return Promise.all(
+    targets.map((target) => {
+      if (target.trim() === '') {
+        return Promise.resolve<ExistingWikiTargetResolution>({ kind: 'missing' })
+      }
+      const reference = indexWikiNoteReference('', target)
+      if (reference === null || reference.pathKey === notePathKey('')) {
+        return Promise.resolve<ExistingWikiTargetResolution>({ kind: 'invalid' })
+      }
+      return resolveReference(reference, generation, context)
+    }),
+  )
 }
 
 /** Resolve a standard Markdown note href from its source note. */
@@ -286,5 +380,7 @@ export async function resolveExistingMarkdownTarget(
   generation: number,
 ): Promise<ExistingWikiTargetResolution> {
   const reference = indexMarkdownNoteReference(sourcePath, href)
-  return reference === null ? { kind: 'invalid' } : resolveReference(reference, generation)
+  return reference === null
+    ? { kind: 'invalid' }
+    : resolveReference(reference, generation, liveResolutionContext(generation))
 }

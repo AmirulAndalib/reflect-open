@@ -1,10 +1,14 @@
 import { z } from 'zod'
 import { noteBasenameKey, notePathKey } from '../graph/local-note-reference'
+import { isNotePath } from '../graph/paths'
 import { call } from '../ipc/invoke'
 import type { IndexedNote } from './indexed-note'
 
 /** Index commands return `()` from Rust, which serializes to `null` over IPC. */
 const voidSchema = z.null()
+const eligibleNotePathSchema = z.string().refine(isNotePath, {
+  message: 'expected an eligible visible Markdown note path',
+})
 
 /**
  * Open + migrate the index for the active graph (Rust reads the root from state)
@@ -79,16 +83,18 @@ export async function moveNoteIndexed(
   to: string,
   generation: number,
 ): Promise<void> {
+  const eligibleFrom = eligibleNotePathSchema.parse(from)
+  const eligibleTo = eligibleNotePathSchema.parse(to)
   await call(
     'note_move_indexed',
     {
       request: {
-        from,
-        to,
-        fromPathKey: notePathKey(from),
-        fromBasenameKey: noteBasenameKey(from),
-        toPathKey: notePathKey(to),
-        toBasenameKey: noteBasenameKey(to),
+        from: eligibleFrom,
+        to: eligibleTo,
+        fromPathKey: notePathKey(eligibleFrom),
+        fromBasenameKey: noteBasenameKey(eligibleFrom),
+        toPathKey: notePathKey(eligibleTo),
+        toBasenameKey: noteBasenameKey(eligibleTo),
         generation,
       },
     },

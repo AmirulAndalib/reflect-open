@@ -43,6 +43,7 @@ export interface ChatMessages {
   createdMs: number;
   id: string;
   parts: string;
+  privacyFingerprint: string | null;
   responseMessages: string;
   seq: number;
   userText: string;

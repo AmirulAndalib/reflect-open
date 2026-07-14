@@ -41,6 +41,7 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
   const {
     openSource,
     onWikilinkClick,
+    onMarkdownLinkClick,
     resolveImageUrl,
     resolveFileLink,
     resolveWikiEmbed,
@@ -103,6 +104,7 @@ export function BacklinksPanel({ path }: BacklinksPanelProps): ReactElement | nu
             expanded={expanded}
             onOpen={openSource}
             onWikilinkClick={onWikilinkClick}
+            onMarkdownLinkClick={onMarkdownLinkClick}
             resolveImageUrl={resolveImageUrl}
             resolveFileLink={resolveFileLink}
             resolveWikiEmbed={resolveWikiEmbed}

@@ -25,6 +25,6 @@ minimumReleaseAgeExclude:
   - prosemirror-model@1.25.11
 
 overrides:
-  '@meowdown/core': https://pkg.pr.new/prosekit/meowdown/@meowdown/core@83080a6
-  '@meowdown/react': https://pkg.pr.new/prosekit/meowdown/@meowdown/react@83080a6
+  '@meowdown/core': https://pkg.pr.new/prosekit/meowdown/@meowdown/core@bb542f1
+  '@meowdown/react': https://pkg.pr.new/prosekit/meowdown/@meowdown/react@bb542f1
 blockExoticSubdeps: false

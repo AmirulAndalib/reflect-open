@@ -349,6 +349,53 @@ fn bare_backlinks_rank_authored_titles_above_aliases_and_basenames() {
 }
 
 #[test]
+fn invalid_daily_filename_uses_basename_precedence() {
+    let conn = migrated();
+    apply_note(
+        &conn,
+        &note("notes/source.md", "Source", vec![wiki("2026-02-31")]),
+    )
+    .unwrap();
+
+    let mut invalid_daily = note("daily/2026-02-31.md", "2026-02-31", vec![]);
+    invalid_daily.authored_title_key = None;
+    apply_note(&conn, &invalid_daily).unwrap();
+    apply_note(&conn, &note("notes/authored.md", "2026-02-31", vec![])).unwrap();
+
+    let rows = run_query(&conn, "SELECT target_path FROM backlinks", &[]).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["target_path"], Value::from("notes/authored.md"));
+}
+
+#[test]
+fn bare_backlinks_deduplicate_folded_aliases_for_the_same_note() {
+    let conn = migrated();
+    apply_note(
+        &conn,
+        &note("notes/source.md", "Source", vec![wiki("Plan")]),
+    )
+    .unwrap();
+
+    let mut target = note("Projects/roadmap.md", "Roadmap", vec![]);
+    target.aliases = vec![
+        IndexedAlias {
+            alias: "Plan".to_string(),
+            alias_key: "plan".to_string(),
+        },
+        IndexedAlias {
+            alias: "PLAN".to_string(),
+            alias_key: "plan".to_string(),
+        },
+    ];
+    apply_note(&conn, &target).unwrap();
+
+    let rows = run_query(&conn, "SELECT target_path, source_path FROM backlinks", &[]).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["target_path"], Value::from("Projects/roadmap.md"));
+    assert_eq!(rows[0]["source_path"], Value::from("notes/source.md"));
+}
+
+#[test]
 fn templates_are_invisible_to_backlink_resolution() {
     let conn = migrated();
     let mut template = note("templates/journal.md", "Journal", vec![wiki("Target")]);
@@ -549,6 +596,7 @@ fn reconcile_scan_classifies_candidates_orphans_and_skips() {
     };
     indexed("notes/settled.md", 1_000, "settled-hash");
     indexed("notes/moved.md", 1_000, "moved-hash");
+    indexed("notes/dirty-move.md", 1_000, "");
     indexed("notes/fresh.md", (now - 1_000) as i64, "fresh-hash");
     indexed("notes/evicted.md", 1_000, "evicted-hash");
     indexed("notes/gone.md", 1_000, "gone-hash");
@@ -562,6 +610,7 @@ fn reconcile_scan_classifies_candidates_orphans_and_skips() {
     let files = [
         meta("notes/settled.md", 1_000, false), // row matches, settled → skipped
         meta("notes/moved.md", 2_000, false),   // mtime moved → candidate with facts
+        meta("notes/dirty-move.md", 1_000, false), // cleared move hash → force reprojection
         meta("notes/fresh.md", now - 1_000, false), // matches but too fresh to trust → candidate
         meta("notes/new.md", 3_000, false),     // no row → arrival candidate
         meta("notes/evicted.md", 9_000, true),  // placeholder → never a candidate, never orphaned
@@ -569,18 +618,29 @@ fn reconcile_scan_classifies_candidates_orphans_and_skips() {
 
     let scan = scan_reconcile(&conn, &files, now).unwrap();
 
-    assert_eq!(scan.total, 5);
+    assert_eq!(scan.total, 6);
     let paths: Vec<&str> = scan
         .candidates
         .iter()
         .map(|candidate| candidate.path.as_str())
         .collect();
-    assert_eq!(paths, ["notes/moved.md", "notes/fresh.md", "notes/new.md"]);
+    assert_eq!(
+        paths,
+        [
+            "notes/moved.md",
+            "notes/dirty-move.md",
+            "notes/fresh.md",
+            "notes/new.md"
+        ]
+    );
     let moved = &scan.candidates[0];
     assert_eq!(moved.modified_ms, 2_000);
     assert_eq!(moved.stored_mtime, Some(1_000));
     assert_eq!(moved.stored_hash.as_deref(), Some("moved-hash"));
-    let arrival = &scan.candidates[2];
+    let dirty = &scan.candidates[1];
+    assert_eq!(dirty.stored_mtime, Some(1_000));
+    assert_eq!(dirty.stored_hash.as_deref(), Some(""));
+    let arrival = &scan.candidates[3];
     assert_eq!(arrival.stored_mtime, None);
     assert_eq!(arrival.stored_hash, None);
 
@@ -879,11 +939,15 @@ fn kind_invariant_migration_wipes_the_projection_for_reindex() {
          INSERT INTO tasks(note_path, marker_offset, text, raw, checked)
            VALUES('notes/a.md', 0, 'buy milk', '[ ] buy milk', 0);
          INSERT INTO search_fts(path, title, body) VALUES('notes/a.md', 'A', 'A body');
-         INSERT INTO index_meta(key, value) VALUES('k', 'v');",
+         INSERT INTO index_meta(key, value) VALUES('k', 'v');
+         INSERT INTO chat_conversations(id, title, created_ms, updated_ms)
+           VALUES('c1', 'Legacy chat', 1, 1);
+         INSERT INTO chat_messages(
+           id, conversation_id, seq, user_text, attachments, parts,
+           response_messages, created_ms)
+           VALUES('m1', 'c1', 0, 'question', '[]', '[]', '[]', 1);",
     )
     .expect("stage v14 rows");
-    save_message(&conn, &conversation("c1"), &chat_message("m1", "c1"))
-        .expect("stage durable chat history");
 
     migrate(&mut conn).expect("migrate to latest");
 
@@ -1012,6 +1076,56 @@ fn session_adoption_reads_never_bump_generations() {
     assert_eq!(graph.0.lock().unwrap().generation, 3);
 }
 
+/// Filesystem-backed resolution carries the graph generation through every
+/// index read. GraphState switches before IndexState is rebound, so both sides
+/// of that transition must reject the other graph's query identity rather than
+/// briefly combining one vault's file listing with the other's rows.
+#[test]
+fn graph_pinned_db_queries_never_cross_an_index_rebind() {
+    use tauri::Manager;
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .expect("mock app");
+    app.manage(crate::fs::GraphState::default());
+    app.manage(super::IndexState::default());
+    app.manage(crate::background_task::BackgroundTaskState::default());
+
+    let first = tempfile::tempdir().expect("first graph");
+    let second = tempfile::tempdir().expect("second graph");
+    {
+        let graph: tauri::State<crate::fs::GraphState> = app.state();
+        let mut inner = graph.0.lock().unwrap();
+        inner.generation = 1;
+        inner.root = Some(first.path().to_path_buf());
+    }
+    super::index_open(app.state(), app.state(), app.state()).expect("open first index");
+
+    let query = |graph_generation| {
+        super::db_query(
+            "SELECT count(*) AS n FROM notes".to_string(),
+            vec![],
+            Some(graph_generation),
+            app.state(),
+        )
+    };
+    assert!(query(1).is_ok());
+
+    // `graph_open` lands before `index_open` during a switch. The new graph
+    // cannot read the old connection in that window.
+    {
+        let graph: tauri::State<crate::fs::GraphState> = app.state();
+        let mut inner = graph.0.lock().unwrap();
+        inner.generation = 2;
+        inner.root = Some(second.path().to_path_buf());
+    }
+    assert!(query(2).is_err());
+    assert!(query(1).is_ok());
+
+    super::index_open(app.state(), app.state(), app.state()).expect("open second index");
+    assert!(query(1).is_err());
+    assert!(query(2).is_ok());
+}
+
 /// Command-level integration: the generation gate that every TS write relies on.
 /// A write carrying a stale generation (issued before the index was reopened)
 /// must silently no-op rather than mutate the newly-opened index.
@@ -1037,6 +1151,7 @@ fn stale_generation_writes_are_dropped_end_to_end() {
         let rows = super::db_query(
             "SELECT count(*) AS n FROM notes".to_string(),
             vec![],
+            None,
             app.state(),
         )
         .unwrap_or_else(|err| panic!("{label}: {err:?}"));
@@ -1094,6 +1209,7 @@ fn stale_generation_writes_are_dropped_end_to_end() {
         super::db_query(
             "SELECT value FROM index_meta WHERE key = 'k'".to_string(),
             vec![],
+            None,
             app.state(),
         )
         .unwrap_or_else(|err| panic!("{label}: {err:?}"))
@@ -1501,6 +1617,7 @@ fn move_in_txn(conn: &mut Connection, from: &str, to: &str) -> crate::error::App
 fn move_note_migrates_every_row_and_preserves_derived_state() {
     let mut conn = migrated();
     let mut moved = note("notes/old.md", "Kept Title", vec![wiki("Elsewhere")]);
+    moved.mtime = 123;
     moved.is_pinned = true;
     moved.pinned_order = Some(2.5);
     moved.has_conflict = true;
@@ -1528,13 +1645,16 @@ fn move_note_migrates_every_row_and_preserves_derived_state() {
     // The notes row moved — same derived state, nothing re-created.
     let row = run_query(
         &conn,
-        "SELECT path, is_pinned, pinned_order, has_conflict FROM notes WHERE path = ?1",
+        "SELECT path, is_pinned, pinned_order, has_conflict, file_hash, mtime
+         FROM notes WHERE path = ?1",
         &[Value::String("notes/kept-title.md".to_string())],
     )
     .unwrap();
     assert_eq!(row.len(), 1);
     assert_eq!(row[0].get("is_pinned").unwrap().as_i64().unwrap(), 1);
     assert_eq!(row[0].get("has_conflict").unwrap().as_i64().unwrap(), 1);
+    assert_eq!(row[0].get("file_hash").unwrap().as_str().unwrap(), "");
+    assert_eq!(row[0].get("mtime").unwrap().as_i64().unwrap(), 123);
     let gone = run_query(
         &conn,
         "SELECT path FROM notes WHERE path = ?1",
@@ -1679,6 +1799,7 @@ fn chat_message(id: &str, conversation_id: &str) -> ChatMessageRow {
         attachments: "[]".to_string(),
         parts: "[]".to_string(),
         response_messages: "[]".to_string(),
+        privacy_fingerprint: Some("privacy-v1:test".to_string()),
         created_ms: 1_000,
     }
 }
@@ -1730,11 +1851,12 @@ fn chat_message_resave_updates_by_id() {
     settled.parts = r#"[{"kind":"text","text":"You wrote three notes."}]"#.to_string();
     settled.response_messages =
         r#"[{"role":"assistant","content":"You wrote three notes."}]"#.to_string();
+    settled.privacy_fingerprint = Some("privacy-v1:settled".to_string());
     save_message(&conn, &conversation("c1"), &settled).unwrap();
 
     let rows = run_query(
         &conn,
-        "SELECT parts FROM chat_messages WHERE id = 'm1'",
+        "SELECT parts, privacy_fingerprint FROM chat_messages WHERE id = 'm1'",
         &[],
     )
     .unwrap();
@@ -1742,6 +1864,10 @@ fn chat_message_resave_updates_by_id() {
     assert_eq!(
         rows[0]["parts"],
         Value::from(r#"[{"kind":"text","text":"You wrote three notes."}]"#)
+    );
+    assert_eq!(
+        rows[0]["privacy_fingerprint"],
+        Value::from("privacy-v1:settled")
     );
 }
 

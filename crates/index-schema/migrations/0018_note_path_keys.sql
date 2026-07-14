@@ -57,13 +57,21 @@ CREATE VIEW backlinks AS
       count(*) OVER (PARTITION BY link_rowid) AS match_count
     FROM path_candidates
   ),
-  ranked_key_candidates AS (
+  -- One note may publish the same folded key more than once (for example,
+  -- aliases that differ only by case). Collapse those rows before ranking so
+  -- one authored link produces one backlink to each winning note.
+  deduplicated_key_candidates AS (
     SELECT links.rowid AS link_rowid, note_keys.note_path AS target_path,
-      note_keys.priority,
-      min(note_keys.priority) OVER (PARTITION BY links.rowid) AS best_priority
+      min(note_keys.priority) AS priority
     FROM links
     JOIN note_keys ON note_keys.key = links.target_key
     WHERE links.kind = 'wiki' AND links.path_key IS NULL
+    GROUP BY links.rowid, note_keys.note_path
+  ),
+  ranked_key_candidates AS (
+    SELECT link_rowid, target_path, priority,
+      min(priority) OVER (PARTITION BY link_rowid) AS best_priority
+    FROM deduplicated_key_candidates
   ),
   resolved AS (
     SELECT link_rowid, target_path

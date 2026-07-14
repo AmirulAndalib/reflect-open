@@ -49,6 +49,8 @@ pub struct IndexedNote {
     pub(super) aliases: Vec<IndexedAlias>,
     /// Emails the note owns via `- Email:` contact-field bullets.
     pub(super) emails: Vec<IndexedEmail>,
+    /// Privacy-candidate keys: canonical managed paths or the reserved
+    /// bare-wiki basename sentinel. Never attachment-description content.
     pub(super) assets: Vec<String>,
     pub(super) tasks: Vec<IndexedTask>,
 }
@@ -228,6 +230,12 @@ pub(super) fn apply_note(conn: &Connection, note: &IndexedNote) -> AppResult<()>
 /// chunks, whose vectors must survive a rename — re-embedding costs the user
 /// real BYOK money for identical content.
 ///
+/// The row's file hash is deliberately cleared. Outgoing relative Markdown-link
+/// candidates are derived from the source path, so a move must be reprojected
+/// even when its bytes are unchanged. Normal move flows reapply immediately;
+/// the dirty sentinel makes a suspended live flow converge on the next reconcile
+/// without temporarily changing the note's user-visible modification time.
+///
 /// Caller wraps this in a transaction with `defer_foreign_keys` ON: the child
 /// tables reference `notes(path)` and SQLite would otherwise reject updating
 /// the parent key while children point at it.
@@ -254,7 +262,9 @@ pub(super) fn move_note(
         )));
     }
     conn.prepare_cached(
-        "UPDATE notes SET path = ?2, path_key = ?3, basename_key = ?4 WHERE path = ?1",
+        "UPDATE notes
+         SET path = ?2, path_key = ?3, basename_key = ?4, file_hash = ''
+         WHERE path = ?1",
     )?
     .execute(params![from, to, to_path_key, to_basename_key])?;
     conn.prepare_cached("UPDATE note_text SET note_path = ?2 WHERE note_path = ?1")?

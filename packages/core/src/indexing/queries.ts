@@ -6,7 +6,7 @@ import {
   resolveWikiLinkAsync,
   type Resolution,
 } from '../markdown'
-import { db } from './db'
+import { db, type IndexDatabase } from './db'
 import { inClauseChunks } from './query-utils'
 export {
   getBacklinks,
@@ -262,8 +262,10 @@ export interface IndexedFileFacts {
  * a streamed/keyset scan if graphs grow large (tracked with the Plan 04b
  * watcher).
  */
-export async function getIndexedFileFacts(): Promise<Map<string, IndexedFileFacts>> {
-  const rows = await db.selectFrom('notes').select(['path', 'fileHash', 'mtime']).execute()
+export async function getIndexedFileFacts(
+  database: IndexDatabase = db,
+): Promise<Map<string, IndexedFileFacts>> {
+  const rows = await database.selectFrom('notes').select(['path', 'fileHash', 'mtime']).execute()
   return new Map(rows.map((row) => [row.path, { fileHash: row.fileHash, mtime: row.mtime }]))
 }
 
@@ -359,7 +361,10 @@ export interface WikiTargetMatchTiers {
 }
 
 /** Query every bare-wiki resolution tier without collapsing lower priorities. */
-export async function findWikiTargetMatchTiers(target: string): Promise<WikiTargetMatchTiers> {
+export async function findWikiTargetMatchTiers(
+  target: string,
+  database: IndexDatabase = db,
+): Promise<WikiTargetMatchTiers> {
   const normalized = normalizeWikiTarget(target)
   if (normalized.key === '') {
     return { date: [], title: [], alias: [], basename: [] }
@@ -367,7 +372,7 @@ export async function findWikiTargetMatchTiers(target: string): Promise<WikiTarg
 
   const dateRows = normalized.date === undefined
     ? []
-    : await db
+    : await database
         .selectFrom('notes')
         .where('dailyDate', '=', normalized.date)
         .where('kind', '!=', 'template')
@@ -375,7 +380,7 @@ export async function findWikiTargetMatchTiers(target: string): Promise<WikiTarg
         .distinct()
         .orderBy('path')
         .execute()
-  const titleRows = await db
+  const titleRows = await database
     .selectFrom('notes')
     .where('authoredTitleKey', '=', normalized.key)
     .where('kind', '!=', 'template')
@@ -383,7 +388,7 @@ export async function findWikiTargetMatchTiers(target: string): Promise<WikiTarg
     .distinct()
     .orderBy('path')
     .execute()
-  const aliasRows = await db
+  const aliasRows = await database
     .selectFrom('aliases')
     .innerJoin('notes', 'notes.path', 'aliases.notePath')
     .where('aliasKey', '=', normalized.key)
@@ -392,7 +397,7 @@ export async function findWikiTargetMatchTiers(target: string): Promise<WikiTarg
     .distinct()
     .orderBy('notePath')
     .execute()
-  const basenameRows = await db
+  const basenameRows = await database
     .selectFrom('notes')
     .where('basenameKey', '=', normalized.key)
     .where('kind', '!=', 'template')

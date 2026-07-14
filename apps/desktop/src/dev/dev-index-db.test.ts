@@ -124,6 +124,77 @@ describe('createDevIndexDb', () => {
     expect(hits).toEqual([{ path: 'notes/sample.md' }])
   })
 
+  it('persists exact path keys and resolves path-qualified backlinks', async () => {
+    const db = await openDb()
+    db.applyNote(
+      sampleNote({
+        path: 'Projects/Plan.md',
+        id: null,
+        title: 'Launch Plan',
+        titleKey: 'launch plan',
+        authoredTitleKey: 'launch plan',
+        pathKey: 'projects/plan.md',
+        basenameKey: 'plan',
+        links: [],
+      }),
+    )
+    db.applyNote(
+      sampleNote({
+        path: 'Journal/Source.md',
+        id: null,
+        title: 'Source',
+        titleKey: 'source',
+        authoredTitleKey: 'source',
+        pathKey: 'journal/source.md',
+        basenameKey: 'source',
+        links: [
+          {
+            kind: 'wiki',
+            targetRaw: 'Projects/Plan',
+            targetKey: '',
+            pathKey: 'projects/plan.md',
+            alternatePathKey: null,
+            alias: 'plan',
+            posFrom: 0,
+            posTo: 23,
+          },
+          {
+            kind: 'md',
+            targetRaw: '../Projects/Plan.md',
+            targetKey: '',
+            pathKey: 'projects/plan.md',
+            alternatePathKey: null,
+            alias: null,
+            posFrom: 24,
+            posTo: 49,
+          },
+        ],
+      }),
+    )
+
+    expect(
+      db.query(
+        'SELECT authored_title_key, path_key, basename_key FROM notes WHERE path = ?',
+        ['Projects/Plan.md'],
+      ),
+    ).toEqual([
+      {
+        authored_title_key: 'launch plan',
+        path_key: 'projects/plan.md',
+        basename_key: 'plan',
+      },
+    ])
+    expect(
+      db.query(
+        'SELECT target_path, source_path, kind FROM backlinks ORDER BY pos_from',
+        [],
+      ),
+    ).toEqual([
+      { target_path: 'Projects/Plan.md', source_path: 'Journal/Source.md', kind: 'wiki' },
+      { target_path: 'Projects/Plan.md', source_path: 'Journal/Source.md', kind: 'md' },
+    ])
+  })
+
   it('finds a short Japanese term inside a title as well as a note body', async () => {
     const db = await openDb()
     db.applyNote(
@@ -373,23 +444,30 @@ describe('createDevIndexDb', () => {
   it('moves every row to the new path and refuses an occupied destination', async () => {
     const db = await openDb()
     db.applyNote(sampleNote())
-    db.moveNote('notes/sample.md', 'notes/renamed.md')
+    db.moveNote('notes/sample.md', 'Archive/Renamed.md', 'archive/renamed.md', 'renamed')
 
-    expect(db.query('SELECT path FROM notes', [])).toEqual([{ path: 'notes/renamed.md' }])
+    expect(db.query('SELECT path, path_key, basename_key, file_hash FROM notes', [])).toEqual([
+      {
+        path: 'Archive/Renamed.md',
+        path_key: 'archive/renamed.md',
+        basename_key: 'renamed',
+        file_hash: '',
+      },
+    ])
     expect(db.query('SELECT note_path FROM tags', [])).toEqual([
-      { note_path: 'notes/renamed.md' },
+      { note_path: 'Archive/Renamed.md' },
     ])
     expect(db.query('SELECT note_path FROM note_emails', [])).toEqual([
-      { note_path: 'notes/renamed.md' },
+      { note_path: 'Archive/Renamed.md' },
     ])
 
     db.applyNote(sampleNote({ path: 'notes/sample.md', id: '01hv3xq7c2dm8k4t9w5e6r1n98' }))
-    expect(() => db.moveNote('notes/sample.md', 'notes/renamed.md')).toThrowError(
-      /already indexed/,
-    )
+    expect(() =>
+      db.moveNote('notes/sample.md', 'Archive/Renamed.md', 'archive/renamed.md', 'renamed'),
+    ).toThrowError(/already indexed/)
     // The refused move must leave both notes' rows untouched.
     const paths = db.query('SELECT path FROM notes ORDER BY path', [])
-    expect(paths).toEqual([{ path: 'notes/renamed.md' }, { path: 'notes/sample.md' }])
+    expect(paths).toEqual([{ path: 'Archive/Renamed.md' }, { path: 'notes/sample.md' }])
   })
 
   it('removes a note and its FTS row', async () => {
@@ -419,6 +497,7 @@ describe('createDevIndexDb', () => {
       attachments: '[]',
       parts: '[]',
       responseMessages: '[]',
+      privacyFingerprint: 'privacy-v1:test',
       createdMs: 1,
     })
 
@@ -453,6 +532,7 @@ describe('createDevIndexDb', () => {
       attachments: '[]',
       parts: '[]',
       responseMessages: '[]',
+      privacyFingerprint: null,
       createdMs: 1,
     })
 

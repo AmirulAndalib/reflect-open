@@ -213,8 +213,12 @@ export function useAssetPersistence(
 
   const attachmentCatalogRevision = attachmentCatalog?.revision ?? 0
   useEffect(() => {
-    // A manifest transition may be a completed download or a later eviction.
-    // Either way, the new state gets a fresh materialization attempt.
+    // A manifest transition hands resolution back to the authoritative
+    // catalog. The local save map exists only to bridge the upload-to-watcher
+    // gap; retaining it after a refresh would keep a deleted, renamed, or
+    // evicted attachment falsely available. A completed download or later
+    // eviction also gets a fresh materialization attempt.
+    locallySavedPaths.current = new Map()
     requestedMaterializations.current = new Map()
   }, [attachmentCatalogRevision])
 

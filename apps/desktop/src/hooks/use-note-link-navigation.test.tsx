@@ -22,7 +22,7 @@ function Links({ scopeKey }: { readonly scopeKey: string | undefined }): ReactEl
           openNoteLink(
             { kind: 'note', path: 'notes/alpha.md' },
             event,
-            beforeInWindowNavigate,
+            { beforeInWindowNavigate },
           )
         }
       >

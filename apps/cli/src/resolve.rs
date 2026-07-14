@@ -1,16 +1,15 @@
 //! `<note>` argument resolution for `show`/`path`. The order mirrors
 //! `resolveWikiLink` (`packages/core/src/markdown/resolve.ts`) with a path
 //! convenience first-class for a CLI: calendar-valid `YYYY-MM-DD` → explicit
-//! graph path → title fold-key → alias fold-key. Index-backed when the index
-//! is open; otherwise a file scan derives the same titles/aliases.
+//! graph path → authored-title fold-key → alias fold-key → filename stem.
+//! Resolution always walks the live vault: the read-only index remains useful
+//! for search, but cannot authoritatively answer after external file changes.
 
 use std::path::{Component, Path, PathBuf};
 
-use rusqlite::{params, Connection};
-
 use crate::error::CliError;
 use crate::keys::fold_key;
-use crate::note_file::{checked_note_path, parse_note_meta, walk_notes};
+use crate::note_file::{basename, checked_note_path, parse_note_meta, walk_notes};
 use crate::paths::{daily_path, parse_calendar_date};
 
 /// What a `<note>` argument resolved to.
@@ -68,73 +67,55 @@ fn absolute_graph_relative(candidate: &Path, canonical_root: &Path) -> Option<Pa
     })
 }
 
-/// Title matches first, alias matches only when no title matched — the
-/// `byTitle ?? byAlias` precedence — each tier ordered by path so collisions
-/// resolve deterministically (same rule as the desktop's `resolveWikiTarget`).
-fn index_lookup(conn: &Connection, key: &str) -> Result<Vec<String>, CliError> {
-    // Templates never resolve by title/alias (the desktop rule) — only an
-    // explicit `templates/...` path argument reaches one.
-    let by_title = collect_paths(
-        conn,
-        "SELECT path FROM notes WHERE title_key = ?1 AND kind != 'template' ORDER BY path",
-        key,
-    )?;
-    if !by_title.is_empty() {
-        return Ok(by_title);
-    }
-    collect_paths(
-        conn,
-        "SELECT note_path FROM aliases
-         JOIN notes ON notes.path = aliases.note_path AND notes.kind != 'template'
-         WHERE alias_key = ?1 ORDER BY note_path",
-        key,
-    )
-}
-
-fn collect_paths(conn: &Connection, sql: &str, key: &str) -> Result<Vec<String>, CliError> {
-    let mut statement = conn.prepare(sql)?;
-    let rows = statement.query_map(params![key], |row| row.get::<_, String>(0))?;
-    let mut paths = Vec::new();
-    for row in rows {
-        paths.push(row?);
-    }
-    Ok(paths)
-}
-
-/// The index-free fallback: derive every note's title/aliases from disk and
-/// match the same fold keys (`walk_notes` returns paths sorted, so the
-/// deterministic-first-match rule holds here too).
+/// Derive every note's title/aliases from the current files and match the
+/// desktop's ranked tiers. `walk_notes` returns sorted paths, so ambiguous
+/// matches retain the CLI's deterministic-first-path behavior. An unavailable
+/// candidate fails the whole lookup closed because its live keys are unknown.
 fn scan_lookup(root: &Path, key: &str) -> Result<Vec<String>, CliError> {
     let mut by_title = Vec::new();
     let mut by_alias = Vec::new();
+    let mut by_basename = Vec::new();
     for note in walk_notes(root)? {
         if note.rel_path.starts_with("templates/") {
             continue; // templates never resolve by title/alias
         }
-        let Ok(content) = std::fs::read_to_string(root.join(&note.rel_path)) else {
-            continue;
-        };
+        if note.placeholder {
+            return Err(CliError::Runtime(format!(
+                "cannot safely resolve notes while {} is unavailable until iCloud downloads it",
+                note.rel_path
+            )));
+        }
+        let content = std::fs::read_to_string(root.join(&note.rel_path)).map_err(|error| {
+            CliError::Runtime(format!(
+                "cannot safely resolve notes because {} could not be read: {error}",
+                note.rel_path
+            ))
+        })?;
         let meta = parse_note_meta(&note.rel_path, &content);
-        if fold_key(&meta.title) == key {
+        if meta.authored_title && fold_key(&meta.title) == key {
             by_title.push(note.rel_path);
-        } else if meta.aliases.iter().any(|alias| fold_key(alias) == key) {
+            continue;
+        }
+        if meta.aliases.iter().any(|alias| fold_key(alias) == key) {
             by_alias.push(note.rel_path);
+            continue;
+        }
+        if fold_key(basename(&note.rel_path)) == key {
+            by_basename.push(note.rel_path);
         }
     }
-    Ok(if by_title.is_empty() {
+    Ok(if !by_title.is_empty() {
+        by_title
+    } else if !by_alias.is_empty() {
         by_alias
     } else {
-        by_title
+        by_basename
     })
 }
 
 /// Resolve a `<note>` argument. Ambiguous matches resolve to the first path
 /// (deterministic) and note the others on stderr.
-pub fn resolve_note(
-    arg: &str,
-    root: &Path,
-    conn: Option<&Connection>,
-) -> Result<ResolvedNote, CliError> {
+pub fn resolve_note(arg: &str, root: &Path) -> Result<ResolvedNote, CliError> {
     let trimmed = arg.trim();
     if trimmed.is_empty() {
         return Err(CliError::NotFound("empty note reference".to_string()));
@@ -149,13 +130,10 @@ pub fn resolve_note(
         return Ok(ResolvedNote::File { rel_path });
     }
     let key = fold_key(trimmed);
-    let matches = match conn {
-        Some(conn) => index_lookup(conn, &key)?,
-        None => scan_lookup(root, &key)?,
-    };
+    let matches = scan_lookup(root, &key)?;
     match matches.split_first() {
         None => Err(CliError::NotFound(format!(
-            "no note matching '{trimmed}' (by date, path, title, or alias)"
+            "no note matching '{trimmed}' (by date, path, title, alias, or filename)"
         ))),
         Some((first, rest)) => {
             if !rest.is_empty() {
@@ -174,7 +152,7 @@ pub fn resolve_note(
 
 #[cfg(test)]
 mod tests {
-    use super::as_graph_path;
+    use super::{as_graph_path, scan_lookup};
 
     #[test]
     fn explicit_paths_accept_root_and_nested_notes_only() {
@@ -197,6 +175,43 @@ mod tests {
         );
         assert_eq!(as_graph_path("Projects/.hidden/secret.md", &root), None);
         assert_eq!(as_graph_path("assets/caption.md", &root), None);
+    }
+
+    #[test]
+    fn scan_lookup_ranks_aliases_above_filename_stems() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp.path().join("Projects")).expect("mkdir");
+        std::fs::create_dir_all(temp.path().join("notes")).expect("mkdir");
+        std::fs::write(temp.path().join("Projects/Target.md"), "No authored title").expect("write");
+        std::fs::write(
+            temp.path().join("notes/alias.md"),
+            "---\naliases: [Target]\n---\n# Other",
+        )
+        .expect("write");
+
+        assert_eq!(
+            scan_lookup(temp.path(), "target").expect("lookup"),
+            vec!["notes/alias.md"]
+        );
+    }
+
+    #[test]
+    fn scan_lookup_fails_closed_for_an_icloud_placeholder() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp.path().join("Projects")).expect("mkdir");
+        std::fs::write(temp.path().join("Projects/.plan.md.icloud"), "placeholder").expect("write");
+
+        let error = scan_lookup(temp.path(), "plan").unwrap_err();
+        assert!(error.to_string().contains("unavailable"));
+    }
+
+    #[test]
+    fn scan_lookup_fails_closed_for_unreadable_markdown() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(temp.path().join("broken.md"), [0xff]).expect("write");
+
+        let error = scan_lookup(temp.path(), "plan").unwrap_err();
+        assert!(error.to_string().contains("could not be read"));
     }
 
     #[cfg(unix)]

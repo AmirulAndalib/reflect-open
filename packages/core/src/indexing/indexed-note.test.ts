@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { gistBodyHash, parseNote } from '../markdown'
+import {
+  assetReferenceLookupKeys,
+  ASSET_BASENAME_KEY_PREFIX,
+} from './asset-reference-keys'
 import { buildIndexedNote, indexedNoteSchema, PROJECTION_VERSION } from './indexed-note'
 
 describe('buildIndexedNote', () => {
-  it('carries the projection version that backfills arbitrary-vault path keys', () => {
-    expect(PROJECTION_VERSION).toBe(16)
+  it('carries the projection version that removes image backlinks', () => {
+    expect(PROJECTION_VERSION).toBe(19)
   })
 
   it('flattens a parsed note into the index payload', () => {
     const source =
-      '---\nid: 01H\naliases: [PJX, "Proj X"]\nprivate: true\npinned: true\n---\n' +
+      '---\nid: 01abcdefghjkmnpqrstvwxyz00\naliases: [PJX, "Proj X"]\nprivate: true\npinned: true\n---\n' +
       '# Project X\n\nLinks [[Charlotte]] and [[Note|alias]] and #status. ' +
       'See [site](https://x.com) and ![p](assets/p.png).'
     const indexed = buildIndexedNote(parseNote({ path: 'notes/project-x.md', source }), {
@@ -19,7 +23,7 @@ describe('buildIndexedNote', () => {
     })
 
     expect(indexed.path).toBe('notes/project-x.md')
-    expect(indexed.id).toBe('01H')
+    expect(indexed.id).toBe('01abcdefghjkmnpqrstvwxyz00')
     expect(indexed.title).toBe('Project X')
     expect(indexed.titleKey).toBe('project x')
     expect(indexed.authoredTitleKey).toBe('project x')
@@ -49,6 +53,39 @@ describe('buildIndexedNote', () => {
     expect(indexed.assets).toEqual(['assets/p.png'])
   })
 
+  it('indexes exact attachment candidates and a deduped bare-wiki sentinel', () => {
+    const source =
+      '![](../assets/A%20B.png) ![[assets/Exact.pdf]] ![[Photo.PNG]] ![[photo.png]]\n' +
+      '![Reference][diagram]\n\n[diagram]: ../assets/reference.svg'
+    const parsed = parseNote({ path: 'Projects/source.md', source })
+    const indexed = buildIndexedNote(parsed, { fileHash: 'h', mtime: 1, source })
+
+    expect(indexed.assets).toEqual([
+      'assets/A B.png',
+      'assets/Exact.pdf',
+      `${ASSET_BASENAME_KEY_PREFIX}photo.png`,
+      'assets/reference.svg',
+    ])
+    expect(parsed.assets.map((asset) => asset.path)).toEqual([
+      'assets/A B.png',
+      'assets/Exact.pdf',
+      'assets/reference.svg',
+    ])
+  })
+
+  it('keeps imported exact paths out of managed keys while retaining bare wiki candidates', () => {
+    const source = '![](../Media/local.png) ![[local.png]]'
+    const parsed = parseNote({ path: 'Projects/source.md', source })
+    const indexed = buildIndexedNote(parsed, { fileHash: 'h', mtime: 1, source })
+
+    expect(parsed.assets).toEqual([])
+    expect(indexed.assets).toEqual([`${ASSET_BASENAME_KEY_PREFIX}local.png`])
+    expect(assetReferenceLookupKeys('assets/LOCAL.png')).toEqual([
+      'assets/LOCAL.png',
+      `${ASSET_BASENAME_KEY_PREFIX}local.png`,
+    ])
+  })
+
   it('keeps a filename-derived title out of the authored-title tier', () => {
     const source = 'Body only.'
     const indexed = buildIndexedNote(parseNote({ path: 'Archive/Project.md', source }), {
@@ -61,6 +98,51 @@ describe('buildIndexedNote', () => {
     expect(indexed.titleKey).toBe('project')
     expect(indexed.authoredTitleKey).toBeNull()
     expect(indexed.basenameKey).toBe('project')
+  })
+
+  it('indexes resolved reference links at each usage span', () => {
+    const source = '[Plan][doc] and [doc].\n\n[doc]: ../Plans/Plan.md#Scope "Plan"'
+    const indexed = buildIndexedNote(parseNote({ path: 'Projects/source.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
+
+    expect(indexed.links).toEqual([
+      expect.objectContaining({
+        kind: 'md',
+        targetRaw: '../Plans/Plan.md#Scope',
+        pathKey: 'plans/plan.md',
+        posFrom: source.indexOf('[Plan][doc]'),
+        posTo: source.indexOf('[Plan][doc]') + '[Plan][doc]'.length,
+      }),
+      expect.objectContaining({
+        kind: 'md',
+        targetRaw: '../Plans/Plan.md#Scope',
+        pathKey: 'plans/plan.md',
+        posFrom: source.indexOf('[doc].'),
+        posTo: source.indexOf('[doc].') + '[doc]'.length,
+      }),
+    ])
+  })
+
+  it('never indexes images as note links or backlinks', () => {
+    const source =
+      '[note](Target.md) ![markdown](Target.md) ![extensionless](Target) ' +
+      '![reference][picture]\n\n[picture]: Target.md'
+    const indexed = buildIndexedNote(parseNote({ path: 'Projects/source.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
+
+    expect(indexed.links).toEqual([
+      expect.objectContaining({
+        kind: 'md',
+        targetRaw: 'Target.md',
+        posFrom: source.indexOf('[note]'),
+      }),
+    ])
   })
 
   it('derives v1 subject aliases from a `//` title, after frontmatter aliases', () => {
@@ -126,7 +208,7 @@ describe('buildIndexedNote', () => {
   })
 
   it('folds asset description text from meta, defaulting to empty', () => {
-    const source = '# Has image\n\n![p](assets/p.png)'
+    const source = '---\nid: 01abcdefghjkmnpqrstvwxyz00\n---\n# Has image\n\n![p](assets/p.png)'
     const withText = buildIndexedNote(parseNote({ path: 'notes/n.md', source }), {
       fileHash: 'h',
       mtime: 0,
@@ -166,6 +248,7 @@ describe('buildIndexedNote', () => {
         source: 'body',
       }).kind
     expect(kindOf('daily/2026-06-09.md')).toBe('daily')
+    expect(kindOf('daily/2026-02-31.md')).toBe('note')
     expect(kindOf('notes/n.md')).toBe('note')
     expect(kindOf('templates/journal.md')).toBe('template')
   })

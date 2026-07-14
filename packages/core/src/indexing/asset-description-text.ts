@@ -1,6 +1,5 @@
-import { isAppError } from '../errors'
-import { readNote } from '../graph/commands'
-import { descriptionPathFor } from '../graph/paths'
+import { isEligibleAssetPath } from '../actions/asset-description-helpers'
+import { readManagedAssetDescription } from '../graph/commands'
 import { splitFrontmatter } from '../markdown/frontmatter'
 
 /**
@@ -47,18 +46,13 @@ export async function gatherAssetDescriptionBodies(
   const bodies: AssetDescriptionBody[] = []
   let total = 0
   for (const assetPath of assetPaths) {
-    if (seen.has(assetPath)) {
+    if (!isEligibleAssetPath(assetPath) || seen.has(assetPath)) {
       continue // an asset referenced twice in one note contributes once
     }
     seen.add(assetPath)
-    let source: string
-    try {
-      source = await readNote(descriptionPathFor(assetPath))
-    } catch (cause) {
-      if (isAppError(cause) && cause.kind === 'notFound') {
-        continue // no description for this asset (not generated yet, or none)
-      }
-      throw cause
+    const source = await readManagedAssetDescription(assetPath)
+    if (source === null) {
+      continue // no description for this asset (not generated yet, or none)
     }
     const body = splitFrontmatter(source).body.trim()
     if (body === '') {

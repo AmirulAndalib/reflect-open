@@ -1,7 +1,8 @@
 import { sql } from 'kysely'
+import { resolveExistingWikiTargets } from '../graph/resolve-existing-wiki-target'
 import { foldTag, normalizeWikiTarget } from '../markdown'
 import { generateDateSuggestions, type DateSuggestionContext } from './date-suggestions'
-import { db } from './db'
+import { db, dbForGraphGeneration } from './db'
 import { inClauseChunks, likeContains } from './query-utils'
 import {
   mergeDateSuggestions,
@@ -43,7 +44,7 @@ async function qualifyAmbiguousWikiSuggestions(
       ),
     ),
   ].filter((key) => key !== '')
-  const ownersByKey = new Map<string, NoteKeyOwner[]>()
+  const ownersByKey = new Map<string, Map<string, number>>()
   for (const chunk of inClauseChunks(keys)) {
     const rows = await db
       .selectFrom('noteKeys')
@@ -57,8 +58,9 @@ async function qualifyAmbiguousWikiSuggestions(
       if (row.key === null || row.notePath === null || row.priority === null) {
         continue
       }
-      const owners = ownersByKey.get(row.key) ?? []
-      owners.push({ notePath: row.notePath, priority: Number(row.priority) })
+      const owners = ownersByKey.get(row.key) ?? new Map<string, number>()
+      const priority = Number(row.priority)
+      owners.set(row.notePath, Math.min(owners.get(row.notePath) ?? priority, priority))
       ownersByKey.set(row.key, owners)
     }
   }
@@ -68,7 +70,9 @@ async function qualifyAmbiguousWikiSuggestions(
       return suggestion
     }
     const key = normalizeWikiTarget(suggestion.target).key
-    const owners = ownersByKey.get(key) ?? []
+    const owners: NoteKeyOwner[] = [...(ownersByKey.get(key) ?? [])].map(
+      ([notePath, priority]) => ({ notePath, priority }),
+    )
     const bestPriority = owners.reduce(
       (best, owner) => Math.min(best, owner.priority),
       Number.POSITIVE_INFINITY,
@@ -77,7 +81,47 @@ async function qualifyAmbiguousWikiSuggestions(
     if (winners.length === 1 && winners[0]!.notePath === suggestion.path) {
       return suggestion
     }
-    return { ...suggestion, target: pathQualifiedWikiTarget(suggestion.path) }
+    return {
+      ...suggestion,
+      target: pathQualifiedWikiTarget(suggestion.path),
+      disambiguated: true,
+    }
+  })
+}
+
+async function qualifyLiveWikiSuggestions(
+  suggestions: readonly WikiSuggestion[],
+  generation: number,
+): Promise<WikiSuggestion[]> {
+  const indexed = suggestions.filter(
+    (suggestion): suggestion is WikiSuggestion & { readonly path: string } =>
+      suggestion.path !== null,
+  )
+  const targets = [...new Set(indexed.map((suggestion) => suggestion.target))]
+  const resolutions = await resolveExistingWikiTargets(targets, generation)
+  const resolutionByTarget = new Map(
+    targets.map((target, index) => [target, resolutions[index]!] as const),
+  )
+
+  return suggestions.flatMap((suggestion) => {
+    if (suggestion.path === null) {
+      return [suggestion]
+    }
+    const resolution = resolutionByTarget.get(suggestion.target)
+    if (resolution?.orphanedPaths?.includes(suggestion.path) === true) {
+      return []
+    }
+    if (
+      resolution?.kind === 'resolved' &&
+      resolution.path === suggestion.path
+    ) {
+      return [suggestion]
+    }
+    return [{
+      ...suggestion,
+      target: pathQualifiedWikiTarget(suggestion.path),
+      disambiguated: true,
+    }]
   })
 }
 
@@ -104,34 +148,51 @@ export async function suggestTags(query: string, limit = 8): Promise<TagSuggesti
 }
 
 /**
- * `[[` autocomplete candidates for `query` (Plan 07): title and alias contains-
- * matches ranked by {@link rankWikiSuggestions}. With `dateGen`, fuzzy date
- * suggestions are merged ahead of index matches.
+ * `[[` autocomplete candidates for `query` (Plan 07): date, authored-title,
+ * alias, and filename-stem contains-matches ranked by
+ * {@link rankWikiSuggestions}. With `dateGen`, fuzzy date suggestions are
+ * merged ahead of index matches. Insertion surfaces pass `generation` so
+ * uniqueness is rechecked against one live manifest/index delta; index-only
+ * navigation surfaces may omit it because they already carry the chosen path.
  */
 export async function suggestWikiTargets(
   query: string,
   limit = 8,
   dateGen?: DateSuggestionContext,
+  generation?: number,
 ): Promise<WikiSuggestion[]> {
   const normalized = normalizeWikiTarget(query)
   const key = normalized.key
+  const database = generation === undefined ? db : dbForGraphGeneration(generation)
 
-  let titleQuery = db
+  let titleQuery = database
     .selectFrom('notes')
     .where('kind', '!=', 'template')
-    .select(['path', 'title', 'titleKey', 'dailyDate', 'mtime'])
+    .select([
+      'path',
+      'title',
+      'titleKey',
+      'authoredTitleKey',
+      'basenameKey',
+      'dailyDate',
+      'mtime',
+    ])
     .orderBy('mtime', 'desc')
     .limit(50)
   if (key !== '') {
-    titleQuery = titleQuery.where(
-      sql<boolean>`title_key LIKE ${likeContains(key)} ESCAPE '\\'`,
+    titleQuery = titleQuery.where(({ or }) =>
+      or([
+        sql<boolean>`daily_date LIKE ${likeContains(key)} ESCAPE '\\'`,
+        sql<boolean>`authored_title_key LIKE ${likeContains(key)} ESCAPE '\\'`,
+        sql<boolean>`basename_key LIKE ${likeContains(key)} ESCAPE '\\'`,
+      ]),
     )
   }
   const titles: TitleCandidate[] = await titleQuery.execute()
 
   let aliases: AliasCandidate[] = []
   if (key !== '') {
-    aliases = await db
+    aliases = await database
       .selectFrom('aliases')
       .innerJoin('notes', 'notes.path', 'aliases.notePath')
       .where('notes.kind', '!=', 'template')
@@ -140,6 +201,8 @@ export async function suggestWikiTargets(
         'notes.path',
         'notes.title',
         'notes.titleKey',
+        'notes.authoredTitleKey',
+        'notes.basenameKey',
         'notes.dailyDate',
         'notes.mtime',
         'aliases.alias',
@@ -150,9 +213,10 @@ export async function suggestWikiTargets(
       .execute()
   }
 
-  const ranked = await qualifyAmbiguousWikiSuggestions(
-    rankWikiSuggestions(key, titles, aliases, limit),
-  )
+  const candidates = rankWikiSuggestions(key, titles, aliases, limit)
+  const ranked = generation === undefined
+    ? await qualifyAmbiguousWikiSuggestions(candidates)
+    : await qualifyLiveWikiSuggestions(candidates, generation)
   if (dateGen !== undefined) {
     return mergeDateSuggestions(ranked, generateDateSuggestions(query, dateGen), { key, limit })
   }

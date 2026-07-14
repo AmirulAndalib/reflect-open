@@ -4861,6 +4861,7 @@ dependencies = [
  "reflect-index-schema",
  "reqwest 0.12.28",
  "rusqlite",
+ "rustix",
  "same-file",
  "serde",
  "serde_json",

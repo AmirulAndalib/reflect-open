@@ -224,7 +224,6 @@ export {
   type SearchFilters,
   type FilteredSearchHit,
   type FilteredSearchOptions,
-  type NoteMoveBacklink,
   type PreparedNoteMoveRewrite,
   type PreparedNoteMoveRewrites,
   type PrepareNoteMoveRewritesOptions,

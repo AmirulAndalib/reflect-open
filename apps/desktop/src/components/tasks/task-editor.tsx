@@ -177,7 +177,7 @@ export function TaskEditor({
   const navigate = useWikiLinkNavigation(generation, task.notePath)
   const navigateMarkdownLink = useMarkdownLinkNavigation(generation, task.notePath)
   const onTagClick = useTagNavigation()
-  const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete()
+  const { onWikilinkSearch, onTagSearch } = useEditorAutocomplete(generation)
 
   // Frozen at mount: the editor is seeded once (uncontrolled), so the commit
   // baseline must stay the seed even if `task.raw` is re-derived mid-edit.

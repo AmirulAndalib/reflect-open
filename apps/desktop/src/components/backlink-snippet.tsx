@@ -4,12 +4,14 @@ import type {
   FileClickHandler,
   FileInfoResolver,
   FileLinkResolver,
+  LinkClickHandler,
   WikiEmbedResolver,
   WikilinkClickHandler,
 } from '@meowdown/core'
 import { errorMessage, type SnippetTask } from '@reflect/core'
 import { useOpenExternalLink } from '@/editor/open-external-link'
 import type { AssetPersistence } from '@/editor/use-asset-persistence'
+import type { BacklinkNavigation } from '@/hooks/use-backlink-navigation'
 import { useSnippetTaskToggle } from '@/hooks/use-snippet-task-toggle'
 
 interface BacklinkSnippetProps {
@@ -20,7 +22,9 @@ interface BacklinkSnippetProps {
   /** The snippet's checkbox tasks anchored to the source note (query-provided). */
   tasks: SnippetTask[]
   /** Navigate a clicked `[[wiki link]]` to its target. Pass a stable function. */
-  onWikilinkClick: WikilinkClickHandler
+  onWikilinkClick: BacklinkNavigation['onWikilinkClick']
+  /** Navigate a standard Markdown note link from this source note. */
+  onMarkdownLinkClick: BacklinkNavigation['onMarkdownLinkClick']
   /** Resolve `![…](…)` sources to displayable URLs. Pass a stable function. */
   resolveImageUrl: (sourcePath: string, src: string) => string | undefined
   resolveFileLink: AssetPersistence['resolveFileLinkFromSource']
@@ -49,6 +53,7 @@ export function BacklinkSnippet({
   notePath,
   tasks,
   onWikilinkClick,
+  onMarkdownLinkClick,
   resolveImageUrl,
   resolveFileLink,
   resolveWikiEmbed,
@@ -58,6 +63,19 @@ export function BacklinkSnippet({
 }: BacklinkSnippetProps): ReactElement {
   const onTaskClick = useSnippetTaskToggle(notePath, tasks)
   const openExternalLink = useOpenExternalLink()
+  const handleWikilinkClick = useCallback<WikilinkClickHandler>(
+    (payload) => onWikilinkClick(notePath, payload),
+    [notePath, onWikilinkClick],
+  )
+  const handleLinkClick = useCallback<LinkClickHandler>(
+    (payload) => {
+      payload.event.preventDefault()
+      if (!onMarkdownLinkClick(notePath, payload)) {
+        openExternalLink(payload)
+      }
+    },
+    [notePath, onMarkdownLinkClick, openExternalLink],
+  )
   const resolveSnippetImageUrl = useCallback(
     (src: string) => {
       void resolverRevision
@@ -99,8 +117,8 @@ export function BacklinkSnippet({
       <MarkdownView
         className="reflect-editor"
         markdown={text}
-        onWikilinkClick={onWikilinkClick}
-        onLinkClick={openExternalLink}
+        onWikilinkClick={handleWikilinkClick}
+        onLinkClick={handleLinkClick}
         {...(onTaskClick ? { onTaskClick } : {})}
         resolveImageUrl={resolveSnippetImageUrl}
         resolveFileLink={resolveSnippetFileLink}

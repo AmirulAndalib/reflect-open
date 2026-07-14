@@ -3,6 +3,7 @@ import type { GraphInfo } from '@reflect/core'
 import { PaletteProvider } from '@/components/command-palette/palette-provider'
 import { NoteWindowContent } from '@/components/note-window-content'
 import { WorkspaceContent } from '@/components/workspace-content'
+import { AmbiguousNoteChooser } from '@/editor/ambiguous-note-chooser'
 import { getInitialWindowRoute } from '@/lib/windows/initial-window-route'
 import { isMainWindow } from '@/lib/windows/window-role'
 import { AssetDescribeProvider } from '@/providers/asset-describe-provider'
@@ -58,19 +59,25 @@ export function GraphWorkspace({ graph }: GraphWorkspaceProps): ReactElement {
                           {/* Tracks the focused day in the daily stream so the right
                               sidebar describes it, not just the routed day. */}
                           <FocusedDailyProvider>
-                            {/* A ⌘-clicked note window is chrome-free: the
-                                routed view only, no sidebar/palette shell.
-                                The V1 import lives above the routed views so
-                                closing settings can't orphan a running
-                                import; main window only — its dialog is the
-                                import's single face. */}
-                            {isMainWindow() ? (
-                              <V1ImportProvider graph={graph}>
-                                <WorkspaceContent graph={graph} />
-                              </V1ImportProvider>
-                            ) : (
-                              <NoteWindowContent />
-                            )}
+                            <>
+                              {/* A ⌘-clicked note window is chrome-free: the
+                                  routed view only, no sidebar/palette shell.
+                                  The V1 import lives above the routed views so
+                                  closing settings can't orphan a running
+                                  import; main window only — its dialog is the
+                                  import's single face. */}
+                              {isMainWindow() ? (
+                                <V1ImportProvider graph={graph}>
+                                  <WorkspaceContent graph={graph} />
+                                </V1ImportProvider>
+                              ) : (
+                                <NoteWindowContent />
+                              )}
+                              {/* Duplicate resolution is graph/window scoped,
+                                  so both the main workspace and secondary note
+                                  windows must be able to settle the singleton. */}
+                              <AmbiguousNoteChooser />
+                            </>
                           </FocusedDailyProvider>
                         </ChatProvider>
                       </AssetDescribeProvider>

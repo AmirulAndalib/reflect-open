@@ -23,6 +23,8 @@ function contextFor(notePath: string | null, generation: number | null): Command
     newChat: vi.fn(),
     switchGraph: vi.fn(),
     toggleAudioMemo: vi.fn(),
+    graph: () =>
+      generation === null ? null : { root: '/g', name: 'g', generation },
     generation: () => generation,
     openPalette: vi.fn(),
     openShortcuts: vi.fn(),

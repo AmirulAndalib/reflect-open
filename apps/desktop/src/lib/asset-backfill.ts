@@ -21,11 +21,12 @@ let inFlight: { generation: number; promise: Promise<ReconcileAssetDescriptionsO
 export function backfillAssetDescriptionsVisibly(
   generation: number,
   providers: AiProvidersState,
+  isStale: () => boolean,
 ): Promise<ReconcileAssetDescriptionsOutcome> {
   if (inFlight !== null && inFlight.generation === generation) {
     return inFlight.promise
   }
-  const promise = runBackfill(generation, providers).finally(() => {
+  const promise = runBackfill(generation, providers, isStale).finally(() => {
     if (inFlight !== null && inFlight.promise === promise) {
       inFlight = null
     }
@@ -37,6 +38,7 @@ export function backfillAssetDescriptionsVisibly(
 async function runBackfill(
   generation: number,
   providers: AiProvidersState,
+  isStale: () => boolean,
 ): Promise<ReconcileAssetDescriptionsOutcome> {
   const operation = startOperation('Describing assets')
   let outcome: ReconcileAssetDescriptionsOutcome
@@ -46,6 +48,7 @@ async function runBackfill(
       generation,
       mode: 'backfill',
       fetchFn: providerFetch,
+      isStale,
       onProgress: (done, total) => operation.progress(done, total),
     })
   } catch (cause) {
@@ -59,7 +62,7 @@ async function runBackfill(
   // assets we just described (Plan 20 search integration). A failure here must
   // not fail the backfill — the descriptions are written; search folds them on
   // the next re-index or a rebuild.
-  if (outcome.describedAssetPaths.length > 0) {
+  if (!isStale() && outcome.describedAssetPaths.length > 0) {
     try {
       await reindexNotesReferencing(outcome.describedAssetPaths, generation)
     } catch (cause) {
@@ -68,7 +71,9 @@ async function runBackfill(
     // The re-index wrote search rows directly (not via the watcher → onApplied
     // path), so the index-backed query caches (staleTime: Infinity) need a manual
     // refresh for ⌘K to reflect the new descriptions.
-    invalidateIndexQueries()
+    if (!isStale()) {
+      invalidateIndexQueries()
+    }
   }
   if (outcome.stopped === null || outcome.stopped.reason === 'stale') {
     operation.done()

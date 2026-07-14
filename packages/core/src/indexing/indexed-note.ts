@@ -21,6 +21,7 @@ import {
   notePathKey,
 } from '../graph/local-note-reference'
 import { previewSnippet } from './snippet'
+import { noteAttachmentIndexKeys } from './asset-reference-keys'
 
 /**
  * The index write payload (Plan 04): a {@link ParsedNote} (Plan 03) flattened into
@@ -73,8 +74,13 @@ import { previewSnippet } from './snippet'
  * breadcrumbs until reprojected.
  * 16 — exact note path/basename keys and local-link path candidates for
  * arbitrary Markdown vault resolution.
+ * 17 — CommonMark reference-style links participate in local-path resolution
+ * and backlinks using their resolved definition destinations.
+ * 18 — authored attachment candidates include exact paths and bare-wiki
+ * basename sentinels for live catalog-aware privacy resolution.
+ * 19 — image syntax is excluded from the note-link/backlink projection.
  */
-export const PROJECTION_VERSION = 16
+export const PROJECTION_VERSION = 19
 
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),
@@ -186,6 +192,7 @@ export const indexedNoteSchema = z.object({
   aliases: z.array(indexedAliasSchema),
   /** Emails the note owns via `- Email:` contact-field bullets. */
   emails: z.array(indexedEmailSchema),
+  /** Privacy-candidate keys only; may contain the reserved bare-wiki sentinel. */
   assets: z.array(z.string()),
   /** Reflect task rows for the Tasks projection (Plan 18). */
   tasks: z.array(indexedTaskSchema),
@@ -281,7 +288,7 @@ export function buildIndexedNote(
     tags: parsed.tags.map((tag) => ({ tag, tagKey: foldTag(tag) })),
     aliases: noteAliases(parsed),
     emails: extractEmailFields(body).map((email) => ({ email, emailKey: foldEmail(email) })),
-    assets: parsed.assets.map((asset) => asset.path),
+    assets: noteAttachmentIndexKeys(parsed.attachmentReferences),
     tasks: parsed.tasks.map((task) => ({
       markerOffset: task.markerOffset,
       text: task.text,

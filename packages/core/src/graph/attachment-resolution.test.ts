@@ -43,6 +43,16 @@ describe('resolveAttachmentFromCatalog', () => {
       path: 'Media/manual.pdf',
       renderKind: 'file',
     })
+    expect(resolve('.%2Fimages/local.png', 'markdown', catalog)).toEqual({
+      kind: 'resolved',
+      path: 'Projects/images/local.png',
+      renderKind: 'image',
+    })
+    expect(resolve('%2FShared/photo%20one.JPG', 'markdown', catalog)).toEqual({
+      kind: 'resolved',
+      path: 'Shared/photo one.JPG',
+      renderKind: 'image',
+    })
   })
 
   it('reports an unqualified Markdown root/source collision instead of guessing', () => {
@@ -85,6 +95,11 @@ describe('resolveAttachmentFromCatalog', () => {
       path: 'Media/PHOTO.PNG',
       renderKind: 'image',
     })
+    expect(resolve('Media%2FPHOTO.PNG', 'wikiEmbed', catalog)).toEqual({
+      kind: 'resolved',
+      path: 'Media/PHOTO.PNG',
+      renderKind: 'image',
+    })
   })
 
   it('reports duplicate wiki filenames in stable path order', () => {
@@ -120,6 +135,8 @@ describe('resolveAttachmentFromCatalog', () => {
       '../.hidden/photo.png',
       'folder\\photo.png',
       '//server/photo.png',
+      'https%3Aphoto.png',
+      'C%3A/folder/photo.png',
       'bad%ZZ.png',
       'payload.html',
     ]) {

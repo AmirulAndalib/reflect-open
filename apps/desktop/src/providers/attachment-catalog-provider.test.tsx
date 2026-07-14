@@ -46,6 +46,35 @@ afterEach(() => {
 })
 
 describe('AttachmentCatalogProvider', () => {
+  it('installs both change subscriptions before taking the initial snapshot', async () => {
+    const fileSubscription = deferred<() => void>()
+    const catalogSubscription = deferred<() => void>()
+    let listenCalls = 0
+    const invoke = vi.fn(async (command: string) =>
+      command === 'list_attachments' ? [] : null,
+    )
+    setBridge({
+      invoke,
+      listen: async () => {
+        listenCalls += 1
+        return listenCalls === 1 ? fileSubscription.promise : catalogSubscription.promise
+      },
+    })
+    render(
+      <AttachmentCatalogProvider generation={4}>
+        <Probe />
+      </AttachmentCatalogProvider>,
+    )
+
+    await waitFor(() => expect(listenCalls).toBe(1))
+    expect(invoke).not.toHaveBeenCalled()
+    await act(async () => fileSubscription.resolve(() => {}))
+    await waitFor(() => expect(listenCalls).toBe(2))
+    expect(invoke).not.toHaveBeenCalled()
+    await act(async () => catalogSubscription.resolve(() => {}))
+    await waitFor(() => expect(invoke).toHaveBeenCalledOnce())
+  })
+
   it('refreshes after supported filesystem changes and ignores unrelated files', async () => {
     let files: readonly FileMeta[] = [
       { path: 'Media/first.png', size: 1, modifiedMs: 1 },

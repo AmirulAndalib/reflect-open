@@ -18,6 +18,7 @@ vi.mock('@/providers/graph-provider', () => ({
 }))
 
 const inertAttachmentProps = {
+  onMarkdownLinkClick: () => false,
   resolveImageUrl: () => undefined,
   resolveFileLink: () => false,
   resolveWikiEmbed: () => undefined,
@@ -169,6 +170,7 @@ describe('BacklinkSnippet attachments', () => {
           notePath="Projects/2026/Plan.md"
           tasks={[]}
           onWikilinkClick={() => {}}
+          onMarkdownLinkClick={() => false}
           resolveImageUrl={resolveImageUrl}
           resolveFileLink={resolveFileLink}
           resolveWikiEmbed={resolveWikiEmbed}
@@ -214,5 +216,49 @@ describe('BacklinkSnippet attachments', () => {
       'Projects/2026/Plan.md',
       '/Media/wiki.pdf',
     )
+  })
+})
+
+describe('BacklinkSnippet note links', () => {
+  it('preserves the source path for same-note wiki headings and relative Markdown links', async () => {
+    const onWikilinkClick = vi.fn()
+    const onMarkdownLinkClick = vi.fn(() => true)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = render(
+      <QueryClientProvider client={client}>
+        <BacklinkSnippet
+          text={'[[#Decisions]] and [Plan](../Plan.md#Scope)'}
+          notePath="Projects/Meetings/Review.md"
+          tasks={[]}
+          onWikilinkClick={onWikilinkClick}
+          onMarkdownLinkClick={onMarkdownLinkClick}
+          resolveImageUrl={() => undefined}
+          resolveFileLink={() => false}
+          resolveWikiEmbed={() => undefined}
+          resolveFileInfo={async () => undefined}
+          openAttachment={async () => {}}
+          resolverRevision={0}
+        />
+      </QueryClientProvider>,
+    )
+
+    await userEvent.click(view.getByTestId('wikilink'))
+    const markdownLink = view.container.querySelector<HTMLAnchorElement>(
+      'a[href="../Plan.md#Scope"]',
+    )
+    if (markdownLink === null) {
+      throw new Error('expected the relative Markdown link to render')
+    }
+    await userEvent.click(markdownLink)
+
+    expect(onWikilinkClick).toHaveBeenCalledWith(
+      'Projects/Meetings/Review.md',
+      expect.objectContaining({ target: '#Decisions' }),
+    )
+    expect(onMarkdownLinkClick).toHaveBeenCalledWith(
+      'Projects/Meetings/Review.md',
+      expect.objectContaining({ href: '../Plan.md#Scope' }),
+    )
+    view.unmount()
   })
 })

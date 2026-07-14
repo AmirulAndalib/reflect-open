@@ -1,6 +1,10 @@
 import {
+  ASSETS_DIR,
+  AUDIO_MEMOS_DIR,
   attachmentResolveRequestSchema,
   indexedNoteSchema,
+  isAttachmentPath,
+  isNotePath,
   ReflectError,
   resolveAttachmentFromCatalog,
   type AppPlatform,
@@ -29,20 +33,49 @@ export interface DevBridgeBackend {
 
 const dbQueryArgsSchema = z.object({ sql: z.string(), params: z.array(z.unknown()) })
 const pathArgsSchema = z.object({ path: z.string() })
-const writeArgsSchema = z.object({ path: z.string(), contents: z.string() })
+const eligibleNotePathSchema = z.string().refine(isNotePath)
+const reservedAttachmentPathSchema = z.string().refine(
+  (path) =>
+    isAttachmentPath(path) &&
+    (path.startsWith(`${ASSETS_DIR}/`) || path.startsWith(`${AUDIO_MEMOS_DIR}/`)),
+)
+const notePathArgsSchema = z.object({ path: eligibleNotePathSchema })
+const writeArgsSchema = z.object({ path: eligibleNotePathSchema, contents: z.string() })
 const createArgsSchema = writeArgsSchema.extend({ generation: z.number().int().nonnegative() })
+const conditionalWriteArgsSchema = createArgsSchema.extend({ expected: z.string().nullable() })
 const generationArgsSchema = z.object({ generation: z.number().int().nonnegative() })
-const assetPathArgsSchema = pathArgsSchema.extend({
+const assetPathArgsSchema = z.object({
+  path: z.string().refine(isAttachmentPath),
   generation: z.number().int().nonnegative(),
 })
-const assetWriteArgsSchema = assetPathArgsSchema.extend({ contentsBase64: z.string() })
+const reservedAssetPathArgsSchema = z.object({
+  path: reservedAttachmentPathSchema,
+  generation: z.number().int().nonnegative(),
+})
+const assetWriteArgsSchema = reservedAssetPathArgsSchema.extend({ contentsBase64: z.string() })
+const managedDescriptionArgsSchema = z.object({
+  path: reservedAttachmentPathSchema,
+  generation: z.number().int().nonnegative().optional(),
+})
 const uploadIdArgsSchema = z.object({ id: z.string().min(1) })
 const uploadCommitArgsSchema = uploadIdArgsSchema.extend({
   desiredName: z.string().min(1),
   generation: z.number().int().nonnegative(),
 })
-const moveArgsSchema = z.object({ from: z.string(), to: z.string() })
+const moveArgsSchema = z.object({
+  from: eligibleNotePathSchema,
+  to: eligibleNotePathSchema,
+  toPathKey: z.string(),
+  toBasenameKey: z.string(),
+  generation: z.number().int().nonnegative(),
+})
 const moveRequestArgsSchema = z.object({ request: moveArgsSchema })
+const noteMoveRequestArgsSchema = z.object({
+  request: moveArgsSchema.extend({
+    fromPathKey: z.string(),
+    fromBasenameKey: z.string(),
+  }),
+})
 const metaArgsSchema = z.object({ key: z.string(), value: z.string() })
 const touchArgsSchema = z.object({
   entries: z.array(z.object({ path: z.string(), mtime: z.number() })),
@@ -66,6 +99,7 @@ const chatSaveArgsSchema = z.object({
     attachments: z.string(),
     parts: z.string(),
     responseMessages: z.string(),
+    privacyFingerprint: z.string().nullable(),
     createdMs: z.number(),
   }),
 })
@@ -135,7 +169,7 @@ export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
         return 0
 
       case 'note_read': {
-        const { path } = pathArgsSchema.parse(args)
+        const { path } = notePathArgsSchema.parse(args)
         const contents = files.read(path)
         if (contents === null) {
           throw new ReflectError('notFound', `no such note: ${path}`)
@@ -145,6 +179,11 @@ export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
       case 'note_write': {
         const { path, contents } = writeArgsSchema.parse(args)
         return files.write(path, contents)
+      }
+      case 'note_write_if_unchanged': {
+        const { path, expected, contents, generation } = conditionalWriteArgsSchema.parse(args)
+        assertDevGeneration(generation, graphInfo.generation)
+        return files.writeIfUnchanged(path, expected, contents)
       }
       case 'note_create': {
         const { path, contents, generation } = createArgsSchema.parse(args)
@@ -157,17 +196,21 @@ export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
         return files.create(path, contents)
       }
       case 'note_exists':
-        return files.exists(pathArgsSchema.parse(args).path)
+        return files.exists(notePathArgsSchema.parse(args).path)
       case 'note_delete': {
-        files.remove(pathArgsSchema.parse(args).path)
+        files.remove(notePathArgsSchema.parse(args).path)
         return null
       }
       case 'list_files':
         return files.list()
       case 'dir_list':
-        return files.listDir(z.object({ dir: z.string() }).parse(args).dir)
+        return files.listDir(
+          z.object({ dir: z.enum([ASSETS_DIR, AUDIO_MEMOS_DIR]) }).parse(args).dir,
+        )
       case 'note_move_indexed': {
-        const { from, to } = moveRequestArgsSchema.parse(args).request
+        const { from, to, toPathKey, toBasenameKey, generation } =
+          noteMoveRequestArgsSchema.parse(args).request
+        assertDevGeneration(generation, graphInfo.generation)
         if (!files.exists(from)) {
           throw new ReflectError('notFound', `cannot move note: ${from} does not exist`)
         }
@@ -177,7 +220,7 @@ export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
         // Index first: it can refuse (occupied path), and a refused move must
         // leave the file untouched — the in-memory stand-in for Rust's
         // file+rows transaction.
-        index.moveNote(from, to)
+        index.moveNote(from, to, toPathKey, toBasenameKey)
         files.move(from, to)
         return null
       }
@@ -189,13 +232,36 @@ export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
         return null
       }
       case 'asset_read': {
-        const { path, generation } = assetPathArgsSchema.parse(args)
+        const { path, generation } = reservedAssetPathArgsSchema.parse(args)
         assertDevGeneration(generation, graphInfo.generation)
         const contentsBase64 = attachments.readBase64(path)
         if (contentsBase64 === null) {
           throw new ReflectError('notFound', `asset not found: ${path}`)
         }
         return contentsBase64
+      }
+      case 'managed_asset_read': {
+        const { path, generation } = reservedAssetPathArgsSchema.parse(args)
+        assertDevGeneration(generation, graphInfo.generation)
+        const contentsBase64 = attachments.readBase64(path)
+        if (contentsBase64 === null) {
+          throw new ReflectError('notFound', `managed asset not found: ${path}`)
+        }
+        return contentsBase64
+      }
+      case 'managed_asset_description_read': {
+        const { path, generation } = managedDescriptionArgsSchema.parse(args)
+        if (generation !== undefined) {
+          assertDevGeneration(generation, graphInfo.generation)
+        }
+        return files.read(`${path}.reflect.md`)
+      }
+      case 'managed_asset_description_write': {
+        const { path, generation, contents } = managedDescriptionArgsSchema
+          .extend({ generation: z.number().int().nonnegative(), contents: z.string() })
+          .parse(args)
+        assertDevGeneration(generation, graphInfo.generation)
+        return files.write(`${path}.reflect.md`, contents)
       }
       case 'asset_upload_begin': {
         const { generation } = generationArgsSchema.parse(args)
@@ -228,6 +294,18 @@ export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
       case 'list_attachments': {
         assertDevGeneration(generationArgsSchema.parse(args).generation, graphInfo.generation)
         return attachments.list()
+      }
+      case 'asset_privacy_snapshot': {
+        const { generation } = generationArgsSchema.parse(args)
+        assertDevGeneration(generation, graphInfo.generation)
+        return {
+          revision: 0,
+          notes: files.list().map((file) => ({
+            path: file.path,
+            source: files.read(file.path) ?? '',
+          })),
+          attachments: attachments.list(),
+        }
       }
       case 'attachment_resolve': {
         const request = attachmentResolveRequestSchema.parse(
@@ -275,8 +353,12 @@ export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
         return null
       }
       case 'index_move': {
-        const { from, to } = moveRequestArgsSchema.parse(args).request
-        index.moveNote(from, to)
+        const { from, to, toPathKey, toBasenameKey, generation } =
+          moveRequestArgsSchema.parse(args).request
+        if (generation !== graphInfo.generation) {
+          return null
+        }
+        index.moveNote(from, to, toPathKey, toBasenameKey)
         return null
       }
       case 'index_touch': {

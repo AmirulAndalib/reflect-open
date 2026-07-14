@@ -27,6 +27,13 @@ function reportInvalidNoteTarget(target: string): void {
   )
 }
 
+/** Navigate a wiki link authored by an explicitly identified source note. */
+export type WikiLinkNavigationFromSource = (
+  sourcePath: string,
+  target: string,
+  event?: MouseEvent | KeyboardEvent,
+) => void
+
 /**
  * Navigation for a clicked `[[wiki link]]`. Calendar-valid ISO dates preserve
  * ordinary resolution precedence, then open their lazy daily route on a miss.
@@ -49,27 +56,37 @@ function reportInvalidNoteTarget(target: string): void {
  *
  * @param generation the open graph's write generation (`GraphInfo.generation`),
  *   or `null` when no graph is writable.
- * @param sourcePath graph-relative path of the note containing the link.
- * @returns a stable-per-generation-and-source click handler for the editor's
- *   wiki-link extension.
+ * @returns a stable-per-generation handler that accepts the graph-relative
+ *   source path for each link activation.
  */
-export function useWikiLinkNavigation(
+export function useWikiLinkNavigationFromSource(
   generation: number | null,
-  sourcePath = '',
-): (target: string, event?: MouseEvent | KeyboardEvent) => void {
+): WikiLinkNavigationFromSource {
   const navigateNoteLink = useNoteLinkNavigation()
   const beginLinkIntent = useLinkIntentGuard()
 
   return useCallback(
-    (target: string, event?: MouseEvent | KeyboardEvent) => {
+    (sourcePath: string, target: string, event?: MouseEvent | KeyboardEvent) => {
       const isStale = beginLinkIntent()
       const open = (route: NoteRoute, path?: string, fragment?: string | null): void => {
+        const headingReveal =
+          path !== undefined && fragment !== undefined && fragment !== null
+            ? { path, fragment }
+            : undefined
         navigateNoteLink(
           route,
           event,
-          path !== undefined && fragment !== undefined && fragment !== null
-            ? () => requestNoteHeadingReveal(path, fragment, generation)
-            : undefined,
+          headingReveal === undefined
+            ? undefined
+            : {
+                headingReveal,
+                beforeInWindowNavigate: () =>
+                  requestNoteHeadingReveal(
+                    headingReveal.path,
+                    headingReveal.fragment,
+                    generation,
+                  ),
+              },
         )
       }
       void (async () => {
@@ -159,6 +176,18 @@ export function useWikiLinkNavigation(
         }
       })()
     },
-    [beginLinkIntent, generation, navigateNoteLink, sourcePath],
+    [beginLinkIntent, generation, navigateNoteLink],
+  )
+}
+
+/** Navigate wiki links authored by one mounted note. */
+export function useWikiLinkNavigation(
+  generation: number | null,
+  sourcePath = '',
+): (target: string, event?: MouseEvent | KeyboardEvent) => void {
+  const navigateFromSource = useWikiLinkNavigationFromSource(generation)
+  return useCallback(
+    (target, event) => navigateFromSource(sourcePath, target, event),
+    [navigateFromSource, sourcePath],
   )
 }

@@ -11,7 +11,7 @@ use pulldown_cmark::{Event, HeadingLevel, Parser, Tag};
 use reflect_graph_paths::{evicted_logical_path, eviction_placeholder};
 
 use crate::error::CliError;
-use crate::frontmatter::{parse_frontmatter, split_frontmatter, Frontmatter};
+use crate::frontmatter::{parse_frontmatter_checked, split_frontmatter, Frontmatter};
 use crate::keys::fold_key;
 use crate::paths::date_from_daily_path;
 
@@ -21,8 +21,13 @@ pub struct NoteMeta {
     /// The frontmatter `id` (Plan 17's ULID), when the note carries one.
     pub id: Option<String>,
     pub title: String,
+    /// True when `title` came from frontmatter or an H1, not path fallback.
+    pub authored_title: bool,
     pub aliases: Vec<String>,
     pub private: bool,
+    /// The leading frontmatter could not be parsed or was unterminated, so
+    /// the note's privacy state cannot safely be proven.
+    pub privacy_uncertain: bool,
 }
 
 /// A note read off disk: full source plus derived metadata.
@@ -43,7 +48,7 @@ pub struct DiskNote {
 }
 
 /// Filename without directories or the `.md` extension (the TS `basename`).
-fn basename(path: &str) -> &str {
+pub(crate) fn basename(path: &str) -> &str {
     let file = path.rsplit('/').next().unwrap_or(path);
     if file.len() >= 3 && file[file.len() - 3..].eq_ignore_ascii_case(".md") {
         &file[..file.len() - 3]
@@ -136,22 +141,22 @@ fn subject_aliases(title: &str) -> Vec<String> {
     aliases
 }
 
-/// The TS `deriveTitle` chain: frontmatter `title` → first H1 → daily date →
-/// filename.
-fn derive_title(rel_path: &str, frontmatter: &Frontmatter, body: &str) -> String {
+/// The TS `deriveTitle` chain plus whether the winning title was authored:
+/// frontmatter `title` → first H1 → daily date → filename.
+fn derive_title(rel_path: &str, frontmatter: &Frontmatter, body: &str) -> (String, bool) {
     if let Some(title) = frontmatter.title.as_deref() {
         let title = title.trim();
         if !title.is_empty() {
-            return title.to_string();
+            return (title.to_string(), true);
         }
     }
     if let Some(heading) = first_h1(body) {
-        return heading;
+        return (heading, true);
     }
     if let Some(date) = date_from_daily_path(rel_path) {
-        return date.to_string();
+        return (date.to_string(), false);
     }
-    basename(rel_path).to_string()
+    (basename(rel_path).to_string(), false)
 }
 
 /// Derive a note's metadata from its source, as the TS indexer would:
@@ -160,8 +165,10 @@ fn derive_title(rel_path: &str, frontmatter: &Frontmatter, body: &str) -> String
 /// `noteAliases`, `indexed-note.ts`).
 pub fn parse_note_meta(rel_path: &str, source: &str) -> NoteMeta {
     let split = split_frontmatter(source);
-    let frontmatter = parse_frontmatter(split.raw);
-    let title = derive_title(rel_path, &frontmatter, split.body);
+    let parsed = parse_frontmatter_checked(split.raw);
+    let privacy_uncertain = split.unterminated || parsed.privacy_uncertain;
+    let frontmatter = parsed.frontmatter;
+    let (title, authored_title) = derive_title(rel_path, &frontmatter, split.body);
     let mut aliases = frontmatter.aliases;
     let mut claimed: std::collections::HashSet<String> =
         aliases.iter().map(|alias| fold_key(alias)).collect();
@@ -173,8 +180,10 @@ pub fn parse_note_meta(rel_path: &str, source: &str) -> NoteMeta {
     NoteMeta {
         id: frontmatter.id,
         title,
+        authored_title,
         aliases,
         private: frontmatter.private,
+        privacy_uncertain,
     }
 }
 
@@ -185,8 +194,13 @@ pub fn read_note(root: &Path, rel_path: &str) -> Result<Note, CliError> {
     let content = fs::read_to_string(&absolute)
         .map_err(|err| CliError::Runtime(format!("could not read {rel_path}: {err}")))?;
     let meta = parse_note_meta(rel_path, &content);
-    if meta.private {
-        return Err(CliError::Private(format!("note is private: {rel_path}")));
+    if meta.private || meta.privacy_uncertain {
+        let reason = if meta.privacy_uncertain {
+            "note may be private because its privacy cannot be verified"
+        } else {
+            "note is private"
+        };
+        return Err(CliError::Private(format!("{reason}: {rel_path}")));
     }
     Ok(Note { content, meta })
 }
@@ -204,8 +218,14 @@ pub fn ensure_not_private(root: &Path, rel_path: &str) -> Result<(), CliError> {
         }
         Err(_) => return Ok(()),
     };
-    if parse_note_meta(rel_path, &content).private {
-        return Err(CliError::Private(format!("note is private: {rel_path}")));
+    let meta = parse_note_meta(rel_path, &content);
+    if meta.private || meta.privacy_uncertain {
+        let reason = if meta.privacy_uncertain {
+            "note may be private because its privacy cannot be verified"
+        } else {
+            "note is private"
+        };
+        return Err(CliError::Private(format!("{reason}: {rel_path}")));
     }
     Ok(())
 }

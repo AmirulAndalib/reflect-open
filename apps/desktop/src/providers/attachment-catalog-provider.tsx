@@ -84,6 +84,8 @@ export function AttachmentCatalogProvider({
   useEffect(() => {
     let disposed = false
     let requestSequence = 0
+    let unlistenFileChanges: (() => void) | null = null
+    let unlistenCatalogChanges: (() => void) | null = null
 
     const acceptManifest = (files: readonly AttachmentFileMeta[]): void => {
       const normalized = normalizeManifest(files)
@@ -117,33 +119,52 @@ export function AttachmentCatalogProvider({
       )
     }
 
-    const subscription = subscribeFileChanges((changes) => {
-      if (changes.some((change) => attachmentPathSchema.safeParse(change.path).success)) {
+    void (async () => {
+      try {
+        unlistenFileChanges = await subscribeFileChanges((changes) => {
+          if (changes.some((change) => attachmentPathSchema.safeParse(change.path).success)) {
+            refresh()
+          }
+        })
+        if (disposed) {
+          unlistenFileChanges()
+          unlistenFileChanges = null
+          return
+        }
+        unlistenCatalogChanges = await subscribeFileCatalogChanged((change) => {
+          if (change.generation === generation) {
+            refresh()
+          }
+        })
+        if (disposed) {
+          unlistenCatalogChanges()
+          unlistenCatalogChanges = null
+          unlistenFileChanges?.()
+          unlistenFileChanges = null
+          return
+        }
+        // Take the first snapshot only after both event streams are live. This
+        // final catch-up closes the subscribe/list race without an event buffer.
         refresh()
+      } catch (cause: unknown) {
+        unlistenCatalogChanges?.()
+        unlistenCatalogChanges = null
+        unlistenFileChanges?.()
+        unlistenFileChanges = null
+        if (!disposed) {
+          acceptManifest([])
+          console.error('attachment catalog subscription failed:', errorMessage(cause))
+        }
       }
-    })
-    void subscription.catch((cause: unknown) => {
-      if (!disposed) {
-        console.error('attachment catalog subscription failed:', errorMessage(cause))
-      }
-    })
-    const catalogSubscription = subscribeFileCatalogChanged((change) => {
-      if (change.generation === generation) {
-        refresh()
-      }
-    })
-    void catalogSubscription.catch((cause: unknown) => {
-      if (!disposed) {
-        console.error('file catalog subscription failed:', errorMessage(cause))
-      }
-    })
-    refresh()
+    })()
 
     return () => {
       disposed = true
       requestSequence += 1
-      void subscription.then((unlisten) => unlisten()).catch(() => {})
-      void catalogSubscription.then((unlisten) => unlisten()).catch(() => {})
+      unlistenCatalogChanges?.()
+      unlistenCatalogChanges = null
+      unlistenFileChanges?.()
+      unlistenFileChanges = null
     }
   }, [generation])
 

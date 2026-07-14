@@ -1,7 +1,9 @@
 import { cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
+import type { NoteHeadingReveal } from '@reflect/core'
 import { RouterProvider, useRouter } from '@/routing/router'
+import type { NoteRoute } from '@/routing/route'
 import { useWikiLinkNavigation } from './use-wiki-link-navigation'
 
 const resolveWikiTarget = vi.hoisted(() => vi.fn())
@@ -9,7 +11,9 @@ const resolveExistingWikiTarget = vi.hoisted(() => vi.fn())
 const resolveOrCreateWikiTarget = vi.hoisted(() => vi.fn())
 const chooseAmbiguousNote = vi.hoisted(() => vi.fn())
 const requestNoteHeadingReveal = vi.hoisted(() => vi.fn())
-const openRouteInNewWindow = vi.hoisted(() => vi.fn<() => Promise<boolean>>())
+const openRouteInNewWindow = vi.hoisted(() =>
+  vi.fn<(route: NoteRoute, headingReveal?: NoteHeadingReveal) => Promise<boolean>>(),
+)
 const operationFail = vi.hoisted(() => vi.fn())
 const startOperation = vi.hoisted(() => vi.fn(() => ({ fail: operationFail })))
 vi.mock('@reflect/core', async (importOriginal) => ({
@@ -268,6 +272,26 @@ describe('useWikiLinkNavigation', () => {
       expect(openRouteInNewWindow).toHaveBeenCalledWith({ kind: 'note', path: 'notes/target.md' }),
     )
     expect(currentRoute(view)).toContain('"today"') // this window stays put
+    view.unmount()
+  })
+
+  it('⌘-click carries a decoded heading reveal into the secondary window', async () => {
+    resolveOrCreateWikiTarget.mockResolvedValue({
+      kind: 'resolved',
+      path: 'Projects/Plan.md',
+    })
+    const view = renderHost()
+
+    lastHandler?.('Projects/Plan#Roadmap', new MouseEvent('click', { metaKey: true }))
+
+    await waitFor(() =>
+      expect(openRouteInNewWindow).toHaveBeenCalledWith(
+        { kind: 'note', path: 'Projects/Plan.md' },
+        { path: 'Projects/Plan.md', fragment: 'Roadmap' },
+      ),
+    )
+    expect(requestNoteHeadingReveal).not.toHaveBeenCalled()
+    expect(currentRoute(view)).toContain('"today"')
     view.unmount()
   })
 

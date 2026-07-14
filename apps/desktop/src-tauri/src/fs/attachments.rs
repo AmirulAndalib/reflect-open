@@ -9,6 +9,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::UNIX_EPOCH;
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
@@ -19,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 
-use super::PinnedGraphRoot;
+use super::{FileMeta, PinnedGraphRoot};
 
 const IMAGE_EXTENSIONS: [&str; 8] = ["avif", "bmp", "gif", "jpeg", "jpg", "png", "svg", "webp"];
 
@@ -119,11 +120,12 @@ impl PathLaunchGuard {
 
 /// Resolve an attachment reference against a graph root.
 pub(super) fn resolve_reference(
-    root: &Path,
+    root: &PinnedGraphRoot,
     source_path: &str,
     reference: &str,
     reference_kind: AttachmentReferenceKind,
 ) -> AppResult<AttachmentResolveOutcome> {
+    super::ensure_pinned_root_path_identity(root)?;
     let source_components = visible_wire_components(source_path)?;
     if !source_path.ends_with(".md") {
         return Err(AppError::parse(format!(
@@ -133,14 +135,16 @@ pub(super) fn resolve_reference(
     let source_dir = &source_components[..source_components.len().saturating_sub(1)];
     let decoded = decode_reference(reference)?;
 
-    match reference_kind {
+    let outcome = match reference_kind {
         AttachmentReferenceKind::Markdown => resolve_markdown(root, source_dir, &decoded),
         AttachmentReferenceKind::WikiEmbed => resolve_wiki_embed(root, &decoded),
-    }
+    }?;
+    super::ensure_pinned_root_path_identity(root)?;
+    Ok(outcome)
 }
 
 fn resolve_markdown(
-    root: &Path,
+    root: &PinnedGraphRoot,
     source_dir: &[String],
     reference: &str,
 ) -> AppResult<AttachmentResolveOutcome> {
@@ -167,7 +171,10 @@ fn resolve_markdown(
     ])
 }
 
-fn resolve_wiki_embed(root: &Path, reference: &str) -> AppResult<AttachmentResolveOutcome> {
+fn resolve_wiki_embed(
+    root: &PinnedGraphRoot,
+    reference: &str,
+) -> AppResult<AttachmentResolveOutcome> {
     if reference.contains('/') {
         let reference = if reference.starts_with('/') {
             explicit_vault_reference(reference)?
@@ -196,7 +203,7 @@ fn explicit_vault_reference(reference: &str) -> AppResult<&str> {
     Ok(relative)
 }
 
-fn outcome_for_path(root: &Path, path: &str) -> AppResult<AttachmentResolveOutcome> {
+fn outcome_for_path(root: &PinnedGraphRoot, path: &str) -> AppResult<AttachmentResolveOutcome> {
     let presence = candidate_presence(root, path)?;
     outcome_for_candidates([(path.to_string(), presence)])
 }
@@ -340,22 +347,25 @@ fn render_kind(path: &str) -> AttachmentRenderKind {
     }
 }
 
-fn candidate_presence(root: &Path, path: &str) -> AppResult<CandidatePresence> {
+fn candidate_presence(root: &PinnedGraphRoot, path: &str) -> AppResult<CandidatePresence> {
     ensure_supported_path(path)?;
-    let absolute = super::resolve::resolve(root, path)?;
-    reject_symlink_components(root, &absolute)?;
+    let components = visible_wire_components(path)?;
+    let (file_name, parent_components) = components
+        .split_last()
+        .ok_or_else(|| AppError::traversal("attachment path is empty"))?;
+    let Some(parent) = open_existing_parent(&root.capability, parent_components, path)? else {
+        return Ok(CandidatePresence::Missing);
+    };
 
-    match fs::symlink_metadata(&absolute) {
+    match parent.symlink_metadata(file_name) {
         Ok(metadata) if metadata.file_type().is_symlink() => Err(AppError::traversal(format!(
             "attachment path contains a symlink: {path}"
         ))),
         Ok(metadata) if metadata.is_file() => Ok(CandidatePresence::Available),
         Ok(_) => Ok(CandidatePresence::Missing),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            let Some(placeholder) = placeholder_for(&absolute) else {
-                return Ok(CandidatePresence::Missing);
-            };
-            match fs::symlink_metadata(&placeholder) {
+            let placeholder_name = format!(".{file_name}.icloud");
+            match parent.symlink_metadata(&placeholder_name) {
                 Ok(metadata) if metadata.file_type().is_symlink() => Err(AppError::traversal(
                     format!("attachment placeholder is a symlink: {path}"),
                 )),
@@ -371,6 +381,22 @@ fn candidate_presence(root: &Path, path: &str) -> AppResult<CandidatePresence> {
     }
 }
 
+fn open_existing_parent(
+    root: &Dir,
+    components: &[String],
+    display_path: &str,
+) -> AppResult<Option<Dir>> {
+    let mut current = root.try_clone()?;
+    for component in components {
+        current = match current.open_dir_nofollow(component) {
+            Ok(next) => next,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(safe_open_error(display_path, error)),
+        };
+    }
+    Ok(Some(current))
+}
+
 /// Open an eligible attachment by walking every parent directory and the leaf
 /// with no-follow semantics. Reads must use the returned file handle rather
 /// than resolving `root.path.join(path)` again.
@@ -380,6 +406,17 @@ pub(super) fn open_existing_attachment(
 ) -> AppResult<OpenAttachment> {
     ensure_supported_path(path)?;
     open_from_capability(root.capability.clone(), path)
+}
+
+/// Read a caller-validated visible graph file through the generation-pinned
+/// root capability. Every parent and the leaf use no-follow semantics, so AI
+/// paths can never turn a symlinked asset or sidecar into bytes from outside
+/// the vault. Callers remain responsible for constraining the accepted path
+/// class (note, managed asset, or managed description).
+pub(super) fn read_existing_visible_file(root: &PinnedGraphRoot, path: &str) -> AppResult<Vec<u8>> {
+    open_from_capability(root.capability.clone(), path)?
+        .read_all()
+        .map_err(AppError::from)
 }
 
 fn open_from_capability(root: Arc<Dir>, path: &str) -> AppResult<OpenAttachment> {
@@ -486,31 +523,6 @@ pub(super) fn revalidate_for_path_launch(
     })
 }
 
-fn reject_symlink_components(root: &Path, path: &Path) -> AppResult<()> {
-    let relative = path.strip_prefix(root).map_err(|_| {
-        AppError::traversal(format!(
-            "attachment path escapes the graph: {}",
-            path.display()
-        ))
-    })?;
-    let mut current = root.to_path_buf();
-    for component in relative.components() {
-        current.push(component);
-        match fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(AppError::traversal(format!(
-                    "attachment path contains a symlink: {}",
-                    relative.display()
-                )))
-            }
-            Ok(_) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => break,
-            Err(err) => return Err(err.into()),
-        }
-    }
-    Ok(())
-}
-
 fn placeholder_for(path: &Path) -> Option<PathBuf> {
     let name = path.file_name()?.to_str()?;
     Some(path.with_file_name(format!(".{name}.icloud")))
@@ -519,36 +531,254 @@ fn placeholder_for(path: &Path) -> Option<PathBuf> {
 /// Best-effort iCloud materialization for an explicitly resolved placeholder.
 /// Resolution still returns `unavailable`; the watcher causes the frontend to
 /// retry after the operating system replaces the stub with the real file.
-pub(super) fn request_materialization(root: &Path, path: &str) {
+pub(super) fn request_materialization(root: &PinnedGraphRoot, path: &str) -> AppResult<()> {
+    ensure_supported_path(path)?;
+    // iCloud exposes only an ambient-path API. Never hand it a path after the
+    // selected root has been renamed or replaced; the generation alone cannot
+    // detect that filesystem transition.
+    super::ensure_pinned_root_path_identity(root)?;
+
     #[cfg(any(target_os = "ios", target_os = "macos"))]
     {
-        let absolute = root.join(path);
+        let guard = materialization_guard(root, path)?;
+        let absolute = root.path.join(path);
         if let Some(placeholder) = placeholder_for(&absolute) {
             crate::icloud::storage::request_download(&placeholder);
         }
         crate::icloud::storage::request_download(&absolute);
+        drop(guard);
     }
     #[cfg(not(any(target_os = "ios", target_os = "macos")))]
     {
         let _ = (root, path);
     }
+    Ok(())
 }
 
-fn find_unique_filename_candidates(
-    root: &Path,
-    requested_name: &str,
-) -> AppResult<Vec<(String, CandidatePresence)>> {
-    let mut candidates = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(directory) = stack.pop() {
-        for entry in fs::read_dir(&directory)? {
+/// Keep the capability and ambient parent/placeholder identities alive until
+/// the pathname-only iCloud call returns. A final pathname race is inherent in
+/// that API, but replacement before this guard is built fails closed.
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+struct MaterializationGuard {
+    _pinned_parent: Dir,
+    _ambient_parent: Dir,
+    _pinned_placeholder: cap_std::fs::File,
+    _ambient_placeholder: cap_std::fs::File,
+    _identities: Vec<Handle>,
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+fn materialization_guard(root: &PinnedGraphRoot, path: &str) -> AppResult<MaterializationGuard> {
+    let components = visible_wire_components(path)?;
+    let (file_name, parent_components) = components
+        .split_last()
+        .ok_or_else(|| AppError::traversal("attachment path is empty"))?;
+    let pinned_parent = open_existing_parent(&root.capability, parent_components, path)?
+        .ok_or_else(|| AppError::not_found(format!("attachment not found: {path}")))?;
+
+    let ambient_root = Dir::open_ambient_dir(&root.path, ambient_authority()).map_err(|error| {
+        AppError::traversal(format!(
+            "the graph root path changed before iCloud materialization: {error}"
+        ))
+    })?;
+    let ambient_parent = open_existing_parent(&ambient_root, parent_components, path)?
+        .ok_or_else(|| AppError::not_found(format!("attachment not found: {path}")))?;
+
+    let pinned_root_identity = Handle::from_file(root.capability.try_clone()?.into_std_file())?;
+    let ambient_root_identity = Handle::from_file(ambient_root.into_std_file())?;
+    if pinned_root_identity != ambient_root_identity {
+        return Err(AppError::traversal(
+            "the graph root path changed before iCloud materialization",
+        ));
+    }
+    let pinned_parent_identity = Handle::from_file(pinned_parent.try_clone()?.into_std_file())?;
+    let ambient_parent_identity = Handle::from_file(ambient_parent.try_clone()?.into_std_file())?;
+    if pinned_parent_identity != ambient_parent_identity {
+        return Err(AppError::traversal(
+            "an attachment directory changed before iCloud materialization",
+        ));
+    }
+
+    let placeholder_name = format!(".{file_name}.icloud");
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let pinned_placeholder = pinned_parent
+        .open_with(&placeholder_name, &options)
+        .map_err(|error| safe_open_error(path, error))?;
+    let ambient_placeholder = ambient_parent
+        .open_with(&placeholder_name, &options)
+        .map_err(|error| safe_open_error(path, error))?;
+    if !pinned_placeholder.metadata()?.is_file() || !ambient_placeholder.metadata()?.is_file() {
+        return Err(AppError::not_found(format!(
+            "attachment placeholder not found: {path}"
+        )));
+    }
+    let pinned_placeholder_identity =
+        Handle::from_file(pinned_placeholder.try_clone()?.into_std())?;
+    let ambient_placeholder_identity =
+        Handle::from_file(ambient_placeholder.try_clone()?.into_std())?;
+    if pinned_placeholder_identity != ambient_placeholder_identity {
+        return Err(AppError::traversal(
+            "the attachment placeholder changed before iCloud materialization",
+        ));
+    }
+
+    // Revalidate the ambient root immediately before returning the guard to
+    // the caller that invokes iCloud's pathname API.
+    super::ensure_pinned_root_path_identity(root)?;
+    Ok(MaterializationGuard {
+        _pinned_parent: pinned_parent,
+        _ambient_parent: ambient_parent,
+        _pinned_placeholder: pinned_placeholder,
+        _ambient_placeholder: ambient_placeholder,
+        _identities: vec![
+            pinned_root_identity,
+            ambient_root_identity,
+            pinned_parent_identity,
+            ambient_parent_identity,
+            pinned_placeholder_identity,
+            ambient_placeholder_identity,
+        ],
+    })
+}
+
+/// List supported attachments through the generation-pinned graph
+/// capability. The ambient graph pathname is never consulted, so a root
+/// replacement cannot splice files from a different directory into the
+/// current generation's catalog.
+pub(super) fn list_supported_attachments(root: &PinnedGraphRoot) -> AppResult<Vec<FileMeta>> {
+    super::ensure_pinned_root_path_identity(root)?;
+    let files = collect_visible_files(root, None, true)?;
+    super::ensure_pinned_root_path_identity(root)?;
+    Ok(files)
+}
+
+/// List visible files below one Reflect-managed attachment root. This is the
+/// size/mtime probe used for recently pasted assets; it intentionally accepts
+/// description sidecars as well as supported attachment formats, matching the
+/// historical `dir_list` contract while pruning hidden paths and symlinks.
+pub(super) fn list_reserved_files(root: &PinnedGraphRoot, dir: &str) -> AppResult<Vec<FileMeta>> {
+    super::ensure_pinned_root_path_identity(root)?;
+    let files = collect_visible_files(root, Some(dir), false)?;
+    super::ensure_pinned_root_path_identity(root)?;
+    Ok(files)
+}
+
+fn collect_visible_files(
+    root: &PinnedGraphRoot,
+    start: Option<&str>,
+    supported_only: bool,
+) -> AppResult<Vec<FileMeta>> {
+    let (start_components, start_directory) = match start {
+        Some(start) => {
+            let components = visible_wire_components(start)?;
+            let Some(directory) = open_existing_parent(&root.capability, &components, start)?
+            else {
+                return Ok(Vec::new());
+            };
+            (components, directory)
+        }
+        None => (Vec::new(), root.capability.try_clone()?),
+    };
+    let mut files = Vec::new();
+    let mut stack = vec![(start_components, start_directory)];
+
+    while let Some((directory_components, directory)) = stack.pop() {
+        for entry in directory.entries()? {
             let entry = entry?;
             let name = entry.file_name();
             let Some(name) = name.to_str() else {
                 continue;
             };
-            let file_type = entry.file_type()?;
-            if file_type.is_symlink() {
+            let metadata = match directory.symlink_metadata(name) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(safe_open_error(name, error)),
+            };
+            if metadata.file_type().is_symlink() {
+                continue;
+            }
+            if metadata.is_dir() {
+                if name.starts_with('.') {
+                    continue;
+                }
+                let next = directory
+                    .open_dir_nofollow(name)
+                    .map_err(|error| safe_open_error(name, error))?;
+                let mut next_components = directory_components.clone();
+                next_components.push(name.to_string());
+                stack.push((next_components, next));
+                continue;
+            }
+            if !metadata.is_file() {
+                continue;
+            }
+
+            let (path, placeholder) = if let Some(logical_name) = icloud_placeholder_target(name) {
+                if logical_name.starts_with('.') {
+                    continue;
+                }
+                match directory.symlink_metadata(logical_name) {
+                    Ok(logical_metadata) if logical_metadata.is_file() => continue,
+                    Ok(_) => continue,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(safe_open_error(logical_name, error)),
+                }
+                (joined_wire_path(&directory_components, logical_name), true)
+            } else {
+                if name.starts_with('.') {
+                    continue;
+                }
+                (joined_wire_path(&directory_components, name), false)
+            };
+
+            if supported_only {
+                if ensure_supported_path(&path).is_err() {
+                    continue;
+                }
+            } else if visible_wire_components(&path).is_err() {
+                continue;
+            }
+            files.push(FileMeta {
+                path,
+                size: metadata.len(),
+                modified_ms: cap_modified_ms(&metadata).unwrap_or(0),
+                placeholder,
+            });
+        }
+    }
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    files.dedup_by(|left, right| left.path == right.path);
+    Ok(files)
+}
+
+fn cap_modified_ms(metadata: &cap_std::fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.into_std().duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+}
+
+fn find_unique_filename_candidates(
+    root: &PinnedGraphRoot,
+    requested_name: &str,
+) -> AppResult<Vec<(String, CandidatePresence)>> {
+    let mut candidates = Vec::new();
+    let mut stack = vec![(Vec::<String>::new(), root.capability.try_clone()?)];
+    while let Some((directory_components, directory)) = stack.pop() {
+        for entry in directory.entries()? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            let metadata = match directory.symlink_metadata(name) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(safe_open_error(name, error)),
+            };
+            if metadata.file_type().is_symlink() {
                 let logical_match = icloud_placeholder_target(name)
                     .is_some_and(|target| target.eq_ignore_ascii_case(requested_name));
                 if name.eq_ignore_ascii_case(requested_name) || logical_match {
@@ -558,13 +788,18 @@ fn find_unique_filename_candidates(
                 }
                 continue;
             }
-            if file_type.is_dir() {
+            if metadata.is_dir() {
                 if !name.starts_with('.') {
-                    stack.push(entry.path());
+                    let next = directory
+                        .open_dir_nofollow(name)
+                        .map_err(|error| safe_open_error(name, error))?;
+                    let mut next_components = directory_components.clone();
+                    next_components.push(name.to_string());
+                    stack.push((next_components, next));
                 }
                 continue;
             }
-            if !file_type.is_file() {
+            if !metadata.is_file() {
                 continue;
             }
 
@@ -573,12 +808,10 @@ fn find_unique_filename_candidates(
                     && logical_name.eq_ignore_ascii_case(requested_name)
                     && ensure_supported_file_name(logical_name).is_ok()
                 {
-                    let logical_path = entry.path().with_file_name(logical_name);
-                    if !logical_path.exists() {
-                        candidates.push((
-                            graph_relative_string(root, &logical_path)?,
-                            CandidatePresence::Unavailable,
-                        ));
+                    let logical_path = joined_wire_path(&directory_components, logical_name);
+                    let presence = candidate_presence(root, &logical_path)?;
+                    if presence != CandidatePresence::Missing {
+                        candidates.push((logical_path, presence));
                     }
                 }
                 continue;
@@ -589,31 +822,21 @@ fn find_unique_filename_candidates(
             {
                 continue;
             }
-            candidates.push((
-                graph_relative_string(root, &entry.path())?,
-                CandidatePresence::Available,
-            ));
+            let path = joined_wire_path(&directory_components, name);
+            let presence = candidate_presence(root, &path)?;
+            if presence != CandidatePresence::Missing {
+                candidates.push((path, presence));
+            }
         }
     }
     Ok(candidates)
 }
 
-fn graph_relative_string(root: &Path, path: &Path) -> AppResult<String> {
-    let relative = path.strip_prefix(root).map_err(|_| {
-        AppError::traversal(format!(
-            "attachment path escapes the graph: {}",
-            path.display()
-        ))
-    })?;
-    let path = relative.to_str().ok_or_else(|| {
-        AppError::parse(format!(
-            "attachment path is not valid UTF-8: {}",
-            relative.display()
-        ))
-    })?;
-    let path = path.replace('\\', "/");
-    ensure_supported_path(&path)?;
-    Ok(path)
+fn joined_wire_path(directory_components: &[String], file_name: &str) -> String {
+    if directory_components.is_empty() {
+        return file_name.to_string();
+    }
+    format!("{}/{file_name}", directory_components.join("/"))
 }
 
 fn icloud_placeholder_target(name: &str) -> Option<&str> {
@@ -639,6 +862,15 @@ mod tests {
             path: root.to_path_buf(),
             capability: Arc::new(Dir::open_ambient_dir(root, ambient_authority()).unwrap()),
         }
+    }
+
+    fn resolve_reference(
+        root: &Path,
+        source_path: &str,
+        reference: &str,
+        reference_kind: AttachmentReferenceKind,
+    ) -> AppResult<AttachmentResolveOutcome> {
+        super::resolve_reference(&pinned(root), source_path, reference, reference_kind)
     }
 
     #[test]
@@ -875,6 +1107,106 @@ mod tests {
                 render_kind: AttachmentRenderKind::Image,
             }
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolver_and_lists_reject_an_ambient_root_replacement() {
+        let parent = tempfile::tempdir().unwrap();
+        let root_path = parent.path().join("vault");
+        let moved_path = parent.path().join("moved-vault");
+        fs::create_dir_all(root_path.join("Original")).unwrap();
+        fs::write(root_path.join("Original/photo.png"), b"original").unwrap();
+        let root = pinned(&root_path);
+
+        fs::rename(&root_path, &moved_path).unwrap();
+        fs::create_dir_all(root_path.join("Replacement")).unwrap();
+        fs::write(root_path.join("Replacement/photo.png"), b"replacement").unwrap();
+
+        assert!(matches!(
+            super::resolve_reference(
+                &root,
+                "Plan.md",
+                "photo.png",
+                AttachmentReferenceKind::WikiEmbed,
+            )
+            .unwrap_err(),
+            AppError::Traversal { .. }
+        ));
+        assert!(matches!(
+            list_supported_attachments(&root),
+            Err(AppError::Traversal { .. })
+        ));
+        assert!(matches!(
+            request_materialization(&root, "Original/remote.png"),
+            Err(AppError::Traversal { .. })
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolver_and_lists_reject_a_descendant_directory_symlink_swap() {
+        use std::os::unix::fs::symlink;
+
+        let graph = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::create_dir_all(graph.path().join("Media")).unwrap();
+        fs::write(graph.path().join("Plan.md"), b"# Plan").unwrap();
+        fs::write(outside.path().join("escape.png"), b"outside").unwrap();
+        let root = pinned(graph.path());
+
+        fs::rename(graph.path().join("Media"), graph.path().join("OldMedia")).unwrap();
+        symlink(outside.path(), graph.path().join("Media")).unwrap();
+
+        let direct_error = super::resolve_reference(
+            &root,
+            "Plan.md",
+            "Media/escape.png",
+            AttachmentReferenceKind::Markdown,
+        )
+        .unwrap_err();
+        assert!(matches!(direct_error, AppError::Traversal { .. }));
+        assert_eq!(
+            super::resolve_reference(
+                &root,
+                "Plan.md",
+                "escape.png",
+                AttachmentReferenceKind::WikiEmbed,
+            )
+            .unwrap(),
+            AttachmentResolveOutcome::NotFound
+        );
+        assert!(list_supported_attachments(&root).unwrap().is_empty());
+    }
+
+    #[test]
+    fn capability_lists_preserve_placeholder_metadata_and_prune_hidden_paths() {
+        let graph = tempfile::tempdir().unwrap();
+        write(graph.path(), "Media/photo.png");
+        write(graph.path(), "Media/.remote.pdf.icloud");
+        write(graph.path(), ".obsidian/hidden.png");
+        write(graph.path(), "assets/report.pdf.reflect.md");
+
+        let root = pinned(graph.path());
+        let attachments = list_supported_attachments(&root).unwrap();
+        assert_eq!(
+            attachments
+                .iter()
+                .map(|file| (file.path.as_str(), file.placeholder))
+                .collect::<Vec<_>>(),
+            vec![("Media/photo.png", false), ("Media/remote.pdf", true)]
+        );
+        assert_eq!(
+            list_reserved_files(&root, "assets")
+                .unwrap()
+                .into_iter()
+                .map(|file| file.path)
+                .collect::<Vec<_>>(),
+            vec!["assets/report.pdf.reflect.md"]
+        );
+        assert!(list_reserved_files(&root, "audio-memos")
+            .unwrap()
+            .is_empty());
     }
 
     #[cfg(unix)]

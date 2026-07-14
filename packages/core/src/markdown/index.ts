@@ -15,6 +15,7 @@ export {
   type WikiLink,
   type MarkdownLink,
   type Heading,
+  type AuthoredAttachmentReference,
   type AssetRef,
   type TaskMarker,
   type ParsedNote,

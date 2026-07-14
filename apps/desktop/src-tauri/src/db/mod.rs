@@ -50,6 +50,10 @@ pub use write::IndexedNote;
 #[derive(Default)]
 struct IndexInner {
     generation: u64,
+    /// Graph session whose root this connection projects. Read-only queries
+    /// may pin this independently from the index write generation so a graph
+    /// switch cannot combine an old file listing with the new vault's rows.
+    graph_generation: Option<u64>,
     conn: Option<Connection>,
 }
 
@@ -113,22 +117,24 @@ pub fn index_open(
     background_tasks: State<BackgroundTaskState>,
 ) -> AppResult<u64> {
     let _background_task = background_task::scoped(&background_tasks, "Reflect index open");
-    let root = graph
-        .0
-        .lock()
-        .map_err(|err| {
+    let (root, graph_generation) = {
+        let state = graph.0.lock().map_err(|err| {
             tracing::error!(?err, "graph state lock poisoned by an earlier panic");
             AppError::io("graph state lock poisoned")
-        })?
-        .root
-        .clone()
-        .ok_or_else(AppError::no_graph)?;
+        })?;
+        (
+            state.root.clone().ok_or_else(AppError::no_graph)?,
+            state.generation,
+        )
+    };
     let mut state = lock_state(&index)?;
     state.generation += 1;
     // Drop the old connection before opening; if the open fails we return with
     // `conn = None` (reads then error) rather than a stale connection.
     state.conn = None;
+    state.graph_generation = None;
     state.conn = Some(migrations::open_index_at(&root)?);
+    state.graph_generation = Some(graph_generation);
     Ok(state.generation)
 }
 
@@ -274,7 +280,7 @@ pub fn note_move_indexed<R: tauri::Runtime>(
         generation,
     } = request;
     let _background_task = background_task::scoped(&background_tasks, "Reflect note move");
-    let root = crate::fs::root_for_generation(&graph, generation)?;
+    let root = crate::fs::pinned_root_for_generation_inner(&graph, generation)?;
     {
         let mut state = lock_state(&index)?;
         let conn = state.conn.as_mut().ok_or_else(AppError::no_graph)?;
@@ -292,7 +298,7 @@ pub fn note_move_indexed<R: tauri::Runtime>(
             return Err(err);
         }
     }
-    crate::fs::invalidate_file_catalog(&graph, &root);
+    crate::fs::invalidate_file_catalog(&graph, root.path());
     emit_index_written(&app);
     emit_note_moved(&app, &from, &to);
     Ok(())
@@ -559,9 +565,15 @@ pub fn embed_remove(
 pub fn db_query(
     sql: String,
     params: Vec<Value>,
+    graph_generation: Option<u64>,
     index: State<IndexState>,
 ) -> AppResult<Vec<Map<String, Value>>> {
     let state = lock_state(&index)?;
+    if graph_generation.is_some() && state.graph_generation != graph_generation {
+        return Err(AppError::io(
+            "the graph changed since this index query was issued; dropping it",
+        ));
+    }
     let conn = state.conn.as_ref().ok_or_else(AppError::no_graph)?;
     query::run_query(conn, &sql, &params)
 }
