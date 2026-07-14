@@ -45,6 +45,67 @@ describe('extractEmailFields', () => {
     ])
   })
 
+  it('reads V1 addresses nested under an empty Email field', () => {
+    const body = [
+      '- Type: #person',
+      '- Email:',
+      '  - <Ada@Example.com>',
+      '  - <ada@work.example>',
+      '- Phone:',
+      '  - [555-1234](tel:555-1234)',
+    ].join('\n')
+
+    expect(extractEmailFields(body)).toEqual([
+      'Ada@Example.com',
+      'ada@work.example',
+    ])
+  })
+
+  it('reads pre-2023 V1 Emails fields and nested mailto links', () => {
+    const body = [
+      '- Emails',
+      '  - [Ada@Example.com](mailto:ada@example.com)',
+      '  - <ada@work.example>',
+    ].join('\n')
+
+    expect(extractEmailFields(body)).toEqual([
+      'Ada@Example.com',
+      'ada@work.example',
+    ])
+  })
+
+  it('handles an indented legacy field and tab-indented child', () => {
+    expect(extractEmailFields('  * EMAIL:\n\t+ <ada@example.com>')).toEqual([
+      'ada@example.com',
+    ])
+  })
+
+  it('ends a legacy field at a sibling and ignores unrelated nested addresses', () => {
+    const body = [
+      '- Email:',
+      '  - owner@example.com',
+      '- Notes:',
+      '  - unrelated@example.com',
+    ].join('\n')
+
+    expect(extractEmailFields(body)).toEqual(['owner@example.com'])
+  })
+
+  it('does not extend a populated inline field into nested list items', () => {
+    const body = [
+      '- Email: owner@example.com',
+      '  - unrelated@example.com',
+    ].join('\n')
+
+    expect(extractEmailFields(body)).toEqual(['owner@example.com'])
+  })
+
+  it('ignores indented prose under a legacy Email field', () => {
+    expect(
+      extractEmailFields('- Email:\n  Reach Ada at unrelated@example.com'),
+    ).toEqual([])
+  })
+
   it('dedups bare and angle-bracketed field values as one address', () => {
     expect(
       extractEmailFields('- Email: <Ada@Example.com>\n- Email: ada@example.com'),

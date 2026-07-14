@@ -57,16 +57,18 @@ import { previewSnippet } from './snippet'
  * `+ [x]`), excluding square checklist checkboxes from the aggregate Tasks view.
  * 12 — `notes.kind` (daily / note / template): templates are indexed but
  * excluded from note surfaces, so rows must carry the kind.
- * 13 — `note_emails` projection (`- Email:` contact-field bullets): existing
- * person notes carry no email rows until reprojected, and attendee → note
- * resolution in the calendar flow needs them, so the bump backfills them.
+ * 13 — `note_emails` projection (flat `- Email:` contact-field bullets):
+ * existing person notes carry no email rows until reprojected, and attendee →
+ * note resolution in the calendar flow needs them, so the bump backfills them.
  * 14 — v1 subject aliases (`//` segments of the title) folded into the
  * `aliases` projection: existing v1-style titles carry no derived alias rows
  * until reprojected, so the bump backfills them.
  * 15 — task parent outline/list breadcrumbs: existing task rows carry empty
  * breadcrumbs until reprojected.
+ * 16 — `note_emails` recognizes V1's nested `Email:` / `Emails` values, so
+ * already-migrated person notes must be reprojected to acquire ownership rows.
  */
-export const PROJECTION_VERSION = 15
+export const PROJECTION_VERSION = 16
 
 export const indexedLinkSchema = z.object({
   kind: z.enum(['wiki', 'md']),

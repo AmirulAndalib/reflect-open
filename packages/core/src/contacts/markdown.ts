@@ -9,11 +9,11 @@ import type { ContactMatch } from './commands'
  * links back to the address book — later corrections happen in the note,
  * exactly like any other markdown.
  *
- * The block follows v1's person template (and the meeting flow's convention):
- * a `- Type: #person` line typing the note for the All Notes person filter,
- * then every email and phone. Suppression after Add is content-based, like
- * v1: {@link noteHasContactDetails} hides the card once details exist, so no
- * frontmatter mark is needed and Add is a single write.
+ * The block uses V2's compact, flat equivalent of v1's person fields (and the
+ * meeting flow's convention): a `- Type: #person` line typing the note for the
+ * All Notes person filter, then every email and phone. Suppression after Add
+ * is content-based, like v1: {@link noteHasContactDetails} hides the card once
+ * details exist, so no frontmatter mark is needed and Add is a single write.
  */
 
 /** Case-insensitive dedup that keeps first occurrence and original casing. */

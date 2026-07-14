@@ -345,11 +345,12 @@ export interface NoteEmailOwner extends RawNoteEmailOwner {
 }
 
 /**
- * The note that owns `email` through a `- Email:` contact-field bullet (the
- * `note_emails` projection), or null. Only `#person`-tagged regular notes
- * qualify. Several notes claiming one address choose the first path
- * alphabetically. Ownership is preserved even when the title cannot safely
- * identify that path, so callers can suppress duplicate creation.
+ * The note that owns `email` through a contact field (flat V2 `- Email:` or
+ * nested V1 `- Email:` / `- Emails`, projected into `note_emails`), or null.
+ * Only `#person`-tagged regular notes qualify. Several notes claiming one
+ * address choose the first path alphabetically. Ownership is preserved even
+ * when the title cannot safely identify that path, so callers can suppress
+ * duplicate creation.
  */
 export async function noteOwningEmail(email: string): Promise<NoteEmailOwner | null> {
   const owner = await queryNoteOwningEmail(email)

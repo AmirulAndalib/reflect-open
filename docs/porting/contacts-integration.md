@@ -42,6 +42,11 @@ Decisions taken at implementation time:
   markdown the user owns, where the syntax would double every value — and the
   editor's link opener is scoped to `https`. Plain values keep the files
   clean; autolinking can make them clickable without markup.
+- **V1 contact fields remain readable.** V1 exported populated contacts as an
+  empty `- Email:` parent with nested address bullets (and older notes used
+  `- Emails`). V2 keeps those files byte-for-byte and recognizes both legacy
+  shapes in the email-ownership projection; new writes use the flatter
+  `- Email: address` form.
 
 ## What v1 did
 

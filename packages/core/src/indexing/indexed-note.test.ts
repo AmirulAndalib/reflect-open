@@ -3,8 +3,8 @@ import { gistBodyHash, parseNote } from '../markdown'
 import { buildIndexedNote, indexedNoteSchema, PROJECTION_VERSION } from './indexed-note'
 
 describe('buildIndexedNote', () => {
-  it('carries the projection version that backfills task breadcrumbs', () => {
-    expect(PROJECTION_VERSION).toBe(15)
+  it('carries the projection version that backfills V1 nested email fields', () => {
+    expect(PROJECTION_VERSION).toBe(16)
   })
 
   it('flattens a parsed note into the index payload', () => {
@@ -84,6 +84,20 @@ describe('buildIndexedNote', () => {
       source,
     })
     expect(indexed.emails).toEqual([{ email: 'Ada@Example.com', emailKey: 'ada@example.com' }])
+  })
+
+  it('projects emails from V1 nested contact fields', () => {
+    const source =
+      '# Ada Lovelace\n\n- Type: #person\n- Email:\n  - <Ada@Example.com>\n  - <ada@work.example>'
+    const indexed = buildIndexedNote(parseNote({ path: 'notes/ada.md', source }), {
+      fileHash: 'h',
+      mtime: 0,
+      source,
+    })
+    expect(indexed.emails).toEqual([
+      { email: 'Ada@Example.com', emailKey: 'ada@example.com' },
+      { email: 'ada@work.example', emailKey: 'ada@work.example' },
+    ])
   })
 
   it('reads email fields from the body with frontmatter split off', () => {
