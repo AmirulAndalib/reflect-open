@@ -106,8 +106,8 @@ export function AttendeeCombobox({ attendees, onAdd }: AttendeeComboboxProps): R
         blocksTypedAdd: contacts.some(
           (suggestion) =>
             suggestion.existingPersonNote &&
-            !suggestion.linkable &&
-            contactNamesEqual(suggestion.contact.fullName, searchTerm),
+            contactNamesEqual(suggestion.contact.fullName, searchTerm) &&
+            (!suggestion.linkable || foldKey(suggestion.target) !== foldKey(searchTerm)),
         ),
       }
     },

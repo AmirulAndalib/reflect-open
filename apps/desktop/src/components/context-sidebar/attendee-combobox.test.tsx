@@ -163,6 +163,24 @@ describe('AttendeeCombobox', () => {
     expect(input.value).toBe('Jane Smith')
   })
 
+  it('does not add the contact name when its linkable email owner has another title', async () => {
+    contactLinkSuggestions.mockResolvedValue([
+      {
+        ...contact('Jane Smith', 'jane@corp.example'),
+        target: 'Jane Doe',
+        existingPersonNote: true,
+      },
+    ])
+    const input = renderCombobox()
+
+    fireEvent.change(input, { target: { value: 'Jane Smith' } })
+    await findHighlighted('Jane Smith')
+    fireEvent.blur(input)
+
+    expect(onAdd).not.toHaveBeenCalled()
+    expect(input.value).toBe('Jane Smith')
+  })
+
   it('Enter adds the typed name once the current lookup settles', async () => {
     const input = renderCombobox()
 
