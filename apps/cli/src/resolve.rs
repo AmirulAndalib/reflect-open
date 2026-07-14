@@ -4,7 +4,7 @@
 //! graph path → title fold-key → alias fold-key. Index-backed when the index
 //! is open; otherwise a file scan derives the same titles/aliases.
 
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use rusqlite::{params, Connection};
 
@@ -35,19 +35,37 @@ impl ResolvedNote {
 /// refused even when their target happens to remain inside the graph.
 fn as_graph_path(arg: &str, root: &Path) -> Option<String> {
     let candidate = Path::new(arg);
+    let canonical_root = root.canonicalize().ok()?;
     let relative = if candidate.is_absolute() {
-        candidate.strip_prefix(root).ok()?.to_path_buf()
+        absolute_graph_relative(candidate, &canonical_root)?
     } else {
         candidate.to_path_buf()
     };
-    let rel_path = relative
-        .to_string_lossy()
-        .replace(std::path::MAIN_SEPARATOR, "/");
-    let current = checked_note_path(root, &rel_path).ok()?;
-    if !current.is_file() || !current.canonicalize().ok()?.starts_with(root) {
+    let rel_path = relative.to_str()?.replace(std::path::MAIN_SEPARATOR, "/");
+    let current = checked_note_path(&canonical_root, &rel_path).ok()?;
+    if !current.is_file() || !current.canonicalize().ok()?.starts_with(&canonical_root) {
         return None;
     }
     Some(rel_path)
+}
+
+/// Find the lexical graph boundary for an absolute path by canonicalizing its
+/// ancestors. This accepts aliases of the graph root (for example macOS's
+/// `/var` → `/private/var`) without canonicalizing away symlinks below it;
+/// [`checked_note_path`] still inspects every component of the returned suffix.
+fn absolute_graph_relative(candidate: &Path, canonical_root: &Path) -> Option<PathBuf> {
+    if candidate
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return None;
+    }
+    candidate.ancestors().find_map(|ancestor| {
+        if ancestor.canonicalize().ok()?.as_path() != canonical_root {
+            return None;
+        }
+        candidate.strip_prefix(ancestor).ok().map(Path::to_path_buf)
+    })
 }
 
 /// Title matches first, alias matches only when no title matched — the
@@ -192,5 +210,61 @@ mod tests {
         let root = temp.path().canonicalize().expect("canonical root");
 
         assert_eq!(as_graph_path("linked.md", &root), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absolute_paths_accept_different_aliases_of_the_graph_root() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let real_root = temp.path().join("real-vault");
+        let alias_root = temp.path().join("vault-alias");
+        std::fs::create_dir(&real_root).expect("mkdir");
+        std::fs::write(real_root.join("README.md"), "root").expect("write");
+        symlink(&real_root, &alias_root).expect("symlink");
+
+        assert_eq!(
+            as_graph_path(
+                real_root.join("README.md").to_str().expect("UTF-8 path"),
+                &alias_root,
+            )
+            .as_deref(),
+            Some("README.md")
+        );
+        assert_eq!(
+            as_graph_path(
+                alias_root.join("README.md").to_str().expect("UTF-8 path"),
+                &real_root,
+            )
+            .as_deref(),
+            Some("README.md")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absolute_paths_still_refuse_symlinks_below_the_graph_root() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(temp.path().join("Projects")).expect("mkdir");
+        std::fs::write(temp.path().join("Projects/plan.md"), "plan").expect("write");
+        symlink(
+            temp.path().join("Projects"),
+            temp.path().join("linked-projects"),
+        )
+        .expect("symlink");
+
+        assert_eq!(
+            as_graph_path(
+                temp.path()
+                    .join("linked-projects/plan.md")
+                    .to_str()
+                    .expect("UTF-8 path"),
+                temp.path(),
+            ),
+            None
+        );
     }
 }
