@@ -272,6 +272,7 @@ pub fn note_move_indexed<R: tauri::Runtime>(
             return Err(err);
         }
     }
+    crate::fs::invalidate_file_catalog(&graph, &root);
     emit_index_written(&app);
     emit_note_moved(&app, &from, &to);
     Ok(())
@@ -330,8 +331,7 @@ pub fn index_reconcile_scan(
     graph: State<GraphState>,
     index: State<IndexState>,
 ) -> AppResult<scan::ReconcileScan> {
-    let root = crate::fs::current_root(&graph)?;
-    let files = crate::fs::note_files(&root)?;
+    let files = crate::fs::current_note_files(&graph)?;
     let state = lock_state(&index)?;
     if state.generation != generation {
         return Ok(scan::ReconcileScan::empty());

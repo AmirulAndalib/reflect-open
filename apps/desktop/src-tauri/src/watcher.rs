@@ -4,22 +4,22 @@
 //! for incremental re-indexing: an edit (ours or external) writes the markdown
 //! file, the watcher fires, and the frontend re-indexes that file. The index
 //! lives under `.reflect/`, which is filtered out here, so index writes can't
-//! loop back. The watcher reports `.md` under `daily/` and `notes/`, plus
-//! anything under `audio-memos/` (recordings feed the sync debounce and the
-//! transcription reconciler, not the index) and eligible image/PDF files under
-//! `assets/` (which feed the asset-description controller — Plan 20 — not the
-//! index; the `.reflect.md` description files are excluded so a write can't loop
-//! back). Non-note consumers filter by path. The frontend resolves
+//! loop back. The watcher reports eligible `.md` anywhere in the graph plus
+//! supported local attachments, recordings under `audio-memos/`, and capture
+//! inbox envelopes. Non-note consumers filter by path; imported attachments
+//! outside Reflect's managed `assets/` tree never enter the AI description
+//! pipeline. The frontend resolves
 //! create-vs-delete and re-indexes (content-hash gated).
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, RecommendedCache};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::error::{AppError, AppResult};
 use crate::fs::GraphState;
@@ -47,29 +47,78 @@ pub struct FileChange {
     pub modified_ms: Option<u64>,
 }
 
-/// Image and PDF extensions that earn an AI description file (Plan 20). Must
-/// stay in sync with `assetTypeFor` in `@reflect/core` (`actions/asset-description`).
-const ELIGIBLE_ASSET_EXTS: [&str; 7] = ["png", "jpg", "jpeg", "gif", "webp", "svg", "pdf"];
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct CatalogEntry {
+    size: u64,
+    modified_ms: u64,
+    placeholder: bool,
+}
 
-/// Whether a graph-relative path is an asset the description controller handles:
-/// an eligible image/PDF under `assets/`, never a `.reflect.md` description file
-/// (which also lives there — tracking it would loop a write back into work).
-fn is_eligible_asset(rel_str: &str) -> bool {
-    if !rel_str.starts_with("assets/") || rel_str.ends_with(".reflect.md") {
-        return false;
+type CatalogSnapshot = BTreeMap<String, CatalogEntry>;
+
+fn catalog_snapshot(files: Vec<crate::fs::FileMeta>) -> CatalogSnapshot {
+    files
+        .into_iter()
+        .map(|file| {
+            (
+                file.path,
+                CatalogEntry {
+                    size: file.size,
+                    modified_ms: file.modified_ms,
+                    placeholder: file.placeholder,
+                },
+            )
+        })
+        .collect()
+}
+
+fn scan_catalog(root: &Path) -> AppResult<CatalogSnapshot> {
+    Ok(catalog_snapshot(crate::fs::catalog_files(root)?))
+}
+
+/// Compare two complete manifests. A placeholder is still present but cannot
+/// be read, so an eviction never becomes an upsert or remove; a later
+/// materialization does become an upsert.
+fn diff_catalogs(before: &CatalogSnapshot, after: &CatalogSnapshot) -> Vec<FileChange> {
+    let mut changes = Vec::new();
+    for path in before.keys().chain(after.keys()) {
+        let previous = before.get(path);
+        let current = after.get(path);
+        let change = match (previous, current) {
+            (Some(_), None) => Some(FileChange {
+                path: path.clone(),
+                kind: "remove".to_string(),
+                modified_ms: None,
+            }),
+            (None, Some(current)) if !current.placeholder => Some(FileChange {
+                path: path.clone(),
+                kind: "upsert".to_string(),
+                modified_ms: Some(current.modified_ms),
+            }),
+            (Some(previous), Some(current)) if !current.placeholder && previous != current => {
+                Some(FileChange {
+                    path: path.clone(),
+                    kind: "upsert".to_string(),
+                    modified_ms: Some(current.modified_ms),
+                })
+            }
+            _ => None,
+        };
+        if let Some(change) = change {
+            changes.push(change);
+        }
     }
-    rel_str
-        .rsplit('.')
-        .next()
-        .is_some_and(|ext| ELIGIBLE_ASSET_EXTS.contains(&ext.to_ascii_lowercase().as_str()))
+    changes.sort_by(|left, right| left.path.cmp(&right.path));
+    changes.dedup_by(|left, right| left.path == right.path);
+    changes
 }
 
 /// Graph-relative path if `path` is tracked: a markdown note (`.md` under
-/// `daily/`, `notes/`, or `templates/`), an audio-memo recording (anything under
+/// any visible non-reserved tree), an audio-memo recording (anything under
 /// `audio-memos/`), a spooled capture envelope (`.json` under `.reflect/inbox/`
 /// — the one carve-out from the `.reflect/` blackout; the envelope is the
-/// spool's commit point and triggers the capture drain), or an eligible asset
-/// under `assets/` ({@link is_eligible_asset} — feeds the description controller),
+/// spool's commit point and triggers the capture drain), or a supported local
+/// attachment anywhere in the graph,
 /// else `None`. Pure — the filtering rule, unit-tested.
 fn tracked_relpath(path: &Path, root: &Path) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
@@ -78,14 +127,13 @@ fn tracked_relpath(path: &Path, root: &Path) -> Option<String> {
     // eviction/re-download events must never read as a stub appearing or the
     // note being deleted (Plan 21).
     let rel_str = evicted_logical_relpath(&rel_str).unwrap_or(rel_str);
-    let note = (rel_str.starts_with("daily/")
-        || rel_str.starts_with("notes/")
-        || rel_str.starts_with("templates/"))
-        && rel_str.ends_with(".md");
-    let recording = rel_str.starts_with("audio-memos/");
+    let kind = reflect_graph_paths::classify_normalized(&rel_str);
+    let note = kind == Some(reflect_graph_paths::GraphPathKind::Note);
+    let recording = rel_str.starts_with("audio-memos/")
+        && reflect_graph_paths::is_safe_visible_relative(Path::new(&rel_str));
     let capture = rel_str.starts_with(".reflect/inbox/") && rel_str.ends_with(".json");
-    let asset = is_eligible_asset(&rel_str);
-    (note || recording || capture || asset).then_some(rel_str)
+    let attachment = kind == Some(reflect_graph_paths::GraphPathKind::Attachment);
+    (note || recording || capture || attachment).then_some(rel_str)
 }
 
 /// `notes/.a.md.icloud` → `Some("notes/a.md")`: the graph-relative path of the
@@ -116,20 +164,38 @@ fn collect_changes(paths: &[PathBuf], root: &Path) -> Vec<FileChange> {
             // Stat the *logical* path — for placeholder events it differs
             // from the event path, and it is what consumers read.
             let logical = root.join(&rel);
-            let change = match std::fs::metadata(&logical) {
-                Ok(meta) => FileChange {
+            let change = if path_has_symlink(root, Path::new(&rel)) {
+                // A previously indexed file can be replaced by a symlink.
+                // Emit a removal rather than silently keeping the stale row;
+                // never stat through the link or any linked parent directory.
+                FileChange {
                     path: rel.clone(),
-                    kind: "upsert".to_string(),
-                    modified_ms: crate::fs::modified_ms(&meta),
-                },
-                Err(_) => {
-                    if crate::fs::eviction_placeholder(&logical).is_some_and(|stub| stub.exists()) {
-                        continue; // evicted, not deleted
-                    }
-                    FileChange {
+                    kind: "remove".to_string(),
+                    modified_ms: None,
+                }
+            } else {
+                match std::fs::metadata(&logical) {
+                    Ok(meta) if meta.is_file() => FileChange {
+                        path: rel.clone(),
+                        kind: "upsert".to_string(),
+                        modified_ms: crate::fs::modified_ms(&meta),
+                    },
+                    Ok(_) => FileChange {
                         path: rel.clone(),
                         kind: "remove".to_string(),
                         modified_ms: None,
+                    },
+                    Err(_) => {
+                        if crate::fs::eviction_placeholder(&logical)
+                            .is_some_and(|stub| stub.exists())
+                        {
+                            continue; // evicted, not deleted
+                        }
+                        FileChange {
+                            path: rel.clone(),
+                            kind: "remove".to_string(),
+                            modified_ms: None,
+                        }
                     }
                 }
             };
@@ -137,6 +203,123 @@ fn collect_changes(paths: &[PathBuf], root: &Path) -> Vec<FileChange> {
         }
     }
     seen.into_values().collect()
+}
+
+/// Whether any existing component of a graph-relative path is a symlink.
+/// `symlink_metadata` examines the link itself; checking every component keeps
+/// a child event under a symlinked directory from reaching its target.
+fn path_has_symlink(root: &Path, rel: &Path) -> bool {
+    let mut current = root.to_path_buf();
+    for component in rel.components() {
+        current.push(component.as_os_str());
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return true,
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
+            Err(_) => return true,
+        }
+    }
+    false
+}
+
+fn may_affect_catalog(path: &Path, root: &Path) -> bool {
+    tracked_relpath(path, root)
+        .is_some_and(|relative| reflect_graph_paths::classify_normalized(&relative).is_some())
+}
+
+fn has_catalog_descendant(snapshot: &CatalogSnapshot, relative: &str) -> bool {
+    let prefix = format!("{relative}/");
+    snapshot.keys().any(|path| path.starts_with(&prefix))
+}
+
+/// Directory rename/remove notifications are not guaranteed to enumerate
+/// their descendants. Detect those events from the current file type or the
+/// previous manifest and fall back to one full manifest delta.
+fn needs_catalog_diff(paths: &[PathBuf], root: &Path, snapshot: &CatalogSnapshot) -> bool {
+    paths.iter().any(|path| {
+        let Ok(relative) = path.strip_prefix(root) else {
+            return false;
+        };
+        if relative.as_os_str().is_empty() {
+            return false;
+        }
+        let relative_string = relative.to_string_lossy().replace('\\', "/");
+        if has_catalog_descendant(snapshot, &relative_string) {
+            return true;
+        }
+        std::fs::symlink_metadata(path).is_ok_and(|metadata| {
+            metadata.file_type().is_dir() && reflect_graph_paths::is_safe_visible_relative(relative)
+        })
+    })
+}
+
+fn apply_changes_to_snapshot(snapshot: &mut CatalogSnapshot, changes: &[FileChange], root: &Path) {
+    for change in changes {
+        if reflect_graph_paths::classify_normalized(&change.path).is_none() {
+            continue;
+        }
+        if change.kind == "remove" {
+            snapshot.remove(&change.path);
+            continue;
+        }
+        let relative = Path::new(&change.path);
+        if path_has_symlink(root, relative) {
+            snapshot.remove(&change.path);
+            continue;
+        }
+        let Ok(metadata) = std::fs::metadata(root.join(relative)) else {
+            snapshot.remove(&change.path);
+            continue;
+        };
+        if !metadata.is_file() {
+            snapshot.remove(&change.path);
+            continue;
+        }
+        snapshot.insert(
+            change.path.clone(),
+            CatalogEntry {
+                size: metadata.len(),
+                modified_ms: change
+                    .modified_ms
+                    .or_else(|| crate::fs::modified_ms(&metadata))
+                    .unwrap_or(0),
+                placeholder: false,
+            },
+        );
+    }
+}
+
+fn merge_changes(primary: Vec<FileChange>, authoritative: Vec<FileChange>) -> Vec<FileChange> {
+    let mut merged: BTreeMap<String, FileChange> = primary
+        .into_iter()
+        .map(|change| (change.path.clone(), change))
+        .collect();
+    for change in authoritative {
+        merged.insert(change.path.clone(), change);
+    }
+    merged.into_values().collect()
+}
+
+/// Re-scan and replace a watcher manifest while holding the same lock every
+/// live callback uses. Keeping the lock across `scan` is load-bearing: a
+/// callback must either land wholly before this snapshot or wholly after it,
+/// never update the map only to be overwritten by an older scan result.
+fn catch_up_catalog_with<F>(
+    snapshot: &Mutex<CatalogSnapshot>,
+    scan: F,
+) -> AppResult<(Vec<FileChange>, bool)>
+where
+    F: FnOnce() -> AppResult<CatalogSnapshot>,
+{
+    let mut snapshot = snapshot.lock().map_err(|error| {
+        tracing::error!(?error, "watcher catalog snapshot lock poisoned");
+        AppError::io("watcher catalog snapshot lock poisoned")
+    })?;
+    let after = scan()?;
+    let changed = *snapshot != after;
+    let changes = diff_catalogs(&snapshot, &after);
+    *snapshot = after;
+    Ok((changes, changed))
 }
 
 fn lock_watcher<'a>(
@@ -161,11 +344,17 @@ pub fn watch_start(
     graph: State<GraphState>,
     watcher: State<WatcherState>,
 ) -> AppResult<()> {
+    let (root, generation, catalog_files) = crate::fs::current_catalog_files(&graph)?;
+    let snapshot = Arc::new(Mutex::new(catalog_snapshot(catalog_files)));
     let graph_guard = graph.0.lock().map_err(|err| {
         tracing::error!(?err, "graph state lock poisoned by an earlier panic");
         AppError::io("graph state lock poisoned")
     })?;
-    let root = graph_guard.root.clone().ok_or_else(AppError::no_graph)?;
+    if graph_guard.generation != generation || graph_guard.root.as_deref() != Some(root.as_path()) {
+        return Err(AppError::io(
+            "the graph changed while its watcher was starting; dropping it",
+        ));
+    }
 
     // Drop any previous watcher first: if installing the new one fails we're then
     // left with no watcher, rather than the previous graph's still driving
@@ -173,6 +362,8 @@ pub fn watch_start(
     *lock_watcher(&watcher)? = None;
 
     let handler_root = root.clone();
+    let handler_snapshot = Arc::clone(&snapshot);
+    let handler_app = app.clone();
     let mut debouncer = new_debouncer(
         Duration::from_millis(400),
         None,
@@ -184,9 +375,47 @@ pub fn watch_start(
                 .iter()
                 .flat_map(|event| event.paths.clone())
                 .collect();
-            let changes = collect_changes(&paths, &handler_root);
+            let (changes, needs_diff) = match handler_snapshot.lock() {
+                Ok(mut snapshot) => {
+                    let mut changes = collect_changes(&paths, &handler_root);
+                    let needs_diff = needs_catalog_diff(&paths, &handler_root, &snapshot);
+                    if needs_diff {
+                        match scan_catalog(&handler_root) {
+                            Ok(after) => {
+                                let manifest_changes = diff_catalogs(&snapshot, &after);
+                                *snapshot = after;
+                                changes = merge_changes(changes, manifest_changes);
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    ?error,
+                                    "failed to rebuild graph file catalog after directory change"
+                                );
+                                apply_changes_to_snapshot(&mut snapshot, &changes, &handler_root);
+                            }
+                        }
+                    } else {
+                        apply_changes_to_snapshot(&mut snapshot, &changes, &handler_root);
+                    }
+                    (changes, needs_diff)
+                }
+                Err(error) => {
+                    tracing::error!(?error, "watcher catalog snapshot lock poisoned");
+                    return;
+                }
+            };
+            if needs_diff
+                || paths
+                    .iter()
+                    .any(|path| may_affect_catalog(path, &handler_root))
+            {
+                crate::fs::invalidate_file_catalog(
+                    &handler_app.state::<GraphState>(),
+                    &handler_root,
+                );
+            }
             if !changes.is_empty() {
-                let _ = app.emit(CHANGE_EVENT, changes);
+                let _ = handler_app.emit(CHANGE_EVENT, changes);
             }
         },
     )
@@ -196,9 +425,20 @@ pub fn watch_start(
         .watch(&root, RecursiveMode::Recursive)
         .map_err(|err| AppError::io(err.to_string()))?;
 
+    // Close the snapshot→watch-install race: once the watcher is live, scan
+    // once more. Any later write is covered by the watcher; anything that
+    // landed in the small install gap is emitted from this manifest delta.
+    let (catch_up, catalog_changed) =
+        catch_up_catalog_with(snapshot.as_ref(), || scan_catalog(&root))?;
     // Dropping any previous debouncer here stops its thread.
     *lock_watcher(&watcher)? = Some(debouncer);
     drop(graph_guard);
+    if catalog_changed {
+        crate::fs::invalidate_file_catalog(&graph, &root);
+    }
+    if !catch_up.is_empty() {
+        let _ = app.emit(CHANGE_EVENT, catch_up);
+    }
     Ok(())
 }
 
@@ -214,7 +454,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tracks_markdown_under_note_dirs_and_audio_memo_recordings() {
+    fn tracks_arbitrary_visible_markdown_and_audio_memo_recordings() {
         let root = Path::new("/g");
         assert_eq!(
             tracked_relpath(Path::new("/g/notes/a.md"), root).as_deref(),
@@ -232,6 +472,14 @@ mod tests {
         assert_eq!(
             tracked_relpath(Path::new("/g/templates/journal.txt"), root),
             None
+        );
+        assert_eq!(
+            tracked_relpath(Path::new("/g/README.md"), root).as_deref(),
+            Some("README.md")
+        );
+        assert_eq!(
+            tracked_relpath(Path::new("/g/Projects/deep/plan.md"), root).as_deref(),
+            Some("Projects/deep/plan.md")
         );
         // Recordings are tracked whole-directory: they feed the sync debounce
         // and the transcription reconciler.
@@ -271,15 +519,31 @@ mod tests {
             None
         );
         assert_eq!(tracked_relpath(Path::new("/g/notes/x.txt"), root), None);
-        assert_eq!(tracked_relpath(Path::new("/g/README.md"), root), None);
+        assert_eq!(tracked_relpath(Path::new("/g/.hidden/a.md"), root), None);
+        assert_eq!(
+            tracked_relpath(Path::new("/g/Projects/.hidden.md"), root),
+            None
+        );
+        assert_eq!(
+            tracked_relpath(Path::new("/g/assets/caption.md"), root),
+            None
+        );
         assert_eq!(tracked_relpath(Path::new("/g/audio-memos"), root), None);
+        assert_eq!(
+            tracked_relpath(Path::new("/g/audio-memos/.hidden.m4a"), root),
+            None
+        );
+        assert_eq!(
+            tracked_relpath(Path::new("/g/audio-memos/.private/memo.m4a"), root),
+            None
+        );
         assert_eq!(tracked_relpath(Path::new("/other/notes/a.md"), root), None);
     }
 
     #[test]
-    fn tracks_eligible_assets_but_not_description_files_or_other_files() {
+    fn tracks_supported_attachments_anywhere_but_not_hidden_or_other_files() {
         let root = Path::new("/g");
-        for ext in ELIGIBLE_ASSET_EXTS {
+        for ext in reflect_graph_paths::ATTACHMENT_EXTENSIONS {
             let path = format!("/g/assets/diagram.{ext}");
             let expected = format!("assets/diagram.{ext}");
             assert_eq!(
@@ -292,6 +556,10 @@ mod tests {
             tracked_relpath(Path::new("/g/assets/PHOTO.PNG"), root).as_deref(),
             Some("assets/PHOTO.PNG")
         );
+        assert_eq!(
+            tracked_relpath(Path::new("/g/Projects/diagram.png"), root).as_deref(),
+            Some("Projects/diagram.png")
+        );
         // The description file lives under assets/ too — tracking it would loop a
         // write back into the controller, so it must never be tracked.
         assert_eq!(
@@ -302,6 +570,10 @@ mod tests {
         assert_eq!(tracked_relpath(Path::new("/g/assets/data.txt"), root), None);
         assert_eq!(tracked_relpath(Path::new("/g/assets/notes.md"), root), None);
         assert_eq!(tracked_relpath(Path::new("/g/assets/noext"), root), None);
+        assert_eq!(
+            tracked_relpath(Path::new("/g/Projects/.private/diagram.png"), root),
+            None
+        );
     }
 
     #[test]
@@ -340,6 +612,171 @@ mod tests {
         assert_eq!(changes[0].kind, "upsert");
         // A real timestamp, not epoch zero — All Notes sorts and labels by it.
         assert!(changes[0].modified_ms.is_some_and(|ms| ms > 0));
+    }
+
+    #[test]
+    fn directory_rename_emits_a_manifest_delta_for_descendant_notes() {
+        let graph = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(graph.path().join("Projects/deep")).unwrap();
+        std::fs::write(graph.path().join("Projects/deep/plan.md"), "# Plan\n").unwrap();
+        let before = scan_catalog(graph.path()).unwrap();
+
+        std::fs::rename(graph.path().join("Projects"), graph.path().join("Archive")).unwrap();
+        let paths = [graph.path().join("Projects"), graph.path().join("Archive")];
+        assert!(needs_catalog_diff(&paths, graph.path(), &before));
+
+        let after = scan_catalog(graph.path()).unwrap();
+        let shapes: Vec<(String, String)> = diff_catalogs(&before, &after)
+            .into_iter()
+            .map(|change| (change.path, change.kind))
+            .collect();
+        assert_eq!(
+            shapes,
+            vec![
+                ("Archive/deep/plan.md".to_string(), "upsert".to_string()),
+                ("Projects/deep/plan.md".to_string(), "remove".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn catch_up_scan_cannot_overwrite_a_callback_that_observed_a_later_file() {
+        use std::sync::mpsc;
+
+        let graph = tempfile::tempdir().unwrap();
+        let snapshot = Arc::new(Mutex::new(CatalogSnapshot::new()));
+        let (scan_started_tx, scan_started_rx) = mpsc::channel();
+        let (finish_scan_tx, finish_scan_rx) = mpsc::channel();
+
+        let catch_up_snapshot = Arc::clone(&snapshot);
+        let catch_up = std::thread::spawn(move || {
+            catch_up_catalog_with(catch_up_snapshot.as_ref(), || {
+                scan_started_tx.send(()).unwrap();
+                finish_scan_rx.recv().unwrap();
+                // Simulate a traversal that passed the note's directory just
+                // before the file was created.
+                Ok(CatalogSnapshot::new())
+            })
+        });
+        scan_started_rx.recv().unwrap();
+
+        let late_note = graph.path().join("late.md");
+        std::fs::write(&late_note, "# Late\n").unwrap();
+        let root = graph.path().to_path_buf();
+        let callback_snapshot = Arc::clone(&snapshot);
+        let (callback_attempted_tx, callback_attempted_rx) = mpsc::channel();
+        let (callback_done_tx, callback_done_rx) = mpsc::channel();
+        let callback = std::thread::spawn(move || {
+            callback_attempted_tx.send(()).unwrap();
+            let mut snapshot = callback_snapshot.lock().unwrap();
+            apply_changes_to_snapshot(
+                &mut snapshot,
+                &[FileChange {
+                    path: "late.md".to_string(),
+                    kind: "upsert".to_string(),
+                    modified_ms: None,
+                }],
+                &root,
+            );
+            callback_done_tx.send(()).unwrap();
+        });
+        callback_attempted_rx.recv().unwrap();
+        assert!(
+            callback_done_rx
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_err(),
+            "callback updated the snapshot while catch-up was still scanning"
+        );
+
+        finish_scan_tx.send(()).unwrap();
+        let (catch_up_changes, changed) = catch_up.join().unwrap().unwrap();
+        callback.join().unwrap();
+
+        assert!(catch_up_changes.is_empty());
+        assert!(!changed);
+        assert!(snapshot.lock().unwrap().contains_key("late.md"));
+    }
+
+    #[test]
+    fn catalog_delta_keeps_evictions_silent_and_upserts_materialization() {
+        let graph = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(graph.path().join("Projects")).unwrap();
+        let note = graph.path().join("Projects/plan.md");
+        let placeholder = graph.path().join("Projects/.plan.md.icloud");
+        std::fs::write(&note, "# Plan\n").unwrap();
+        let present = scan_catalog(graph.path()).unwrap();
+
+        std::fs::remove_file(&note).unwrap();
+        std::fs::write(&placeholder, "stub").unwrap();
+        let evicted = scan_catalog(graph.path()).unwrap();
+        assert!(diff_catalogs(&present, &evicted).is_empty());
+
+        std::fs::write(&note, "# Downloaded\n").unwrap();
+        let materialized = scan_catalog(graph.path()).unwrap();
+        let changes = diff_catalogs(&evicted, &materialized);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "Projects/plan.md");
+        assert_eq!(changes[0].kind, "upsert");
+    }
+
+    #[test]
+    fn a_directory_named_like_a_note_is_never_upserted_as_a_file() {
+        let graph = tempfile::tempdir().unwrap();
+        let directory = graph.path().join("folder.md");
+        std::fs::create_dir(&directory).unwrap();
+
+        assert_eq!(
+            collect_changes(std::slice::from_ref(&directory), graph.path()),
+            vec![FileChange {
+                path: "folder.md".to_string(),
+                kind: "remove".to_string(),
+                modified_ms: None,
+            }]
+        );
+        assert!(needs_catalog_diff(
+            std::slice::from_ref(&directory),
+            graph.path(),
+            &CatalogSnapshot::new(),
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_files_and_descendants_emit_removals_without_following_targets() {
+        use std::os::unix::fs::symlink;
+
+        let graph = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.md"), "outside").unwrap();
+        symlink(
+            outside.path().join("secret.md"),
+            graph.path().join("linked.md"),
+        )
+        .unwrap();
+        symlink(outside.path(), graph.path().join("linked-dir")).unwrap();
+
+        let changes = collect_changes(
+            &[
+                graph.path().join("linked.md"),
+                graph.path().join("linked-dir/secret.md"),
+            ],
+            graph.path(),
+        );
+        assert_eq!(
+            changes,
+            vec![
+                FileChange {
+                    path: "linked-dir/secret.md".to_string(),
+                    kind: "remove".to_string(),
+                    modified_ms: None,
+                },
+                FileChange {
+                    path: "linked.md".to_string(),
+                    kind: "remove".to_string(),
+                    modified_ms: None,
+                },
+            ]
+        );
     }
 
     #[test]

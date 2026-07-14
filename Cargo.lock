@@ -4717,6 +4717,7 @@ dependencies = [
  "clap",
  "jiff",
  "pulldown-cmark",
+ "reflect-graph-paths",
  "reflect-index-schema",
  "rusqlite",
  "saphyr",
@@ -4724,6 +4725,14 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+]
+
+[[package]]
+name = "reflect-graph-paths"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4759,6 +4768,7 @@ dependencies = [
  "objc2-ui-kit",
  "ort",
  "percent-encoding",
+ "reflect-graph-paths",
  "reflect-index-schema",
  "reqwest 0.12.28",
  "rusqlite",

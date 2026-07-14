@@ -16,9 +16,15 @@ use crate::graph_gitignore;
 
 use super::FileMeta;
 
+#[derive(Clone, Default)]
+pub(super) struct FileCatalog {
+    pub notes: Vec<FileMeta>,
+    pub attachments: Vec<FileMeta>,
+}
+
 pub(super) const REFLECT_DIR: &str = ".reflect";
 const META_SCHEMA_VERSION: u32 = 1;
-pub(super) const TOP_LEVEL_DIRS: [&str; 4] = ["daily", "notes", "assets", REFLECT_DIR];
+pub(super) const TOP_LEVEL_DIRS: [&str; 3] = ["daily", "notes", "assets"];
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 const APPLE_EXCLUSION_KEYS: [&str; 2] = [
     "NSURLUbiquitousItemIsExcludedFromSyncKey",
@@ -29,36 +35,84 @@ const LOCAL_ONLY_XATTRS: [(&str, &[u8]); 2] = [
     ("com.apple.fileprovider.ignore#P", b"1"),
     ("com.dropbox.ignored", b"1"),
 ];
-/// Directories scanned by `list_files` for markdown notes. `templates/` is
-/// not bootstrapped (no-litter) — the first template write creates it.
-pub(super) const NOTE_DIRS: [&str; 3] = ["daily", "notes", "templates"];
-
 /// Create the standard graph layout + ignore/meta files (idempotent).
 pub(super) fn bootstrap(root: &Path) -> AppResult<()> {
     for dir in TOP_LEVEL_DIRS {
         fs::create_dir_all(root.join(dir))?;
     }
-    sweep_upload_staging(root);
-    mark_dir_local_only(&root.join(REFLECT_DIR));
-    // A backup repo must never ride a file-sync provider: two devices' object
-    // stores merging file-by-file is repository corruption (Plan 21). New
-    // repos are marked at init (`git::repo`); this covers pre-existing ones.
-    let git_dir = root.join(".git");
-    if git_dir.exists() {
-        mark_dir_local_only(&git_dir);
-    }
+    initialize_runtime(root)?;
     let gitignore = root.join(".gitignore");
     if !gitignore.exists() {
         fs::write(&gitignore, graph_gitignore::default_contents())?;
     }
-    let meta = root.join(REFLECT_DIR).join("meta.json");
-    if !meta.exists() {
-        fs::write(
-            &meta,
-            format!("{{\n  \"schemaVersion\": {META_SCHEMA_VERSION}\n}}\n"),
-        )?;
-    }
     Ok(())
+}
+
+/// Initialize only Reflect's rebuildable runtime state for an existing vault.
+/// Existing Markdown folders are opened in place; user-facing directories and
+/// the root `.gitignore` remain byte-for-byte untouched.
+pub(super) fn initialize_runtime(root: &Path) -> AppResult<()> {
+    ensure_runtime_directory(root)?;
+    sweep_upload_staging(root);
+    mark_dir_local_only(&root.join(REFLECT_DIR));
+    // Validate/install the repository-local exclusion before touching `.git`:
+    // an adopted vault may contain a hostile symlink there, and even a
+    // best-effort xattr write must not follow it outside the vault.
+    graph_gitignore::ensure_runtime_excluded(root)?;
+    // A backup repo must never ride a file-sync provider: two devices' object
+    // stores merging file-by-file is repository corruption (Plan 21). New
+    // repos are marked at init (`git::repo`); this covers pre-existing ones.
+    let git_dir = root.join(".git");
+    if fs::symlink_metadata(&git_dir).is_ok_and(|metadata| metadata.is_dir()) {
+        mark_dir_local_only(&git_dir);
+    }
+    ensure_runtime_meta(root)?;
+    Ok(())
+}
+
+/// Establish the one directory Reflect is allowed to add when adopting an
+/// existing vault. `create_dir_all` follows a pre-existing symlink, which
+/// would let an untrusted vault redirect cleanup and metadata writes outside
+/// its root; inspect the entry itself and fail closed on every non-directory.
+fn ensure_runtime_directory(root: &Path) -> AppResult<()> {
+    let runtime = root.join(REFLECT_DIR);
+    match fs::symlink_metadata(&runtime) {
+        Ok(metadata) if metadata.file_type().is_dir() => Ok(()),
+        Ok(_) => Err(AppError::traversal(format!(
+            "runtime path must be a real directory: {}",
+            runtime.display()
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // The graph root already exists. A single-component create is
+            // intentional: if another process races in a symlink or file,
+            // `create_dir` fails instead of accepting and following it.
+            fs::create_dir(&runtime)?;
+            Ok(())
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn ensure_runtime_meta(root: &Path) -> AppResult<()> {
+    let meta = root.join(REFLECT_DIR).join("meta.json");
+    match fs::symlink_metadata(&meta) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(()),
+        Ok(_) => Err(AppError::traversal(format!(
+            "runtime metadata path must be a real file: {}",
+            meta.display()
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // `create_new` is atomic and refuses even a dangling symlink that
+            // races this probe, so metadata creation cannot be redirected.
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&meta)?;
+            write!(file, "{{\n  \"schemaVersion\": {META_SCHEMA_VERSION}\n}}\n")?;
+            Ok(())
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Drop leftover staging files (`.reflect/tmp/`: asset uploads, `fs::assets`,
@@ -244,8 +298,7 @@ pub(crate) fn modified_ms(meta: &fs::Metadata) -> Option<u64> {
 /// app the file still exists — it just isn't readable until re-downloaded
 /// (Plan 21: eviction must never read as deletion).
 pub(crate) fn icloud_placeholder_target(file_name: &str) -> Option<&str> {
-    let name = file_name.strip_prefix('.')?.strip_suffix(".icloud")?;
-    (!name.is_empty()).then_some(name)
+    reflect_graph_paths::icloud_placeholder_target(file_name)
 }
 
 /// The placeholder path iCloud leaves behind when it evicts `logical`
@@ -331,6 +384,90 @@ pub(super) fn collect_files(
     Ok(())
 }
 
+/// Recursively list every eligible Markdown note from the graph root.
+///
+/// Hidden directories and the reserved attachment trees are pruned before
+/// descent. Symlinks are never followed. An iCloud placeholder is classified
+/// by the visible logical path it represents, so its dot-prefixed stub name is
+/// not mistaken for a user-hidden note.
+pub(super) fn collect_note_files(root: &Path) -> AppResult<Vec<FileMeta>> {
+    Ok(collect_classified_files(root, false)?.notes)
+}
+
+/// Build one snapshot of every eligible note and supported attachment.
+pub(super) fn collect_file_catalog(root: &Path) -> AppResult<FileCatalog> {
+    collect_classified_files(root, true)
+}
+
+fn collect_classified_files(root: &Path, include_attachments: bool) -> AppResult<FileCatalog> {
+    let mut catalog = FileCatalog::default();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        for entry in fs::read_dir(&current)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            let Ok(rel) = path.strip_prefix(root) else {
+                continue;
+            };
+            if file_type.is_dir() {
+                let descend = if include_attachments {
+                    reflect_graph_paths::is_safe_visible_relative(rel)
+                } else {
+                    reflect_graph_paths::may_contain_notes(rel)
+                };
+                if descend {
+                    stack.push(path);
+                }
+                continue;
+            }
+            if !file_type.is_file() {
+                continue;
+            }
+
+            let listed = match evicted_logical_path(&path) {
+                Some(logical) if !logical.exists() => logical
+                    .strip_prefix(root)
+                    .ok()
+                    .and_then(reflect_graph_paths::classify)
+                    .map(|kind| (logical, true, kind)),
+                Some(_) => None,
+                None => reflect_graph_paths::classify(rel).map(|kind| (path, false, kind)),
+            };
+            let Some((listed_path, placeholder, kind)) = listed else {
+                continue;
+            };
+            if kind == reflect_graph_paths::GraphPathKind::Attachment && !include_attachments {
+                continue;
+            }
+            let Ok(listed_rel) = listed_path.strip_prefix(root) else {
+                continue;
+            };
+            let meta = entry.metadata()?;
+            let file = FileMeta {
+                path: listed_rel.to_string_lossy().replace('\\', "/"),
+                size: meta.len(),
+                modified_ms: modified_ms(&meta).unwrap_or(0),
+                placeholder,
+            };
+            match kind {
+                reflect_graph_paths::GraphPathKind::Note => catalog.notes.push(file),
+                reflect_graph_paths::GraphPathKind::Attachment => catalog.attachments.push(file),
+            }
+        }
+    }
+    catalog
+        .notes
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    catalog
+        .attachments
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(catalog)
+}
+
 /// If `path` is an eviction placeholder, the sibling path of the file it
 /// stands in for (`notes/.a.md.icloud` → `notes/a.md`).
 fn evicted_logical_path(path: &Path) -> Option<PathBuf> {
@@ -359,6 +496,76 @@ mod tests {
         assert!(dir.path().join(".reflect/meta.json").exists());
     }
 
+    #[test]
+    fn existing_vault_initialization_adds_runtime_only() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("README.md"), "# Existing\n").unwrap();
+        fs::write(dir.path().join(".gitignore"), "node_modules/\n").unwrap();
+
+        initialize_runtime(dir.path()).unwrap();
+
+        assert!(dir.path().join(".reflect/meta.json").is_file());
+        assert_eq!(
+            fs::read_to_string(dir.path().join(".gitignore")).unwrap(),
+            "node_modules/\n"
+        );
+        for sub in TOP_LEVEL_DIRS {
+            assert!(!dir.path().join(sub).exists(), "unexpected dir {sub}");
+        }
+        assert_eq!(
+            fs::read_to_string(dir.path().join("README.md")).unwrap(),
+            "# Existing\n"
+        );
+    }
+
+    #[test]
+    fn existing_non_directory_runtime_path_is_rejected_unchanged() {
+        let vault = tempdir().unwrap();
+        let runtime = vault.path().join(REFLECT_DIR);
+        fs::write(&runtime, b"not a directory").unwrap();
+
+        assert!(initialize_runtime(vault.path()).is_err());
+
+        assert_eq!(fs::read(runtime).unwrap(), b"not a directory");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn existing_symlinked_runtime_path_is_rejected_before_cleanup_or_write() {
+        use std::os::unix::fs::symlink;
+
+        let vault = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        fs::create_dir(outside.path().join("tmp")).unwrap();
+        let sentinel = outside.path().join("tmp/keep");
+        fs::write(&sentinel, b"outside").unwrap();
+        symlink(outside.path(), vault.path().join(REFLECT_DIR)).unwrap();
+
+        assert!(initialize_runtime(vault.path()).is_err());
+
+        assert_eq!(fs::read(sentinel).unwrap(), b"outside");
+        assert!(!outside.path().join("meta.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_runtime_metadata_is_never_created_outside_the_vault() {
+        use std::os::unix::fs::symlink;
+
+        let vault = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        fs::create_dir(vault.path().join(REFLECT_DIR)).unwrap();
+        let outside_meta = outside.path().join("meta.json");
+        symlink(
+            &outside_meta,
+            vault.path().join(REFLECT_DIR).join("meta.json"),
+        )
+        .unwrap();
+
+        assert!(initialize_runtime(vault.path()).is_err());
+        assert!(!outside_meta.exists());
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn bootstrap_marks_reflect_dir_with_provider_ignore_xattrs() {
@@ -379,7 +586,7 @@ mod tests {
     #[test]
     fn bootstrap_marks_a_present_git_dir_local_only() {
         let dir = tempdir().unwrap();
-        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        git2::Repository::init(dir.path()).unwrap();
         bootstrap(dir.path()).unwrap();
         assert_eq!(
             xattr::get(dir.path().join(".git"), "com.apple.fileprovider.ignore#P").unwrap(),
@@ -515,23 +722,104 @@ mod tests {
     }
 
     #[test]
-    fn list_finds_only_markdown_under_note_dirs() {
+    fn note_walk_finds_root_and_nested_markdown_and_prunes_reserved_hidden_paths() {
         let dir = tempdir().unwrap();
         bootstrap(dir.path()).unwrap();
         atomic_write(dir.path(), &dir.path().join("notes/a.md"), "a").unwrap();
         atomic_write(dir.path(), &dir.path().join("daily/2026-06-09.md"), "b").unwrap();
         atomic_write(dir.path(), &dir.path().join("templates/journal.md"), "t").unwrap();
+        atomic_write(dir.path(), &dir.path().join("README.md"), "root").unwrap();
+        atomic_write(
+            dir.path(),
+            &dir.path().join("Projects/deep/plan.md"),
+            "nested",
+        )
+        .unwrap();
+        atomic_write(dir.path(), &dir.path().join("assets/caption.md"), "asset").unwrap();
+        atomic_write(
+            dir.path(),
+            &dir.path().join("audio-memos/transcript.md"),
+            "audio",
+        )
+        .unwrap();
+        atomic_write(
+            dir.path(),
+            &dir.path().join(".obsidian/plugin.md"),
+            "hidden",
+        )
+        .unwrap();
+        atomic_write(
+            dir.path(),
+            &dir.path().join("Projects/.private/secret.md"),
+            "hidden",
+        )
+        .unwrap();
+        atomic_write(dir.path(), &dir.path().join("Projects/upper.MD"), "upper").unwrap();
         atomic_write(dir.path(), &dir.path().join("notes/skip.txt"), "c").unwrap();
 
-        let mut out = Vec::new();
-        for d in NOTE_DIRS {
-            collect_files(dir.path(), d, Some("md"), &mut out).unwrap();
-        }
+        let out = collect_note_files(dir.path()).unwrap();
         let paths: Vec<&str> = out.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"README.md"));
+        assert!(paths.contains(&"Projects/deep/plan.md"));
         assert!(paths.contains(&"notes/a.md"));
         assert!(paths.contains(&"daily/2026-06-09.md"));
         assert!(paths.contains(&"templates/journal.md"));
         assert!(!paths.iter().any(|p| p.ends_with(".txt")));
+        assert!(!paths.iter().any(|p| p.starts_with("assets/")));
+        assert!(!paths.iter().any(|p| p.starts_with("audio-memos/")));
+        assert!(!paths.iter().any(|p| p.contains("/.")));
+        assert!(!paths.iter().any(|p| p.ends_with(".MD")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn note_walk_does_not_follow_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        fs::write(outside.path().join("outside.md"), "outside").unwrap();
+        fs::create_dir_all(root.path().join("Projects")).unwrap();
+        symlink(
+            outside.path().join("outside.md"),
+            root.path().join("linked.md"),
+        )
+        .unwrap();
+        symlink(outside.path(), root.path().join("Projects/linked")).unwrap();
+
+        assert!(collect_note_files(root.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn catalog_includes_supported_visible_attachments() {
+        let root = tempdir().unwrap();
+        for path in [
+            "assets/photo.png",
+            "Projects/reference.PDF",
+            "Media/clip.mp4",
+            "Media/ignore.zip",
+            ".hidden/photo.png",
+            "Media/.private/photo.png",
+        ] {
+            let absolute = root.path().join(path);
+            fs::create_dir_all(absolute.parent().unwrap()).unwrap();
+            fs::write(absolute, "bytes").unwrap();
+        }
+
+        let catalog = collect_file_catalog(root.path()).unwrap();
+        let paths: Vec<&str> = catalog
+            .attachments
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                "Media/clip.mp4",
+                "Projects/reference.PDF",
+                "assets/photo.png"
+            ]
+        );
     }
 
     #[test]
@@ -540,8 +828,7 @@ mod tests {
         bootstrap(dir.path()).unwrap();
         fs::write(dir.path().join("notes/.a.md.icloud"), b"stub").unwrap();
 
-        let mut out = Vec::new();
-        collect_files(dir.path(), "notes", Some("md"), &mut out).unwrap();
+        let out = collect_note_files(dir.path()).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].path, "notes/a.md");
         assert!(out[0].placeholder);
@@ -556,8 +843,7 @@ mod tests {
         atomic_write(dir.path(), &dir.path().join("notes/a.md"), "a").unwrap();
         fs::write(dir.path().join("notes/.a.md.icloud"), b"stub").unwrap();
 
-        let mut out = Vec::new();
-        collect_files(dir.path(), "notes", Some("md"), &mut out).unwrap();
+        let out = collect_note_files(dir.path()).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].path, "notes/a.md");
         assert!(!out[0].placeholder);

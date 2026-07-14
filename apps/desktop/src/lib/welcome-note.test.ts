@@ -66,12 +66,15 @@ describe('ensureWelcomeNote', () => {
     expect(graph.written[0]!.contents).toContain('[[Wiki Links]]')
   })
 
-  it('marks a graph with existing notes without writing into it', async () => {
-    const graph = installFakeBridge({ existingFiles: ['daily/2026-06-12.md'] })
-    expect(await ensureWelcomeNote(GENERATIONS)).toBe(false)
-    expect(graph.written).toHaveLength(0)
-    expect(graph.meta[WELCOME_SEEDED_META_KEY]).toBe('true')
-  })
+  it.each(['daily/2026-06-12.md', 'README.md', 'Projects/Plan.md'])(
+    'marks a graph containing %s without writing into it',
+    async (existingPath) => {
+      const graph = installFakeBridge({ existingFiles: [existingPath] })
+      expect(await ensureWelcomeNote(GENERATIONS)).toBe(false)
+      expect(graph.written).toHaveLength(0)
+      expect(graph.meta[WELCOME_SEEDED_META_KEY]).toBe('true')
+    },
+  )
 
   it('does nothing once marked — an emptied graph is not re-onboarded', async () => {
     const graph = installFakeBridge({ meta: { [WELCOME_SEEDED_META_KEY]: 'true' } })

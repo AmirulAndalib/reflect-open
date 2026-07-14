@@ -66,7 +66,7 @@ mod platform {
         NSNumber, NSOperationQueue, NSPredicate, NSString,
     };
     use serde::Serialize;
-    use tauri::Emitter;
+    use tauri::{Emitter, Manager};
 
     use crate::error::{AppError, AppResult};
 
@@ -235,9 +235,16 @@ mod platform {
         unsafe { query.setOperationQueue(Some(&queue)) };
 
         let handler_roots = roots.clone();
+        let handler_root = std::path::PathBuf::from(&root);
         let emit_app = app.clone();
         let block = RcBlock::new(move |notification: NonNull<NSNotification>| {
-            handle_notification(&app, &handler_roots, emit_file_changes, notification);
+            handle_notification(
+                &app,
+                &handler_roots,
+                &handler_root,
+                emit_file_changes,
+                notification,
+            );
         });
         let center = NSNotificationCenter::defaultCenter();
         let query_object: &AnyObject = &query;
@@ -389,6 +396,7 @@ mod platform {
     fn handle_notification(
         app: &tauri::AppHandle,
         roots: &[String],
+        graph_root: &std::path::Path,
         emit_file_changes: bool,
         notification: NonNull<NSNotification>,
     ) {
@@ -409,6 +417,8 @@ mod platform {
         } else {
             full_round(&query, roots)
         };
+
+        crate::fs::invalidate_file_catalog(&app.state::<crate::fs::GraphState>(), graph_root);
 
         if emit_file_changes && !round.changes.is_empty() {
             let _ = app.emit("index:changed", round.changes);
@@ -565,7 +575,7 @@ mod platform {
     }
 
     /// The watcher's note-tracking rule, over absolute metadata paths:
-    /// `.md` under `daily/`, `notes/`, or `templates/`, graph-relative. Tries
+    /// eligible `.md` anywhere in the graph. Tries
     /// every root variant — Spotlight may report either side of the
     /// `/var` ↔ `/private/var` symlink. Variants are slash-terminated
     /// ([`root_variants`]), so the strip is a path boundary, not a string
@@ -574,10 +584,8 @@ mod platform {
         let rel = roots
             .iter()
             .find_map(|root| path.strip_prefix(root.as_str()))?;
-        let tracked = (rel.starts_with("daily/")
-            || rel.starts_with("notes/")
-            || rel.starts_with("templates/"))
-            && rel.ends_with(".md");
+        let tracked = reflect_graph_paths::classify_normalized(rel)
+            == Some(reflect_graph_paths::GraphPathKind::Note);
         tracked.then(|| rel.to_string())
     }
 
@@ -785,6 +793,22 @@ mod platform {
             assert_eq!(
                 tracked_note_relpath("/private/var/mobile/Containers/Notes/notes/idea.md", &roots),
                 Some("notes/idea.md".to_string())
+            );
+            assert_eq!(
+                tracked_note_relpath("/var/mobile/Containers/Notes/README.md", &roots),
+                Some("README.md".to_string())
+            );
+            assert_eq!(
+                tracked_note_relpath("/var/mobile/Containers/Notes/Projects/deep/plan.md", &roots),
+                Some("Projects/deep/plan.md".to_string())
+            );
+            assert_eq!(
+                tracked_note_relpath("/var/mobile/Containers/Notes/assets/caption.md", &roots),
+                None
+            );
+            assert_eq!(
+                tracked_note_relpath("/var/mobile/Containers/Notes/.hidden/a.md", &roots),
+                None
             );
             assert_eq!(
                 tracked_note_relpath("/var/mobile/Containers/Notes/.reflect/index.sqlite", &roots),

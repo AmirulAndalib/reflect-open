@@ -10,8 +10,8 @@ use rusqlite::{params, Connection};
 
 use crate::error::CliError;
 use crate::keys::fold_key;
-use crate::note_file::{parse_note_meta, walk_notes};
-use crate::paths::{daily_path, parse_calendar_date, NOTE_DIRS};
+use crate::note_file::{checked_note_path, parse_note_meta, walk_notes};
+use crate::paths::{daily_path, parse_calendar_date};
 
 /// What a `<note>` argument resolved to.
 pub enum ResolvedNote {
@@ -30,25 +30,24 @@ impl ResolvedNote {
 }
 
 /// Interpret `arg` as an explicit note path (graph-relative, or absolute
-/// inside the graph). Only existing `.md` files under `daily/`/`notes/`
-/// qualify; anything else falls through to title/alias matching.
+/// inside the graph). Only existing eligible Markdown files qualify; anything
+/// else falls through to title/alias matching. Symlinked path components are
+/// refused even when their target happens to remain inside the graph.
 fn as_graph_path(arg: &str, root: &Path) -> Option<String> {
     let candidate = Path::new(arg);
-    let absolute = if candidate.is_absolute() {
-        candidate.to_path_buf()
+    let relative = if candidate.is_absolute() {
+        candidate.strip_prefix(root).ok()?.to_path_buf()
     } else {
-        root.join(candidate)
+        candidate.to_path_buf()
     };
-    let canonical = absolute.canonicalize().ok()?;
-    if !canonical.is_file() {
+    let rel_path = relative
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    let current = checked_note_path(root, &rel_path).ok()?;
+    if !current.is_file() || !current.canonicalize().ok()?.starts_with(root) {
         return None;
     }
-    let rel = canonical.strip_prefix(root).ok()?;
-    let rel_path = rel.to_string_lossy().replace('\\', "/");
-    let under_note_dir = NOTE_DIRS
-        .iter()
-        .any(|dir| rel_path.starts_with(&format!("{dir}/")));
-    (under_note_dir && rel_path.ends_with(".md")).then_some(rel_path)
+    Some(rel_path)
 }
 
 /// Title matches first, alias matches only when no title matched — the
@@ -152,5 +151,46 @@ pub fn resolve_note(
                 rel_path: first.clone(),
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::as_graph_path;
+
+    #[test]
+    fn explicit_paths_accept_root_and_nested_notes_only() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(temp.path().join("README.md"), "root").expect("write");
+        std::fs::create_dir_all(temp.path().join("Projects/.hidden")).expect("mkdir");
+        std::fs::write(temp.path().join("Projects/plan.md"), "plan").expect("write");
+        std::fs::write(temp.path().join("Projects/.hidden/secret.md"), "secret").expect("write");
+        std::fs::create_dir_all(temp.path().join("assets")).expect("mkdir");
+        std::fs::write(temp.path().join("assets/caption.md"), "caption").expect("write");
+        let root = temp.path().canonicalize().expect("canonical root");
+
+        assert_eq!(
+            as_graph_path("README.md", &root).as_deref(),
+            Some("README.md")
+        );
+        assert_eq!(
+            as_graph_path("Projects/plan.md", &root).as_deref(),
+            Some("Projects/plan.md")
+        );
+        assert_eq!(as_graph_path("Projects/.hidden/secret.md", &root), None);
+        assert_eq!(as_graph_path("assets/caption.md", &root), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn explicit_paths_refuse_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(temp.path().join("real.md"), "real").expect("write");
+        symlink(temp.path().join("real.md"), temp.path().join("linked.md")).expect("symlink");
+        let root = temp.path().canonicalize().expect("canonical root");
+
+        assert_eq!(as_graph_path("linked.md", &root), None);
     }
 }

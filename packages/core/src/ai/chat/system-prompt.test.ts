@@ -26,6 +26,8 @@ describe('chatSystemPrompt', () => {
       semanticSearchEnabled: true,
     })
     expect(prompt).toContain('Today’s date is 2026-06-12.')
+    expect(prompt).toContain('Reflect-created regular notes live under notes/')
+    expect(prompt).toContain('opened Markdown vault may live anywhere')
     expect(prompt).toContain('Grounding rules:')
     expect(prompt).not.toContain('Graph overview')
   })

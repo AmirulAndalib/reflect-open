@@ -195,7 +195,10 @@ pub async fn git_merge_remote(
     state: State<'_, GraphState>,
 ) -> AppResult<MergeOutcome> {
     let root = crate::fs::root_for_generation(&state, generation)?;
-    run_blocking(move || merge::merge_remote(&root)).await
+    let merge_root = root.clone();
+    let outcome = run_blocking(move || merge::merge_remote(&merge_root)).await?;
+    crate::fs::invalidate_file_catalog(&state, &root);
+    Ok(outcome)
 }
 
 /// Push the current branch to `origin`; rejections come back as data so the

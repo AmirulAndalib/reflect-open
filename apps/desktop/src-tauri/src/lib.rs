@@ -251,6 +251,7 @@ pub fn run() {
             fs::note_exists,
             fs::note_delete,
             fs::list_files,
+            fs::list_attachments,
             recents::recent_graphs,
             recents::forget_recent,
             settings::settings_load,

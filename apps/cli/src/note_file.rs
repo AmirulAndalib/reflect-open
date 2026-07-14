@@ -4,7 +4,7 @@
 //! `collect_markdown` (`apps/desktop/src-tauri/src/fs/io.rs`).
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use pulldown_cmark::{Event, HeadingLevel, Parser, Tag};
@@ -12,7 +12,7 @@ use pulldown_cmark::{Event, HeadingLevel, Parser, Tag};
 use crate::error::CliError;
 use crate::frontmatter::{parse_frontmatter, split_frontmatter, Frontmatter};
 use crate::keys::fold_key;
-use crate::paths::{date_from_daily_path, NOTE_DIRS};
+use crate::paths::date_from_daily_path;
 
 /// A note's derived metadata, as the TS indexer would compute it.
 #[derive(Debug)]
@@ -36,6 +36,9 @@ pub struct DiskNote {
     pub rel_path: String,
     /// Last-modified time in epoch milliseconds (the `notes.mtime` unit).
     pub mtime_ms: u64,
+    /// The path exists only as an iCloud eviction placeholder, so its content
+    /// is unavailable on this device.
+    pub placeholder: bool,
 }
 
 /// Filename without directories or the `.md` extension (the TS `basename`).
@@ -177,7 +180,7 @@ pub fn parse_note_meta(rel_path: &str, source: &str) -> NoteMeta {
 /// Read a note and enforce the privacy contract: a `private: true` note is
 /// refused (exit 3), based on the file's own frontmatter — never an index row.
 pub fn read_note(root: &Path, rel_path: &str) -> Result<Note, CliError> {
-    let absolute = root.join(rel_path);
+    let absolute = checked_note_path(root, rel_path)?;
     let content = fs::read_to_string(&absolute)
         .map_err(|err| CliError::Runtime(format!("could not read {rel_path}: {err}")))?;
     let meta = parse_note_meta(rel_path, &content);
@@ -190,8 +193,15 @@ pub fn read_note(root: &Path, rel_path: &str) -> Result<Note, CliError> {
 /// Enforce the privacy contract without returning content (used by `path`).
 /// A missing file has nothing to protect.
 pub fn ensure_not_private(root: &Path, rel_path: &str) -> Result<(), CliError> {
-    let Ok(content) = fs::read_to_string(root.join(rel_path)) else {
-        return Ok(());
+    let absolute = checked_note_path(root, rel_path)?;
+    let content = match fs::read_to_string(&absolute) {
+        Ok(content) => content,
+        Err(_) if eviction_placeholder(&absolute).is_some_and(|path| path.is_file()) => {
+            return Err(CliError::Runtime(format!(
+                "note is unavailable until iCloud downloads it: {rel_path}"
+            )))
+        }
+        Err(_) => return Ok(()),
     };
     if parse_note_meta(rel_path, &content).private {
         return Err(CliError::Private(format!("note is private: {rel_path}")));
@@ -199,58 +209,184 @@ pub fn ensure_not_private(root: &Path, rel_path: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Every `.md` under `daily/` + `notes/`, recursively — same contract as the
-/// desktop's `collect_markdown`: symlinks are skipped, paths come back
-/// graph-relative and forward-slashed.
+/// Resolve one canonical graph-relative note path without following symlinks.
+/// The file itself may be absent (daily `path` output relies on that), but any
+/// component that exists must be an ordinary in-graph entry.
+pub(crate) fn checked_note_path(root: &Path, rel_path: &str) -> Result<PathBuf, CliError> {
+    if reflect_graph_paths::classify_normalized(rel_path)
+        != Some(reflect_graph_paths::GraphPathKind::Note)
+    {
+        return Err(CliError::Runtime(format!(
+            "unsafe or ineligible note path: {rel_path}"
+        )));
+    }
+    let mut absolute = root.to_path_buf();
+    for component in Path::new(rel_path).components() {
+        absolute.push(component.as_os_str());
+        match fs::symlink_metadata(&absolute) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(CliError::Runtime(format!(
+                    "refusing symlinked note path: {rel_path}"
+                )))
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(CliError::Runtime(format!(
+                    "could not inspect {rel_path}: {error}"
+                )))
+            }
+        }
+    }
+    Ok(absolute)
+}
+
+/// Every eligible `.md` in the graph, recursively — same contract as the
+/// desktop listing: hidden/reserved trees are pruned, symlinks are skipped,
+/// and paths come back graph-relative and forward-slashed.
 pub fn walk_notes(root: &Path) -> Result<Vec<DiskNote>, CliError> {
     let mut notes = Vec::new();
-    for dir in NOTE_DIRS {
-        let base = root.join(dir);
-        if !base.is_dir() {
-            continue;
-        }
-        let mut stack = vec![base];
-        while let Some(current) = stack.pop() {
-            for entry in fs::read_dir(&current)? {
-                let entry = entry?;
-                let file_type = entry.file_type()?;
-                if file_type.is_symlink() {
-                    continue;
-                }
-                let path = entry.path();
-                if file_type.is_dir() {
-                    stack.push(path);
-                    continue;
-                }
-                if !file_type.is_file()
-                    || path.extension().and_then(|ext| ext.to_str()) != Some("md")
-                {
-                    continue;
-                }
-                let Ok(rel) = path.strip_prefix(root) else {
-                    continue;
-                };
-                let mtime_ms = entry
-                    .metadata()?
-                    .modified()
-                    .ok()
-                    .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-                    .map(|duration| duration.as_millis() as u64)
-                    .unwrap_or(0);
-                notes.push(DiskNote {
-                    rel_path: rel.to_string_lossy().replace('\\', "/"),
-                    mtime_ms,
-                });
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        for entry in fs::read_dir(&current)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
             }
+            let path = entry.path();
+            let Ok(rel) = path.strip_prefix(root) else {
+                continue;
+            };
+            if file_type.is_dir() {
+                if reflect_graph_paths::may_contain_notes(rel) {
+                    stack.push(path);
+                }
+                continue;
+            }
+            if !file_type.is_file() {
+                continue;
+            }
+
+            let listed = match evicted_logical_path(&path) {
+                Some(logical)
+                    if logical
+                        .strip_prefix(root)
+                        .is_ok_and(reflect_graph_paths::is_note)
+                        && !logical.exists() =>
+                {
+                    Some((logical, true))
+                }
+                Some(_) => None,
+                None if reflect_graph_paths::is_note(rel) => Some((path, false)),
+                None => None,
+            };
+            let Some((listed_path, placeholder)) = listed else {
+                continue;
+            };
+            let Ok(listed_rel) = listed_path.strip_prefix(root) else {
+                continue;
+            };
+            let mtime_ms = entry
+                .metadata()?
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis() as u64)
+                .unwrap_or(0);
+            notes.push(DiskNote {
+                rel_path: listed_rel.to_string_lossy().replace('\\', "/"),
+                mtime_ms,
+                placeholder,
+            });
         }
     }
     notes.sort_by(|left, right| left.rel_path.cmp(&right.rel_path));
     Ok(notes)
 }
 
+fn evicted_logical_path(path: &Path) -> Option<std::path::PathBuf> {
+    let name = path.file_name()?.to_str()?;
+    let logical = reflect_graph_paths::icloud_placeholder_target(name)?;
+    Some(path.with_file_name(logical))
+}
+
+fn eviction_placeholder(path: &Path) -> Option<std::path::PathBuf> {
+    let name = path.file_name()?.to_str()?;
+    Some(path.with_file_name(format!(".{name}.icloud")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn walk_finds_arbitrary_notes_and_prunes_ignored_trees() {
+        let root = tempfile::tempdir().expect("tempdir");
+        for (path, content) in [
+            ("README.md", "root"),
+            ("Projects/deep/plan.md", "nested"),
+            ("daily/2026-07-14.md", "daily"),
+            ("templates/meeting.md", "template"),
+            ("assets/caption.md", "reserved"),
+            ("audio-memos/transcript.md", "reserved"),
+            (".obsidian/plugin.md", "hidden"),
+            ("Projects/.private/secret.md", "hidden"),
+            ("Projects/upper.MD", "upper"),
+        ] {
+            let absolute = root.path().join(path);
+            fs::create_dir_all(absolute.parent().expect("parent")).expect("mkdir");
+            fs::write(absolute, content).expect("write");
+        }
+
+        let paths: Vec<String> = walk_notes(root.path())
+            .expect("walk")
+            .into_iter()
+            .map(|note| note.rel_path)
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                "Projects/deep/plan.md",
+                "README.md",
+                "daily/2026-07-14.md",
+                "templates/meeting.md",
+            ]
+        );
+    }
+
+    #[test]
+    fn walk_keeps_icloud_placeholders_as_unavailable_notes() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(root.path().join("Projects")).expect("mkdir");
+        fs::write(root.path().join("Projects/.plan.md.icloud"), "stub").expect("write");
+
+        let notes = walk_notes(root.path()).expect("walk");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].rel_path, "Projects/plan.md");
+        assert!(notes[0].placeholder);
+        let error = ensure_not_private(root.path(), "Projects/plan.md").unwrap_err();
+        assert!(error.to_string().contains("unavailable"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn walk_does_not_follow_file_or_directory_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        fs::write(outside.path().join("outside.md"), "outside").expect("write");
+        fs::create_dir_all(root.path().join("Projects")).expect("mkdir");
+        symlink(
+            outside.path().join("outside.md"),
+            root.path().join("linked.md"),
+        )
+        .expect("file symlink");
+        symlink(outside.path(), root.path().join("Projects/linked")).expect("directory symlink");
+
+        assert!(walk_notes(root.path()).expect("walk").is_empty());
+    }
 
     /// Parity with `deriveTitle` (`extract.ts`): frontmatter `title` → first
     /// H1 → daily date → filename, with the same cleaning rules.

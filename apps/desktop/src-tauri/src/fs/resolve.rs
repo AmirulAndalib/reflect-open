@@ -58,6 +58,7 @@ fn existing_ancestor(path: &Path) -> PathBuf {
 /// can't redirect reads/writes outside it.
 pub(crate) fn resolve(root: &Path, rel: &str) -> AppResult<PathBuf> {
     let rel = ensure_relative(rel)?;
+    reject_symlink_components(root, &rel)?;
     let joined = root.join(&rel);
     let canonical_root = root.canonicalize()?;
     let anchor = existing_ancestor(&joined).canonicalize()?;
@@ -67,6 +68,28 @@ pub(crate) fn resolve(root: &Path, rel: &str) -> AppResult<PathBuf> {
         )));
     }
     Ok(joined)
+}
+
+/// Reject every symlink component, even when it points back inside the graph.
+/// Symlinks are outside the graph-content contract: discovery never indexes
+/// them, and direct reads/writes must not provide a second path around that
+/// rule through a stale route or index row.
+fn reject_symlink_components(root: &Path, rel: &Path) -> AppResult<()> {
+    let mut current = root.to_path_buf();
+    for component in rel.components() {
+        current.push(component.as_os_str());
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(AppError::traversal(format!(
+                    "path contains a symlink: {rel:?}"
+                )))
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -109,5 +132,21 @@ mod tests {
         // A symlink inside the graph pointing out of it.
         symlink(outside.path(), graph.path().join("notes/escape")).unwrap();
         assert!(resolve(graph.path(), "notes/escape/evil.md").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_rejects_symlinks_that_stay_inside_the_graph() {
+        use std::os::unix::fs::symlink;
+        let graph = tempdir().unwrap();
+        bootstrap(graph.path()).unwrap();
+        std::fs::write(graph.path().join("notes/real.md"), "# Real\n").unwrap();
+        symlink(
+            graph.path().join("notes/real.md"),
+            graph.path().join("notes/linked.md"),
+        )
+        .unwrap();
+
+        assert!(resolve(graph.path(), "notes/linked.md").is_err());
     }
 }

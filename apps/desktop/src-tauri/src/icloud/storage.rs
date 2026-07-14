@@ -154,24 +154,16 @@ pub async fn icloud_pending_count(root: String, notes_only: bool) -> AppResult<u
     .map_err(|err| AppError::io(err.to_string()))?
 }
 
-/// The graph's note directories — the download-scope filter and the
-/// graph-detection probe share one list.
-const NOTE_DIRS: [&str; 3] = ["daily", "notes", "templates"];
-
 /// Whether a placeholder found under `rel_dir` (the stub's directory,
 /// graph-relative) standing for `target` falls in the notes-only download
-/// scope: markdown under one of the note directories. Assets, audio memos,
-/// and anything else wait for the follow-up full-scope request.
+/// scope: eligible Markdown anywhere in the vault. Attachments and ignored
+/// trees wait for the follow-up full-scope request.
 ///
 /// Compiled off Apple targets only for tests: its sole production caller is
 /// the platform walk, which has no non-Apple twin.
 #[cfg(any(target_os = "ios", target_os = "macos", test))]
 fn placeholder_in_note_scope(rel_dir: &Path, target: &str) -> bool {
-    let Some(first) = rel_dir.components().next() else {
-        return false; // a stray placeholder at the graph root is not a note
-    };
-    let first = first.as_os_str().to_string_lossy();
-    NOTE_DIRS.iter().any(|dir| *dir == first) && target.ends_with(".md")
+    reflect_graph_paths::is_note(&rel_dir.join(target))
 }
 
 /// Every existing graph among the container `Documents/` subdirectories
@@ -184,8 +176,14 @@ fn find_graph_dirs(documents: &Path) -> Vec<PathBuf> {
     };
     let mut dirs: Vec<PathBuf> = entries
         .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir() && dir_has_notes(path))
+        .filter_map(|entry| {
+            let file_type = entry.file_type().ok()?;
+            if file_type.is_symlink() || !file_type.is_dir() {
+                return None;
+            }
+            let path = entry.path();
+            dir_has_notes(&path).then_some(path)
+        })
         .collect();
     dirs.sort();
     dirs
@@ -195,20 +193,10 @@ fn find_graph_dirs(documents: &Path) -> Vec<PathBuf> {
 /// placeholders per `crate::fs::icloud_placeholder_target` — the one home of
 /// that grammar).
 ///
-/// Looks one level into the standard note directories rather than requiring
-/// `.reflect/meta.json`: the index directory is excluded from sync on
-/// purpose, so a synced-down graph arrives as bare `daily/`/`notes/` content.
+/// It deliberately does not require `.reflect/meta.json`: the index directory
+/// is excluded from sync, so a synced-down graph arrives as bare Markdown.
 fn dir_has_notes(root: &Path) -> bool {
-    NOTE_DIRS.iter().any(|dir| {
-        let Ok(entries) = std::fs::read_dir(root.join(dir)) else {
-            return false;
-        };
-        entries.flatten().any(|entry| {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            name.ends_with(".md") || crate::fs::icloud_placeholder_target(&name).is_some()
-        })
-    })
+    crate::fs::note_files(root).is_ok_and(|notes| !notes.is_empty())
 }
 
 /// Ask iCloud to (re)download one item, best-effort. The metadata-query
@@ -267,6 +255,14 @@ mod platform {
                     continue;
                 }
                 if path.is_dir() {
+                    if notes_only {
+                        let eligible = path
+                            .strip_prefix(root)
+                            .is_ok_and(reflect_graph_paths::may_contain_notes);
+                        if !eligible {
+                            continue;
+                        }
+                    }
                     stack.push(path);
                     continue;
                 }
@@ -535,6 +531,19 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn find_graph_dirs_does_not_follow_symlinked_vaults() {
+        use std::os::unix::fs::symlink;
+
+        let documents = tempfile::tempdir().expect("documents");
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("README.md"), "# Outside\n").expect("write note");
+        symlink(outside.path(), documents.path().join("Linked")).expect("symlink");
+
+        assert!(find_graph_dirs(documents.path()).is_empty());
+    }
+
     #[test]
     fn adopt_copy_skips_local_state_and_verifies() {
         let source = tempfile::tempdir().expect("tempdir");
@@ -616,25 +625,21 @@ mod tests {
     }
 
     #[test]
-    fn dir_has_notes_sees_markdown_and_placeholders() {
+    fn dir_has_notes_sees_arbitrary_markdown_and_placeholders() {
         let root = tempfile::tempdir().expect("tempdir");
         assert!(!dir_has_notes(root.path()));
 
-        std::fs::create_dir_all(root.path().join("daily")).expect("mkdir");
-        assert!(!dir_has_notes(root.path()));
-
-        std::fs::write(root.path().join("daily/.2026-07-04.md.icloud"), b"stub").expect("write");
+        std::fs::create_dir_all(root.path().join("Projects/deep")).expect("mkdir");
+        std::fs::write(root.path().join("Projects/deep/.plan.md.icloud"), b"stub").expect("write");
         assert!(dir_has_notes(root.path()));
 
         let downloaded = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir_all(downloaded.path().join("notes")).expect("mkdir");
-        std::fs::write(downloaded.path().join("notes/idea.md"), b"# hi").expect("write");
+        std::fs::write(downloaded.path().join("README.md"), b"# hi").expect("write");
         assert!(dir_has_notes(downloaded.path()));
     }
 
     #[test]
-    fn note_scope_covers_markdown_under_note_dirs_only() {
-        // Markdown in the tracked directories (nested included) is in scope.
+    fn note_scope_covers_arbitrary_eligible_markdown() {
         assert!(placeholder_in_note_scope(
             Path::new("daily"),
             "2026-07-04.md"
@@ -648,7 +653,12 @@ mod tests {
             Path::new("notes/archive"),
             "old.md"
         ));
-        // Assets, recordings, non-markdown, and root strays wait for the
+        assert!(placeholder_in_note_scope(Path::new(""), "stray.md"));
+        assert!(placeholder_in_note_scope(
+            Path::new("Projects/deep"),
+            "plan.md"
+        ));
+        // Assets, recordings, hidden paths, and non-markdown wait for the
         // full-scope follow-up request.
         assert!(!placeholder_in_note_scope(Path::new("assets"), "photo.png"));
         assert!(!placeholder_in_note_scope(
@@ -656,6 +666,13 @@ mod tests {
             "memo.m4a"
         ));
         assert!(!placeholder_in_note_scope(Path::new("notes"), "photo.png"));
-        assert!(!placeholder_in_note_scope(Path::new(""), "stray.md"));
+        assert!(!placeholder_in_note_scope(
+            Path::new("Projects/.hidden"),
+            "stray.md"
+        ));
+        assert!(!placeholder_in_note_scope(
+            Path::new("assets"),
+            "caption.md"
+        ));
     }
 }
