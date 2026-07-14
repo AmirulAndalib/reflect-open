@@ -147,7 +147,7 @@ export function classifyGraphPath(path: string): GraphPathKind | null {
     return null
   }
   const extension = filename.slice(extensionSeparator + 1)
-  if (extension === 'md' && !RESERVED_NOTE_TREES.has(first)) {
+  if (extension === 'md' && !RESERVED_NOTE_TREES.has(first.toLowerCase())) {
     return 'note'
   }
   return ATTACHMENT_EXTENSIONS.has(extension.toLowerCase()) ? 'attachment' : null
@@ -172,7 +172,7 @@ export function mayContainNotes(path: string): boolean {
     return false
   }
   const first = path.split('/')[0]
-  return first !== undefined && !RESERVED_NOTE_TREES.has(first)
+  return first !== undefined && !RESERVED_NOTE_TREES.has(first.toLowerCase())
 }
 
 /** Is this graph-relative path a note template (`.md` under `templates/`)? */

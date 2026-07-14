@@ -63,13 +63,19 @@ fn classify_components(components: &[&str]) -> Option<GraphPathKind> {
     let first = *components.first()?;
     let file_name = *components.last()?;
     let (_, extension) = file_name.rsplit_once('.')?;
-    if extension == "md" && !RESERVED_NOTE_TREES.contains(&first) {
+    if extension == "md" && !is_reserved_note_tree(first) {
         return Some(GraphPathKind::Note);
     }
     ATTACHMENT_EXTENSIONS
         .iter()
         .any(|candidate| extension.eq_ignore_ascii_case(candidate))
         .then_some(GraphPathKind::Attachment)
+}
+
+fn is_reserved_note_tree(component: &str) -> bool {
+    RESERVED_NOTE_TREES
+        .iter()
+        .any(|reserved| component.eq_ignore_ascii_case(reserved))
 }
 
 /// Whether a path is an eligible Markdown note.
@@ -93,7 +99,7 @@ pub fn may_contain_notes(path: &Path) -> bool {
     path.components()
         .next()
         .and_then(|component| component.as_os_str().to_str())
-        .is_some_and(|first| !RESERVED_NOTE_TREES.contains(&first))
+        .is_some_and(|first| !is_reserved_note_tree(first))
 }
 
 /// Whether every path component is a visible, normal relative component.
