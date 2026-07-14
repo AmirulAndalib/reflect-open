@@ -1,4 +1,5 @@
 import { appendBlock } from '../markdown/edit'
+import { foldEmail } from '../markdown/email-fields'
 import { splitFrontmatter } from '../markdown/frontmatter'
 import type { ContactMatch } from './commands'
 
@@ -31,6 +32,22 @@ function uniqueValues(values: readonly string[]): string[] {
   return unique
 }
 
+/** Email identity dedup that preserves the first address-book spelling. */
+function uniqueEmails(values: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const unique: string[] = []
+  for (const value of values) {
+    const trimmed = value.trim()
+    const key = foldEmail(trimmed)
+    if (key === '' || seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    unique.push(trimmed)
+  }
+  return unique
+}
+
 /** A `- Type:` typing bullet (any list marker, any case). */
 const TYPE_LINE_PATTERN = /^[ \t]*[-+*][ \t]+type:/im
 
@@ -46,7 +63,7 @@ const TYPE_LINE_PATTERN = /^[ \t]*[-+*][ \t]+type:/im
  * stack a second line.
  */
 export function contactDetailsMarkdown(contact: ContactMatch, existingBody = ''): string {
-  const emails = uniqueValues(contact.emails)
+  const emails = uniqueEmails(contact.emails)
   const phones = uniqueValues(contact.phones)
   if (emails.length === 0 && phones.length === 0) {
     return ''

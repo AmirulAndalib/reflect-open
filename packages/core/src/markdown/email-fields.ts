@@ -20,9 +20,17 @@ const EMAIL_FIELD_PATTERN = /^[ \t]*[-+*][ \t]+email:(.*)$/gim
  */
 const EMAIL_PATTERN = /[^\s@<>(),;:[\]]+@[^\s@<>(),;:[\]]+\.[^\s@<>(),;:[\]]+/g
 
-/** Normalize an email for matching: trimmed, lowercased. */
+/**
+ * Normalize an email identity for matching: unwrap an optional display-name or
+ * angle-bracket envelope, drop an optional `mailto:` prefix, trim, and
+ * lowercase. The address itself stays otherwise intact — provider-specific
+ * rules such as removing dots or `+tags` would merge distinct mailboxes.
+ */
 export function foldEmail(email: string): string {
-  return email.trim().toLowerCase()
+  const trimmed = email.trim()
+  const wrapped = trimmed.match(/^(?:[^<>]*)<\s*([^<>]+)\s*>$/)
+  const address = (wrapped?.[1] ?? trimmed).replace(/^mailto:/i, '').trim()
+  return address.toLowerCase()
 }
 
 /**

@@ -193,7 +193,7 @@ describe('DailyEventsSection', () => {
 
     const attendee = await screen.findByLabelText<HTMLInputElement>('Attendees')
     fireEvent.change(attendee, { target: { value: 'Grace Hopper' } })
-    fireEvent.keyDown(attendee, { key: 'Enter' })
+    fireEvent.click(await screen.findByText('Add “Grace Hopper”'))
     fireEvent.click(screen.getByRole('button', { name: /add to daily note/i }))
 
     await waitFor(() =>

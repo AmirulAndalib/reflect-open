@@ -1,5 +1,5 @@
 import { resolveAttendeeContact } from '../contacts/resolve'
-import { noteTitleOwningEmail } from '../indexing/queries'
+import { noteOwningEmail } from '../indexing/queries'
 import { wikiLinkSafe } from '../markdown/edit'
 import { foldEmail } from '../markdown/email-fields'
 import type { MeetingAttendee } from './add-meeting'
@@ -15,9 +15,10 @@ import type { MeetingAttendee } from './add-meeting'
  * identity, so each attendee that carries one resolves in order:
  *
  * 1. **The graph.** A `#person`-tagged note owning the address via a
- *    `- Email:` contact-field bullet (the `note_emails` projection) wins
- *    outright — the attendee is renamed to that note's title, so the
- *    `[[Person]]` link lands on the existing note.
+ *    `- Email:` contact-field bullet (the `note_emails` projection) wins.
+ *    A uniquely addressable title becomes the `[[Person]]` target; an
+ *    ambiguous or syntax-unsafe owner stays plain text and still blocks a
+ *    duplicate note from being created.
  * 2. **Apple Contacts** (gate on), only when the attendee's name *is* the
  *    address — the calendar knew no better. The contact's full name becomes
  *    the attendee, so the note the flow then creates (pre-filled with the
@@ -28,7 +29,7 @@ import type { MeetingAttendee } from './add-meeting'
  *
  * Both the add-meeting dialog (prefilling chips) and `addMeetingToDaily`
  * (authoritatively, at write time) run this, so what the user sees is what
- * gets linked — and a quick submit can't skip the resolution.
+ * gets written — and a quick submit can't skip the resolution.
  */
 export async function resolveMeetingAttendees(
   attendees: readonly MeetingAttendee[],
@@ -44,14 +45,23 @@ async function resolveAttendee(
   if (attendee.email === undefined || foldEmail(attendee.email) === '') {
     return attendee
   }
-  const ownerTitle = await noteTitleOwningEmail(attendee.email)
+  const owner = await noteOwningEmail(attendee.email)
   // The rename must be lossless: `[[…]]` has no escaping, so a title that
   // wikiLinkSafe would alter (brackets, pipes, doubled spaces) can't be
   // linked verbatim — the sanitized form would miss the owner in the index
-  // and mint the very duplicate this resolution exists to prevent. Such an
-  // owner falls through to the later steps instead.
-  if (ownerTitle !== null && ownerTitle !== '' && wikiLinkSafe(ownerTitle) === ownerTitle) {
-    return { name: ownerTitle, email: attendee.email }
+  // and mint the very duplicate this resolution exists to prevent.
+  if (owner !== null) {
+    if (
+      owner.uniquelyAddressable &&
+      owner.title !== '' &&
+      wikiLinkSafe(owner.title) === owner.title
+    ) {
+      return { name: owner.title, email: attendee.email, existingPersonNote: true }
+    }
+    // Keep the calendar spelling when the owning note cannot be addressed by
+    // title. Falling through to Contacts would hide that ownership and let the
+    // write path mint a duplicate person note under a safer-looking name.
+    return { ...attendee, existingPersonNote: true, linkable: false }
   }
   if (lookupContacts && foldEmail(attendee.name) === foldEmail(attendee.email)) {
     const contact = await resolveAttendeeContact(attendee.email)

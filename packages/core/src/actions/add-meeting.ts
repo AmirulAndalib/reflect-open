@@ -21,7 +21,9 @@ import { resolveMeetingAttendees } from './resolve-attendees'
  *
  * and creates the notes those links resolve to when they don't exist yet.
  * With "Create backlinked note" off, the meeting name is plain text (as in
- * v1), not a link — only attendees get `[[Person]]` links and notes.
+ * v1), not a link. Attendees normally get `[[Person]]` links and notes; a
+ * known email owner whose title cannot be addressed safely stays plain text
+ * rather than linking or creating the wrong note.
  *
  * Attendees resolve by invite email first ({@link resolveMeetingAttendees}):
  * a `#person`-tagged note owning the address via a `- Email:` bullet supplies
@@ -50,12 +52,20 @@ export const MEETINGS_HEADING = 'Meetings'
 const MEETING_NOTE_BODY = '- Type: #meeting'
 const PERSON_NOTE_BODY = '- Type: #person'
 
-/** One attendee entering the flow: the display name that becomes the
+/** One attendee entering the flow: the display name normally used for the
  * `[[Person]]` link, plus the invite email (when the calendar knew it) that
- * the contacts lookup resolves by. */
+ * graph ownership and the contacts lookup resolve by. */
 export interface MeetingAttendee {
   name: string
   email?: string | undefined
+  /**
+   * Set by email resolution when a person note already owns this attendee.
+   * The write path uses it to suppress duplicate creation even when that
+   * owner's title is ambiguous or cannot be embedded in a wiki link.
+   */
+  existingPersonNote?: boolean | undefined
+  /** False when the known owner cannot be addressed safely as `[[name]]`. */
+  linkable?: boolean | undefined
 }
 
 export interface AddMeetingInput {
@@ -63,7 +73,7 @@ export interface AddMeetingInput {
   date: string
   /** Meeting name — becomes the `[[Meeting]]` link text and note title. */
   title: string
-  /** Attendees — each becomes a `[[Person]]` link and (maybe) a note. */
+  /** Attendees — each normally becomes a `[[Person]]` link and (maybe) a note. */
   attendees: MeetingAttendee[]
   /**
    * The dialog's "Create backlinked note?" choice (v1's `backlinkMeeting`):
@@ -170,7 +180,12 @@ function normalizeAttendees(attendees: MeetingAttendee[]): MeetingAttendee[] {
       continue
     }
     seen.add(key)
-    normalized.push(attendee.email === undefined ? { name } : { name, email: attendee.email })
+    normalized.push({
+      name,
+      ...(attendee.email === undefined ? {} : { email: attendee.email }),
+      ...(attendee.existingPersonNote === true ? { existingPersonNote: true } : {}),
+      ...(attendee.linkable === false ? { linkable: false } : {}),
+    })
   }
   return normalized
 }
@@ -202,7 +217,7 @@ async function personNoteBody(attendee: MeetingAttendee, lookupContacts: boolean
  */
 export function meetingLine(input: {
   title: string
-  attendees: string[]
+  attendees: readonly (string | Pick<MeetingAttendee, 'name' | 'linkable'>)[]
   backlinkMeeting: boolean
   startTime?: string | undefined
 }): string {
@@ -212,7 +227,16 @@ export function meetingLine(input: {
   }
   if (input.attendees.length > 0) {
     parts.push(input.startTime ? 'met with ' : 'Met with ')
-    parts.push(input.attendees.map((name) => `[[${name}]]`).join(', '))
+    parts.push(
+      input.attendees
+        .map((attendee) => {
+          if (typeof attendee === 'string') {
+            return `[[${attendee}]]`
+          }
+          return attendee.linkable === false ? attendee.name : `[[${attendee.name}]]`
+        })
+        .join(', '),
+    )
     parts.push(' for ')
   }
   parts.push(input.backlinkMeeting ? `[[${input.title}]]` : input.title)
@@ -252,7 +276,7 @@ export async function addMeetingToDaily(input: AddMeetingInput): Promise<AddMeet
   ).filter((attendee) => attendee.name.toLowerCase() !== title.toLowerCase())
   const line = meetingLine({
     title,
-    attendees: attendees.map((attendee) => attendee.name),
+    attendees,
     backlinkMeeting: input.backlinkMeeting,
     startTime: input.startTime,
   })
@@ -264,7 +288,7 @@ export async function addMeetingToDaily(input: AddMeetingInput): Promise<AddMeet
     createdNotes.push(title)
   }
   for (const attendee of attendees) {
-    if (await titleHasNote(attendee.name)) {
+    if (attendee.existingPersonNote === true || (await titleHasNote(attendee.name))) {
       continue
     }
     const body = await personNoteBody(attendee, lookupContacts)

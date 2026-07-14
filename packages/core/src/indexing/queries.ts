@@ -315,16 +315,12 @@ export async function getNoteIdsByPath(paths: string[]): Promise<Map<string, str
 /** The folded tag key marking person notes (`- Type: #person`, v1's typing). */
 const PERSON_TAG_KEY = 'person'
 
-/**
- * The title of the note that owns `email` through a `- Email:` contact-field
- * bullet (the `note_emails` projection), or null. Only `#person`-tagged
- * regular notes qualify: a daily note, template, or non-person note quoting
- * an address must never become a `[[Person]]` link target — the projection
- * records every field bullet, and this query is where the ownership policy
- * lives. Several notes claiming one address resolve to the first path
- * alphabetically, the resolver's rule everywhere else.
- */
-export async function noteTitleOwningEmail(email: string): Promise<string | null> {
+interface RawNoteEmailOwner {
+  readonly title: string
+  readonly path: string
+}
+
+async function queryNoteOwningEmail(email: string): Promise<RawNoteEmailOwner | null> {
   const key = foldEmail(email)
   if (key === '') {
     return null
@@ -336,10 +332,40 @@ export async function noteTitleOwningEmail(email: string): Promise<string | null
     .where('noteEmails.emailKey', '=', key)
     .where('tags.tagKey', '=', PERSON_TAG_KEY)
     .where('notes.kind', '=', 'note')
-    .select('notes.title as title')
+    .select(['notes.title as title', 'notes.path as path'])
     .orderBy('notes.path')
     .executeTakeFirst()
-  return owner?.title ?? null
+  return owner ?? null
+}
+
+/** A `#person` note that owns an email and whether its title uniquely addresses it. */
+export interface NoteEmailOwner extends RawNoteEmailOwner {
+  /** False when a date/title collision makes `[[title]]` ambiguous or points elsewhere. */
+  readonly uniquelyAddressable: boolean
+}
+
+/**
+ * The note that owns `email` through a `- Email:` contact-field bullet (the
+ * `note_emails` projection), or null. Only `#person`-tagged regular notes
+ * qualify. Several notes claiming one address choose the first path
+ * alphabetically. Ownership is preserved even when the title cannot safely
+ * identify that path, so callers can suppress duplicate creation.
+ */
+export async function noteOwningEmail(email: string): Promise<NoteEmailOwner | null> {
+  const owner = await queryNoteOwningEmail(email)
+  if (owner === null) {
+    return null
+  }
+  const matches = await findExactWikiTargetMatches(owner.title)
+  return {
+    ...owner,
+    uniquelyAddressable: matches.paths.length === 1 && matches.paths[0] === owner.path,
+  }
+}
+
+/** The title of the `#person` note owning `email`, whether or not it is unique. */
+export async function noteTitleOwningEmail(email: string): Promise<string | null> {
+  return (await queryNoteOwningEmail(email))?.title ?? null
 }
 
 /** Exact indexed date/title/alias candidates, preserving ambiguity within the winning tier. */

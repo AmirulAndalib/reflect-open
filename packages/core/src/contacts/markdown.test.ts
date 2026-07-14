@@ -39,6 +39,13 @@ describe('contactDetailsMarkdown', () => {
     expect(details).toBe('- Type: #person\n- Email: Ada@Example.com\n- Email: ada@work.com')
   })
 
+  it('dedupes wrapped and bare forms while preserving the first spelling', () => {
+    const details = contactDetailsMarkdown(
+      contact({ emails: ['<Ada@Example.com>', 'ada@example.com'] }),
+    )
+    expect(details).toBe('- Type: #person\n- Email: <Ada@Example.com>')
+  })
+
   it('omits the typing line when the target body already carries a Type bullet', () => {
     const details = contactDetailsMarkdown(
       contact({ emails: ['ada@example.com'] }),

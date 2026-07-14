@@ -2,6 +2,7 @@ import { useDeferredValue, useState, type KeyboardEvent, type ReactElement } fro
 import { Command as CommandPrimitive } from 'cmdk'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
+  contactNamesEqual,
   contactLinkSuggestions,
   foldKey,
   hasBridge,
@@ -32,27 +33,28 @@ interface AttendeeComboboxProps {
 
 /** cmdk item values are matched lowercased, so the key is minted that way. */
 function entryKey(entry: AutocompleteEntry): string {
-  return `${entry.kind}:${entryName(entry)}`.toLowerCase()
+  return `${entry.kind}:${entryTarget(entry)}`.toLowerCase()
 }
 
 /** The attendee name selecting this entry would add. */
-function entryName(entry: AutocompleteEntry): string {
+function entryTarget(entry: AutocompleteEntry): string {
   switch (entry.kind) {
     case 'suggestion':
       return entry.suggestion.target
     case 'contact':
-      return entry.contact.fullName
+      return entry.suggestion.target
     case 'create':
       return entry.title
   }
 }
 
 function entryAttendee(entry: AutocompleteEntry): MeetingAttendee {
-  // A contact's invite email rides along so the submit-time contacts lookup
-  // can pre-fill the person note, exactly like calendar-sourced attendees.
-  return entry.kind === 'contact'
-    ? { name: entry.contact.fullName, email: entry.contact.emails[0] }
-    : { name: entryName(entry) }
+  if (entry.kind !== 'contact' || entry.suggestion.email === null) {
+    return { name: entryTarget(entry) }
+  }
+  // The exact address that resolved an existing person note rides along;
+  // otherwise this is the Contact's primary email for note pre-fill.
+  return { name: entry.suggestion.target, email: entry.suggestion.email }
 }
 
 /**
@@ -60,9 +62,9 @@ function entryAttendee(entry: AutocompleteEntry): MeetingAttendee {
  * as the editor's `[[` menu — ranked note titles, Apple Contacts (when the
  * integration is on and readable), and a trailing `Add "…"` row for names
  * that match nothing. Enter picks the highlighted row, or adds the typed
- * text verbatim when no suggestion is highlighted; Escape dismisses the
- * suggestions without closing the dialog. Daily-note suggestions are
- * filtered out — an attendee is a person, not a date.
+ * text verbatim after the current lookup confirms it is safe; Escape
+ * dismisses the suggestions without closing the dialog. Daily-note
+ * suggestions are filtered out — an attendee is a person, not a date.
  *
  * The input's accessible name comes from cmdk's own `label` mechanism (a
  * visually-hidden `<label>`): cmdk overrides any `id`/`aria-labelledby`
@@ -81,7 +83,7 @@ export function AttendeeCombobox({ attendees, onAdd }: AttendeeComboboxProps): R
   const deferredQuery = useDeferredValue(query)
   const searchTerm = deferredQuery.trim()
 
-  const { data: fetched, isPlaceholderData } = useQuery({
+  const { data: fetched, isFetching, isPlaceholderData } = useQuery({
     queryKey: [INDEX_QUERY_SCOPE, graph?.root, 'attendee-suggestions', searchTerm, contactsInMenu],
     queryFn: async () => {
       const [suggestions, contacts] = await Promise.all([
@@ -95,11 +97,19 @@ export function AttendeeCombobox({ attendees, onAdd }: AttendeeComboboxProps): R
             })
           : Promise.resolve([]),
       ])
-      return buildAutocompleteEntries(
-        searchTerm,
-        suggestions.filter((suggestion) => suggestion.date === null),
-        { offerCreate: true, contacts },
-      )
+      return {
+        entries: buildAutocompleteEntries(
+          searchTerm,
+          suggestions.filter((suggestion) => suggestion.date === null),
+          { offerCreate: true, contacts },
+        ),
+        blocksTypedAdd: contacts.some(
+          (suggestion) =>
+            suggestion.existingPersonNote &&
+            !suggestion.linkable &&
+            contactNamesEqual(suggestion.contact.fullName, searchTerm),
+        ),
+      }
     },
     enabled: hasBridge() && graph !== null && searchTerm !== '',
     // Typing re-keys the query as the deferred value settles; holding the
@@ -108,15 +118,20 @@ export function AttendeeCombobox({ attendees, onAdd }: AttendeeComboboxProps): R
   })
 
   const chosen = new Set(attendees.map((attendee) => foldKey(attendee.name)))
-  const entries = (searchTerm === '' ? [] : (fetched ?? [])).filter(
-    (entry) => !chosen.has(foldKey(entryName(entry))),
+  const entries = (searchTerm === '' ? [] : (fetched?.entries ?? [])).filter(
+    (entry) => !chosen.has(foldKey(entryTarget(entry))),
   )
   const open = !dismissed && query.trim() !== '' && entries.length > 0
   // The list lags the input twice over (the deferred value, then the fetch —
   // keepPreviousData shows the prior query's rows meanwhile). Enter may only
   // take the highlighted row when the rows answer exactly what's typed;
-  // anything staler falls back to the typed text, like blur always does.
-  const entriesMatchInput = !isPlaceholderData && searchTerm === query.trim()
+  // typed fallback also waits for that answer so it cannot outrun an exact
+  // Contact whose email already owns a person note.
+  const entriesMatchInput =
+    fetched !== undefined &&
+    !isFetching &&
+    !isPlaceholderData &&
+    searchTerm === query.trim()
 
   const select = (entry: AutocompleteEntry): void => {
     onAdd(entryAttendee(entry))
@@ -126,7 +141,8 @@ export function AttendeeCombobox({ attendees, onAdd }: AttendeeComboboxProps): R
 
   const addTyped = (): void => {
     const name = query.trim()
-    if (name === '') {
+    const blockedByOwnedContact = entriesMatchInput && fetched?.blocksTypedAdd === true
+    if (name === '' || !entriesMatchInput || blockedByOwnedContact) {
       return
     }
     onAdd({ name })
@@ -207,7 +223,11 @@ export function AttendeeCombobox({ attendees, onAdd }: AttendeeComboboxProps): R
                 onSelect={() => select(entry)}
               >
                 <span className="min-w-0 flex-1 truncate">
-                  {entry.kind === 'create' ? `Add “${entry.title}”` : entryName(entry)}
+                  {entry.kind === 'create'
+                    ? `Add “${entry.title}”`
+                    : entry.kind === 'contact'
+                      ? entry.suggestion.contact.fullName
+                      : entry.suggestion.target}
                 </span>
                 {entry.kind === 'suggestion' && entry.suggestion.alias !== null && (
                   <span className="truncate text-xs text-text-muted">
@@ -216,7 +236,12 @@ export function AttendeeCombobox({ attendees, onAdd }: AttendeeComboboxProps): R
                 )}
                 {entry.kind === 'contact' && (
                   <span className="truncate text-xs text-text-muted">
-                    {entry.contact.emails[0] ?? entry.contact.phones[0] ?? 'Contact'}
+                    {entry.suggestion.email ??
+                      entry.suggestion.contact.phones[0] ??
+                      'Contact'}
+                    {entry.suggestion.existingPersonNote &&
+                      entry.suggestion.target !== entry.suggestion.contact.fullName &&
+                      ` → ${entry.suggestion.target}`}
                   </span>
                 )}
               </CommandItem>

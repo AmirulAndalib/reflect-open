@@ -9,6 +9,7 @@ import {
   getOpenTasks,
   getPinnedNotes,
   listDailyNotes,
+  noteOwningEmail,
   noteTitleOwningEmail,
   suggestWikiTargets,
 } from './queries'
@@ -53,9 +54,9 @@ describe('dailyDatesInRange', () => {
 
 describe('noteTitleOwningEmail', () => {
   it('joins note_emails to #person-tagged regular notes by folded key, first path wins', async () => {
-    mockInvoke.mockResolvedValue([{ title: 'Jane Doe' }])
+    mockInvoke.mockResolvedValue([{ title: 'Jane Doe', path: 'notes/jane-doe.md' }])
 
-    await expect(noteTitleOwningEmail('  Jane@Corp.com ')).resolves.toBe('Jane Doe')
+    await expect(noteTitleOwningEmail('  <Jane@Corp.com> ')).resolves.toBe('Jane Doe')
 
     const [command, args] = mockInvoke.mock.calls[0]!
     expect(command).toBe('db_query')
@@ -66,6 +67,21 @@ describe('noteTitleOwningEmail', () => {
     expect(sql).toContain('kind')
     expect(sql).toContain('order by')
     expect(args['params']).toEqual(['jane@corp.com', 'person', 'note'])
+    expect(mockInvoke).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves ownership while marking a duplicate title unaddressable', async () => {
+    mockInvoke.mockImplementation(async (_command, args) =>
+      String(args['sql']).includes('note_emails')
+        ? [{ title: 'Jane Doe', path: 'notes/jane-doe-2.md' }]
+        : [{ path: 'notes/jane-doe.md' }, { path: 'notes/jane-doe-2.md' }],
+    )
+
+    await expect(noteOwningEmail('jane@corp.com')).resolves.toEqual({
+      title: 'Jane Doe',
+      path: 'notes/jane-doe-2.md',
+      uniquelyAddressable: false,
+    })
   })
 
   it('answers null for an unowned address without guessing', async () => {

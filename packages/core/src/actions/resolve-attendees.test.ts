@@ -1,17 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolveAttendeeContact } from '../contacts/resolve'
-import { noteTitleOwningEmail } from '../indexing/queries'
+import { noteOwningEmail, type NoteEmailOwner } from '../indexing/queries'
 import { resolveMeetingAttendees } from './resolve-attendees'
 
 vi.mock('../indexing/queries', () => ({
-  noteTitleOwningEmail: vi.fn(),
+  noteOwningEmail: vi.fn(),
 }))
 vi.mock('../contacts/resolve', () => ({
   resolveAttendeeContact: vi.fn(),
 }))
 
-const owningNoteMock = vi.mocked(noteTitleOwningEmail)
+const owningNoteMock = vi.mocked(noteOwningEmail)
 const contactMock = vi.mocked(resolveAttendeeContact)
+
+function owner(
+  title: string,
+  uniquelyAddressable = true,
+): NoteEmailOwner {
+  return { title, path: `notes/${title.toLowerCase().replaceAll(' ', '-')}.md`, uniquelyAddressable }
+}
 
 function contact(fullName: string): Awaited<ReturnType<typeof resolveAttendeeContact>> {
   return { fullName, givenName: '', familyName: '', emails: [], phones: [] }
@@ -25,22 +32,26 @@ beforeEach(() => {
 
 describe('resolveMeetingAttendees', () => {
   it('renames an attendee to the note that owns their invite email', async () => {
-    owningNoteMock.mockResolvedValue('Jane Doe')
+    owningNoteMock.mockResolvedValue(owner('Jane Doe'))
     const resolved = await resolveMeetingAttendees(
       [{ name: 'jane@corp.com', email: 'jane@corp.com' }],
       false,
     )
-    expect(resolved).toEqual([{ name: 'Jane Doe', email: 'jane@corp.com' }])
+    expect(resolved).toEqual([
+      { name: 'Jane Doe', email: 'jane@corp.com', existingPersonNote: true },
+    ])
   })
 
   it('the graph outranks Apple Contacts — a note owner wins even with the gate on', async () => {
-    owningNoteMock.mockResolvedValue('Jane Doe')
+    owningNoteMock.mockResolvedValue(owner('Jane Doe'))
     contactMock.mockResolvedValue(contact('Jane A. Doe'))
     const resolved = await resolveMeetingAttendees(
       [{ name: 'jane@corp.com', email: 'jane@corp.com' }],
       true,
     )
-    expect(resolved).toEqual([{ name: 'Jane Doe', email: 'jane@corp.com' }])
+    expect(resolved).toEqual([
+      { name: 'Jane Doe', email: 'jane@corp.com', existingPersonNote: true },
+    ])
     expect(contactMock).not.toHaveBeenCalled()
   })
 
@@ -79,25 +90,59 @@ describe('resolveMeetingAttendees', () => {
     expect(contactMock).not.toHaveBeenCalled()
   })
 
-  it('skips an owner whose title cannot be wiki-linked verbatim', async () => {
+  it('preserves ownership without renaming when the title cannot be linked verbatim', async () => {
     // `[[Jane [Doe]]]` would corrupt the link, and the sanitized form would
     // miss the owner in the index — so the rename must not happen at all.
-    owningNoteMock.mockResolvedValue('Jane [Doe]')
+    owningNoteMock.mockResolvedValue(owner('Jane [Doe]'))
     contactMock.mockResolvedValue(contact('Jane Doe'))
     const resolved = await resolveMeetingAttendees(
       [{ name: 'jane@corp.com', email: 'jane@corp.com' }],
       true,
     )
-    expect(resolved).toEqual([{ name: 'Jane Doe', email: 'jane@corp.com' }])
+    expect(resolved).toEqual([
+      {
+        name: 'jane@corp.com',
+        email: 'jane@corp.com',
+        existingPersonNote: true,
+        linkable: false,
+      },
+    ])
+    expect(contactMock).not.toHaveBeenCalled()
   })
 
-  it('falls through on a nameless contact or blank-titled owner', async () => {
-    owningNoteMock.mockResolvedValue('   ')
+  it('preserves ownership without renaming when the owner title is ambiguous', async () => {
+    owningNoteMock.mockResolvedValue(owner('Jane Doe', false))
+    contactMock.mockResolvedValue(contact('Jane A. Doe'))
+    const resolved = await resolveMeetingAttendees(
+      [{ name: 'jane@corp.com', email: 'jane@corp.com' }],
+      true,
+    )
+    expect(resolved).toEqual([
+      {
+        name: 'jane@corp.com',
+        email: 'jane@corp.com',
+        existingPersonNote: true,
+        linkable: false,
+      },
+    ])
+    expect(contactMock).not.toHaveBeenCalled()
+  })
+
+  it('preserves a blank-titled owner instead of treating it as a miss', async () => {
+    owningNoteMock.mockResolvedValue(owner('   '))
     contactMock.mockResolvedValue(contact('  '))
     const resolved = await resolveMeetingAttendees(
       [{ name: 'jane@corp.com', email: 'jane@corp.com' }],
       true,
     )
-    expect(resolved).toEqual([{ name: 'jane@corp.com', email: 'jane@corp.com' }])
+    expect(resolved).toEqual([
+      {
+        name: 'jane@corp.com',
+        email: 'jane@corp.com',
+        existingPersonNote: true,
+        linkable: false,
+      },
+    ])
+    expect(contactMock).not.toHaveBeenCalled()
   })
 })

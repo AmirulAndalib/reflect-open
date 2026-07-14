@@ -5,6 +5,18 @@ describe('foldEmail', () => {
   it('trims and lowercases', () => {
     expect(foldEmail('  Ada@Example.COM ')).toBe('ada@example.com')
   })
+
+  it('treats angle brackets, display names, and mailto values as the same identity', () => {
+    expect(foldEmail('<Ada@Example.COM>')).toBe('ada@example.com')
+    expect(foldEmail('Ada Lovelace <Ada@Example.COM>')).toBe('ada@example.com')
+    expect(foldEmail('<mailto:Ada@Example.COM>')).toBe('ada@example.com')
+  })
+
+  it('preserves provider-significant dots and plus tags', () => {
+    expect(foldEmail('<ada.lovelace+notes@example.com>')).toBe(
+      'ada.lovelace+notes@example.com',
+    )
+  })
 })
 
 describe('extractEmailFields', () => {
@@ -31,6 +43,12 @@ describe('extractEmailFields', () => {
       'a@x.com',
       'B@Y.com',
     ])
+  })
+
+  it('dedups bare and angle-bracketed field values as one address', () => {
+    expect(
+      extractEmailFields('- Email: <Ada@Example.com>\n- Email: ada@example.com'),
+    ).toEqual(['Ada@Example.com'])
   })
 
   it('unwraps a mailto link, collapsing the text/href pair', () => {

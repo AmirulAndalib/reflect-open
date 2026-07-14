@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { noteExists, readNote, writeNote } from '../graph/commands'
 import { createNoteWithTitle } from '../graph/create-note'
-import { noteTitleOwningEmail, resolveWikiTarget } from '../indexing/queries'
+import {
+  noteOwningEmail,
+  resolveWikiTarget,
+  type NoteEmailOwner,
+} from '../indexing/queries'
 import { setBridge } from '../ipc/bridge'
 import { resolved, unresolved } from '../markdown/resolve'
 import { addMeetingToDaily, meetingLine, type AddMeetingInput } from './add-meeting'
@@ -15,7 +19,7 @@ vi.mock('../graph/create-note', () => ({
   createNoteWithTitle: vi.fn(),
 }))
 vi.mock('../indexing/queries', () => ({
-  noteTitleOwningEmail: vi.fn(),
+  noteOwningEmail: vi.fn(),
   resolveWikiTarget: vi.fn(),
 }))
 
@@ -24,12 +28,16 @@ const readNoteMock = vi.mocked(readNote)
 const writeNoteMock = vi.mocked(writeNote)
 const createNoteMock = vi.mocked(createNoteWithTitle)
 const resolveMock = vi.mocked(resolveWikiTarget)
-const owningNoteMock = vi.mocked(noteTitleOwningEmail)
+const owningNoteMock = vi.mocked(noteOwningEmail)
 
 const DAILY = 'daily/2026-07-01.md'
 const GENERATION = 3
 
 const notFound = () => ({ kind: 'notFound', message: 'missing' })
+
+function owner(title: string, uniquelyAddressable = true): NoteEmailOwner {
+  return { title, path: `notes/${title.toLowerCase().replaceAll(' ', '-')}.md`, uniquelyAddressable }
+}
 
 function input(overrides: Partial<AddMeetingInput> = {}): AddMeetingInput {
   return {
@@ -81,6 +89,16 @@ describe('meetingLine', () => {
         startTime: '9:00am',
       }),
     ).toBe('- 9:00am met with [[Ada Lovelace]] for Standup')
+  })
+
+  it('writes an unaddressable existing attendee as plain text', () => {
+    expect(
+      meetingLine({
+        title: 'Standup',
+        attendees: [{ name: 'jane@corp.com', linkable: false }],
+        backlinkMeeting: false,
+      }),
+    ).toBe('- Met with jane@corp.com for Standup')
   })
 })
 
@@ -218,7 +236,7 @@ describe('addMeetingToDaily', () => {
 describe('addMeetingToDaily attendee resolution', () => {
   it('links the note owning the invite email instead of minting a duplicate', async () => {
     owningNoteMock.mockImplementation(async (email) =>
-      email === 'jane@corp.com' ? 'Jane Doe' : null,
+      email === 'jane@corp.com' ? owner('Jane Doe') : null,
     )
     resolveMock.mockImplementation(async (target) =>
       target === 'Jane Doe' ? resolved('notes/jane-doe.md') : unresolved(target),
@@ -239,7 +257,7 @@ describe('addMeetingToDaily attendee resolution', () => {
   })
 
   it('collapses two spellings of one person once their emails resolve to the same note', async () => {
-    owningNoteMock.mockResolvedValue('Jane Doe')
+    owningNoteMock.mockResolvedValue(owner('Jane Doe'))
     resolveMock.mockImplementation(async (target) =>
       target === 'Jane Doe' ? resolved('notes/jane-doe.md') : unresolved(target),
     )
@@ -257,6 +275,25 @@ describe('addMeetingToDaily attendee resolution', () => {
       '## Meetings\n\n- Met with [[Jane Doe]] for Standup\n',
       GENERATION,
     )
+  })
+
+  it('does not target or recreate an email owner whose title is ambiguous', async () => {
+    owningNoteMock.mockResolvedValue(owner('Jane Doe', false))
+
+    const outcome = await addMeetingToDaily(
+      input({
+        attendees: [{ name: 'jane@corp.com', email: 'jane@corp.com' }],
+        backlinkMeeting: false,
+      }),
+    )
+
+    expect(writeNoteMock).toHaveBeenCalledWith(
+      DAILY,
+      '## Meetings\n\n- Met with jane@corp.com for Standup\n',
+      GENERATION,
+    )
+    expect(createNoteMock).not.toHaveBeenCalled()
+    expect(outcome.createdNotes).toEqual([])
   })
 
   it('resolution errors fail the call loudly rather than writing a duplicate-prone line', async () => {

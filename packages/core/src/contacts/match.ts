@@ -1,5 +1,8 @@
 import { lookupContactsByName, type ContactMatch } from './commands'
 import { contactDetailsMarkdown } from './markdown'
+import { personNoteOwnerForContact } from './resolve'
+import { wikiLinkSafe } from '../markdown/edit'
+import { foldEmail } from '../markdown/email-fields'
 
 /**
  * The person-note matching rule: a note earns a suggested-contact card only
@@ -79,35 +82,102 @@ export async function suggestContactForTitle(title: string): Promise<ContactMatc
 }
 
 /**
+ * A macOS Contact row prepared for a wiki-link or meeting-attendee menu.
+ * `target` is an existing graph title when one of the Contact's emails owns a
+ * `#person` note; otherwise it is the Contact's full name and selecting the row
+ * should create that note. `email` is the matched address, or the Contact's
+ * first usable address for a new note.
+ */
+export interface ContactLinkSuggestion {
+  readonly contact: ContactMatch
+  readonly target: string
+  readonly email: string | null
+  readonly existingPersonNote: boolean
+  /** Whether `target` can be embedded verbatim inside `[[…]]`. */
+  readonly linkable: boolean
+}
+
+function firstContactEmail(contact: ContactMatch): string | null {
+  for (const email of contact.emails) {
+    const key = foldEmail(email)
+    if (key !== '') {
+      return key
+    }
+  }
+  return null
+}
+
+async function resolveContactLinkSuggestion(
+  contact: ContactMatch,
+): Promise<ContactLinkSuggestion> {
+  const owner = await personNoteOwnerForContact(contact)
+  const target = owner?.title ?? contact.fullName
+  return {
+    contact,
+    target,
+    email: owner?.email ?? firstContactEmail(contact),
+    existingPersonNote: owner !== null,
+    linkable: (owner?.linkable ?? true) && wikiLinkSafe(target) === target,
+  }
+}
+
+async function resolveSameNameContacts(
+  contacts: readonly ContactMatch[],
+): Promise<ContactLinkSuggestion | null> {
+  let fallback: ContactLinkSuggestion | null = null
+  let unlinkableOwner: ContactLinkSuggestion | null = null
+  for (const contact of contacts) {
+    const suggestion = await resolveContactLinkSuggestion(contact)
+    fallback ??= suggestion
+    if (suggestion.existingPersonNote && suggestion.linkable) {
+      return suggestion
+    }
+    if (suggestion.existingPersonNote) {
+      unlinkableOwner ??= suggestion
+    }
+  }
+  return unlinkableOwner ?? fallback
+}
+
+/**
  * Contacts for the `[[` link menu — v1 mixed contacts into the backlink
  * autocomplete so a person note could be born from the address book. Unlike
  * the card's exact rule, this keeps the framework's word-prefix matches
  * (typing "Ada" should offer "Ada Lovelace"); contacts without a name or any
  * details are dropped, mirroring v1's valid-contact filter. Queries shorter
  * than two characters answer empty — one letter matches half the address
- * book. Callers gate on the integration being enabled and readable.
+ * book. Each result is resolved against existing `#person` email ownership
+ * before it reaches the menu; `linkable` says whether its `target` is safe to
+ * insert. Callers gate on the integration being enabled and readable.
  */
 export async function contactLinkSuggestions(
   query: string,
   limit = 4,
-): Promise<ContactMatch[]> {
+): Promise<ContactLinkSuggestion[]> {
   const trimmed = query.trim()
   if (trimmed.length < 2) {
     return []
   }
   const candidates = await lookupContactsByName(trimmed)
-  const seen = new Set<string>()
-  const suggestions: ContactMatch[] = []
+  const contactsByName = new Map<string, ContactMatch[]>()
   for (const candidate of candidates) {
     const key = normalizeName(candidate.fullName)
-    if (key === '' || seen.has(key) || contactDetailsMarkdown(candidate) === '') {
+    if (key === '' || contactDetailsMarkdown(candidate) === '') {
       continue
     }
-    seen.add(key)
-    suggestions.push(candidate)
-    if (suggestions.length === limit) {
-      break
+    const sameName = contactsByName.get(key)
+    if (sameName !== undefined) {
+      sameName.push(candidate)
+      continue
+    }
+    if (contactsByName.size < limit) {
+      contactsByName.set(key, [candidate])
     }
   }
-  return suggestions
+  const resolved = await Promise.all(
+    [...contactsByName.values()].map(resolveSameNameContacts),
+  )
+  return resolved.filter(
+    (suggestion): suggestion is ContactLinkSuggestion => suggestion !== null,
+  )
 }

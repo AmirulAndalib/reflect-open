@@ -4,16 +4,22 @@ import type { NoteSession } from '@/editor/note-session'
 
 const readNote = vi.hoisted(() => vi.fn<(path: string) => Promise<string>>())
 const writeNote = vi.hoisted(() => vi.fn(async () => {}))
-const noteExists = vi.hoisted(() => vi.fn(async () => false))
 const openSession = vi.hoisted(() => vi.fn<(path: string) => NoteSession | null>(() => null))
-const createNoteWithTitle = vi.hoisted(() => vi.fn(async () => 'notes/created.md'))
+const resolveOrCreateNoteWithTitle = vi.hoisted(() =>
+  vi.fn(async () => ({ kind: 'created' as const, path: 'notes/created.md' })),
+)
+const personNoteOwnerForContact = vi.hoisted(() =>
+  vi.fn<() => Promise<{ title: string; email: string; linkable: boolean } | null>>(
+    async () => null,
+  ),
+)
 
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
   readNote,
   writeNote,
-  noteExists,
-  createNoteWithTitle,
+  resolveOrCreateNoteWithTitle,
+  personNoteOwnerForContact,
 }))
 vi.mock('@/editor/open-documents', () => ({ openSession }))
 
@@ -34,9 +40,9 @@ const ADA_BLOCK = '- Type: #person\n- Email: ada@example.com\n- Phone: +1 555 01
 beforeEach(() => {
   readNote.mockReset()
   writeNote.mockClear()
-  noteExists.mockReset()
-  noteExists.mockResolvedValue(false)
-  createNoteWithTitle.mockClear()
+  resolveOrCreateNoteWithTitle.mockClear()
+  personNoteOwnerForContact.mockReset()
+  personNoteOwnerForContact.mockResolvedValue(null)
   openSession.mockReset()
   openSession.mockReturnValue(null)
 })
@@ -144,19 +150,22 @@ describe('addContactToNote', () => {
 })
 
 describe('createPersonNoteFromContact', () => {
-  it('creates the person note prefilled with the details block', async () => {
+  it('resolves or creates the person note with the details block as its seed', async () => {
     await createPersonNoteFromContact(ADA, 3)
 
-    expect(createNoteWithTitle).toHaveBeenCalledWith('Ada Lovelace', 3, ADA_BLOCK)
+    expect(resolveOrCreateNoteWithTitle).toHaveBeenCalledWith('Ada Lovelace', 3, ADA_BLOCK)
   })
 
-  it('skips creation when the slug path already exists (index-lag backstop)', async () => {
-    noteExists.mockResolvedValue(true)
+  it('skips creation for any email owner, even when its title is ambiguous', async () => {
+    personNoteOwnerForContact.mockResolvedValue({
+      title: 'Ada Lovelace',
+      email: 'ada@example.com',
+      linkable: false,
+    })
 
     await createPersonNoteFromContact(ADA, 3)
 
-    expect(noteExists).toHaveBeenCalledWith('notes/ada-lovelace.md')
-    expect(createNoteWithTitle).not.toHaveBeenCalled()
+    expect(resolveOrCreateNoteWithTitle).not.toHaveBeenCalled()
   })
 })
 

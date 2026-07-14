@@ -446,11 +446,18 @@ describe('resolveOrCreateNoteWithTitle', () => {
   it('creates only after both index checks and the disk scan miss', async () => {
     const invoke = bindBridge()
 
-    await expect(resolveOrCreateNoteWithTitle('Brand New', 7)).resolves.toMatchObject({
+    await expect(
+      resolveOrCreateNoteWithTitle('Brand New', 7, '- Type: #person'),
+    ).resolves.toMatchObject({
       kind: 'created',
       path: 'notes/brand-new.md',
     })
-    expect(invoke.mock.calls.filter(([command]) => command === 'note_create')).toHaveLength(1)
+    const create = invoke.mock.calls.find(([command]) => command === 'note_create')
+    expect(create).toBeDefined()
+    const args = create?.[1] as { contents: string }
+    expect(args.contents).toMatch(
+      /^---\nid: [0-9a-z]{26}\n---\n# Brand New\n\n- Type: #person\n$/,
+    )
   })
 })
 

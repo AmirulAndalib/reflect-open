@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ContactMatch, WikiSuggestion } from '@reflect/core'
+import type { ContactLinkSuggestion, ContactMatch, WikiSuggestion } from '@reflect/core'
 import { buildAutocompleteEntries } from './wiki-autocomplete-entries'
 
 function suggestion(overrides: Partial<WikiSuggestion>): WikiSuggestion {
@@ -21,6 +21,21 @@ function contact(overrides: Partial<ContactMatch>): ContactMatch {
     emails: ['ada@example.com'],
     phones: [],
     ...overrides,
+  }
+}
+
+function contactSuggestion(
+  contactOverrides: Partial<ContactMatch> = {},
+  suggestionOverrides: Partial<Omit<ContactLinkSuggestion, 'contact'>> = {},
+): ContactLinkSuggestion {
+  const matchedContact = contact(contactOverrides)
+  return {
+    contact: matchedContact,
+    target: matchedContact.fullName,
+    email: matchedContact.emails[0] ?? null,
+    existingPersonNote: false,
+    linkable: true,
+    ...suggestionOverrides,
   }
 }
 
@@ -118,21 +133,21 @@ describe('buildAutocompleteEntries', () => {
   })
 
   it('places contact rows after suggestions and before the create row', () => {
-    const ada = contact({})
+    const ada = contactSuggestion()
     const entries = buildAutocompleteEntries(
       'Ada L',
       [suggestion({ target: 'Ada Lovelace Notes', title: 'Ada Lovelace Notes' })],
       { offerCreate: true, contacts: [ada] },
     )
     expect(entries.map((entry) => entry.kind)).toEqual(['suggestion', 'contact', 'create'])
-    expect(entries[1]).toEqual({ kind: 'contact', contact: ada })
+    expect(entries[1]).toEqual({ kind: 'contact', suggestion: ada })
   })
 
   it('drops a contact whose name already resolves to a suggestion', () => {
     const entries = buildAutocompleteEntries(
-      'ada',
+      'Ada Lovelace',
       [suggestion({ target: 'Ada Lovelace', title: 'Ada Lovelace' })],
-      { offerCreate: true, contacts: [contact({})] },
+      { offerCreate: true, contacts: [contactSuggestion()] },
     )
     expect(entries.filter((entry) => entry.kind === 'contact')).toEqual([])
   })
@@ -141,7 +156,7 @@ describe('buildAutocompleteEntries', () => {
     const entries = buildAutocompleteEntries(
       'ada',
       [suggestion({ target: 'People/Ada', title: 'People/Ada', alias: 'Ada Lovelace' })],
-      { offerCreate: true, contacts: [contact({})] },
+      { offerCreate: true, contacts: [contactSuggestion()] },
     )
     expect(entries.filter((entry) => entry.kind === 'contact')).toEqual([])
   })
@@ -150,7 +165,7 @@ describe('buildAutocompleteEntries', () => {
     const entries = buildAutocompleteEntries(
       'Ada Lovelace',
       [suggestion({ target: '🧠 Ada Lovelace', title: '🧠 Ada Lovelace' })],
-      { offerCreate: true, contacts: [contact({})] },
+      { offerCreate: true, contacts: [contactSuggestion()] },
     )
     expect(entries.map((entry) => entry.kind)).toEqual(['suggestion'])
   })
@@ -160,8 +175,88 @@ describe('buildAutocompleteEntries', () => {
     // beside it would just be the worse duplicate.
     const entries = buildAutocompleteEntries('ada lovelace', [], {
       offerCreate: true,
-      contacts: [contact({})],
+      contacts: [contactSuggestion()],
     })
     expect(entries.map((entry) => entry.kind)).toEqual(['contact'])
+  })
+
+  it('uses the contact row instead of a duplicate owner suggestion', () => {
+    const owned = contactSuggestion({}, {
+      target: 'Augusta Ada King',
+      existingPersonNote: true,
+    })
+    const entries = buildAutocompleteEntries(
+      'Ada Lovelace',
+      [suggestion({ target: 'Augusta Ada King', title: 'Augusta Ada King' })],
+      {
+        offerCreate: true,
+        contacts: [owned],
+      },
+    )
+    expect(entries).toEqual([{ kind: 'contact', suggestion: owned }])
+    expect(entries.filter((entry) => entry.kind === 'create')).toEqual([])
+  })
+
+  it('puts an exact email owner ahead of a different same-name note', () => {
+    const owned = contactSuggestion({}, {
+      target: 'Augusta Ada King',
+      existingPersonNote: true,
+    })
+    const entries = buildAutocompleteEntries(
+      'Ada Lovelace',
+      [suggestion({ target: 'Ada Lovelace', title: 'Ada Lovelace' })],
+      { offerCreate: true, contacts: [owned] },
+    )
+    expect(entries[0]).toEqual({ kind: 'contact', suggestion: owned })
+    expect(entries[1]).toEqual({
+      kind: 'suggestion',
+      suggestion: expect.objectContaining({ target: 'Ada Lovelace' }),
+    })
+    expect(entries.filter((entry) => entry.kind === 'create')).toEqual([])
+  })
+
+  it('replaces a duplicate owner suggestion with the exact contact row', () => {
+    const owned = contactSuggestion({}, {
+      target: 'Augusta Ada King',
+      existingPersonNote: true,
+    })
+    const entries = buildAutocompleteEntries(
+      'Ada Lovelace',
+      [
+        suggestion({ target: 'Ada Lovelace', title: 'Ada Lovelace' }),
+        suggestion({ target: 'Augusta Ada King', title: 'Augusta Ada King' }),
+      ],
+      { offerCreate: true, contacts: [owned] },
+    )
+    expect(entries.map((entry) => entry.kind)).toEqual(['contact', 'suggestion'])
+    expect(entries[0]).toEqual({ kind: 'contact', suggestion: owned })
+  })
+
+  it('shows only one contact row for a shared resolved target', () => {
+    const entries = buildAutocompleteEntries('ada', [], {
+      offerCreate: true,
+      contacts: [
+        contactSuggestion({}, { target: 'Augusta Ada King', existingPersonNote: true }),
+        contactSuggestion(
+          { fullName: 'Ada King' },
+          { target: 'Augusta Ada King', existingPersonNote: true },
+        ),
+      ],
+    })
+    expect(entries.filter((entry) => entry.kind === 'contact')).toHaveLength(1)
+  })
+
+  it('offers no create fallback for an un-linkable owned contact', () => {
+    const entries = buildAutocompleteEntries('Ada Lovelace', [], {
+      offerCreate: true,
+      contacts: [
+        contactSuggestion({}, {
+          target: 'Ada [Private]',
+          existingPersonNote: true,
+          linkable: false,
+        }),
+      ],
+    })
+    expect(entries).toEqual([])
   })
 })

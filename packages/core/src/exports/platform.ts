@@ -217,10 +217,16 @@ export {
   contactNamesEqual,
   matchContactForTitle,
   suggestContactForTitle,
+  type ContactLinkSuggestion,
 } from '../contacts/match'
 export {
   contactDetailsMarkdown,
   appendContactDetails,
   noteHasContactDetails,
 } from '../contacts/markdown'
-export { pickContactForEmail, resolveAttendeeContact } from '../contacts/resolve'
+export {
+  personNoteOwnerForContact,
+  pickContactForEmail,
+  resolveAttendeeContact,
+  type ContactPersonNoteOwner,
+} from '../contacts/resolve'

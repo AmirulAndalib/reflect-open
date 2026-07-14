@@ -111,11 +111,23 @@ export function useEditorAutocomplete(): EditorAutocomplete {
           }
         }
         if (entry.kind === 'contact') {
-          const { contact } = entry
+          const { contact, target, email, existingPersonNote } = entry.suggestion
+          const primaryDetail = email ?? contact.phones[0] ?? 'Contact'
+          const detail =
+            existingPersonNote && target !== contact.fullName
+              ? `${primaryDetail} → ${target}`
+              : primaryDetail
+          if (existingPersonNote) {
+            return {
+              target,
+              label: contact.fullName,
+              detail,
+            }
+          }
           return {
-            target: contact.fullName,
+            target,
             label: contact.fullName,
-            detail: contact.emails[0] ?? contact.phones[0] ?? 'Contact',
+            detail,
             // Like the create row: the menu inserts the link text; the person
             // note is born in the background, prefilled from the contact.
             onSelect: () => {

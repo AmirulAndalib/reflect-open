@@ -88,6 +88,30 @@ describe('contactLinkSuggestions', () => {
     phones: [],
   }
 
+  function bindContactLookup(
+    contacts: ContactMatch[],
+    owners: Record<string, { title: string; path: string }> = {},
+  ): ReturnType<typeof vi.fn> {
+    const invoke = vi.fn(async (command: string, args: Record<string, unknown>) => {
+      if (command === 'contacts_lookup_by_name') {
+        return contacts
+      }
+      const sql = String(args['sql'])
+      const params = args['params']
+      const key = Array.isArray(params) ? String(params[0]) : ''
+      if (sql.includes('note_emails')) {
+        const owner = owners[key]
+        return owner === undefined ? [] : [owner]
+      }
+      const owner = Object.values(owners).find(
+        (candidate) => candidate.title.toLowerCase() === key,
+      )
+      return owner === undefined ? [] : [{ path: owner.path }]
+    })
+    setBridge({ invoke, listen: async () => () => {} })
+    return invoke
+  }
+
   it('answers empty for short queries without touching the bridge', async () => {
     const invoke = vi.fn()
     setBridge({ invoke, listen: async () => () => {} })
@@ -96,14 +120,38 @@ describe('contactLinkSuggestions', () => {
   })
 
   it('keeps word-prefix matches, dropping nameless and detail-less contacts', async () => {
-    const invoke = vi.fn().mockResolvedValue([
-      ada,
-      { fullName: '', givenName: '', familyName: '', emails: ['x@example.com'], phones: [] },
-      { fullName: 'Ada Byron', givenName: 'Ada', familyName: 'Byron', emails: [], phones: [] },
-    ])
+    const invoke = vi.fn(async (command: string) =>
+      command === 'contacts_lookup_by_name'
+        ? [
+            ada,
+            {
+              fullName: '',
+              givenName: '',
+              familyName: '',
+              emails: ['x@example.com'],
+              phones: [],
+            },
+            {
+              fullName: 'Ada Byron',
+              givenName: 'Ada',
+              familyName: 'Byron',
+              emails: [],
+              phones: [],
+            },
+          ]
+        : [],
+    )
     setBridge({ invoke, listen: async () => () => {} })
 
-    await expect(contactLinkSuggestions('Ada')).resolves.toEqual([ada])
+    await expect(contactLinkSuggestions('Ada')).resolves.toEqual([
+      {
+        contact: ada,
+        target: 'Ada Lovelace',
+        email: 'ada@example.com',
+        existingPersonNote: false,
+        linkable: true,
+      },
+    ])
     expect(invoke).toHaveBeenCalledWith('contacts_lookup_by_name', { name: 'Ada' })
   })
 
@@ -116,16 +164,110 @@ describe('contactLinkSuggestions', () => {
       phones: [],
     })
     setBridge({
-      invoke: async () => [named(1), { ...named(1), emails: ['dupe@example.com'] }, named(2), named(3), named(4), named(5)],
+      invoke: async (command) =>
+        command === 'contacts_lookup_by_name'
+          ? [
+              named(1),
+              { ...named(1), emails: ['dupe@example.com'] },
+              named(2),
+              named(3),
+              named(4),
+              named(5),
+            ]
+          : [],
       listen: async () => () => {},
     })
 
     const suggestions = await contactLinkSuggestions('Person')
-    expect(suggestions.map((entry) => entry.fullName)).toEqual([
+    expect(suggestions.map((entry) => entry.contact.fullName)).toEqual([
       'Person 1',
       'Person 2',
       'Person 3',
       'Person 4',
+    ])
+  })
+
+  it('prefers the same-named contact whose email owns a person note', async () => {
+    const unowned = { ...ada, emails: ['ada@personal.example'] }
+    const owned = { ...ada, emails: ['ada@work.example'] }
+    bindContactLookup([unowned, owned], {
+      'ada@work.example': {
+        title: 'Augusta Ada King',
+        path: 'notes/augusta-ada-king.md',
+      },
+    })
+
+    await expect(contactLinkSuggestions('Ada')).resolves.toEqual([
+      {
+        contact: owned,
+        target: 'Augusta Ada King',
+        email: 'ada@work.example',
+        existingPersonNote: true,
+        linkable: true,
+      },
+    ])
+  })
+
+  it('targets the existing person note that owns a contact email', async () => {
+    bindContactLookup([ada], {
+      'ada@example.com': {
+        title: 'Augusta Ada King',
+        path: 'notes/augusta-ada-king.md',
+      },
+    })
+
+    await expect(contactLinkSuggestions('Ada')).resolves.toEqual([
+      {
+        contact: ada,
+        target: 'Augusta Ada King',
+        email: 'ada@example.com',
+        existingPersonNote: true,
+        linkable: true,
+      },
+    ])
+  })
+
+  it('marks a contact whose email owner cannot be embedded in a wiki link', async () => {
+    bindContactLookup([ada], {
+      'ada@example.com': {
+        title: 'Ada [Private]',
+        path: 'notes/ada-private.md',
+      },
+    })
+
+    await expect(contactLinkSuggestions('Ada')).resolves.toEqual([
+      {
+        contact: ada,
+        target: 'Ada [Private]',
+        email: 'ada@example.com',
+        existingPersonNote: true,
+        linkable: false,
+      },
+    ])
+  })
+
+  it('continues past an unsafe same-name owner to a linkable owner', async () => {
+    const unsafe = { ...ada, emails: ['ada@unsafe.example'] }
+    const safe = { ...ada, emails: ['ada@safe.example'] }
+    bindContactLookup([unsafe, safe], {
+      'ada@unsafe.example': {
+        title: 'Ada [Private]',
+        path: 'notes/ada-private.md',
+      },
+      'ada@safe.example': {
+        title: 'Augusta Ada King',
+        path: 'notes/augusta-ada-king.md',
+      },
+    })
+
+    await expect(contactLinkSuggestions('Ada')).resolves.toEqual([
+      {
+        contact: safe,
+        target: 'Augusta Ada King',
+        email: 'ada@safe.example',
+        existingPersonNote: true,
+        linkable: true,
+      },
     ])
   })
 })

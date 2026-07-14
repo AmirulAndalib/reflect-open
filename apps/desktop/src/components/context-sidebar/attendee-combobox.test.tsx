@@ -1,7 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ContactMatch, MeetingAttendee, WikiSuggestion } from '@reflect/core'
+import type {
+  ContactLinkSuggestion,
+  ContactMatch,
+  MeetingAttendee,
+  WikiSuggestion,
+} from '@reflect/core'
 import { AttendeeCombobox } from './attendee-combobox'
 
 // jsdom can't scroll or observe resizes; cmdk scrolls the highlighted row
@@ -16,7 +21,7 @@ window.ResizeObserver ??= NoopResizeObserver as unknown as typeof ResizeObserver
 
 const suggestWikiTargets = vi.hoisted(() => vi.fn<() => Promise<WikiSuggestion[]>>(async () => []))
 const contactLinkSuggestions = vi.hoisted(() =>
-  vi.fn<() => Promise<ContactMatch[]>>(async () => []),
+  vi.fn<() => Promise<ContactLinkSuggestion[]>>(async () => []),
 )
 vi.mock('@reflect/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@reflect/core')>()),
@@ -38,8 +43,21 @@ function noteSuggestion(title: string, overrides: Partial<WikiSuggestion> = {}):
   return { target: title, path: `notes/${title}.md`, title, alias: null, date: null, ...overrides }
 }
 
-function contact(fullName: string, email: string): ContactMatch {
-  return { fullName, givenName: '', familyName: '', emails: [email], phones: [] }
+function contact(fullName: string, email: string): ContactLinkSuggestion {
+  const matchedContact: ContactMatch = {
+    fullName,
+    givenName: '',
+    familyName: '',
+    emails: [email],
+    phones: [],
+  }
+  return {
+    contact: matchedContact,
+    target: fullName,
+    email,
+    existingPersonNote: false,
+    linkable: true,
+  }
 }
 
 const onAdd = vi.fn<(attendee: MeetingAttendee) => void>()
@@ -95,17 +113,68 @@ describe('AttendeeCombobox', () => {
     expect(onAdd).toHaveBeenCalledWith({ name: 'Grace Hopper', email: 'grace@example.com' })
   })
 
-  it('Enter with no suggestions adds the typed name verbatim', async () => {
+  it('a picked contact uses the person note found through any contact email', async () => {
+    contactLinkSuggestions.mockResolvedValue([
+      {
+        contact: {
+          fullName: 'Jane Smith',
+          givenName: 'Jane',
+          familyName: 'Smith',
+          emails: ['jane@personal.example', '<jane@corp.example>'],
+          phones: [],
+        },
+        target: 'Jane Doe',
+        email: 'jane@corp.example',
+        existingPersonNote: true,
+        linkable: true,
+      },
+    ])
+    const input = renderCombobox()
+
+    fireEvent.change(input, { target: { value: 'jan' } })
+    await findHighlighted('Jane Smith')
+    expect(screen.getByText('jane@corp.example → Jane Doe')).toBeTruthy()
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(onAdd).toHaveBeenCalledWith({ name: 'Jane Doe', email: 'jane@corp.example' })
+  })
+
+  it('does not add typed text when an exact contact has an unlinkable email owner', async () => {
+    suggestWikiTargets.mockResolvedValue([noteSuggestion('Jane Smythe')])
+    contactLinkSuggestions.mockResolvedValue([
+      {
+        ...contact('Jane Smith', 'jane@corp.example'),
+        target: 'Jane Doe',
+        existingPersonNote: true,
+        linkable: false,
+      },
+    ])
+    const input = renderCombobox()
+
+    fireEvent.change(input, { target: { value: 'Jane Smith' } })
+    await findHighlighted('Jane Smythe')
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByText('Jane Smythe')).toBeNull())
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.blur(input)
+
+    expect(onAdd).not.toHaveBeenCalled()
+    expect(input.value).toBe('Jane Smith')
+  })
+
+  it('Enter adds the typed name once the current lookup settles', async () => {
     const input = renderCombobox()
 
     fireEvent.change(input, { target: { value: 'Brand New Person' } })
+    await findHighlighted('Add “Brand New Person”')
     fireEvent.keyDown(input, { key: 'Enter' })
 
     expect(onAdd).toHaveBeenCalledWith({ name: 'Brand New Person' })
     expect(input.value).toBe('')
   })
 
-  it('Enter during a pending refetch adds the typed text, not a stale row', async () => {
+  it('Enter during a pending refetch adds neither typed text nor a stale row', async () => {
     suggestWikiTargets.mockResolvedValue([noteSuggestion('Ada Lovelace')])
     const input = renderCombobox()
 
@@ -113,13 +182,42 @@ describe('AttendeeCombobox', () => {
     await findHighlighted('Ada Lovelace')
 
     // Keep typing: the popover still shows the previous query's rows
-    // (keepPreviousData) while the new fetch hangs. Enter must take the
-    // live text, not the stale highlighted suggestion.
+    // (keepPreviousData) while the new fetch hangs. Enter must wait rather
+    // than take either the stale row or unverified live text.
     suggestWikiTargets.mockReturnValue(new Promise(() => {}))
     fireEvent.change(input, { target: { value: 'Adam Smith' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect(onAdd).toHaveBeenCalledWith({ name: 'Adam Smith' })
+    expect(onAdd).not.toHaveBeenCalled()
+    expect(input.value).toBe('Adam Smith')
+  })
+
+  it('a quick Enter cannot outrun an exact contact owner lookup', async () => {
+    let resolveContacts: (contacts: ContactLinkSuggestion[]) => void = () => {}
+    contactLinkSuggestions.mockReturnValue(
+      new Promise((resolve) => {
+        resolveContacts = resolve
+      }),
+    )
+    const input = renderCombobox()
+
+    fireEvent.change(input, { target: { value: 'Jane Smith' } })
+    await waitFor(() => expect(contactLinkSuggestions).toHaveBeenCalled())
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(onAdd).not.toHaveBeenCalled()
+    expect(input.value).toBe('Jane Smith')
+
+    await act(async () => {
+      resolveContacts([
+        {
+          ...contact('Jane Smith', 'jane@corp.example'),
+          target: 'Jane Doe',
+          existingPersonNote: true,
+          linkable: false,
+        },
+      ])
+    })
   })
 
   it('offers an Add row for a name that matches nothing exactly', async () => {
