@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { upsertFrontmatter } from '@reflect/core'
+import { upsertFrontmatter, type PrepareNoteMoveRewritesOptions } from '@reflect/core'
 import { onNoteMoved } from '@/lib/note-moves'
 import type { NoteSession } from './note-session'
 import { openSession, registerOpenDocument, retargetOpenDocument } from './open-documents'
@@ -498,11 +498,15 @@ describe('rename coordinator', () => {
       { path: PATH, size: 1, modifiedMs: 1 },
       { path: sourcePath, size: 1, modifiedMs: 1 },
     ])
-    io.prepareNoteMoveRewrites.mockResolvedValue({
-      failed: [],
-      rewrites: [{ path: sourcePath, before, after }],
-    })
-    io.readNote.mockResolvedValue(managed('# New Title\n'))
+    io.prepareNoteMoveRewrites.mockImplementationOnce(
+      async (options: PrepareNoteMoveRewritesOptions) => ({
+        failed: [],
+        rewrites: [{ path: sourcePath, before: await options.read(sourcePath), after }],
+      }),
+    )
+    io.readNote.mockImplementation(async (path: string) =>
+      path === sourcePath ? 'stale disk bytes\n' : managed('# New Title\n'),
+    )
     try {
       const coordinator = makeCoordinator()
       await renameOnce(coordinator, 'Old Title', 'New Title')

@@ -89,6 +89,15 @@ describe('toggleNotePrivate', () => {
     expect(writeNoteIfUnchanged).not.toHaveBeenCalled()
   })
 
+  it('does not report privacy persisted or fall back to disk when the live save fails', async () => {
+    const { session, commitFrontmatter } = fakeSession('# A\n')
+    commitFrontmatter.mockRejectedValueOnce(new Error('disk full'))
+    openSession.mockReturnValue(session)
+
+    await expect(toggleNotePrivate('notes/a.md', 3)).rejects.toThrow('disk full')
+    expect(writeNoteIfUnchanged).not.toHaveBeenCalled()
+  })
+
   it('toggles off through the session when the open note is private', async () => {
     const { session, commitFrontmatter } = fakeSession('---\nprivate: true\n---\n# A\n')
     openSession.mockReturnValue(session)

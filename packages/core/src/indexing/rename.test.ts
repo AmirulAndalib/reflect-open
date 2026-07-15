@@ -350,6 +350,19 @@ describe('prepareNoteMoveRewrites', () => {
 
     expect(result).toEqual({ rewrites: [], failed: ['Projects/source.md'] })
   })
+
+  it('fails closed when multiple live paths share the moved note path key', async () => {
+    const source = '[Old](notes/old.md)\n'
+    const result = await prepareNoteMoveRewrites({
+      fromPath: 'notes/old.md',
+      toPath: 'notes/new.md',
+      notePaths: ['notes/old.md', 'Notes/OLD.md', 'source.md'],
+      read: async (path) => (path === 'source.md' ? source : '# Old\n'),
+    })
+
+    expect(result.rewrites).toEqual([])
+    expect(new Set(result.failed)).toEqual(new Set(['notes/old.md', 'Notes/OLD.md']))
+  })
 })
 
 describe('nextAliases', () => {

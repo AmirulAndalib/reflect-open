@@ -99,11 +99,29 @@ describe('local note references', () => {
     })
   })
 
+  it('distinguishes an encoded question mark in a filename from query syntax', () => {
+    expect(indexMarkdownNoteReference('Today.md', 'Plans/What%3F.md')).toEqual({
+      targetKey: '',
+      pathKey: 'plans/what?.md',
+      alternatePathKey: null,
+      fragment: null,
+    })
+    expect(
+      indexMarkdownNoteReference('Today.md', 'Plans/What.md?download=1'),
+    ).toBeNull()
+  })
+
   it('rejects traversal, hidden paths, malformed escapes, and remote links', () => {
     expect(indexMarkdownNoteReference('Today.md', '../outside.md')).toBeNull()
     expect(indexMarkdownNoteReference('Today.md', '.private/secret.md')).toBeNull()
     expect(indexMarkdownNoteReference('Today.md', 'bad%2')).toBeNull()
     expect(indexMarkdownNoteReference('Today.md', 'https://example.com/a.md')).toBeNull()
+    expect(
+      indexMarkdownNoteReference('Today.md', 'https%3A%2F%2Fexample.com%2Fa.md'),
+    ).toBeNull()
+    expect(indexMarkdownNoteReference('Today.md', '%2F%2Fserver%2Fshare.md')).toBeNull()
+    expect(indexMarkdownNoteReference('Today.md', 'C%3A%2Fsecret.md')).toBeNull()
+    expect(indexMarkdownNoteReference('Today.md', 'Projects/%2Ehidden/secret.md')).toBeNull()
     expect(indexMarkdownNoteReference('Today.md', 'assets/manual.pdf')).toBeNull()
     expect(indexMarkdownNoteReference('Today.md', 'assets/secret.md')).toBeNull()
     expect(indexWikiNoteReference('Today.md', '../outside')).toBeNull()

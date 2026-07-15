@@ -1,5 +1,8 @@
 import { sql } from 'kysely'
-import { resolveExistingWikiTargets } from '../graph/resolve-existing-wiki-target'
+import {
+  createExistingWikiTargetResolver,
+  type ExistingWikiTargetResolver,
+} from '../graph/resolve-existing-wiki-target'
 import { foldTag, normalizeWikiTarget } from '../markdown'
 import { generateDateSuggestions, type DateSuggestionContext } from './date-suggestions'
 import { db, dbForGraphGeneration } from './db'
@@ -89,16 +92,16 @@ async function qualifyAmbiguousWikiSuggestions(
   })
 }
 
-async function qualifyLiveWikiSuggestions(
+async function qualifyLiveWikiSuggestionBatch(
   suggestions: readonly WikiSuggestion[],
-  generation: number,
+  resolver: ExistingWikiTargetResolver,
 ): Promise<WikiSuggestion[]> {
   const indexed = suggestions.filter(
     (suggestion): suggestion is WikiSuggestion & { readonly path: string } =>
       suggestion.path !== null,
   )
   const targets = [...new Set(indexed.map((suggestion) => suggestion.target))]
-  const resolutions = await resolveExistingWikiTargets(targets, generation)
+  const resolutions = await resolver.resolve(targets)
   const resolutionByTarget = new Map(
     targets.map((target, index) => [target, resolutions[index]!] as const),
   )
@@ -123,6 +126,30 @@ async function qualifyLiveWikiSuggestions(
       disambiguated: true,
     }]
   })
+}
+
+async function qualifyLiveWikiSuggestions(
+  suggestions: readonly WikiSuggestion[],
+  generation: number,
+  limit: number,
+): Promise<WikiSuggestion[]> {
+  if (limit <= 0 || suggestions.length === 0) {
+    return []
+  }
+  const qualified: WikiSuggestion[] = []
+  const resolver = createExistingWikiTargetResolver(generation)
+  // Keep live-resolution work proportional to the requested menu size. When
+  // a leading indexed row is an orphan, advance through another bounded batch
+  // instead of resolving every title and alias candidate for each keystroke.
+  const batchSize = Math.max(1, Math.min(limit, 8))
+  for (let offset = 0; offset < suggestions.length; offset += batchSize) {
+    const batch = suggestions.slice(offset, offset + batchSize)
+    qualified.push(...await qualifyLiveWikiSuggestionBatch(batch, resolver))
+    if (qualified.length >= limit) {
+      return qualified.slice(0, limit)
+    }
+  }
+  return qualified
 }
 
 /**
@@ -213,10 +240,15 @@ export async function suggestWikiTargets(
       .execute()
   }
 
-  const candidates = rankWikiSuggestions(key, titles, aliases, limit)
+  const candidates = rankWikiSuggestions(
+    key,
+    titles,
+    aliases,
+    titles.length + aliases.length,
+  )
   const ranked = generation === undefined
-    ? await qualifyAmbiguousWikiSuggestions(candidates)
-    : await qualifyLiveWikiSuggestions(candidates, generation)
+    ? (await qualifyAmbiguousWikiSuggestions(candidates)).slice(0, limit)
+    : await qualifyLiveWikiSuggestions(candidates, generation, limit)
   if (dateGen !== undefined) {
     return mergeDateSuggestions(ranked, generateDateSuggestions(query, dateGen), { key, limit })
   }

@@ -194,14 +194,7 @@ pub fn read_note(root: &Path, rel_path: &str) -> Result<Note, CliError> {
     let content = fs::read_to_string(&absolute)
         .map_err(|err| CliError::Runtime(format!("could not read {rel_path}: {err}")))?;
     let meta = parse_note_meta(rel_path, &content);
-    if meta.private || meta.privacy_uncertain {
-        let reason = if meta.privacy_uncertain {
-            "note may be private because its privacy cannot be verified"
-        } else {
-            "note is private"
-        };
-        return Err(CliError::Private(format!("{reason}: {rel_path}")));
-    }
+    ensure_meta_is_accessible(&meta, rel_path)?;
     Ok(Note { content, meta })
 }
 
@@ -219,13 +212,17 @@ pub fn ensure_not_private(root: &Path, rel_path: &str) -> Result<(), CliError> {
         Err(_) => return Ok(()),
     };
     let meta = parse_note_meta(rel_path, &content);
-    if meta.private || meta.privacy_uncertain {
-        let reason = if meta.privacy_uncertain {
-            "note may be private because its privacy cannot be verified"
-        } else {
-            "note is private"
-        };
-        return Err(CliError::Private(format!("{reason}: {rel_path}")));
+    ensure_meta_is_accessible(&meta, rel_path)
+}
+
+fn ensure_meta_is_accessible(meta: &NoteMeta, rel_path: &str) -> Result<(), CliError> {
+    if meta.private {
+        return Err(CliError::Private(format!("note is private: {rel_path}")));
+    }
+    if meta.privacy_uncertain {
+        return Err(CliError::Private(format!(
+            "note may be private because its privacy cannot be verified: {rel_path}"
+        )));
     }
     Ok(())
 }
@@ -404,21 +401,59 @@ mod tests {
     fn title_chain_matches_the_ts_extractor() {
         let meta = parse_note_meta("notes/a.md", "---\ntitle: FM Title\n---\n# H1\n");
         assert_eq!(meta.title, "FM Title");
+        assert!(meta.authored_title);
 
         let meta = parse_note_meta("notes/a.md", "intro\n\n# The *Heading* [[Link]]\n");
         assert_eq!(meta.title, "The *Heading* [[Link]]");
+        assert!(meta.authored_title);
 
         let meta = parse_note_meta("notes/a.md", "Setext Title\n===\nbody\n");
         assert_eq!(meta.title, "Setext Title");
+        assert!(meta.authored_title);
 
         let meta = parse_note_meta("notes/a.md", "## only an h2\n");
         assert_eq!(meta.title, "a");
+        assert!(!meta.authored_title);
 
         let meta = parse_note_meta("daily/2026-06-11.md", "plain text\n");
         assert_eq!(meta.title, "2026-06-11");
+        assert!(!meta.authored_title);
 
         let meta = parse_note_meta("notes/Fancy Name.md", "no headings\n");
         assert_eq!(meta.title, "Fancy Name");
+        assert!(!meta.authored_title);
+    }
+
+    #[test]
+    fn malformed_or_unterminated_frontmatter_marks_privacy_uncertain() {
+        let malformed = parse_note_meta(
+            "notes/a.md",
+            "---\nprivate: [broken\n---\n# Public-looking title\n",
+        );
+        assert!(malformed.privacy_uncertain);
+        assert!(!malformed.private);
+
+        let unterminated = parse_note_meta("notes/a.md", "---\nprivate: false\n# Body\n");
+        assert!(unterminated.privacy_uncertain);
+
+        let valid = parse_note_meta("notes/a.md", "---\nprivate: false\n---\n# Body\n");
+        assert!(!valid.privacy_uncertain);
+    }
+
+    #[test]
+    fn definite_private_state_takes_precedence_over_uncertain_privacy() {
+        let meta = NoteMeta {
+            id: None,
+            title: "Secret".into(),
+            authored_title: true,
+            aliases: Vec::new(),
+            private: true,
+            privacy_uncertain: true,
+        };
+
+        let error = ensure_meta_is_accessible(&meta, "notes/secret.md").unwrap_err();
+        assert!(error.to_string().contains("note is private"));
+        assert!(!error.to_string().contains("may be private"));
     }
 
     #[test]

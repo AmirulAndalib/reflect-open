@@ -85,6 +85,14 @@ describe('gatherAssetDescriptionText', () => {
 })
 
 describe('gatherAssetDescriptionBodies', () => {
+  it('pins managed description reads to the caller generation', async () => {
+    files.set('assets/a.png.reflect.md', 'Pinned description.\n')
+
+    await gatherAssetDescriptionBodies(['assets/a.png'], 7)
+
+    expect(readDescriptionMock).toHaveBeenCalledWith('assets/a.png', 7)
+  })
+
   it('returns per-asset bodies attributed to their asset paths', async () => {
     files.set('assets/a.png.reflect.md', '---\nreflectAsset: true\n---\n\nA flow diagram.\n')
     files.set('assets/b.pdf.reflect.md', '---\nreflectAsset: true\n---\n\nQ4 revenue report.\n')

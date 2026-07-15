@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { foldKey } from '../markdown/keys'
 import { isSafeVisibleGraphPath } from './paths'
 
@@ -21,24 +22,26 @@ interface SplitReference {
   readonly fragment: string | null
 }
 
-function decodeComponent(value: string): string | null {
+const decodedReferenceComponentSchema = z.string().transform((encoded, context) => {
   try {
-    return decodeURIComponent(value)
+    return decodeURIComponent(encoded)
   } catch {
-    return null
+    context.addIssue({ code: 'custom', message: 'invalid percent encoding' })
+    return ''
   }
-}
+})
+
+const splitReferenceSchema = z.object({
+  path: decodedReferenceComponentSchema,
+  fragment: z.union([decodedReferenceComponentSchema, z.null()]),
+})
 
 function splitReference(value: string): SplitReference | null {
   const hash = value.indexOf('#')
   const rawPath = hash === -1 ? value : value.slice(0, hash)
   const rawFragment = hash === -1 ? null : value.slice(hash + 1)
-  const path = decodeComponent(rawPath)
-  const fragment = rawFragment === null ? null : decodeComponent(rawFragment)
-  if (path === null || (fragment === null && rawFragment !== null)) {
-    return null
-  }
-  return { path, fragment }
+  const decoded = splitReferenceSchema.safeParse({ path: rawPath, fragment: rawFragment })
+  return decoded.success ? decoded.data : null
 }
 
 function isHiddenSegment(segment: string): boolean {
@@ -210,8 +213,19 @@ export function indexMarkdownNoteReference(
   if (trimmed === '' || URI_SCHEME_RE.test(trimmed) || trimmed.startsWith('//')) {
     return null
   }
+  const rawHash = trimmed.indexOf('#')
+  const authoredRawPath = rawHash === -1 ? trimmed : trimmed.slice(0, rawHash)
+  // Markdown query syntax is not part of a local note path. Check the authored
+  // bytes before decoding so `%3F` remains a legitimate literal filename
+  // character rather than being mistaken for a query delimiter.
+  if (authoredRawPath.includes('?')) {
+    return null
+  }
   const split = splitReference(trimmed)
   if (split === null) {
+    return null
+  }
+  if (URI_SCHEME_RE.test(split.path) || split.path.startsWith('//')) {
     return null
   }
   if (split.path === '') {
@@ -225,9 +239,6 @@ export function indexMarkdownNoteReference(
       fragment: split.fragment,
     }
   }
-  if (split.path.includes('?')) {
-    return null
-  }
   const explicitRoot = split.path.startsWith('/')
   const explicitRelative = split.path.startsWith('./') || split.path.startsWith('../')
   const rawPath = explicitRoot ? split.path.slice(1) : split.path
@@ -239,7 +250,11 @@ export function indexMarkdownNoteReference(
   const rootCandidate = normalizeSegments(markdownPath, [])
 
   const primary = explicitRoot ? rootCandidate : sourceCandidate
-  if (primary === null || isReservedNotePath(primary)) {
+  if (
+    primary === null ||
+    !isSafeVisibleGraphPath(primary) ||
+    isReservedNotePath(primary)
+  ) {
     return null
   }
   const alternate =
@@ -247,6 +262,7 @@ export function indexMarkdownNoteReference(
     explicitRelative ||
     rootCandidate === null ||
     rootCandidate === primary ||
+    !isSafeVisibleGraphPath(rootCandidate) ||
     isReservedNotePath(rootCandidate)
       ? null
       : rootCandidate

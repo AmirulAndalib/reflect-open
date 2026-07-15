@@ -60,6 +60,7 @@ function fileOf(name: string, type: string, size = 16): File {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   setBridge(null)
   persistence = null
   resetOperations()
@@ -413,7 +414,7 @@ describe('useAssetPersistence catalog resolution', () => {
 
   it('refreshes sizes and retries iCloud materialization after catalog transitions', async () => {
     let now = 1_000
-    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
     let files: readonly FileMeta[] = [
       { path: 'Media/remote.png', size: 10, modifiedMs: 1, placeholder: true },
       { path: 'Media/manual.pdf', size: 20, modifiedMs: 1 },
@@ -472,7 +473,6 @@ describe('useAssetPersistence catalog resolution', () => {
         3,
       ),
     )
-    nowSpy.mockRestore()
   })
 })
 

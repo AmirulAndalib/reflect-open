@@ -456,30 +456,25 @@ describe('resolveOrCreateNoteWithTitle', () => {
     expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
   })
 
-  it('re-resolves after the disk scan before creating', async () => {
+  it('does not repeat a settled missing resolution before the atomic claim', async () => {
     let titleLookups = 0
-    const indexedFiles: Record<string, string> = {}
     const invoke = bindBridge({
-      indexedFiles,
       query: (sql) => {
         if (!sql.includes('"authored_title_key" = ?')) {
           return []
         }
         titleLookups += 1
-        if (titleLookups === 1) {
-          indexedFiles['notes/synced.md'] = '# Synced\n'
-          return []
-        }
-        return [{ path: 'notes/synced.md' }]
+        return []
       },
     })
 
-    await expect(resolveOrCreateNoteWithTitle('Synced', 7)).resolves.toEqual({
-      kind: 'resolved',
-      path: 'notes/synced.md',
+    await expect(resolveOrCreateNoteWithTitle('Brand New', 7)).resolves.toEqual({
+      kind: 'created',
+      path: 'notes/brand-new.md',
     })
-    expect(titleLookups).toBe(2)
-    expect(invoke.mock.calls.some(([command]) => command === 'note_create')).toBe(false)
+    expect(titleLookups).toBe(1)
+    expect(invoke.mock.calls.filter(([command]) => command === 'list_files')).toHaveLength(1)
+    expect(invoke.mock.calls.filter(([command]) => command === 'note_create')).toHaveLength(1)
   })
 
   it('re-resolves an atomic-claim collision instead of creating a suffix', async () => {
@@ -492,10 +487,11 @@ describe('resolveOrCreateNoteWithTitle', () => {
           return []
         }
         titleLookups += 1
-        if (titleLookups === 2) {
-          files['notes/business-ideas.md'] = '# Business ideas\n'
-        }
         return []
+      },
+      create: (path) => {
+        files[path] = '# Business ideas\n'
+        return { kind: 'collision' }
       },
     })
 
@@ -503,13 +499,13 @@ describe('resolveOrCreateNoteWithTitle', () => {
       kind: 'resolved',
       path: 'notes/business-ideas.md',
     })
-    expect(titleLookups).toBe(3)
-    expect(invoke.mock.calls.filter(([command]) => command === 'list_files')).toHaveLength(3)
+    expect(titleLookups).toBe(2)
+    expect(invoke.mock.calls.filter(([command]) => command === 'list_files')).toHaveLength(2)
     expect(invoke.mock.calls.filter(([command]) => command === 'note_create')).toHaveLength(1)
     expect(files['notes/business-ideas-2.md']).toBeUndefined()
   })
 
-  it('creates only after both index checks and the disk scan miss', async () => {
+  it('creates only after the index and disk scan both miss', async () => {
     const invoke = bindBridge()
 
     await expect(resolveOrCreateNoteWithTitle('Brand New', 7)).resolves.toMatchObject({

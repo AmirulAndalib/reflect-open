@@ -29,7 +29,7 @@ function escapeLinkLabel(name: string): string {
  * `assets/` either way, and an unlinked copy would be an invisible orphan.
  */
 export async function attachFilesToNote(context: CommandContext): Promise<void> {
-  const generation = context.generation()
+  const generation = context.graph()?.generation ?? null
   const notePath = context.notePath()
   if (generation === null || notePath === null) {
     return

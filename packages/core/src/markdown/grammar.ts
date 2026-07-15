@@ -38,7 +38,7 @@ export const wikiEmbedExtension: MarkdownConfig = {
         const contentStart = pos + 3
         for (let index = contentStart; index < cx.end; index += 1) {
           const character = cx.char(index)
-          if (character === NEWLINE || character === OPEN_BRACKET) {
+          if (character === NEWLINE) {
             return -1
           }
           if (character === CLOSE_BRACKET && cx.char(index + 1) === CLOSE_BRACKET) {

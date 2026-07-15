@@ -75,6 +75,7 @@ export function MobileDaily({ date }: { date: string }): ReactElement {
       <Button
         size="icon"
         aria-label="New note"
+        disabled={graph === null}
         className="fixed right-4 z-40 size-12 rounded-full shadow-lg"
         style={{ bottom: 'calc(max(env(safe-area-inset-bottom), var(--keyboard-height, 0px)) + 4.25rem)' }}
         onClick={() => {

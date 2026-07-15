@@ -32,6 +32,30 @@ use super::GraphState;
 /// the CSP `img-src` grant in `tauri.conf.json` spell it out literally.
 pub(crate) const SCHEME: &str = "reflect-asset";
 const PREVIEW_RASTER_QUERY: &str = "reflect-preview=raster";
+const MIME_SNIFF_BYTES: u64 = 8 * 1024;
+const MAX_UNRANGED_RESPONSE_BYTES: u64 = 32 * 1024 * 1024;
+// Image elements do not retry a 413 with byte ranges, so give classified images
+// the same bounded ceiling as explicit native asset reads.
+const MAX_UNRANGED_IMAGE_RESPONSE_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_RANGE_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
+
+struct ServedAsset {
+    mime: String,
+    bytes: Vec<u8>,
+    total_len: u64,
+    range: Option<ByteRange>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ByteRange {
+    start: u64,
+    end: u64,
+}
+
+enum ServeError {
+    Status(StatusCode),
+    RangeNotSatisfiable(u64),
+}
 
 /// Protocol entry point (`register_asynchronous_uri_scheme_protocol`). Runs
 /// on the webview's calling thread — on WebKit, the app's main thread — so it
@@ -47,12 +71,20 @@ pub(crate) fn handle<R: Runtime>(
         responder.respond(status_response(StatusCode::BAD_REQUEST));
         return;
     };
-    let Ok(request_path) = percent_encoding::percent_decode(encoded_path.as_bytes()).decode_utf8()
-    else {
+    let Ok(request_path) = decode_request_path(encoded_path) else {
         responder.respond(status_response(StatusCode::BAD_REQUEST));
         return;
     };
-    let request_path = request_path.into_owned();
+    let range_header = match request.headers().get(header::RANGE) {
+        Some(value) => match value.to_str() {
+            Ok(value) => Some(value.to_string()),
+            Err(_) => {
+                responder.respond(status_response(StatusCode::BAD_REQUEST));
+                return;
+            }
+        },
+        None => None,
+    };
     let preview_raster_only = requests_preview_raster(request.uri().query());
     let method_allowed = request.method() == tauri::http::Method::GET;
     tauri::async_runtime::spawn_blocking(move || {
@@ -60,26 +92,61 @@ pub(crate) fn handle<R: Runtime>(
             responder.respond(status_response(StatusCode::METHOD_NOT_ALLOWED));
             return;
         }
-        responder.respond(response_for(&app, &request_path, preview_raster_only));
+        responder.respond(response_for(
+            &app,
+            &request_path,
+            preview_raster_only,
+            range_header.as_deref(),
+        ));
     });
+}
+
+fn decode_request_path(encoded_path: &str) -> Result<String, StatusCode> {
+    let bytes = encoded_path.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let Some(encoded_byte) = bytes.get(index + 1..index + 3) else {
+                return Err(StatusCode::BAD_REQUEST);
+            };
+            if !encoded_byte.iter().all(u8::is_ascii_hexdigit) {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            index += 3;
+        } else {
+            index += 1;
+        }
+    }
+    percent_encoding::percent_decode(bytes)
+        .decode_utf8()
+        .map(|decoded| decoded.into_owned())
+        .map_err(|_| StatusCode::BAD_REQUEST)
 }
 
 fn response_for<R: Runtime>(
     app: &AppHandle<R>,
     request_path: &str,
     preview_raster_only: bool,
+    range_header: Option<&str>,
 ) -> Response<Cow<'static, [u8]>> {
-    match serve(app, request_path) {
-        Ok((mime, bytes)) => {
-            if preview_raster_only && !is_preview_safe_raster_mime(&mime) {
+    match serve(app, request_path, range_header) {
+        Ok(asset) => {
+            if preview_raster_only && !is_preview_safe_raster_mime(&asset.mime) {
                 return status_response(StatusCode::UNSUPPORTED_MEDIA_TYPE);
             }
-            let is_svg = mime == "image/svg+xml";
+            let is_svg = asset.mime == "image/svg+xml";
             let mut response = Response::builder()
-                .header(header::CONTENT_TYPE, mime)
-                .header(header::CONTENT_LENGTH, bytes.len())
+                .header(header::CONTENT_TYPE, asset.mime)
+                .header(header::CONTENT_LENGTH, asset.bytes.len())
+                .header(header::ACCEPT_RANGES, "bytes")
                 .header(header::CACHE_CONTROL, "no-store")
                 .header("x-content-type-options", "nosniff");
+            if let Some(range) = asset.range {
+                response = response.status(StatusCode::PARTIAL_CONTENT).header(
+                    header::CONTENT_RANGE,
+                    format!("bytes {}-{}/{}", range.start, range.end, asset.total_len),
+                );
+            }
             if is_svg {
                 response = response.header(
                     "content-security-policy",
@@ -87,12 +154,23 @@ fn response_for<R: Runtime>(
                 );
             }
             response
-                .body(Cow::Owned(bytes))
+                .body(Cow::Owned(asset.bytes))
                 .unwrap_or_else(|_| status_response(StatusCode::INTERNAL_SERVER_ERROR))
         }
-        Err(status) => {
+        Err(ServeError::Status(status)) => {
             tracing::warn!(path = request_path, %status, "asset protocol refused a request");
-            status_response(status)
+            if status == StatusCode::PAYLOAD_TOO_LARGE {
+                range_required_response()
+            } else {
+                status_response(status)
+            }
+        }
+        Err(ServeError::RangeNotSatisfiable(total_len)) => {
+            tracing::warn!(
+                path = request_path,
+                "asset protocol refused an invalid range"
+            );
+            range_not_satisfiable_response(total_len)
         }
     }
 }
@@ -120,34 +198,129 @@ fn status_response(status: StatusCode) -> Response<Cow<'static, [u8]>> {
         .expect("a status-only response always builds")
 }
 
+fn range_not_satisfiable_response(total_len: u64) -> Response<Cow<'static, [u8]>> {
+    Response::builder()
+        .status(StatusCode::RANGE_NOT_SATISFIABLE)
+        .header(header::CONTENT_RANGE, format!("bytes */{total_len}"))
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Cow::Borrowed(&[][..]))
+        .expect("a range error response always builds")
+}
+
+fn range_required_response() -> Response<Cow<'static, [u8]>> {
+    Response::builder()
+        .status(StatusCode::PAYLOAD_TOO_LARGE)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Cow::Borrowed(&[][..]))
+        .expect("a range-required response always builds")
+}
+
 fn serve<R: Runtime>(
     app: &AppHandle<R>,
     request_path: &str,
-) -> Result<(String, Vec<u8>), StatusCode> {
-    let (generation, rel) = parse_request_path(request_path)?;
+    range_header: Option<&str>,
+) -> Result<ServedAsset, ServeError> {
+    let (generation, rel) = parse_request_path(request_path).map_err(ServeError::Status)?;
     let state = app.state::<GraphState>();
-    let root =
-        super::pinned_root_for_generation(&state, generation).map_err(|_| StatusCode::FORBIDDEN)?;
-    let attachment =
+    let root = super::pinned_root_for_generation(&state, generation)
+        .map_err(|_| ServeError::Status(StatusCode::FORBIDDEN))?;
+    let mut attachment =
         super::attachments::open_existing_attachment(&root, rel).map_err(|err| match err {
-            crate::error::AppError::NotFound { .. } => StatusCode::NOT_FOUND,
-            _ => StatusCode::FORBIDDEN,
+            crate::error::AppError::NotFound { .. } => ServeError::Status(StatusCode::NOT_FOUND),
+            _ => ServeError::Status(StatusCode::FORBIDDEN),
         })?;
-    // On an iCloud graph this read blocks until the file is materialized on
-    // the device — acceptable here on the blocking pool, and exactly the wait
-    // that must never happen on the UI thread.
-    // Read from the already-open descriptor: resolving the pathname again here
-    // would reintroduce a symlink-swap window after validation.
-    let bytes = attachment.read_all().map_err(|err| match err.kind() {
-        std::io::ErrorKind::NotFound => StatusCode::NOT_FOUND,
-        std::io::ErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
-        _ => StatusCode::INTERNAL_SERVER_ERROR,
-    })?;
+    let total_len = attachment.len().map_err(map_read_error)?;
+
+    // Sniff only a small prefix, then seek and read the selected bounded range
+    // from this same capability-opened descriptor. Resolving the pathname
+    // again would reintroduce a symlink-swap window after validation.
+    let sniff_len = total_len.min(MIME_SNIFF_BYTES);
+    let sniffed_bytes = attachment
+        .read_range(0, sniff_len, MIME_SNIFF_BYTES)
+        .map_err(map_read_error)?;
     // Never let Tauri's default unknown-extension fallback (`text/html`) turn
     // arbitrary vault bytes into active web content. Known signatures win;
     // otherwise unsupported sniff results stay inert octet streams.
-    let mime = sniff_mime(&bytes, rel);
-    Ok((mime, bytes))
+    let mime = sniff_mime(&sniffed_bytes, rel);
+    let max_unranged_bytes = if mime.starts_with("image/") {
+        MAX_UNRANGED_IMAGE_RESPONSE_BYTES
+    } else {
+        MAX_UNRANGED_RESPONSE_BYTES
+    };
+    let selected_range = match range_header {
+        Some(value) => Some(
+            parse_range(value, total_len, MAX_RANGE_RESPONSE_BYTES)
+                .map_err(|()| ServeError::RangeNotSatisfiable(total_len))?,
+        ),
+        None if total_len > max_unranged_bytes => {
+            return Err(ServeError::Status(StatusCode::PAYLOAD_TOO_LARGE));
+        }
+        None => None,
+    };
+    let (start, length) = selected_range.map_or((0, total_len), |range| {
+        (range.start, range.end - range.start + 1)
+    });
+    let max_bytes = if selected_range.is_some() {
+        MAX_RANGE_RESPONSE_BYTES
+    } else {
+        max_unranged_bytes
+    };
+    let bytes = attachment
+        .read_range(start, length, max_bytes)
+        .map_err(map_read_error)?;
+    Ok(ServedAsset {
+        mime,
+        bytes,
+        total_len,
+        range: selected_range,
+    })
+}
+
+fn map_read_error(error: std::io::Error) -> ServeError {
+    ServeError::Status(match error.kind() {
+        std::io::ErrorKind::NotFound => StatusCode::NOT_FOUND,
+        std::io::ErrorKind::PermissionDenied => StatusCode::FORBIDDEN,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    })
+}
+
+fn parse_range(value: &str, total_len: u64, max_bytes: u64) -> Result<ByteRange, ()> {
+    let range = value.trim().strip_prefix("bytes=").ok_or(())?;
+    if total_len == 0 || max_bytes == 0 || range.contains(',') {
+        return Err(());
+    }
+    let (start, end) = range.split_once('-').ok_or(())?;
+    if start.is_empty() {
+        let suffix_len: u64 = end.parse().map_err(|_| ())?;
+        if suffix_len == 0 {
+            return Err(());
+        }
+        let selected_len = suffix_len.min(total_len).min(max_bytes);
+        return Ok(ByteRange {
+            start: total_len - selected_len,
+            end: total_len - 1,
+        });
+    }
+
+    let start: u64 = start.parse().map_err(|_| ())?;
+    if start >= total_len {
+        return Err(());
+    }
+    let requested_end = if end.is_empty() {
+        total_len - 1
+    } else {
+        end.parse::<u64>().map_err(|_| ())?.min(total_len - 1)
+    };
+    if requested_end < start {
+        return Err(());
+    }
+    let max_end = start.saturating_add(max_bytes - 1).min(total_len - 1);
+    Ok(ByteRange {
+        start,
+        end: requested_end.min(max_end),
+    })
 }
 
 fn sniff_mime(bytes: &[u8], path: &str) -> String {
@@ -257,6 +430,60 @@ mod tests {
     }
 
     #[test]
+    fn request_path_decoding_rejects_malformed_percent_escapes() {
+        assert_eq!(
+            decode_request_path("3/assets/bad%GG.png").unwrap_err(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            decode_request_path("3/assets/bad%.png").unwrap_err(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            decode_request_path("3/assets/bad%2.png").unwrap_err(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            decode_request_path("3/Projects/photo%201.png").unwrap(),
+            "3/Projects/photo 1.png"
+        );
+        assert_eq!(
+            decode_request_path("3/Projects/100%25.png").unwrap(),
+            "3/Projects/100%.png"
+        );
+    }
+
+    #[test]
+    fn byte_ranges_are_bounded_and_validate_unsatisfiable_requests() {
+        assert_eq!(
+            parse_range("bytes=2-5", 10, 8).unwrap(),
+            ByteRange { start: 2, end: 5 }
+        );
+        assert_eq!(
+            parse_range("bytes=2-", 20, 4).unwrap(),
+            ByteRange { start: 2, end: 5 }
+        );
+        assert_eq!(
+            parse_range("bytes=-3", 10, 8).unwrap(),
+            ByteRange { start: 7, end: 9 }
+        );
+        assert_eq!(
+            parse_range("bytes=-20", 10, 4).unwrap(),
+            ByteRange { start: 6, end: 9 }
+        );
+        for invalid in [
+            "items=0-1",
+            "bytes=",
+            "bytes=5-4",
+            "bytes=10-",
+            "bytes=0-1,3-4",
+        ] {
+            assert!(parse_range(invalid, 10, 8).is_err(), "{invalid}");
+        }
+        assert!(parse_range("bytes=0-", 0, 8).is_err());
+    }
+
+    #[test]
     fn rejects_non_attachments_and_unsafe_paths() {
         assert_eq!(
             parse_request_path("3/notes/secret.md").unwrap_err(),
@@ -316,16 +543,91 @@ mod tests {
         app.manage(GraphState::default());
         set_graph(&app, graph.path(), 7);
 
-        let response = response_for(app.handle(), "7/Projects/media/photo.png", true);
+        let response = response_for(app.handle(), "7/Projects/media/photo.png", true, None);
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
         assert_eq!(response.headers()["x-content-type-options"], "nosniff");
         assert_eq!(response.body().as_ref(), b"\x89PNG\r\n\x1a\n");
 
         assert_eq!(
-            response_for(app.handle(), "6/Projects/media/photo.png", true).status(),
+            response_for(app.handle(), "6/Projects/media/photo.png", true, None).status(),
             StatusCode::FORBIDDEN,
         );
+    }
+
+    #[test]
+    fn serves_descriptor_backed_ranges_and_reports_invalid_ranges() {
+        let graph = tempfile::tempdir().unwrap();
+        let bytes = b"\x89PNG\r\n\x1a\nabcdefgh";
+        std::fs::write(graph.path().join("photo.png"), bytes).unwrap();
+
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(GraphState::default());
+        set_graph(&app, graph.path(), 8);
+
+        let response = response_for(app.handle(), "8/photo.png", false, Some("bytes=8-11"));
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
+        assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 8-11/16");
+        assert_eq!(response.headers()[header::CONTENT_LENGTH], "4");
+        assert_eq!(response.body().as_ref(), b"abcd");
+
+        let invalid = response_for(app.handle(), "8/photo.png", false, Some("bytes=20-"));
+        assert_eq!(invalid.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(invalid.headers()[header::CONTENT_RANGE], "bytes */16");
+        assert!(invalid.body().is_empty());
+    }
+
+    #[test]
+    fn refuses_to_buffer_large_assets_without_a_range() {
+        let graph = tempfile::tempdir().unwrap();
+        let file = std::fs::File::create(graph.path().join("large.pdf")).unwrap();
+        file.set_len(MAX_UNRANGED_RESPONSE_BYTES + 1).unwrap();
+
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(GraphState::default());
+        set_graph(&app, graph.path(), 9);
+
+        let response = response_for(app.handle(), "9/large.pdf", false, None);
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
+        assert!(response.body().is_empty());
+
+        let ranged = response_for(app.handle(), "9/large.pdf", false, Some("bytes=0-15"));
+        assert_eq!(ranged.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(ranged.body().len(), 16);
+    }
+
+    #[test]
+    fn serves_large_images_up_to_the_bounded_image_limit() {
+        let graph = tempfile::tempdir().unwrap();
+        let path = graph.path().join("large.png");
+        let mut file = std::fs::File::create(&path).unwrap();
+        std::io::Write::write_all(&mut file, b"\x89PNG\r\n\x1a\n").unwrap();
+        file.set_len(MAX_UNRANGED_RESPONSE_BYTES + 1).unwrap();
+
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(GraphState::default());
+        set_graph(&app, graph.path(), 10);
+
+        let response = response_for(app.handle(), "10/large.png", false, None);
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+        assert_eq!(
+            response.body().len() as u64,
+            MAX_UNRANGED_RESPONSE_BYTES + 1
+        );
+
+        file.set_len(MAX_UNRANGED_IMAGE_RESPONSE_BYTES + 1).unwrap();
+        let oversized = response_for(app.handle(), "10/large.png", false, None);
+        assert_eq!(oversized.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(oversized.body().is_empty());
     }
 
     #[test]
@@ -340,14 +642,14 @@ mod tests {
         app.manage(GraphState::default());
         set_graph(&app, graph.path(), 1);
 
-        let response = response_for(app.handle(), "1/photo.png", false);
+        let response = response_for(app.handle(), "1/photo.png", false, None);
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
             "application/octet-stream"
         );
         assert_eq!(
-            response_for(app.handle(), "1/photo.png", true).status(),
+            response_for(app.handle(), "1/photo.png", true, None).status(),
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
         );
     }
@@ -363,7 +665,7 @@ mod tests {
         app.manage(GraphState::default());
         set_graph(&app, graph.path(), 2);
 
-        let response = response_for(app.handle(), "2/diagram.svg", false);
+        let response = response_for(app.handle(), "2/diagram.svg", false, None);
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[header::CONTENT_TYPE], "image/svg+xml");
         assert_eq!(
@@ -371,7 +673,7 @@ mod tests {
             "sandbox; default-src 'none'; style-src 'unsafe-inline'"
         );
         assert_eq!(
-            response_for(app.handle(), "2/diagram.svg", true).status(),
+            response_for(app.handle(), "2/diagram.svg", true, None).status(),
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
         );
     }
@@ -392,7 +694,7 @@ mod tests {
         set_graph(&app, graph.path(), 3);
 
         assert_eq!(
-            response_for(app.handle(), "3/link.png", false).status(),
+            response_for(app.handle(), "3/link.png", false, None).status(),
             StatusCode::FORBIDDEN,
         );
     }
@@ -416,7 +718,7 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         std::fs::write(root.join("photo.png"), b"\x89PNG\r\n\x1a\nreplacement").unwrap();
 
-        let response = response_for(app.handle(), "4/photo.png", false);
+        let response = response_for(app.handle(), "4/photo.png", false, None);
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.body().as_ref(), b"\x89PNG\r\n\x1a\nvault");
     }

@@ -136,6 +136,14 @@ export interface WikiLink extends Span {
   alias?: string | undefined
 }
 
+/** Metadata carried by a Markdown link resolved through a CommonMark definition. */
+export interface MarkdownLinkReference {
+  /** Normalized definition label. */
+  key: string
+  /** A later definition repeats this key; automated writes must fail closed. */
+  duplicate: boolean
+}
+
 /** A standard markdown link or autolink `[text](href)`. */
 export interface MarkdownLink extends Span {
   href: string
@@ -143,12 +151,7 @@ export interface MarkdownLink extends Span {
   /** Source range of the destination itself, excluding optional `<…>` brackets. */
   destination: Span
   /** Present when this occurrence resolves through a CommonMark definition. */
-  reference?: {
-    /** Normalized definition label. */
-    key: string
-    /** A later definition repeats this key; automated writes must fail closed. */
-    duplicate: boolean
-  } | undefined
+  reference?: MarkdownLinkReference | undefined
   /** Host for external `http(s)` links, else undefined. */
   domain?: string | undefined
 }

@@ -5,7 +5,9 @@ import {
 } from '../indexing/queries'
 import {
   findExactNotePathMatches,
-  findWikiTargetFallbackTiers,
+  findWikiTargetFallbackTiersInCatalog,
+  loadWikiTargetFallbackCatalog,
+  type WikiTargetFallbackCatalog,
 } from '../indexing/queries-local-note-targets'
 import { dbForGraphGeneration, type IndexDatabase } from '../indexing/db'
 import {
@@ -39,6 +41,15 @@ export type ExistingWikiTargetResolution = ExistingWikiTargetOutcome & {
   readonly orphanedPaths?: readonly string[]
 }
 
+/**
+ * A generation-pinned resolver that shares its manifest, index facts, file
+ * reads, parsed candidates, and fallback catalog across multiple batches.
+ */
+export interface ExistingWikiTargetResolver {
+  /** Resolve one batch while reusing this resolver's generation-pinned state. */
+  resolve(targets: readonly string[]): Promise<ExistingWikiTargetResolution[]>
+}
+
 interface MutableMatchTiers {
   readonly date: Set<string>
   readonly title: Set<string>
@@ -57,7 +68,9 @@ interface ManifestDelta {
 interface LiveResolutionContext {
   readonly delta: Promise<ManifestDelta>
   readonly sources: Map<string, Promise<string>>
+  readonly parsed: Map<string, Promise<ReturnType<typeof parseNote>>>
   readonly database: IndexDatabase
+  readonly fallbackCatalog: () => Promise<WikiTargetFallbackCatalog>
 }
 
 const MTIME_TRUST_AGE_MS = 5_000
@@ -152,10 +165,16 @@ async function manifestDelta(
 
 function liveResolutionContext(generation: number): LiveResolutionContext {
   const database = dbForGraphGeneration(generation)
+  let fallbackCatalog: Promise<WikiTargetFallbackCatalog> | undefined
   return {
     delta: manifestDelta(generation, database),
     sources: new Map(),
+    parsed: new Map(),
     database,
+    fallbackCatalog: () => {
+      fallbackCatalog ??= loadWikiTargetFallbackCatalog(database)
+      return fallbackCatalog
+    },
   }
 }
 
@@ -173,10 +192,26 @@ function readCandidate(
   return source
 }
 
+function parseCandidate(
+  context: LiveResolutionContext,
+  path: string,
+  generation: number,
+): Promise<ReturnType<typeof parseNote>> {
+  const existing = context.parsed.get(path)
+  if (existing !== undefined) {
+    return existing
+  }
+  const parsed = readCandidate(context, path, generation).then((source) =>
+    parseNote({ path, source }),
+  )
+  context.parsed.set(path, parsed)
+  return parsed
+}
+
 function addParsedBareMatch(
   tiers: MutableMatchTiers,
   path: string,
-  source: string,
+  parsed: ReturnType<typeof parseNote>,
   targetKey: string,
   fallbackTargetKey: string,
   targetDate: string | undefined,
@@ -184,7 +219,6 @@ function addParsedBareMatch(
   if (isTemplatePath(path)) {
     return
   }
-  const parsed = parseNote({ path, source })
   if (targetDate !== undefined && dateFromDailyPath(path) === targetDate) {
     tiers.date.add(path)
   }
@@ -267,7 +301,7 @@ async function resolveReference(
         addParsedBareMatch(
           tiers,
           path,
-          await readCandidate(context, path, generation),
+          await parseCandidate(context, path, generation),
           bareTarget,
           fallbackTargetKey,
           targetDate,
@@ -292,9 +326,9 @@ async function resolveReference(
       }
     }
 
-    const indexedFallback = await findWikiTargetFallbackTiers(
+    const indexedFallback = findWikiTargetFallbackTiersInCatalog(
       bareTarget,
-      context.database,
+      await context.fallbackCatalog(),
     )
     for (const path of indexedFallback.title) {
       if (!unstable.has(path)) {
@@ -355,22 +389,33 @@ export async function resolveExistingWikiTargets(
   targets: readonly string[],
   generation: number,
 ): Promise<ExistingWikiTargetResolution[]> {
-  if (targets.length === 0) {
-    return []
-  }
+  return createExistingWikiTargetResolver(generation).resolve(targets)
+}
+
+/** Create a reusable live resolver for incremental autocomplete batches. */
+export function createExistingWikiTargetResolver(
+  generation: number,
+): ExistingWikiTargetResolver {
   const context = liveResolutionContext(generation)
-  return Promise.all(
-    targets.map((target) => {
-      if (target.trim() === '') {
-        return Promise.resolve<ExistingWikiTargetResolution>({ kind: 'missing' })
+  return {
+    resolve: async (targets): Promise<ExistingWikiTargetResolution[]> => {
+      if (targets.length === 0) {
+        return []
       }
-      const reference = indexWikiNoteReference('', target)
-      if (reference === null || reference.pathKey === notePathKey('')) {
-        return Promise.resolve<ExistingWikiTargetResolution>({ kind: 'invalid' })
-      }
-      return resolveReference(reference, generation, context)
-    }),
-  )
+      return Promise.all(
+        targets.map((target) => {
+          if (target.trim() === '') {
+            return Promise.resolve<ExistingWikiTargetResolution>({ kind: 'missing' })
+          }
+          const reference = indexWikiNoteReference('', target)
+          if (reference === null || reference.pathKey === notePathKey('')) {
+            return Promise.resolve<ExistingWikiTargetResolution>({ kind: 'invalid' })
+          }
+          return resolveReference(reference, generation, context)
+        }),
+      )
+    },
+  }
 }
 
 /** Resolve a standard Markdown note href from its source note. */

@@ -140,7 +140,17 @@ export function createRenameCoordinator(options: RenameCoordinatorOptions): Rena
       fromPath: currentPath,
       toPath: target,
       notePaths,
-      read: (path) => readNote(path, gen),
+      read: async (path) => {
+        const owner = openSession(path)
+        if (owner === null) {
+          return readNote(path, gen)
+        }
+        const live = owner.liveContent()
+        if (live === null) {
+          throw new Error(`local link source is not loaded: ${path}`)
+        }
+        return live
+      },
     })
     if (prepared.failed.length > 0) {
       throw new Error(

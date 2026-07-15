@@ -136,6 +136,24 @@ describe('useEditorAutocomplete', () => {
     )
   })
 
+  it('reports an invalid background create instead of silently leaving the link unresolved', async () => {
+    resolveOrCreateNoteWithTitle.mockResolvedValue({ kind: 'invalid' })
+    const { result } = renderHook(() => useEditorAutocomplete(7))
+    const items = await result.current.onWikilinkSearch('file://secret')
+
+    act(() => {
+      items[0]!.onSelect?.()
+    })
+
+    await waitFor(() =>
+      expect(resolveOrCreateNoteWithTitle).toHaveBeenCalledWith('file://secret', 7),
+    )
+    expect(startOperation).toHaveBeenCalledWith('Creating note')
+    expect(operationFail).toHaveBeenCalledWith(
+      'Couldn’t create “file://secret” because it isn’t a valid note title or path.',
+    )
+  })
+
   it('surfaces a failed background create instead of silently doing nothing', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     resolveOrCreateNoteWithTitle.mockRejectedValue(new Error('graph changed'))

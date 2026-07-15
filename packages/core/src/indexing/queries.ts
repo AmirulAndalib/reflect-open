@@ -344,7 +344,7 @@ export async function noteTitleOwningEmail(email: string): Promise<string | null
   return owner?.title ?? null
 }
 
-/** Exact indexed date/title/alias candidates, preserving ambiguity within the winning tier. */
+/** Exact indexed date/title/alias/basename candidates, preserving winning-tier ambiguity. */
 export type ExactWikiTargetMatch =
   | { readonly kind: 'date'; readonly paths: readonly string[] }
   | { readonly kind: 'title'; readonly paths: readonly string[] }
@@ -416,10 +416,10 @@ export async function findWikiTargetMatchTiers(
 
 /**
  * Find every indexed path that exactly claims `target`, with ordinary wiki
- * resolution precedence: calendar date, then title, then alias. Unlike
- * {@link resolveWikiTarget}, this does not collapse a tier to its first path;
- * callers that may create on a miss need to distinguish one existing note
- * from several notes claiming the same spelling.
+ * resolution precedence: calendar date, then title, then alias, then basename.
+ * Unlike {@link resolveWikiTarget}, this does not collapse a tier to its first
+ * path; callers that may create on a miss need to distinguish one existing
+ * note from several notes claiming the same spelling.
  */
 export async function findExactWikiTargetMatches(
   target: string,
@@ -435,12 +435,13 @@ export async function findExactWikiTargetMatches(
 
 /**
  * Resolve a `[[target]]` against the index, returning the note ref (its path).
- * The resolution *policy* (prefer daily-date, then title, then alias) lives once
- * in {@link resolveWikiLinkAsync}; this is only the DB-backed data access.
+ * The resolution *policy* (prefer daily-date, then title, then alias, then
+ * basename) lives once in {@link resolveWikiLinkAsync}; this is only the
+ * DB-backed data access.
  *
- * Each lookup `orderBy`s before taking the first row so a title/alias/date
- * collision resolves to the same note every time (otherwise the row order is
- * undefined).
+ * Each lookup `orderBy`s before taking the first row so a
+ * title/alias/date/basename collision resolves to the same note every time
+ * (otherwise the row order is undefined).
  */
 export function resolveWikiTarget(target: string): Promise<Resolution> {
   // Templates are excluded from every lookup, mirroring the `note_keys` view:

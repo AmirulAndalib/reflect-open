@@ -16,12 +16,13 @@ export function NewNoteButton(): ReactElement {
   return (
     <button
       type="button"
+      disabled={graph === null}
       onClick={() => {
         if (graph !== null) {
           navigate(newNoteRoute(graph))
         }
       }}
-      className="flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-text-on-brand shadow-sm transition-colors duration-100 hover:bg-accent-hover"
+      className="flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-text-on-brand shadow-sm transition-colors duration-100 enabled:hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
     >
       New note
       {NEW_NOTE_BINDING !== null ? (

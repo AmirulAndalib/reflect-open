@@ -578,7 +578,70 @@ fn resolution_sees_an_unindexed_duplicate() {
     let output = reflect(&fixture, &["show", "Plan"]);
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert!(stdout(&output).contains("new owner"));
-    assert!(stderr(&output).contains("Projects/Plan.md"));
+    assert!(stderr(&output).contains("1 other match"));
+    assert!(!stderr(&output).contains("Projects/Plan.md"));
+}
+
+#[test]
+fn ambiguity_warning_never_discloses_a_private_duplicate_path() {
+    let fixture = graph();
+    fixture.write_note(
+        "A-Private/sensitive-client-name.md",
+        "---\nprivate: true\n---\n# Plan\nsecret owner\n",
+    );
+    fixture.write_note("Z-Public/Plan.md", "# Plan\npublic owner\n");
+
+    let output = reflect(&fixture, &["show", "Plan"]);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "# Plan\npublic owner\n");
+    assert!(!stderr(&output).contains("other match"));
+    assert!(!stderr(&output).contains("Private"));
+    assert!(!stderr(&output).contains("sensitive-client-name"));
+}
+
+#[test]
+fn bare_resolution_failures_never_disclose_unverified_note_paths() {
+    let placeholder_fixture = graph();
+    let placeholder_dir = placeholder_fixture.root().join("Sensitive-Client");
+    fs::create_dir_all(&placeholder_dir).unwrap();
+    fs::write(
+        placeholder_dir.join(".Unannounced-Merger.md.icloud"),
+        b"placeholder",
+    )
+    .unwrap();
+
+    let placeholder = reflect(&placeholder_fixture, &["show", "Plan"]);
+    assert!(!placeholder.status.success());
+    assert_eq!(stdout(&placeholder), "");
+    assert!(stderr(&placeholder).contains("unavailable"));
+    assert!(!stderr(&placeholder).contains("Sensitive-Client"));
+    assert!(!stderr(&placeholder).contains("Unannounced-Merger"));
+
+    let unreadable_fixture = graph();
+    let unreadable_dir = unreadable_fixture.root().join("Sensitive-Client");
+    fs::create_dir_all(&unreadable_dir).unwrap();
+    fs::write(unreadable_dir.join("Stealth-Launch.md"), [0xff]).unwrap();
+
+    let unreadable = reflect(&unreadable_fixture, &["show", "Plan"]);
+    assert!(!unreadable.status.success());
+    assert_eq!(stdout(&unreadable), "");
+    assert!(stderr(&unreadable).contains("could not be read"));
+    assert!(!stderr(&unreadable).contains("Sensitive-Client"));
+    assert!(!stderr(&unreadable).contains("Stealth-Launch"));
+}
+
+#[test]
+fn explicit_unreadable_path_keeps_its_user_supplied_diagnostic() {
+    let fixture = graph();
+    let rel_path = "Sensitive-Client/Stealth-Launch.md";
+    let absolute = fixture.root().join(rel_path);
+    fs::create_dir_all(absolute.parent().unwrap()).unwrap();
+    fs::write(absolute, [0xff]).unwrap();
+
+    let output = reflect(&fixture, &["show", rel_path]);
+    assert!(!output.status.success());
+    assert_eq!(stdout(&output), "");
+    assert!(stderr(&output).contains(rel_path));
 }
 
 #[test]
@@ -595,7 +658,7 @@ fn resolution_drops_a_deleted_index_owner_before_applying_fallback_tiers() {
 }
 
 #[test]
-fn show_blocks_a_private_note_even_when_the_index_says_public() {
+fn bare_resolution_hides_a_private_note_even_when_the_index_says_public() {
     let fixture = graph();
     let note = fixture.write_note("notes/a.md", "# Alpha\npublic at index time\n");
     fixture.build_index();
@@ -604,10 +667,14 @@ fn show_blocks_a_private_note_even_when_the_index_says_public() {
     let output = reflect(&fixture, &["show", "Alpha"]);
     assert_eq!(output.status.code(), Some(3));
     assert_eq!(stdout(&output), "");
-    assert!(stderr(&output).contains("private"));
+    assert!(stderr(&output).contains("no note matching"));
+    assert!(!stderr(&output).contains("private"));
+    assert!(!stderr(&output).contains("notes/a.md"));
 
     let path_output = reflect(&fixture, &["path", "Alpha"]);
     assert_eq!(path_output.status.code(), Some(3));
+    assert!(stderr(&path_output).contains("no note matching"));
+    assert!(!stderr(&path_output).contains("private"));
 }
 
 #[test]

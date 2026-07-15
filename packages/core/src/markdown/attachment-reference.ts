@@ -5,7 +5,12 @@ const URI_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i
 /** Whether a local Markdown destination names a note rather than an attachment. */
 export function isMarkdownNoteHref(href: string): boolean {
   const hash = href.indexOf('#')
-  const rawPath = hash === -1 ? href : href.slice(0, hash)
+  const query = href.indexOf('?')
+  const end = Math.min(
+    hash === -1 ? href.length : hash,
+    query === -1 ? href.length : query,
+  )
+  const rawPath = href.slice(0, end)
   try {
     return /\.md$/i.test(decodeURIComponent(rawPath))
   } catch {

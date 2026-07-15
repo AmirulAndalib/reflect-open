@@ -199,10 +199,11 @@ export async function writeNote(path: string, contents: string, generation: numb
 }
 
 /**
- * Replace a note only if its current bytes still equal `expected`. `null`
- * means the path must still be absent and uses the native create-if-absent
- * path. A changed result never writes, letting editors reconcile a concurrent
- * edit/removal rather than clobber or recreate it.
+ * Optimistically replace a note after its current bytes match `expected` in
+ * the native command's final validation. `null` means the path must still be
+ * absent and uses the native create-if-absent path. A changed result never
+ * writes. The filesystem watcher remains authoritative for a non-cooperating
+ * external writer that races the final atomic rename.
  */
 export async function writeNoteIfUnchanged(
   path: string,

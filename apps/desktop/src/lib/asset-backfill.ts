@@ -8,7 +8,13 @@ import { startOperation } from '@/lib/operations'
 import { providerFetch } from '@/lib/provider-fetch'
 import { invalidateIndexQueries } from '@/lib/query-client'
 
-let inFlight: { generation: number; promise: Promise<ReconcileAssetDescriptionsOutcome> } | null = null
+interface InFlightBackfill {
+  readonly generation: number
+  readonly promise: Promise<ReconcileAssetDescriptionsOutcome>
+  readonly staleChecks: Array<() => boolean>
+}
+
+let inFlight: InFlightBackfill | null = null
 
 /**
  * Describe every existing eligible asset with user-visible status (Plan 20):
@@ -24,14 +30,20 @@ export function backfillAssetDescriptionsVisibly(
   isStale: () => boolean,
 ): Promise<ReconcileAssetDescriptionsOutcome> {
   if (inFlight !== null && inFlight.generation === generation) {
+    inFlight.staleChecks.push(isStale)
     return inFlight.promise
   }
-  const promise = runBackfill(generation, providers, isStale).finally(() => {
+  const staleChecks = [isStale]
+  // A coalesced caller represents another live consumer of the same
+  // generation. Stop only once every joined consumer has gone stale; binding
+  // the run to the first caller would let its unmount cancel a newer request.
+  const allConsumersStale = (): boolean => staleChecks.every((check) => check())
+  const promise = runBackfill(generation, providers, allConsumersStale).finally(() => {
     if (inFlight !== null && inFlight.promise === promise) {
       inFlight = null
     }
   })
-  inFlight = { generation, promise }
+  inFlight = { generation, promise, staleChecks }
   return promise
 }
 

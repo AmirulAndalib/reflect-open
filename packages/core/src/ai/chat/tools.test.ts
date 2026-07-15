@@ -72,6 +72,20 @@ function dailyRow(date: string, overrides: Partial<DailyNoteRow> = {}): DailyNot
   }
 }
 
+describe('buildNoteTools asset discovery overrides', () => {
+  it('requires legacy note and attachment listings as one privacy snapshot pair', () => {
+    expect(() => buildNoteTools({ listFilesFn: async () => [] })).toThrow(
+      'listFilesFn and listAttachmentsFn must be provided together',
+    )
+    expect(() => buildNoteTools({ listAttachmentsFn: async () => [] })).toThrow(
+      'listFilesFn and listAttachmentsFn must be provided together',
+    )
+    expect(() =>
+      buildNoteTools({ listFilesFn: async () => [], listAttachmentsFn: async () => [] }),
+    ).not.toThrow()
+  })
+})
+
 function isAsyncIterable(value: object): value is AsyncIterable<unknown> {
   return Symbol.asyncIterator in value
 }

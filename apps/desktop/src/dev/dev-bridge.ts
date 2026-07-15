@@ -21,6 +21,9 @@ import type { DevIndexDb } from '@/dev/dev-index-db'
 /** The fixed fake graph root the dev bridge reports (mirrors `mobile_storage`). */
 export const DEV_GRAPH_ROOT = '/dev-graph'
 
+/** The fixed graph generation shared by the dev graph and attachment store. */
+export const DEV_GRAPH_GENERATION = 1
+
 /** Everything the command router needs; assembled by `installDevBridge`. */
 export interface DevBridgeBackend {
   /** The platform `app_platform` reports (the `?platform=` override value). */
@@ -118,7 +121,7 @@ const chatDeleteArgsSchema = z.object({ id: z.string() })
  */
 export function createDevBridge(backend: DevBridgeBackend): IpcBridge {
   const { platform, files, index } = backend
-  const graphInfo = { root: DEV_GRAPH_ROOT, name: 'Dev Graph', generation: 1 }
+  const graphInfo = { root: DEV_GRAPH_ROOT, name: 'Dev Graph', generation: DEV_GRAPH_GENERATION }
   const attachments = backend.attachments ?? createDevAttachmentStore(graphInfo.generation)
   let settingsDocument: Record<string, unknown> = { mobileOnboarded: true }
   const uploads = new Map<

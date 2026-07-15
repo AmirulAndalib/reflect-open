@@ -209,4 +209,11 @@ mod tests {
         assert_eq!(classify(drive_relative), None);
         assert!(!is_safe_visible_relative(drive_relative));
     }
+
+    #[test]
+    fn native_paths_reject_nul_bytes() {
+        let nul_path = Path::new("Projects/plan\0.md");
+        assert_eq!(classify(nul_path), None);
+        assert!(!is_safe_visible_relative(nul_path));
+    }
 }

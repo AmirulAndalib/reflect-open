@@ -139,10 +139,10 @@ async function claimNotePathForSlug(
  *
  * Delegates the read-only decision to {@link resolveExistingWikiTarget}, so
  * date/title/alias precedence, ambiguity, unavailable files, the bounded disk
- * fallback, and the final index race check have one implementation. Only a
- * genuine `missing` result reaches the atomic no-clobber claim. If that claim
- * loses to a concurrent sync checkout or creator, the winner is resolved
- * before any suffix is tried.
+ * fallback, and generation pinning have one implementation. Only a genuine
+ * `missing` result reaches the atomic no-clobber claim. If that claim loses to
+ * a concurrent sync checkout or creator, the winner is resolved before any
+ * suffix is tried.
  */
 export async function resolveOrCreateNoteWithTitle(
   title: string,
@@ -151,11 +151,6 @@ export async function resolveOrCreateNoteWithTitle(
   const existing = await resolveExistingWikiTarget(title, generation)
   if (existing.kind !== 'missing') {
     return existing
-  }
-
-  const confirmed = await resolveExistingWikiTarget(title, generation)
-  if (confirmed.kind !== 'missing') {
-    return confirmed
   }
 
   // On a lost claim, re-resolve both projections before considering a

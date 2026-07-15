@@ -164,8 +164,12 @@ export function buildNoteTools(options: BuildNoteToolsOptions = {}) {
   const listFilesFn = options.listFilesFn ?? (() => listFiles(options.generation))
   const listAttachmentsFn =
     options.listAttachmentsFn ?? (() => listAttachments(options.generation))
-  const usesLegacyAssetDiscovery =
-    options.listFilesFn !== undefined || options.listAttachmentsFn !== undefined
+  const hasListFilesOverride = options.listFilesFn !== undefined
+  const hasListAttachmentsOverride = options.listAttachmentsFn !== undefined
+  if (hasListFilesOverride !== hasListAttachmentsOverride) {
+    throw new Error('listFilesFn and listAttachmentsFn must be provided together')
+  }
+  const usesLegacyAssetDiscovery = hasListFilesOverride && hasListAttachmentsOverride
   const privacySnapshotFn =
     options.privacySnapshotFn ??
     (usesLegacyAssetDiscovery

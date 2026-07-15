@@ -81,6 +81,15 @@ export function useNoteDocument(
   const missingSeed = options?.missingSeed
   const [snapshot, setSnapshot] = useState<NoteSessionSnapshot>(INITIAL_NOTE_SNAPSHOT)
   const editorRef = useRef<NoteEditorHandle | null>(null)
+  const initialCreateConsumedRef = useRef(onInitialCreateConsumed)
+  // The host may recreate this callback while consuming the route-level
+  // claim. Keep the session wired to a stable proxy so that callback identity
+  // alone never disposes and reloads the live document.
+  // eslint-disable-next-line react-hooks/refs
+  initialCreateConsumedRef.current = onInitialCreateConsumed
+  const reportInitialCreateConsumed = useCallback(() => {
+    initialCreateConsumedRef.current?.()
+  }, [])
   /** Mirrors the snapshot's conflict for non-reactive checks (rename gating). */
   const conflictRef = useRef<string | null>(null)
   /** A removed path must not enter settled rename/move automation. */
@@ -153,7 +162,7 @@ export function useNoteDocument(
           },
           onContent: coordinator ? coordinator.content : undefined,
           createIfMissing,
-          onInitialCreateConsumed,
+          onInitialCreateConsumed: reportInitialCreateConsumed,
           recreateAfterRemoval: createIfMissing && isDaily(path),
           missingSeed,
         }),
@@ -167,7 +176,7 @@ export function useNoteDocument(
     path,
     canWrite,
     createIfMissing,
-    onInitialCreateConsumed,
+    reportInitialCreateConsumed,
     trackRenames,
     missingSeed,
   ])

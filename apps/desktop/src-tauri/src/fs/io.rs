@@ -10,6 +10,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard};
 use std::time::UNIX_EPOCH;
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
@@ -32,6 +33,26 @@ pub(super) struct FileCatalog {
 }
 
 pub(super) const REFLECT_DIR: &str = ".reflect";
+static MUTATION_COMMIT_LOCK: Mutex<()> = Mutex::new(());
+
+pub(super) fn lock_mutation_commit() -> AppResult<MutexGuard<'static, ()>> {
+    MUTATION_COMMIT_LOCK
+        .lock()
+        .map_err(|_| AppError::io("filesystem mutation commit lock is poisoned"))
+}
+
+#[cfg(test)]
+pub(super) fn mutation_commit_lock_is_held_for_test() -> bool {
+    match MUTATION_COMMIT_LOCK.try_lock() {
+        Ok(guard) => {
+            drop(guard);
+            false
+        }
+        Err(std::sync::TryLockError::WouldBlock) => true,
+        Err(std::sync::TryLockError::Poisoned(_)) => true,
+    }
+}
+
 const META_SCHEMA_VERSION: u32 = 1;
 pub(super) const TOP_LEVEL_DIRS: [&str; 3] = ["daily", "notes", "assets"];
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -228,7 +249,7 @@ pub(super) enum AtomicCreateOutcome {
     Collision,
 }
 
-/// Result of a compare-and-swap note write.
+/// Result of an optimistic conditional note write.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum AtomicConditionalWriteOutcome {
     Written(Option<u64>),
@@ -252,6 +273,10 @@ pub(super) fn atomic_create(
         return Ok(AtomicCreateOutcome::Collision);
     }
     let temp = stage_bytes(root, target, contents.as_bytes())?;
+    let _commit_guard = lock_mutation_commit()?;
+    if file_occupied(target) {
+        return Ok(AtomicCreateOutcome::Collision);
+    }
     match temp.persist_noclobber(target) {
         Ok(file) => Ok(AtomicCreateOutcome::Created(
             file.metadata().ok().as_ref().and_then(modified_ms),
@@ -263,11 +288,11 @@ pub(super) fn atomic_create(
     }
 }
 
-/// Write only when the current file bytes still match `expected`. `None`
+/// Optimistically write when the current file bytes match `expected`. `None`
 /// means the path is expected to be absent and uses the no-clobber create
-/// primitive. The comparison and atomic replacement live inside one native
-/// command, narrowing the race window to the final filesystem persist rather
-/// than an IPC round-trip.
+/// primitive. Mutations through these IO primitives serialize final validation
+/// and replacement; any writer that does not share that lock can still write
+/// during the final filesystem-persist window.
 #[cfg(test)]
 pub(super) fn atomic_write_if_unchanged(
     root: &Path,
@@ -293,9 +318,24 @@ pub(super) fn atomic_write_if_unchanged(
     if current != expected {
         return Ok(AtomicConditionalWriteOutcome::Changed);
     }
-    Ok(AtomicConditionalWriteOutcome::Written(atomic_write(
-        root, target, contents,
-    )?))
+    let temp = stage_bytes(root, target, contents.as_bytes())?;
+    let _commit_guard = lock_mutation_commit()?;
+    let current = match fs::read_to_string(target) {
+        Ok(current) => current,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(AtomicConditionalWriteOutcome::Changed);
+        }
+        Err(error) => return Err(error.into()),
+    };
+    if current != expected {
+        return Ok(AtomicConditionalWriteOutcome::Changed);
+    }
+    let file = temp
+        .persist(target)
+        .map_err(|error| AppError::io(error.to_string()))?;
+    Ok(AtomicConditionalWriteOutcome::Written(
+        file.metadata().ok().as_ref().and_then(modified_ms),
+    ))
 }
 
 /// Byte-level atomic write — shared by notes (text) and assets (binary).
@@ -315,6 +355,7 @@ pub(crate) fn atomic_write_bytes(
     contents: &[u8],
 ) -> AppResult<Option<u64>> {
     let tmp = stage_bytes(root, target, contents)?;
+    let _commit_guard = lock_mutation_commit()?;
     let file = tmp
         .persist(target)
         .map_err(|err| AppError::io(err.to_string()))?;
@@ -373,6 +414,7 @@ where
     ensure_replaceable_target(&parent.directory, &parent.file_name, path)?;
     let mut staged = stage_pinned_bytes(root, contents)?;
 
+    let _commit_guard = lock_mutation_commit()?;
     before_commit();
     revalidate_visible_parent(root, &parent)?;
     ensure_replaceable_target(&parent.directory, &parent.file_name, path)?;
@@ -416,6 +458,7 @@ where
     }
     let mut staged = stage_pinned_bytes(root, contents.as_bytes())?;
 
+    let _commit_guard = lock_mutation_commit()?;
     before_commit();
     revalidate_visible_parent(root, &parent)?;
     if visible_path_occupied(&parent.directory, &parent.file_name)? {
@@ -453,8 +496,11 @@ where
     }
 }
 
-/// Compare the currently addressed regular file with `expected`, then replace
-/// it atomically only if both its identity and bytes still match at commit.
+/// Optimistically compare the addressed file with `expected`, then atomically
+/// replace it after a final identity-and-bytes validation. Mutations through
+/// these IO primitives share a commit lock, so they cannot enter between
+/// validation and rename. Any writer that does not share the lock can still
+/// race the final rename; watcher reconciliation remains authoritative.
 pub(super) fn atomic_write_if_unchanged_pinned(
     root: &PinnedGraphRoot,
     path: &str,
@@ -500,6 +546,7 @@ where
     }
     let mut staged = stage_pinned_bytes(root, contents.as_bytes())?;
 
+    let _commit_guard = lock_mutation_commit()?;
     before_commit();
     revalidate_visible_parent(root, &parent)?;
     if placeholder_exists(&parent.directory, &parent.file_name)? {
@@ -559,6 +606,7 @@ where
         )));
     }
 
+    let _commit_guard = lock_mutation_commit()?;
     before_commit();
     revalidate_visible_parent(root, &source_parent)?;
     revalidate_visible_parent(root, &destination_parent)?;
@@ -709,6 +757,7 @@ where
         open_internal_directory(root, &[REFLECT_DIR, "trash"], true)?;
     let trash_name = available_trash_name(&trash_directory, &source_name)?;
 
+    let _commit_guard = lock_mutation_commit()?;
     before_commit();
     revalidate_visible_parent(root, &original_parent)?;
     revalidate_directory(root, &trash_components, &trash_directory)?;
@@ -1114,8 +1163,9 @@ fn safe_mutation_error(path: &str, error: std::io::Error) -> AppError {
 /// Descriptor-relative no-clobber rename. Apple/Linux/Android use the native
 /// exclusive rename operation, retaining one atomic namespace transition.
 /// Other platforms use the same hard-link + unlink fallback as `tempfile`'s
-/// `persist_noclobber`, with rollback if the unlink fails.
-fn rename_noreplace(
+/// `persist_noclobber`. Failed-source-unlink cleanup is identity guarded so a
+/// replacement destination is never knowingly removed.
+pub(super) fn rename_noreplace(
     from_directory: &Dir,
     from: &str,
     to_directory: &Dir,
@@ -1144,12 +1194,111 @@ fn rename_noreplace(
         }
     }
 
+    rename_noreplace_fallback_with(
+        from_directory,
+        from,
+        to_directory,
+        to,
+        |_, _| {},
+        |directory, path| directory.remove_file(path),
+    )
+}
+
+/// Descriptor-relative no-clobber rename for directories. Windows rename is
+/// natively no-replace; Apple/Linux/Android use `renameat2`/`renamex_np` via
+/// rustix. The final fallback is used only on unsupported targets.
+pub(super) fn rename_directory_noreplace(
+    from_directory: &Dir,
+    from: &Path,
+    to_directory: &Dir,
+    to: &Path,
+) -> std::io::Result<()> {
+    #[cfg(any(
+        target_os = "android",
+        target_os = "ios",
+        target_os = "linux",
+        target_os = "macos"
+    ))]
+    {
+        use rustix::fs::{renameat_with, RenameFlags};
+        use rustix::io::Errno;
+
+        match renameat_with(
+            from_directory,
+            from,
+            to_directory,
+            to,
+            RenameFlags::NOREPLACE,
+        ) {
+            Ok(()) => return Ok(()),
+            Err(Errno::NOSYS | Errno::INVAL) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return from_directory.rename(from, to_directory, to);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        match to_directory.symlink_metadata(to) {
+            Ok(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "directory rename destination already exists",
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        from_directory.rename(from, to_directory, to)
+    }
+}
+
+fn rename_noreplace_fallback_with<AfterLink, RemoveSource>(
+    from_directory: &Dir,
+    from: &str,
+    to_directory: &Dir,
+    to: &str,
+    after_link: AfterLink,
+    remove_source: RemoveSource,
+) -> std::io::Result<()>
+where
+    AfterLink: FnOnce(&Dir, &str),
+    RemoveSource: FnOnce(&Dir, &str) -> std::io::Result<()>,
+{
+    let source_identity = nofollow_regular_file_identity(from_directory, from)?
+        .ok_or_else(|| std::io::Error::other("hard-link source is not a regular file"))?;
     from_directory.hard_link(from, to_directory, to)?;
-    if let Err(error) = from_directory.remove_file(from) {
-        let _ = to_directory.remove_file(to);
+    after_link(to_directory, to);
+    if nofollow_regular_file_identity(to_directory, to)?.as_ref() != Some(&source_identity) {
+        return Err(std::io::Error::other(
+            "hard-link destination changed before source cleanup",
+        ));
+    }
+    if let Err(error) = remove_source(from_directory, from) {
+        if nofollow_regular_file_identity(to_directory, to)?.as_ref() == Some(&source_identity) {
+            let _ = to_directory.remove_file(to);
+        }
         return Err(error);
     }
     Ok(())
+}
+
+fn nofollow_regular_file_identity(
+    directory: &Dir,
+    file_name: &str,
+) -> std::io::Result<Option<Handle>> {
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    match directory.open_with(file_name, &options) {
+        Ok(file) if file.metadata()?.is_file() => Handle::from_file(file.into_std()).map(Some),
+        Ok(_) => Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 /// Last-modified time in epoch milliseconds, or `None` when the platform
@@ -1779,6 +1928,64 @@ mod tests {
             fs::read_to_string(root.join("notes/business-ideas.md")).unwrap(),
             winner
         );
+    }
+
+    #[test]
+    fn hard_link_fallback_never_cleans_up_a_replacement_destination() {
+        let vault = tempdir().unwrap();
+        let source = vault.path().join("source.md");
+        let destination = vault.path().join("destination.md");
+        fs::write(&source, "source\n").unwrap();
+        let directory = Dir::open_ambient_dir(vault.path(), ambient_authority()).unwrap();
+
+        let error = rename_noreplace_fallback_with(
+            &directory,
+            "source.md",
+            &directory,
+            "destination.md",
+            |_, _| {},
+            |_, _| {
+                fs::remove_file(&destination).unwrap();
+                fs::write(&destination, "replacement\n").unwrap();
+                Err(std::io::Error::other("simulated source unlink failure"))
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        assert_eq!(fs::read_to_string(source).unwrap(), "source\n");
+        assert_eq!(fs::read_to_string(destination).unwrap(), "replacement\n");
+    }
+
+    #[test]
+    fn hard_link_fallback_rejects_replacement_before_identity_validation() {
+        let vault = tempdir().unwrap();
+        let source = vault.path().join("source.md");
+        let destination = vault.path().join("destination.md");
+        fs::write(&source, "source\n").unwrap();
+        let directory = Dir::open_ambient_dir(vault.path(), ambient_authority()).unwrap();
+        let remove_source_called = std::cell::Cell::new(false);
+
+        let error = rename_noreplace_fallback_with(
+            &directory,
+            "source.md",
+            &directory,
+            "destination.md",
+            |_, _| {
+                fs::remove_file(&destination).unwrap();
+                fs::write(&destination, "replacement\n").unwrap();
+            },
+            |_, _| {
+                remove_source_called.set(true);
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        assert!(!remove_source_called.get());
+        assert_eq!(fs::read_to_string(source).unwrap(), "source\n");
+        assert_eq!(fs::read_to_string(destination).unwrap(), "replacement\n");
     }
 
     #[test]

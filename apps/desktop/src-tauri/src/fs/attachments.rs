@@ -6,7 +6,7 @@
 //! path because protocol URLs and open commands are independently forgeable.
 
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
@@ -93,15 +93,91 @@ pub(super) struct OpenAttachment {
 }
 
 impl OpenAttachment {
-    pub(super) fn read_all(mut self) -> std::io::Result<Vec<u8>> {
-        let mut bytes = Vec::new();
-        self.file.read_to_end(&mut bytes)?;
+    pub(super) fn len(&self) -> std::io::Result<u64> {
+        self.file.metadata().map(|metadata| metadata.len())
+    }
+
+    /// Read this descriptor only when its complete contents fit within the
+    /// caller's explicit budget. The second limit check catches growth after
+    /// `metadata()` without ever allocating or reading beyond the budget.
+    pub(super) fn read_all(self, max_bytes: u64) -> std::io::Result<Vec<u8>> {
+        let file_len = self.len()?;
+        if file_len > max_bytes {
+            return Err(file_too_large(file_len, max_bytes));
+        }
+        let read_limit = max_bytes.checked_add(1).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "attachment read limit is too large",
+            )
+        })?;
+        let capacity = usize::try_from(file_len).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "file length does not fit in memory",
+            )
+        })?;
+        let mut bytes = Vec::with_capacity(capacity);
+        self.file.take(read_limit).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > max_bytes {
+            return Err(file_too_large(bytes.len() as u64, max_bytes));
+        }
+        Ok(bytes)
+    }
+
+    /// Read an exact, caller-bounded byte range from the already validated
+    /// descriptor. This is used by the custom protocol so large media never
+    /// needs to be buffered in full.
+    pub(super) fn read_range(
+        &mut self,
+        start: u64,
+        length: u64,
+        max_bytes: u64,
+    ) -> std::io::Result<Vec<u8>> {
+        if length > max_bytes {
+            return Err(file_too_large(length, max_bytes));
+        }
+        let capacity = usize::try_from(length).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "attachment byte range does not fit in memory",
+            )
+        })?;
+        let end = start.checked_add(length).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "attachment byte range overflows",
+            )
+        })?;
+        if end > self.len()? {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "attachment became shorter while it was being read",
+            ));
+        }
+
+        self.file.seek(SeekFrom::Start(start))?;
+        let mut bytes = Vec::with_capacity(capacity);
+        self.file.by_ref().take(length).read_to_end(&mut bytes)?;
+        if bytes.len() != capacity {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "attachment became shorter while it was being read",
+            ));
+        }
         Ok(bytes)
     }
 
     fn identity_handle(&self) -> std::io::Result<Handle> {
         Handle::from_file(self.file.try_clone()?)
     }
+}
+
+fn file_too_large(actual: u64, max_bytes: u64) -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!("file is {actual} bytes; the read limit is {max_bytes} bytes"),
+    )
 }
 
 /// Holds the ambient-root re-open, attachment handle, and identity handles
@@ -413,9 +489,13 @@ pub(super) fn open_existing_attachment(
 /// paths can never turn a symlinked asset or sidecar into bytes from outside
 /// the vault. Callers remain responsible for constraining the accepted path
 /// class (note, managed asset, or managed description).
-pub(super) fn read_existing_visible_file(root: &PinnedGraphRoot, path: &str) -> AppResult<Vec<u8>> {
+pub(super) fn read_existing_visible_file(
+    root: &PinnedGraphRoot,
+    path: &str,
+    max_bytes: u64,
+) -> AppResult<Vec<u8>> {
     open_from_capability(root.capability.clone(), path)?
-        .read_all()
+        .read_all(max_bytes)
         .map_err(AppError::from)
 }
 
@@ -1304,7 +1384,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(attachment.read_all().unwrap(), b"vault bytes");
+        assert_eq!(attachment.read_all(1024).unwrap(), b"vault bytes");
     }
 
     #[test]
@@ -1341,7 +1421,26 @@ mod tests {
             .err()
             .expect("replaced ambient root must be rejected by the pathname launcher");
         assert!(matches!(launch_error, AppError::Traversal { .. }));
-        assert_eq!(attachment.read_all().unwrap(), b"vault bytes");
+        assert_eq!(attachment.read_all(1024).unwrap(), b"vault bytes");
+    }
+
+    #[test]
+    fn descriptor_reads_enforce_the_callers_byte_budget() {
+        let graph = tempfile::tempdir().unwrap();
+        fs::write(graph.path().join("photo.png"), b"12345").unwrap();
+        let root = pinned(graph.path());
+
+        let exact = open_existing_attachment(&root, "photo.png").unwrap();
+        assert_eq!(exact.read_all(5).unwrap(), b"12345");
+
+        let too_small = open_existing_attachment(&root, "photo.png").unwrap();
+        let error = too_small.read_all(4).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+
+        let mut ranged = open_existing_attachment(&root, "photo.png").unwrap();
+        assert_eq!(ranged.read_range(1, 3, 3).unwrap(), b"234");
+        let error = ranged.read_range(0, 4, 3).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
 
     #[cfg(unix)]

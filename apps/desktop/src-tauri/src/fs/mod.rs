@@ -16,8 +16,12 @@ mod resolve;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(desktop)]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+#[cfg(desktop)]
+use cap_fs_ext::DirExt;
 use cap_std::ambient_authority;
 use cap_std::fs::Dir;
 use serde::Serialize;
@@ -136,6 +140,13 @@ pub struct AssetPrivacySnapshot {
 /// invalidated by a filesystem source that cannot safely use `index:changed`
 /// for every transition (notably iCloud eviction placeholders).
 pub(crate) const FILE_CATALOG_CHANGED_EVENT: &str = "graph:catalog-changed";
+
+const MAX_NOTE_READ_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_ASSET_IPC_READ_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_AI_MANAGED_ASSET_READ_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_ASSET_DESCRIPTION_READ_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_PRIVACY_SNAPSHOT_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_PRIVACY_SNAPSHOT_ATTEMPTS: usize = 3;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -438,7 +449,7 @@ fn note_read_for(state: &GraphState, path: &str, generation: Option<u64>) -> App
     ensure_note_path(path)?;
     let root = pinned_root(state, generation)?;
     ensure_pinned_root_path_identity(&root)?;
-    let bytes = attachments::read_existing_visible_file(&root, path)?;
+    let bytes = attachments::read_existing_visible_file(&root, path, MAX_NOTE_READ_BYTES)?;
     String::from_utf8(bytes)
         .map_err(|error| AppError::parse(format!("note is not UTF-8 ({path}): {error}")))
 }
@@ -463,11 +474,12 @@ pub fn note_write(
     Ok(modified_ms)
 }
 
-/// Compare the current note with `expected` and atomically replace it only on
-/// an exact match. `expected: null` means the path must still be absent and
-/// takes the native no-clobber create path. A mismatch is returned as data so
-/// editor sessions can reconcile instead of overwriting external changes or
-/// recreating a removed adopted note.
+/// Optimistically compare the current note with `expected`, then atomically
+/// replace it after final validation. `expected: null` means the path must
+/// still be absent and takes the native no-clobber create path. Other command-
+/// layer mutations cannot enter between validation and commit; a writer that
+/// does not share the commit lock can still race the final filesystem rename,
+/// so watcher reconciliation remains authoritative.
 #[tauri::command]
 pub fn note_write_if_unchanged(
     path: String,
@@ -544,7 +556,7 @@ fn asset_read_for(state: &GraphState, path: &str, generation: u64) -> AppResult<
     ensure_reserved_attachment_path(path)?;
     let root = pinned_root_for_generation_inner(state, generation)?;
     ensure_pinned_root_path_identity(&root)?;
-    let bytes = attachments::read_existing_visible_file(&root, path)?;
+    let bytes = attachments::read_existing_visible_file(&root, path, MAX_ASSET_IPC_READ_BYTES)?;
     Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
@@ -586,7 +598,8 @@ fn managed_asset_read_for(state: &GraphState, path: &str, generation: u64) -> Ap
     use base64::Engine;
     ensure_ai_managed_asset_path(path)?;
     let root = pinned_root_for_generation_inner(state, generation)?;
-    let bytes = attachments::read_existing_visible_file(&root, path)?;
+    let bytes =
+        attachments::read_existing_visible_file(&root, path, MAX_AI_MANAGED_ASSET_READ_BYTES)?;
     Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
@@ -611,7 +624,11 @@ fn managed_asset_description_read_for(
     let root = pinned_root(state, generation)?;
     ensure_pinned_root_path_identity(&root)?;
     let description_path = format!("{path}.reflect.md");
-    match attachments::read_existing_visible_file(&root, &description_path) {
+    match attachments::read_existing_visible_file(
+        &root,
+        &description_path,
+        MAX_ASSET_DESCRIPTION_READ_BYTES,
+    ) {
         Ok(bytes) => String::from_utf8(bytes)
             .map(Some)
             .map_err(|error| AppError::parse(format!("asset description is not UTF-8: {error}"))),
@@ -862,25 +879,366 @@ fn invalidate_graph_for_delete(state: &GraphState, generation: u64) -> AppResult
     Ok(root)
 }
 
-/// Revalidate the selected directory itself immediately before the OS Trash
-/// pathname boundary. Unix keeps the identity handle alive through the call;
-/// Windows directory capabilities intentionally deny delete sharing, so the
-/// handle must be released after the check for Trash to move it.
+#[cfg(desktop)]
+static GRAPH_DELETE_STAGE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// A selected graph moved by descriptor into a unique sibling staging
+/// directory. The original root name is preserved for the OS Trash item, but
+/// the pathname-only API never receives the user-selected pathname after its
+/// capability has been released on Windows.
+#[cfg(desktop)]
+struct StagedGraphRoot {
+    original_path: PathBuf,
+    root_name: PathBuf,
+    parent_path: PathBuf,
+    parent: Dir,
+    parent_identity: same_file::Handle,
+    staging_name: String,
+    staging_path: PathBuf,
+    staging_directory: Dir,
+    staging_identity: same_file::Handle,
+    root_identity: same_file::Handle,
+}
+
+#[cfg(desktop)]
+impl StagedGraphRoot {
+    fn revalidated_ambient_path(&self) -> AppResult<&Path> {
+        let ambient_parent = Dir::open_ambient_dir(&self.parent_path, ambient_authority())
+            .map_err(|error| {
+                AppError::traversal(format!(
+                    "graph-delete parent changed before the Trash handoff: {error}"
+                ))
+            })?;
+        if graph_directory_identity(&ambient_parent)? != self.parent_identity {
+            return Err(AppError::traversal(
+                "graph-delete parent changed before the Trash handoff",
+            ));
+        }
+
+        let ambient_staging = ambient_parent
+            .open_dir_nofollow(&self.staging_name)
+            .map_err(|error| {
+                AppError::traversal(format!(
+                    "graph-delete staging directory changed before the Trash handoff: {error}"
+                ))
+            })?;
+        if graph_directory_identity(&ambient_staging)? != self.staging_identity {
+            return Err(AppError::traversal(
+                "graph-delete staging directory changed before the Trash handoff",
+            ));
+        }
+
+        let staged_root = self
+            .staging_directory
+            .open_dir_nofollow(&self.root_name)
+            .map_err(|error| {
+                AppError::traversal(format!(
+                    "staged graph changed before the Trash handoff: {error}"
+                ))
+            })?;
+        if graph_directory_identity(&staged_root)? != self.root_identity {
+            return Err(AppError::traversal(
+                "staged graph changed before the Trash handoff",
+            ));
+        }
+        let ambient_root_identity =
+            same_file::Handle::from_path(&self.staging_path).map_err(|error| {
+                AppError::traversal(format!(
+                    "staged graph path changed before the Trash handoff: {error}"
+                ))
+            })?;
+        if ambient_root_identity != self.root_identity {
+            return Err(AppError::traversal(
+                "staged graph path changed before the Trash handoff",
+            ));
+        }
+        Ok(&self.staging_path)
+    }
+
+    fn rollback(self) -> AppResult<()> {
+        let current = self
+            .staging_directory
+            .open_dir_nofollow(&self.root_name)
+            .map_err(|error| {
+                AppError::traversal(format!("staged graph could not be restored: {error}"))
+            })?;
+        if graph_directory_identity(&current)? != self.root_identity {
+            return Err(AppError::traversal(
+                "staged graph changed and could not be restored safely",
+            ));
+        }
+        drop(current);
+        io::rename_directory_noreplace(
+            &self.staging_directory,
+            &self.root_name,
+            &self.parent,
+            &self.root_name,
+        )
+        .map_err(|error| AppError::io(format!("staged graph could not be restored: {error}")))?;
+        self.remove_empty_staging_directory();
+        Ok(())
+    }
+
+    fn complete(self) {
+        self.remove_empty_staging_directory();
+    }
+
+    fn remove_empty_staging_directory(self) {
+        let StagedGraphRoot {
+            parent,
+            staging_name,
+            staging_directory,
+            staging_identity,
+            ..
+        } = self;
+        drop(staging_directory);
+        let Ok(current) = parent.open_dir_nofollow(&staging_name) else {
+            return;
+        };
+        let current_matches =
+            graph_directory_identity(&current).is_ok_and(|identity| identity == staging_identity);
+        drop(current);
+        drop(staging_identity);
+        if current_matches {
+            if let Err(error) = parent.remove_dir(&staging_name) {
+                tracing::warn!(%error, "failed to remove empty graph-delete staging directory");
+            }
+        }
+    }
+}
+
+#[cfg(desktop)]
+fn graph_directory_identity(directory: &Dir) -> AppResult<same_file::Handle> {
+    Ok(same_file::Handle::from_file(
+        directory.try_clone()?.into_std_file(),
+    )?)
+}
+
+#[cfg(desktop)]
+fn create_graph_delete_staging(
+    parent: &Dir,
+    parent_path: &Path,
+) -> AppResult<(String, PathBuf, Dir, same_file::Handle)> {
+    for _ in 0..128 {
+        let serial = GRAPH_DELETE_STAGE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let staging_name = format!(".reflect-delete-stage-{}-{serial}", std::process::id());
+        match parent.create_dir(&staging_name) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(AppError::io(error.to_string())),
+        }
+        let staging_path = parent_path.join(&staging_name);
+        let staging_directory = match parent.open_dir_nofollow(&staging_name) {
+            Ok(directory) => directory,
+            Err(error) => {
+                let _ = parent.remove_dir(&staging_name);
+                return Err(AppError::traversal(format!(
+                    "graph-delete staging directory could not be pinned: {error}"
+                )));
+            }
+        };
+        let capability_identity = match graph_directory_identity(&staging_directory) {
+            Ok(identity) => identity,
+            Err(error) => {
+                drop(staging_directory);
+                let _ = parent.remove_dir(&staging_name);
+                return Err(error);
+            }
+        };
+        let ambient_identity = match same_file::Handle::from_path(&staging_path) {
+            Ok(identity) => identity,
+            Err(error) => {
+                drop(staging_directory);
+                let _ = parent.remove_dir(&staging_name);
+                return Err(AppError::traversal(format!(
+                    "graph-delete staging directory path could not be pinned: {error}"
+                )));
+            }
+        };
+        if capability_identity != ambient_identity {
+            drop(staging_directory);
+            let _ = parent.remove_dir(&staging_name);
+            return Err(AppError::traversal(
+                "graph-delete staging directory was replaced while it was created",
+            ));
+        }
+        return Ok((
+            staging_name,
+            staging_path,
+            staging_directory,
+            ambient_identity,
+        ));
+    }
+    Err(AppError::io(
+        "could not allocate a unique graph-delete staging directory",
+    ))
+}
+
+#[cfg(desktop)]
+fn stage_graph_root_for_delete(root: PinnedGraphRoot) -> AppResult<StagedGraphRoot> {
+    stage_graph_root_for_delete_with(root, || {})
+}
+
+#[cfg(desktop)]
+fn stage_graph_root_for_delete_with<F>(
+    root: PinnedGraphRoot,
+    after_root_release: F,
+) -> AppResult<StagedGraphRoot>
+where
+    F: FnOnce(),
+{
+    ensure_pinned_root_path_identity(&root)?;
+    let original_path = root.path.clone();
+    let parent_path = original_path
+        .parent()
+        .ok_or_else(|| AppError::traversal("a filesystem root cannot be moved to Trash"))?
+        .to_path_buf();
+    let root_name = original_path
+        .file_name()
+        .ok_or_else(|| AppError::traversal("graph root has no directory name"))?;
+    let root_name = PathBuf::from(root_name);
+    let parent = Dir::open_ambient_dir(&parent_path, ambient_authority())?;
+    let parent_identity = graph_directory_identity(&parent)?;
+
+    // `same_file::Handle::from_path` uses a delete-sharing handle on Windows.
+    // Retain that identity through the Trash call, but release the cap-std
+    // root handle whose stricter sharing mode would prevent the staging move.
+    let capability_identity = graph_directory_identity(&root.capability)?;
+    let root_identity = same_file::Handle::from_path(&original_path)?;
+    if capability_identity != root_identity {
+        return Err(AppError::traversal(
+            "the graph root path changed before delete staging",
+        ));
+    }
+    drop(capability_identity);
+
+    let (staging_name, staging_parent_path, staging_directory, staging_identity) =
+        create_graph_delete_staging(&parent, &parent_path)?;
+    let staging_path = staging_parent_path.join(&root_name);
+    drop(root);
+    after_root_release();
+
+    if let Err(error) =
+        io::rename_directory_noreplace(&parent, &root_name, &staging_directory, &root_name)
+    {
+        let root_path_changed = same_file::Handle::from_path(&original_path)
+            .map_or(true, |current| current != root_identity);
+        let staged = StagedGraphRoot {
+            original_path,
+            root_name,
+            parent_path,
+            parent,
+            parent_identity,
+            staging_name,
+            staging_path,
+            staging_directory,
+            staging_identity,
+            root_identity,
+        };
+        staged.complete();
+        return if root_path_changed {
+            Err(AppError::traversal(format!(
+                "the graph root path changed before delete staging: {error}"
+            )))
+        } else {
+            Err(AppError::io(format!(
+                "graph could not be staged for Trash: {error}"
+            )))
+        };
+    }
+
+    let mut staged = StagedGraphRoot {
+        original_path,
+        root_name,
+        parent_path,
+        parent,
+        parent_identity,
+        staging_name,
+        staging_path,
+        staging_directory,
+        staging_identity,
+        root_identity,
+    };
+    let staged_root = match staged
+        .staging_directory
+        .open_dir_nofollow(&staged.root_name)
+    {
+        Ok(root) => root,
+        Err(error) => {
+            let recovery_path = staged.staging_path.clone();
+            return match staged.rollback() {
+                Ok(()) => Err(AppError::traversal(format!(
+                    "staged graph could not be re-opened safely: {error}"
+                ))),
+                Err(rollback_error) => Err(AppError::traversal(format!(
+                    "staged graph could not be re-opened; it may remain recoverable at {}: {error}; rollback failed: {rollback_error:?}",
+                    recovery_path.display(),
+                ))),
+            };
+        }
+    };
+    let staged_root_identity = match graph_directory_identity(&staged_root) {
+        Ok(identity) => identity,
+        Err(error) => {
+            drop(staged_root);
+            let recovery_path = staged.staging_path.clone();
+            return match staged.rollback() {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(AppError::traversal(format!(
+                    "staged graph identity could not be verified; it may remain recoverable at {}: {error:?}; rollback failed: {rollback_error:?}",
+                    recovery_path.display(),
+                ))),
+            };
+        }
+    };
+    drop(staged_root);
+    if staged_root_identity != staged.root_identity {
+        staged.root_identity = staged_root_identity;
+        let recovery_path = staged.staging_path.clone();
+        return match staged.rollback() {
+            Ok(()) => Err(AppError::traversal(
+                "the graph root path was replaced after its capability was released",
+            )),
+            Err(rollback_error) => Err(AppError::traversal(format!(
+                "the graph root path was replaced; its replacement remains recoverable at {} because rollback failed: {rollback_error:?}",
+                recovery_path.display(),
+            ))),
+        };
+    }
+    Ok(staged)
+}
+
+/// Move the capability-validated graph to a unique sibling directory before
+/// crossing the OS Trash pathname boundary. This closes the Windows race where
+/// releasing the original capability made the selected pathname replaceable.
 #[cfg(desktop)]
 fn trash_pinned_graph_root(root: PinnedGraphRoot) -> AppResult<PathBuf> {
-    ensure_pinned_root_path_identity(&root)?;
-    let root_path = root.path.clone();
-    #[cfg(target_os = "windows")]
-    {
-        drop(root);
-        os_trash_delete(&root_path)?;
+    let staged = stage_graph_root_for_delete(root)?;
+    let root_path = staged.original_path.clone();
+    let staged_path = match staged.revalidated_ambient_path() {
+        Ok(path) => path.to_path_buf(),
+        Err(error) => {
+            let recovery_path = staged.staging_path.clone();
+            return match staged.rollback() {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(AppError::io(format!(
+                    "{error:?}; the graph remains recoverable at {} because rollback failed: {rollback_error:?}",
+                    recovery_path.display(),
+                ))),
+            };
+        }
+    };
+    if let Err(error) = os_trash_delete(&staged_path) {
+        let recovery_path = staged.staging_path.clone();
+        return match staged.rollback() {
+            Ok(()) => Err(error),
+            Err(rollback_error) => Err(AppError::io(format!(
+                "{error:?}; the graph remains recoverable at {} because rollback failed: {rollback_error:?}",
+                recovery_path.display(),
+            ))),
+        };
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let result = os_trash_delete(&root_path);
-        drop(root);
-        result?;
-    }
+    staged.complete();
     Ok(root_path)
 }
 
@@ -952,7 +1310,7 @@ fn asset_privacy_snapshot_with<F>(
 where
     F: FnMut(&Path) -> AppResult<io::FileCatalog>,
 {
-    loop {
+    for attempt in 0..MAX_PRIVACY_SNAPSHOT_ATTEMPTS {
         let (root, revision) = {
             let inner = lock_graph(state)?;
             if inner.generation != generation {
@@ -972,9 +1330,16 @@ where
             )
         };
 
+        // Native file mutations stage without this guard, then acquire it for
+        // their final validation and namespace commit. Holding the same guard
+        // through this live walk and revision check means each such commit is
+        // either already visible to the scan or cannot land until the returned
+        // snapshot has been fully captured.
+        let _commit_guard = io::lock_mutation_commit()?;
         ensure_pinned_root_path_identity(&root)?;
         let catalog = scan(&root.path)?;
         let mut notes = Vec::with_capacity(catalog.notes.len());
+        let mut total_note_bytes = 0_u64;
         for file in &catalog.notes {
             if file.placeholder {
                 return Err(AppError::not_found(format!(
@@ -990,7 +1355,17 @@ where
                     file.path
                 )));
             }
-            let bytes = attachments::read_existing_visible_file(&root, &file.path)?;
+            let remaining_bytes = MAX_PRIVACY_SNAPSHOT_BYTES
+                .checked_sub(total_note_bytes)
+                .ok_or_else(|| AppError::io("privacy snapshot exceeded its byte limit"))?;
+            let bytes = attachments::read_existing_visible_file(
+                &root,
+                &file.path,
+                remaining_bytes.min(MAX_NOTE_READ_BYTES),
+            )?;
+            total_note_bytes = total_note_bytes
+                .checked_add(bytes.len() as u64)
+                .ok_or_else(|| AppError::io("privacy snapshot byte count overflowed"))?;
             let source = String::from_utf8(bytes).map_err(|error| {
                 AppError::parse(format!(
                     "privacy snapshot note is not UTF-8 ({}): {error}",
@@ -1014,6 +1389,11 @@ where
             ));
         }
         if inner.catalog_revision != revision {
+            if attempt + 1 == MAX_PRIVACY_SNAPSHOT_ATTEMPTS {
+                return Err(AppError::io(
+                    "the vault kept changing while its privacy snapshot was being captured",
+                ));
+            }
             continue;
         }
         return Ok(AssetPrivacySnapshot {
@@ -1022,6 +1402,7 @@ where
             attachments: catalog.attachments,
         });
     }
+    unreachable!("privacy snapshot attempts are non-zero")
 }
 
 fn ensure_pinned_root_path_identity(root: &PinnedGraphRoot) -> AppResult<()> {
@@ -1220,7 +1601,8 @@ mod file_catalog_tests {
     use cap_std::fs::Dir;
     use serde_json::json;
     use std::fs;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{mpsc, Arc, Mutex};
+    use std::thread;
 
     fn graph_state(root: &std::path::Path, generation: u64) -> GraphState {
         GraphState(Mutex::new(GraphInner {
@@ -1435,6 +1817,50 @@ mod file_catalog_tests {
     }
 
     #[test]
+    fn privacy_snapshot_serializes_native_commits_until_capture_finishes() {
+        let vault = tempfile::tempdir().expect("vault");
+        fs::write(vault.path().join("README.md"), "# Before\n").expect("root note");
+        fs::create_dir(vault.path().join(".reflect")).expect("runtime directory");
+        let graph = Arc::new(graph_state(vault.path(), 3));
+        let writer_root =
+            super::pinned_root_for_generation_inner(&graph, 3).expect("pinned writer root");
+        let snapshot_graph = Arc::clone(&graph);
+        let (scan_started_tx, scan_started_rx) = mpsc::channel();
+        let (continue_scan_tx, continue_scan_rx) = mpsc::channel();
+
+        let snapshot_thread = thread::spawn(move || {
+            asset_privacy_snapshot_with(&snapshot_graph, 3, |root| {
+                scan_started_tx.send(()).expect("signal scan start");
+                continue_scan_rx.recv().expect("continue scan");
+                super::io::collect_file_catalog(root)
+            })
+        });
+
+        scan_started_rx.recv().expect("scan started");
+        let snapshot_holds_commit_lock = super::io::mutation_commit_lock_is_held_for_test();
+        let writer_thread = thread::spawn(move || {
+            super::io::atomic_write_pinned(&writer_root, "README.md", "# After\n")
+        });
+        continue_scan_tx.send(()).expect("release scan");
+
+        let snapshot = snapshot_thread
+            .join()
+            .expect("snapshot thread")
+            .expect("privacy snapshot");
+        writer_thread
+            .join()
+            .expect("writer thread")
+            .expect("native write");
+
+        assert!(snapshot_holds_commit_lock);
+        assert_eq!(snapshot.notes[0].source, "# Before\n");
+        assert_eq!(
+            fs::read_to_string(vault.path().join("README.md")).expect("written note"),
+            "# After\n"
+        );
+    }
+
+    #[test]
     fn privacy_snapshot_retries_when_its_revision_changes() {
         let vault = tempfile::tempdir().expect("vault");
         fs::write(vault.path().join("README.md"), "# Root\n").expect("root note");
@@ -1461,6 +1887,29 @@ mod file_catalog_tests {
                 .collect::<Vec<_>>(),
             vec!["README.md", "arrived.md"]
         );
+    }
+
+    #[test]
+    fn privacy_snapshot_fails_closed_after_bounded_unstable_retries() {
+        let vault = tempfile::tempdir().expect("vault");
+        fs::write(vault.path().join("README.md"), "# Root\n").expect("root note");
+        let graph = graph_state(vault.path(), 3);
+        let mut scans = 0;
+
+        let error = asset_privacy_snapshot_with(&graph, 3, |root| {
+            scans += 1;
+            let catalog = super::io::collect_file_catalog(root)?;
+            invalidate_file_catalog(&graph, root);
+            Ok(catalog)
+        })
+        .err()
+        .expect("a continuously changing snapshot must fail closed");
+
+        assert_eq!(scans, super::MAX_PRIVACY_SNAPSHOT_ATTEMPTS);
+        let crate::error::AppError::Io { message } = error else {
+            panic!("unstable snapshot should return an IO error");
+        };
+        assert!(message.contains("kept changing"));
     }
 
     #[cfg(unix)]
@@ -1631,9 +2080,12 @@ mod file_catalog_tests {
     }
 }
 
-#[cfg(all(test, desktop, unix))]
+#[cfg(all(test, desktop))]
 mod graph_delete_identity_tests {
-    use super::{invalidate_graph_for_delete, trash_pinned_graph_root, GraphInner, GraphState};
+    use super::{
+        invalidate_graph_for_delete, stage_graph_root_for_delete_with, trash_pinned_graph_root,
+        GraphInner, GraphState,
+    };
     use cap_std::ambient_authority;
     use cap_std::fs::Dir;
     use std::fs;
@@ -1703,6 +2155,71 @@ mod graph_delete_identity_tests {
             fs::read_to_string(root.join("README.md")).unwrap(),
             "replacement\n"
         );
+    }
+
+    #[test]
+    fn delete_staging_restores_a_replacement_that_arrives_after_root_release() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("vault");
+        let moved = parent.path().join("moved-vault");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("README.md"), "original\n").unwrap();
+        let graph = graph_state(&root, 12);
+        let pinned = invalidate_graph_for_delete(&graph, 12).unwrap();
+
+        let result = stage_graph_root_for_delete_with(pinned, || {
+            fs::rename(&root, &moved).unwrap();
+            fs::create_dir(&root).unwrap();
+            fs::write(root.join("README.md"), "replacement\n").unwrap();
+        });
+
+        assert!(matches!(
+            result,
+            Err(crate::error::AppError::Traversal { .. })
+        ));
+        assert_eq!(
+            fs::read_to_string(moved.join("README.md")).unwrap(),
+            "original\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("README.md")).unwrap(),
+            "replacement\n"
+        );
+        assert!(fs::read_dir(parent.path()).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".reflect-delete-stage-")));
+    }
+
+    #[test]
+    fn delete_staging_rejects_a_root_moved_after_capability_release() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("vault");
+        let moved = parent.path().join("moved-vault");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("README.md"), "original\n").unwrap();
+        let graph = graph_state(&root, 14);
+        let pinned = invalidate_graph_for_delete(&graph, 14).unwrap();
+
+        let result = stage_graph_root_for_delete_with(pinned, || {
+            fs::rename(&root, &moved).unwrap();
+        });
+
+        assert!(matches!(
+            result,
+            Err(crate::error::AppError::Traversal { .. })
+        ));
+        assert_eq!(
+            fs::read_to_string(moved.join("README.md")).unwrap(),
+            "original\n"
+        );
+        assert!(!root.exists());
+        assert!(fs::read_dir(parent.path()).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".reflect-delete-stage-")));
     }
 }
 

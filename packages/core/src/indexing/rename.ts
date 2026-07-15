@@ -48,17 +48,27 @@ export interface PreparedNoteMoveRewrite {
   readonly after: string
 }
 
+/** Inputs needed to prepare every safe reference rewrite for one managed move. */
 export interface PrepareNoteMoveRewritesOptions {
+  /** Current graph-relative path of the managed note being moved. */
   readonly fromPath: string
+  /** Destination graph-relative path of the managed note being moved. */
   readonly toPath: string
   /** Generation-pinned live note manifest: every path is read and parsed. */
   readonly notePaths: readonly string[]
+  /** Read one path from the same generation-pinned graph snapshot. */
   readonly read: (path: string) => Promise<string>
 }
 
+/** The complete, still-unwritten result of preparing one managed note move. */
 export interface PreparedNoteMoveRewrites {
+  /** Byte-exact source replacements that are safe to write before the move. */
   readonly rewrites: readonly PreparedNoteMoveRewrite[]
-  /** Sources that changed or became unreadable before a safe rewrite could be prepared. */
+  /**
+   * Sources whose contents changed, became unreadable, or were ambiguous
+   * before a safe rewrite was prepared. A non-empty list means the caller must
+   * abort the move and leave every prepared rewrite unwritten.
+   */
   readonly failed: readonly string[]
 }
 
@@ -122,17 +132,20 @@ function markdownReferenceMatchesLiveTarget(
   pathKey: string,
   alternatePathKey: string | null,
   targetPathKey: string,
-  livePathKeys: ReadonlySet<string>,
+  livePathKeyOwners: ReadonlyMap<string, number>,
 ): boolean | null {
   const candidates = [...new Set([pathKey, alternatePathKey].filter((key) => key !== null))]
   if (!candidates.includes(targetPathKey)) {
     return false
   }
-  const liveCandidates = candidates.filter((key) => livePathKeys.has(key))
-  if (liveCandidates.length !== 1) {
+  const liveOwnerCount = candidates.reduce(
+    (count, key) => count + (livePathKeyOwners.get(key) ?? 0),
+    0,
+  )
+  if (liveOwnerCount !== 1) {
     return null
   }
-  return liveCandidates[0] === targetPathKey
+  return livePathKeyOwners.get(targetPathKey) === 1
 }
 
 function sourceRewrite(
@@ -140,7 +153,7 @@ function sourceRewrite(
   source: string,
   fromPath: string,
   toPath: string,
-  livePathKeys: ReadonlySet<string>,
+  livePathKeyOwners: ReadonlyMap<string, number>,
 ): string | null {
   const fromKey = notePathKey(fromPath)
   const parsed = parseNote({ path: sourcePath, source })
@@ -151,7 +164,7 @@ function sourceRewrite(
     if (
       targetPath === null ||
       notePathKey(targetPath) !== fromKey ||
-      !livePathKeys.has(fromKey)
+      livePathKeyOwners.get(fromKey) !== 1
     ) {
       continue
     }
@@ -173,7 +186,7 @@ function sourceRewrite(
       reference.pathKey,
       reference.alternatePathKey,
       fromKey,
-      livePathKeys,
+      livePathKeyOwners,
     )
     if (match === null) {
       return null
@@ -221,7 +234,21 @@ function sourceRewrite(
 export async function prepareNoteMoveRewrites(
   options: PrepareNoteMoveRewritesOptions,
 ): Promise<PreparedNoteMoveRewrites> {
-  const livePathKeys = new Set(options.notePaths.map(notePathKey))
+  const livePathKeyOwners = new Map<string, number>()
+  for (const path of options.notePaths) {
+    const key = notePathKey(path)
+    livePathKeyOwners.set(key, (livePathKeyOwners.get(key) ?? 0) + 1)
+  }
+  const fromPathKey = notePathKey(options.fromPath)
+  if (livePathKeyOwners.get(fromPathKey) !== 1) {
+    const collidingPaths = [
+      ...new Set(options.notePaths.filter((path) => notePathKey(path) === fromPathKey)),
+    ].sort((left, right) => left.localeCompare(right))
+    return {
+      rewrites: [],
+      failed: collidingPaths.length > 0 ? collidingPaths : [options.fromPath],
+    }
+  }
   const rewrites: PreparedNoteMoveRewrite[] = []
   const failed: string[] = []
   for (const path of [...new Set(options.notePaths)].sort((left, right) =>
@@ -229,7 +256,13 @@ export async function prepareNoteMoveRewrites(
   )) {
     try {
       const before = await options.read(path)
-      const after = sourceRewrite(path, before, options.fromPath, options.toPath, livePathKeys)
+      const after = sourceRewrite(
+        path,
+        before,
+        options.fromPath,
+        options.toPath,
+        livePathKeyOwners,
+      )
       if (after === null) {
         failed.push(path)
       } else if (after !== before) {

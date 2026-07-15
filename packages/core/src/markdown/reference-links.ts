@@ -1,7 +1,7 @@
 import type { SyntaxNode, Tree } from '@lezer/common'
 import { decodeString } from 'micromark-util-decode-string'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
-import type { Span } from './model'
+import type { MarkdownLinkReference, Span } from './model'
 
 /** One first-definition-wins CommonMark link definition. */
 export interface ReferenceDefinition {
@@ -15,6 +15,13 @@ export interface ReferenceDefinition {
 
 /** Definitions resolved document-wide by normalized label. */
 export type ReferenceDefinitions = ReadonlyMap<string, ReferenceDefinition>
+
+/** A reference-link occurrence paired with its document-wide definition. */
+export interface ResolvedReferenceLink extends MarkdownLinkReference {
+  readonly href: string
+  readonly text: string
+  readonly destination: Span
+}
 
 /** Normalize a CommonMark reference label for case-insensitive matching. */
 export function normalizeReferenceLabel(label: string): string {
@@ -80,7 +87,7 @@ export function resolveReferenceLink(
   body: string,
   node: SyntaxNode,
   definitions: ReferenceDefinitions,
-): { href: string; text: string; destination: Span; key: string; duplicate: boolean } | null {
+): ResolvedReferenceLink | null {
   const marks = node.getChildren('LinkMark')
   if (marks.length !== 2) {
     return null

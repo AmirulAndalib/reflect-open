@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setBridge } from '../ipc/bridge'
 import {
+  createExistingWikiTargetResolver,
   resolveExistingMarkdownTarget,
   resolveExistingWikiTarget,
   resolveExistingWikiTargets,
@@ -130,6 +131,72 @@ describe('resolveExistingWikiTarget', () => {
     ])
     expect(invoke.mock.calls.filter(([command]) => command === 'list_files')).toHaveLength(1)
     expect(invoke.mock.calls.filter(([command]) => command === 'note_read')).toHaveLength(1)
+  })
+
+  it('shares its live manifest and parsed candidates across incremental batches', async () => {
+    const invoke = bindBridge({
+      files: {
+        'Imported/Plan.md': '---\naliases: [Roadmap]\n---\n# Plan',
+      },
+    })
+    const resolver = createExistingWikiTargetResolver(7)
+
+    await expect(resolver.resolve(['Plan'])).resolves.toEqual([
+      { kind: 'resolved', path: 'Imported/Plan.md' },
+    ])
+    await expect(resolver.resolve(['Roadmap'])).resolves.toEqual([
+      { kind: 'resolved', path: 'Imported/Plan.md' },
+    ])
+
+    expect(invoke.mock.calls.filter(([command]) => command === 'list_files')).toHaveLength(1)
+    expect(invoke.mock.calls.filter(([command]) => command === 'note_read')).toHaveLength(1)
+    expect(
+      invoke.mock.calls.filter(
+        ([command, args]) =>
+          command === 'db_query' && String(args?.['sql']).includes('"file_hash"'),
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('shares one leading-emoji fallback catalog across a target batch', async () => {
+    const invoke = bindBridge({
+      files: {
+        'notes/business-ideas.md': '# 🧠 Business ideas',
+        'notes/product-ideas.md': '# 💡 Product ideas',
+      },
+      indexed: [
+        { path: 'notes/business-ideas.md', mtime: 1 },
+        { path: 'notes/product-ideas.md', mtime: 1 },
+      ],
+      query: (sql) => {
+        if (sql.includes('"authored_title_key" is not null')) {
+          return [
+            { path: 'notes/business-ideas.md', title: '🧠 Business ideas' },
+            { path: 'notes/product-ideas.md', title: '💡 Product ideas' },
+          ]
+        }
+        return []
+      },
+    })
+
+    await expect(
+      resolveExistingWikiTargets(['Business ideas', 'Product ideas'], 7),
+    ).resolves.toEqual([
+      { kind: 'resolved', path: 'notes/business-ideas.md' },
+      { kind: 'resolved', path: 'notes/product-ideas.md' },
+    ])
+    const databaseQueries = invoke.mock.calls.filter(([command]) => command === 'db_query')
+    expect(
+      databaseQueries.filter(([, args]) =>
+        String(args?.['sql']).includes('"authored_title_key" is not null'),
+      ),
+    ).toHaveLength(1)
+    expect(
+      databaseQueries.filter(([, args]) => {
+        const sql = String(args?.['sql'])
+        return sql.includes('from "aliases"') && !sql.includes('"alias_key" = ?')
+      }),
+    ).toHaveLength(1)
   })
 
   it('does not give an impossible date-shaped path daily precedence over a title', async () => {

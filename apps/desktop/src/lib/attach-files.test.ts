@@ -11,7 +11,11 @@ import { attachFilesToNote } from './attach-files'
 const { openMock } = vi.hoisted(() => ({ openMock: vi.fn() }))
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: openMock }))
 
-function contextFor(notePath: string | null, generation: number | null): CommandContext {
+function contextFor(
+  notePath: string | null,
+  graphGeneration: number | null,
+  indexGeneration = graphGeneration,
+): CommandContext {
   return {
     navigate: vi.fn(),
     route: () => ({ kind: 'today' }),
@@ -24,8 +28,10 @@ function contextFor(notePath: string | null, generation: number | null): Command
     switchGraph: vi.fn(),
     toggleAudioMemo: vi.fn(),
     graph: () =>
-      generation === null ? null : { root: '/g', name: 'g', generation },
-    generation: () => generation,
+      graphGeneration === null
+        ? null
+        : { root: '/g', name: 'g', generation: graphGeneration },
+    generation: () => indexGeneration,
     openPalette: vi.fn(),
     openShortcuts: vi.fn(),
     openTemplatePicker: vi.fn(),
@@ -99,6 +105,23 @@ describe('attachFilesToNote', () => {
     })
     expect(handle.insertMarkdown).toHaveBeenCalledWith('![Sunset.png](../assets/sunset.png)')
     unregisterNoteEditorHandle('Projects/Plan.md', handle)
+  })
+
+  it('pins attachment copies to the graph generation, not the index session', async () => {
+    const invoke = vi.fn(async () => 'assets/manual.pdf')
+    setBridge({ invoke, listen: async () => () => {} })
+    openMock.mockResolvedValue('/Users/me/manual.pdf')
+    const handle = editorHandle()
+    registerNoteEditorHandle('notes/plan.md', handle)
+
+    await attachFilesToNote(contextFor('notes/plan.md', 4, 99))
+
+    expect(invoke).toHaveBeenCalledWith('asset_import', {
+      sourcePath: '/Users/me/manual.pdf',
+      desiredName: 'manual.pdf',
+      generation: 4,
+    })
+    unregisterNoteEditorHandle('notes/plan.md', handle)
   })
 
   it('escapes bracketed filenames in the link label', async () => {

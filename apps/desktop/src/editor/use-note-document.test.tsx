@@ -175,6 +175,26 @@ describe('useNoteDocument', () => {
     expect(result.current.dirty).toBe(false)
   })
 
+  it('does not rebind the live session when the create-consumed callback identity changes', async () => {
+    const firstCallback = vi.fn()
+    const secondCallback = vi.fn()
+    const hook = renderHook(
+      ({ onConsumed }: { onConsumed: () => void }) =>
+        useNoteDocument('notes/a.md', 1, { onInitialCreateConsumed: onConsumed }),
+      { initialProps: { onConsumed: firstCallback } },
+    )
+    await waitFor(() => expect(hook.result.current.status).toBe('ready'))
+    expect(firstCallback).toHaveBeenCalledOnce()
+    const initialEpoch = hook.result.current.sessionEpoch
+
+    hook.rerender({ onConsumed: secondCallback })
+    await act(async () => Promise.resolve())
+
+    expect(hook.result.current.sessionEpoch).toBe(initialEpoch)
+    expect(mockInvoke.mock.calls.filter(([command]) => command === 'note_read')).toHaveLength(1)
+    expect(secondCallback).not.toHaveBeenCalled()
+  })
+
   it('debounces edits into an atomic write and clears dirty', async () => {
     vi.useFakeTimers()
     try {

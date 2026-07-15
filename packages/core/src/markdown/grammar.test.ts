@@ -62,9 +62,14 @@ describe('wikiEmbedExtension (Lezer grammar)', () => {
     expect(wikiLinkSpans(body)).toEqual([])
   })
 
-  it('rejects empty, nested, unclosed, multiline, and code candidates', () => {
+  it('claims bracket-containing embeds without exposing nested backlinks', () => {
+    const body = '![[bad[target]]'
+    expect(wikiEmbedSpans(body)).toEqual([[0, body.length]])
+    expect(wikiLinkSpans(body)).toEqual([])
+  })
+
+  it('rejects empty, unclosed, multiline, and code candidates', () => {
     expect(wikiEmbedSpans('![[]]')).toEqual([])
-    expect(wikiEmbedSpans('![[a[[b]]')).toEqual([])
     expect(wikiEmbedSpans('![[never closed')).toEqual([])
     expect(wikiEmbedSpans('![[spans\nlines]]')).toEqual([])
     expect(wikiEmbedSpans('`![[in code]]`')).toEqual([])

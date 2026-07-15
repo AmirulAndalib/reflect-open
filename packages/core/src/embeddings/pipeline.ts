@@ -49,6 +49,7 @@ export async function embedNote(options: EmbedNoteOptions): Promise<number> {
   const parsed = parseNote({ path, source: content })
   const assetBodies = await gatherAssetDescriptionBodies(
     unambiguousManagedAttachmentPaths(parsed.attachmentReferences),
+    generation,
   )
   const chunks = [
     ...(await chunkNote(path, content, parsed)),

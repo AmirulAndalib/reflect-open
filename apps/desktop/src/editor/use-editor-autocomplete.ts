@@ -68,6 +68,10 @@ export function useEditorAutocomplete(generation: number | null): EditorAutocomp
           startOperation('Creating note').fail(
             `Couldn’t create “${title}” while a potentially matching note is unavailable. Try again when it is available on this device.`,
           )
+        } else if (outcome.kind === 'invalid') {
+          startOperation('Creating note').fail(
+            `Couldn’t create “${title}” because it isn’t a valid note title or path.`,
+          )
         }
       }
     },

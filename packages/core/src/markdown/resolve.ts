@@ -62,12 +62,19 @@ export interface WikiLookup {
   byDate(date: string): string | undefined
   byTitle(key: string): string | undefined
   byAlias(key: string): string | undefined
+  /**
+   * Lowest-precedence lookup, after title and alias, by folded,
+   * Unicode-normalized filename stem. When several notes share it, return the
+   * implementation's deterministic owner; ambiguity-preserving callers must
+   * use the tiered index APIs instead.
+   */
   byBasename(key: string): string | undefined
 }
 
 /**
  * Resolve a `[[target]]` to a note ref, preferring an explicit daily-date, then
- * a title match, then an alias match. Pure — see {@link WikiLookup}.
+ * a title match, then an alias match, then a filename-stem match. Pure — see
+ * {@link WikiLookup}.
  */
 export function resolveWikiLink(target: string, lookup: WikiLookup): Resolution {
   const normalized = normalizeWikiTarget(target)
@@ -88,15 +95,22 @@ export interface AsyncWikiLookup {
   byDate(date: string): Promise<string | undefined>
   byTitle(key: string): Promise<string | undefined>
   byAlias(key: string): Promise<string | undefined>
+  /**
+   * Lowest-precedence lookup, after title and alias, by folded,
+   * Unicode-normalized filename stem. When several notes share it, return the
+   * implementation's deterministic owner; ambiguity-preserving callers must
+   * use the tiered index APIs instead.
+   */
   byBasename(key: string): Promise<string | undefined>
 }
 
 /**
  * Resolve a `[[target]]` against an async (DB-backed) lookup, with the same
  * precedence as {@link resolveWikiLink}: explicit daily-date, then title, then
- * alias. The `??` chain short-circuits, so a title hit means the alias lookup is
- * never queried. This keeps the resolution *policy* in one place — the
- * index-backed `resolveWikiTarget` supplies only the data access.
+ * alias, then filename stem. The `??` chain short-circuits, so a title hit
+ * means the lower-tier lookups are never queried. This keeps the resolution
+ * *policy* in one place — the index-backed `resolveWikiTarget` supplies only
+ * the data access.
  */
 export async function resolveWikiLinkAsync(
   target: string,

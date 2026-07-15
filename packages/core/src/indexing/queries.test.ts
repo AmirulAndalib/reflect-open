@@ -732,6 +732,92 @@ describe('suggestWikiTargets', () => {
     await expect(suggestWikiTargets('Plan', 8, undefined, 7)).resolves.toEqual([])
   })
 
+  it('applies the result limit after dropping orphaned live suggestions', async () => {
+    const extraRows = Array.from({ length: 24 }, (_, index) => ({
+      path: `Live/Plan-Extra-${index}.md`,
+      title: `Plan Extra ${index}`,
+      title_key: `plan extra ${index}`,
+      authored_title_key: `plan extra ${index}`,
+      basename_key: `plan-extra-${index}`,
+      daily_date: null,
+      mtime: 90 - index,
+    }))
+    mockInvoke.mockImplementation(async (command, args) => {
+      if (command === 'list_files') {
+        return [
+          { path: 'Live/Plan-Beta.md', size: 11, modifiedMs: 1 },
+          ...extraRows.map((row) => ({ path: row.path, size: 11, modifiedMs: 1 })),
+        ]
+      }
+      const sql = String(args['sql'])
+      if (sql.includes('from "notes"') && sql.includes('authored_title_key LIKE')) {
+        return [
+          {
+            path: 'Deleted/Plan-Alpha.md',
+            title: 'Plan Alpha',
+            title_key: 'plan alpha',
+            authored_title_key: 'plan alpha',
+            basename_key: 'plan-alpha',
+            daily_date: null,
+            mtime: 100,
+          },
+          {
+            path: 'Live/Plan-Beta.md',
+            title: 'Plan Beta',
+            title_key: 'plan beta',
+            authored_title_key: 'plan beta',
+            basename_key: 'plan-beta',
+            daily_date: null,
+            mtime: 99,
+          },
+          ...extraRows,
+        ]
+      }
+      if (sql.includes('"file_hash"') && sql.includes('"mtime"')) {
+        return [
+          { path: 'Deleted/Plan-Alpha.md', file_hash: 'deleted', mtime: 1 },
+          { path: 'Live/Plan-Beta.md', file_hash: 'live', mtime: 1 },
+          ...extraRows.map((row) => ({ path: row.path, file_hash: 'live', mtime: 1 })),
+        ]
+      }
+      if (sql.includes('"authored_title_key" = ?')) {
+        const params = Array.isArray(args['params']) ? args['params'] : []
+        if (params[0] === 'plan alpha') {
+          return [{ path: 'Deleted/Plan-Alpha.md' }]
+        }
+        if (params[0] === 'plan beta') {
+          return [{ path: 'Live/Plan-Beta.md' }]
+        }
+        return []
+      }
+      return []
+    })
+
+    await expect(suggestWikiTargets('Plan', 1, undefined, 7)).resolves.toEqual([
+      {
+        target: 'Plan Beta',
+        path: 'Live/Plan-Beta.md',
+        title: 'Plan Beta',
+        alias: null,
+        date: null,
+      },
+    ])
+    const exactResolutionQueries = mockInvoke.mock.calls.filter(
+      ([command, args]) =>
+        command === 'db_query' && String(args['sql']).includes('"authored_title_key" = ?'),
+    )
+    expect(exactResolutionQueries).toHaveLength(2)
+    expect(
+      exactResolutionQueries.map(([, args]) => {
+        const params = args['params']
+        return Array.isArray(params) ? params[0] : undefined
+      }),
+    ).toEqual(['plan alpha', 'plan beta'])
+    expect(
+      mockInvoke.mock.calls.filter(([command]) => command === 'list_files'),
+    ).toHaveLength(1)
+  })
+
   it('keeps a live title owner while dropping a deleted duplicate owner', async () => {
     mockInvoke.mockImplementation(async (command, args) => {
       if (command === 'list_files') {

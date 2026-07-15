@@ -71,6 +71,8 @@ fn absolute_graph_relative(candidate: &Path, canonical_root: &Path) -> Option<Pa
 /// desktop's ranked tiers. `walk_notes` returns sorted paths, so ambiguous
 /// matches retain the CLI's deterministic-first-path behavior. An unavailable
 /// candidate fails the whole lookup closed because its live keys are unknown.
+/// Private and privacy-uncertain notes are excluded before any tier is built,
+/// so they neither win nor suppress a lower-ranked public match.
 fn scan_lookup(root: &Path, key: &str) -> Result<Vec<String>, CliError> {
     let mut by_title = Vec::new();
     let mut by_alias = Vec::new();
@@ -80,18 +82,20 @@ fn scan_lookup(root: &Path, key: &str) -> Result<Vec<String>, CliError> {
             continue; // templates never resolve by title/alias
         }
         if note.placeholder {
-            return Err(CliError::Runtime(format!(
-                "cannot safely resolve notes while {} is unavailable until iCloud downloads it",
-                note.rel_path
-            )));
+            return Err(CliError::Runtime(
+                "cannot safely resolve notes while an unavailable note is waiting for iCloud download"
+                    .to_string(),
+            ));
         }
-        let content = std::fs::read_to_string(root.join(&note.rel_path)).map_err(|error| {
-            CliError::Runtime(format!(
-                "cannot safely resolve notes because {} could not be read: {error}",
-                note.rel_path
-            ))
+        let content = std::fs::read_to_string(root.join(&note.rel_path)).map_err(|_| {
+            CliError::Runtime(
+                "cannot safely resolve notes because a note could not be read".to_string(),
+            )
         })?;
         let meta = parse_note_meta(&note.rel_path, &content);
+        if meta.private || meta.privacy_uncertain {
+            continue;
+        }
         if meta.authored_title && fold_key(&meta.title) == key {
             by_title.push(note.rel_path);
             continue;
@@ -138,9 +142,8 @@ pub fn resolve_note(arg: &str, root: &Path) -> Result<ResolvedNote, CliError> {
         Some((first, rest)) => {
             if !rest.is_empty() {
                 eprintln!(
-                    "reflect: note: {} other match(es) for '{trimmed}': {}",
-                    rest.len(),
-                    rest.join(", ")
+                    "reflect: note: {} other match(es) for '{trimmed}'; using the first deterministic match",
+                    rest.len()
                 );
             }
             Ok(ResolvedNote::File {
@@ -196,22 +199,90 @@ mod tests {
     }
 
     #[test]
+    fn scan_lookup_excludes_private_and_privacy_uncertain_matches() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp.path().join("A-Private")).expect("mkdir");
+        std::fs::create_dir_all(temp.path().join("B-Uncertain")).expect("mkdir");
+        std::fs::create_dir_all(temp.path().join("Z-Public")).expect("mkdir");
+        std::fs::write(
+            temp.path().join("A-Private/plan.md"),
+            "---\nprivate: true\n---\n# Plan\n",
+        )
+        .expect("private note");
+        std::fs::write(
+            temp.path().join("B-Uncertain/plan.md"),
+            "---\nprivate: [broken\n---\n# Plan\n",
+        )
+        .expect("uncertain note");
+        std::fs::write(temp.path().join("Z-Public/plan.md"), "# Plan\n").expect("public note");
+        std::fs::write(
+            temp.path().join("A-Private/secret-alias.md"),
+            "---\nprivate: true\naliases: [Shortcut]\n---\n# Hidden\n",
+        )
+        .expect("private alias");
+        std::fs::write(
+            temp.path().join("Z-Public/public-alias.md"),
+            "---\naliases: [Shortcut]\n---\n# Visible\n",
+        )
+        .expect("public alias");
+        std::fs::write(
+            temp.path().join("A-Private/Target.md"),
+            "---\nprivate: true\n---\nno authored title\n",
+        )
+        .expect("private basename");
+        std::fs::write(
+            temp.path().join("Z-Public/Target.md"),
+            "no authored title\n",
+        )
+        .expect("public basename");
+
+        assert_eq!(
+            scan_lookup(temp.path(), "plan").expect("lookup"),
+            vec!["Z-Public/plan.md"]
+        );
+        assert_eq!(
+            scan_lookup(temp.path(), "shortcut").expect("lookup"),
+            vec!["Z-Public/public-alias.md"]
+        );
+        assert_eq!(
+            scan_lookup(temp.path(), "target").expect("lookup"),
+            vec!["Z-Public/Target.md"]
+        );
+    }
+
+    #[test]
     fn scan_lookup_fails_closed_for_an_icloud_placeholder() {
         let temp = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir_all(temp.path().join("Projects")).expect("mkdir");
-        std::fs::write(temp.path().join("Projects/.plan.md.icloud"), "placeholder").expect("write");
+        std::fs::create_dir_all(temp.path().join("Sensitive-Client")).expect("mkdir");
+        std::fs::write(
+            temp.path()
+                .join("Sensitive-Client/.Unannounced-Merger.md.icloud"),
+            "placeholder",
+        )
+        .expect("write");
 
         let error = scan_lookup(temp.path(), "plan").unwrap_err();
-        assert!(error.to_string().contains("unavailable"));
+        let message = error.to_string();
+        assert!(message.contains("unavailable"));
+        assert!(!message.contains("Sensitive-Client"));
+        assert!(!message.contains("Unannounced-Merger"));
     }
 
     #[test]
     fn scan_lookup_fails_closed_for_unreadable_markdown() {
         let temp = tempfile::tempdir().expect("tempdir");
-        std::fs::write(temp.path().join("broken.md"), [0xff]).expect("write");
+        std::fs::create_dir_all(temp.path().join("Sensitive-Client")).expect("mkdir");
+        std::fs::write(
+            temp.path().join("Sensitive-Client/Stealth-Launch.md"),
+            [0xff],
+        )
+        .expect("write");
 
         let error = scan_lookup(temp.path(), "plan").unwrap_err();
-        assert!(error.to_string().contains("could not be read"));
+        let message = error.to_string();
+        assert!(message.contains("could not be read"));
+        assert!(!message.contains("Sensitive-Client"));
+        assert!(!message.contains("Stealth-Launch"));
     }
 
     #[cfg(unix)]

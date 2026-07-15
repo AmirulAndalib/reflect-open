@@ -104,6 +104,7 @@ export interface AssetSaveError {
   message: string
 }
 
+/** Generation-pinned attachment capabilities exposed to one mounted note editor. */
 export interface AssetPersistence {
   /** Resolve an image source to a displayable URL (or null to skip). */
   resolveImageUrl: (src: string) => string | null
@@ -131,8 +132,9 @@ export interface AssetPersistence {
   /** Resolve and open an attachment reference authored by an explicitly identified source note. */
   openAttachmentFromSource: (sourcePath: string, href: string) => Promise<void>
   /**
-   * Persist a pasted/dropped file into `assets/`, returning its graph-relative
-   * path — or null when declined, failed (the failure lands on
+   * Persist a pasted/dropped file into `assets/`, returning a Markdown href
+   * relative to the source note (for example `../assets/file.pdf`) — or null
+   * when declined, failed (the failure lands on
    * {@link AssetPersistence.saveError}, never a throw), or no graph is open.
    * Images get `pasted-…` names (screenshots have no meaningful name);
    * everything else keeps its original filename, sanitized, since the name

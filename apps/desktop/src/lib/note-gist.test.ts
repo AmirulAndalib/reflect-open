@@ -125,6 +125,16 @@ describe('publishNoteToGist', () => {
     expect(writeNoteIfUnchanged).not.toHaveBeenCalled()
   })
 
+  it('compensates a fresh gist when the live-session record save fails', async () => {
+    const { session, commitFrontmatter } = fakeSession(BODY)
+    commitFrontmatter.mockRejectedValueOnce(new Error('disk full'))
+    openSession.mockReturnValue(session)
+
+    await expect(publishNoteToGist('notes/a.md', 3)).rejects.toThrow('disk full')
+    expect(deleteGist).toHaveBeenCalledWith('tok', 'g1', expect.any(Function))
+    expect(writeNoteIfUnchanged).not.toHaveBeenCalled()
+  })
+
   it('falls back to disk when the session cannot take the patch', async () => {
     const { session } = fakeSession(BODY, false)
     openSession.mockReturnValue(session)
@@ -196,6 +206,16 @@ describe('publishNoteToGist', () => {
     expect(deleteGist).toHaveBeenCalledWith('tok', 'g1', expect.any(Function))
   })
 
+  it('deletes a freshly created gist when the local CAS loses its race', async () => {
+    readNote.mockResolvedValue(BODY)
+    writeNoteIfUnchanged.mockResolvedValueOnce({ kind: 'changed' })
+
+    await expect(publishNoteToGist('notes/a.md', 3)).rejects.toThrow(
+      /changed or was removed/,
+    )
+    expect(deleteGist).toHaveBeenCalledWith('tok', 'g1', expect.any(Function))
+  })
+
   it('never deletes the existing gist when recording a republish fails (shared links survive)', async () => {
     readNote.mockResolvedValue(REPUBLISH_SOURCE)
     updateGist.mockResolvedValue({ id: 'g0', htmlUrl: 'https://gist.github.com/alex/g0' })
@@ -203,6 +223,17 @@ describe('publishNoteToGist', () => {
     await expect(publishNoteToGist('notes/a.md', 3)).rejects.toMatchObject({
       message: 'disk on fire',
     })
+    expect(deleteGist).not.toHaveBeenCalled()
+  })
+
+  it('never deletes the existing gist when a republish record CAS loses its race', async () => {
+    readNote.mockResolvedValue(REPUBLISH_SOURCE)
+    updateGist.mockResolvedValue({ id: 'g0', htmlUrl: 'https://gist.github.com/alex/g0' })
+    writeNoteIfUnchanged.mockResolvedValueOnce({ kind: 'changed' })
+
+    await expect(publishNoteToGist('notes/a.md', 3)).rejects.toThrow(
+      /changed or was removed/,
+    )
     expect(deleteGist).not.toHaveBeenCalled()
   })
 
@@ -241,6 +272,16 @@ describe('unpublishNoteGist', () => {
     expect(deleteGist).not.toHaveBeenCalled()
   })
 
+  it('does not delete the remote gist when the local clear CAS loses its race', async () => {
+    readNote.mockResolvedValue(REPUBLISH_SOURCE)
+    writeNoteIfUnchanged.mockResolvedValueOnce({ kind: 'changed' })
+
+    await expect(unpublishNoteGist('notes/a.md', 3)).rejects.toThrow(
+      /changed or was removed/,
+    )
+    expect(deleteGist).not.toHaveBeenCalled()
+  })
+
   it('restores local gist frontmatter when the remote delete fails', async () => {
     readNote
       .mockResolvedValueOnce(REPUBLISH_SOURCE)
@@ -275,6 +316,16 @@ describe('unpublishNoteGist', () => {
     await unpublishNoteGist('notes/a.md', 3)
 
     expect(commitFrontmatter).toHaveBeenCalledWith({ gist: false })
+    expect(writeNoteIfUnchanged).not.toHaveBeenCalled()
+  })
+
+  it('does not delete the remote gist when the live-session clear save fails', async () => {
+    const { session, commitFrontmatter } = fakeSession(REPUBLISH_SOURCE)
+    commitFrontmatter.mockRejectedValueOnce(new Error('disk full'))
+    openSession.mockReturnValue(session)
+
+    await expect(unpublishNoteGist('notes/a.md', 3)).rejects.toThrow('disk full')
+    expect(deleteGist).not.toHaveBeenCalled()
     expect(writeNoteIfUnchanged).not.toHaveBeenCalled()
   })
 

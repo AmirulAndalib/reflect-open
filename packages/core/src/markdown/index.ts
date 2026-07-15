@@ -14,6 +14,7 @@ export {
   type Span,
   type WikiLink,
   type MarkdownLink,
+  type MarkdownLinkReference,
   type Heading,
   type AuthoredAttachmentReference,
   type AssetRef,

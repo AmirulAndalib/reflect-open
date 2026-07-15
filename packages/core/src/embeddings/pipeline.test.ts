@@ -27,13 +27,15 @@ function fakePipelineBridge(options: {
 }) {
   const embedded: string[][] = []
   const applied: { path: string; chunks: AppliedChunk[] }[] = []
+  const managedDescriptionReads: Array<{ path: string; generation: number | undefined }> = []
   setBridge({
     invoke: async (command, args) => {
       if (command === 'note_read') {
         return options.content
       }
       if (command === 'managed_asset_description_read') {
-        const path = (args as { path: string }).path
+        const { path, generation } = args as { path: string; generation?: number }
+        managedDescriptionReads.push({ path, generation })
         return options.descriptions?.[path] ?? null
       }
       if (command === 'db_query') {
@@ -57,7 +59,7 @@ function fakePipelineBridge(options: {
     },
     listen: async () => () => {},
   })
-  return { embedded, applied }
+  return { embedded, applied, managedDescriptionReads }
 }
 
 const MODEL = 'all-MiniLM-L6-v2'
@@ -152,7 +154,7 @@ describe('embedNote', () => {
     '---\nreflectAsset: true\nsource: assets/pic.png\n---\n\nA red bridge over a misty river at dawn.\n'
 
   it('embeds asset description chunks after the note’s own chunks', async () => {
-    const { applied } = fakePipelineBridge({
+    const { applied, managedDescriptionReads } = fakePipelineBridge({
       content: IMAGE_NOTE,
       storedRows: [],
       descriptions: { 'assets/pic.png': PIC_DESCRIPTION },
@@ -168,6 +170,7 @@ describe('embedNote', () => {
     // Synthetic positions live past the note source, so asset chunks order last.
     expect(assetChunk.posFrom).toBeGreaterThan(IMAGE_NOTE.length)
     expect(chunks.slice(0, -1).every((chunk) => chunk.posFrom < IMAGE_NOTE.length)).toBe(true)
+    expect(managedDescriptionReads).toEqual([{ path: 'assets/pic.png', generation: 1 }])
   })
 
   it('a note without a description for its asset embeds only its own text', async () => {
