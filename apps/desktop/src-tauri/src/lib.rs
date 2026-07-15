@@ -88,10 +88,9 @@ mod app_metadata_tests {
 mod capability_tests {
     #[test]
     fn desktop_capability_allows_main_window_hide() {
-        let capability: serde_json::Value = serde_json::from_str(include_str!(
-            "../capabilities/default.json"
-        ))
-        .expect("valid default capability");
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json"))
+                .expect("valid default capability");
         let permissions = capability["permissions"]
             .as_array()
             .expect("capability permissions");
