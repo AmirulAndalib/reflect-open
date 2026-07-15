@@ -80,7 +80,8 @@ function closeCurrentWindow(): CloseRequestForTest {
 }
 
 describe('installQuitFlush', () => {
-  it('flushes and hides the macOS main window instead of destroying it', async () => {
+  it('flushes and hides the macOS main window even when one flush rejects', async () => {
+    flushSettings.mockRejectedValueOnce(new Error('settings flush failed'))
     const dispose = installQuitFlush()
     const closeRequest = closeCurrentWindow()
 

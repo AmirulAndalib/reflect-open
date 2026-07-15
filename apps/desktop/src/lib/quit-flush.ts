@@ -49,7 +49,7 @@ export function installQuitFlush(): () => void {
         // destroy the last window (and Tauri then terminates the process).
         event.preventDefault()
       }
-      await Promise.all([flushOpenDocuments(), flushSettings()])
+      await Promise.allSettled([flushOpenDocuments(), flushSettings()])
       await flushBackup()
       if (shouldHide) {
         await currentWindow.hide()
