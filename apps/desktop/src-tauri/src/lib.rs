@@ -324,8 +324,8 @@ pub fn run() {
                 windows::surface_main_window(app);
             }
             // Clicking the Dock icon is macOS's recovery path when an app has
-            // no visible windows. Surface a hidden/minimized main window, or
-            // recreate it if the user previously closed it with ⌘W.
+            // no visible windows. Surface the hidden/minimized main window,
+            // or recreate it after an unexpected destruction.
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen {
                 has_visible_windows,
