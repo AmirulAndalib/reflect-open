@@ -159,9 +159,6 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          # Both matrix legs run on the same runner image, so rust-cache's
-          # default key (OS, rustc, Cargo.lock, job id) would collide across
-          # legs and they would clobber each other's caches.
           key: ${{ matrix.runner }}-${{ matrix.target }}
           # A failed notarization still compiled everything; keep the cache.
           cache-on-failure: true
