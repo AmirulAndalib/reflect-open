@@ -239,6 +239,13 @@ describe('rankWikiSuggestions — rich titles', () => {
     const [row] = rankWikiSuggestions('standup', [], [standup], 8)
     expect(row).toMatchObject({ target: 'Meeting with Ada', alias: 'Standup' })
   })
+
+  it('keeps an authored alias that differs from the target only by case', () => {
+    const plain = note('Meeting with Ada', 0, { path: 'notes/meeting.md' })
+    const authored = alias(plain, 'meeting with ada')
+    const [row] = rankWikiSuggestions('meeting with ada', [], [authored], 8)
+    expect(row).toMatchObject({ target: 'Meeting with Ada', alias: 'meeting with ada' })
+  })
 })
 
 describe('mergeDateSuggestions — rich titles', () => {

@@ -110,17 +110,18 @@ interface Scored {
 
 /**
  * One candidate scored for ranking. The target is the note's linkable form
- * ({@link wikiLinkTargetForTitle}), not the raw title — for a rich title the
- * two differ, and only the linkable form can live inside `[[…]]`. An alias
- * that folds to the same key as the target is display noise (the derived
- * linkable-form alias row matching itself), so it collapses to `null`;
- * without that, address serialization would emit a self-referential
- * `Meeting with Ada|Meeting with Ada`.
+ * ({@link wikiLinkTargetForTitle}), not the raw title: for a rich title the
+ * two differ, and only the linkable form can live inside `[[…]]`. A matched
+ * alias byte-identical to the target is the derived linkable-form row
+ * matching itself (projection writes it with exactly this function's output),
+ * so it collapses to `null`; without that, address serialization would emit
+ * a self-referential `Meeting with Ada|Meeting with Ada`. The comparison is
+ * deliberately exact, not fold-based: an authored alias differing only by
+ * case is a real display preference and keeps its promised text.
  */
 function toScored(row: TitleCandidate, matchedAlias: string | null, score: number): Scored {
   const target = row.dailyDate ?? wikiLinkTargetForTitle(row.title)
-  const alias =
-    matchedAlias !== null && foldKey(matchedAlias) === foldKey(target) ? null : matchedAlias
+  const alias = matchedAlias === target ? null : matchedAlias
   return {
     suggestion: { target, path: row.path, title: row.title, alias, date: row.dailyDate },
     score,
