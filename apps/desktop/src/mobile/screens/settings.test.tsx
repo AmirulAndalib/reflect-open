@@ -135,6 +135,9 @@ describe('MobileSettings', () => {
     const user = userEvent.setup()
     mount()
 
+    await user.click(screen.getByRole('switch', { name: 'Smooth caret animation' }))
+    expect(updateSettings).toHaveBeenCalledWith({ editorSmoothCaretAnimation: false })
+
     await user.click(screen.getByRole('switch', { name: 'Start with a bullet' }))
     expect(updateSettings).toHaveBeenCalledWith({ editorDefaultBullet: false })
 

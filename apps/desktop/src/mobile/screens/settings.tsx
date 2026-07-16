@@ -161,6 +161,13 @@ export function MobileSettings(): ReactElement {
 
           <SettingsGroup header="Editor">
             <SettingsSwitchRow
+              label="Smooth caret animation"
+              checked={settings.editorSmoothCaretAnimation}
+              onCheckedChange={(editorSmoothCaretAnimation) =>
+                updateSettings({ editorSmoothCaretAnimation })
+              }
+            />
+            <SettingsSwitchRow
               label="Start with a bullet"
               checked={settings.editorDefaultBullet}
               onCheckedChange={(editorDefaultBullet) => updateSettings({ editorDefaultBullet })}

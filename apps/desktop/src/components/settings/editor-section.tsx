@@ -160,6 +160,13 @@ export function EditorSection(): ReactElement {
       />
 
       <SettingsSwitchField
+        legend="Smooth caret animation"
+        description="Animate the text cursor as it moves while editing."
+        checked={settings.editorSmoothCaretAnimation}
+        onCheckedChange={(checked) => updateSettings({ editorSmoothCaretAnimation: checked })}
+      />
+
+      <SettingsSwitchField
         legend="Start with a bullet"
         description="New and empty notes open with a single bullet point, ready to type."
         checked={settings.editorDefaultBullet}

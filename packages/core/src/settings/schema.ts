@@ -57,6 +57,12 @@ export const editorDefaultBulletSchema = z.boolean().catch(true)
 export const editorBulletAfterHeadingSchema = z.boolean().catch(true)
 
 /**
+ * Whether the caret animates smoothly between positions while editing. On by
+ * default. Display-only; it never changes the document or stored Markdown.
+ */
+export const editorSmoothCaretAnimationSchema = z.boolean().catch(true)
+
+/**
  * The editor's reading text size. `small` (the default) is one design-system
  * size down from the prose size (14px); `medium` is the DS prose size (16px)
  * and `large` steps one DS size up (18px). Display-only — it scales the editor
@@ -428,6 +434,7 @@ export const settingsSchema = z
     editorSpellCheck: editorSpellCheckSchema,
     editorDefaultBullet: editorDefaultBulletSchema,
     editorBulletAfterHeading: editorBulletAfterHeadingSchema,
+    editorSmoothCaretAnimation: editorSmoothCaretAnimationSchema,
     editorTextSize: editorTextSizeSchema,
     editorFullWidth: editorFullWidthSchema,
     sidebarWidth: sidebarWidthSchema,

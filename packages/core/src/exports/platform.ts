@@ -154,6 +154,7 @@ export {
   editorSpellCheckSchema,
   editorDefaultBulletSchema,
   editorBulletAfterHeadingSchema,
+  editorSmoothCaretAnimationSchema,
   editorTextSizeSchema,
   editorFullWidthSchema,
   sidebarWidthSchema,
