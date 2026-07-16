@@ -357,7 +357,7 @@ describe('MobileShell', () => {
     )
   })
 
-  it('marks dates with daily-note content across the pageable strip window', async () => {
+  it('marks dates backed by daily notes across the pageable strip window', async () => {
     const today = todayIso()
     const week = weekOf(today, 'monday')
     const notedDay = week.find((day) => day !== today) ?? week[0]!
@@ -368,7 +368,9 @@ describe('MobileShell', () => {
 
     await view.findByTestId(`note-dot-${notedDay}`)
     expect(view.queryByTestId(`note-dot-${emptyDay}`)).toBeNull()
-    expect(view.getByRole('button', { name: `${dayCellLabel(notedDay)}, has content` })).toBeTruthy()
+    expect(
+      view.getByRole('button', { name: `${dayCellLabel(notedDay)}, has daily note` }),
+    ).toBeTruthy()
 
     const weekWindow = createWeekWindow(today, 'monday')
     expect(indexFns.dailyDatesInRange).toHaveBeenCalledWith(

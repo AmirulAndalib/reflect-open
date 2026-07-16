@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 describe('WeekRow', () => {
-  it('keeps content marked when the date is both selected and today', async () => {
+  it('keeps a daily note marked when the date is both selected and today', async () => {
     const onSelect = vi.fn()
     const view = render(
       <WeekRow
@@ -26,7 +26,7 @@ describe('WeekRow', () => {
     )
 
     const selected = view.getByRole('button', {
-      name: 'Thursday, July 16th, has content',
+      name: 'Thursday, July 16th, has daily note',
     })
     expect(selected.getAttribute('aria-current')).toBe('date')
     expect(within(selected).getByTestId('note-dot-2026-07-16')).toBeTruthy()

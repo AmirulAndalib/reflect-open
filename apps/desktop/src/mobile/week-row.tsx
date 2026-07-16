@@ -11,7 +11,7 @@ interface WeekRowProps {
   selectedDay: string | null
   /** Today when it falls in this week, else `null`. */
   todayDay: string | null
-  /** Dates backed by an indexed daily note (and therefore real content). */
+  /** Dates backed by an indexed daily note. */
   notedDates: ReadonlySet<string>
   /** Select a day — drives the carousel and the route. */
   onSelect: (date: string) => void
@@ -60,12 +60,12 @@ function WeekRowComponent({
       {days.map((day) => {
         const selected = day === selectedDay
         const isToday = day === todayDay
-        const hasContent = notedDates.has(day)
+        const hasNote = notedDates.has(day)
         return (
           <button
             key={day}
             type="button"
-            aria-label={`${format(parseIsoDate(day), 'EEEE, MMMM do')}${hasContent ? ', has content' : ''}`}
+            aria-label={`${format(parseIsoDate(day), 'EEEE, MMMM do')}${hasNote ? ', has daily note' : ''}`}
             aria-current={selected ? 'date' : undefined}
             onClick={() => {
               hapticImpactLight()
@@ -86,14 +86,14 @@ function WeekRowComponent({
             >
               {format(parseIsoDate(day), 'd')}
             </span>
-            {/* Content takes the strip's single marker slot; otherwise it
+            {/* A daily note takes the strip's single marker slot; otherwise it
                 keeps V1's Today dot when today isn't selected. */}
             <span
               aria-hidden
-              data-testid={hasContent ? `note-dot-${day}` : undefined}
+              data-testid={hasNote ? `note-dot-${day}` : undefined}
               className={cn(
                 'size-1 rounded-full',
-                hasContent
+                hasNote
                   ? 'bg-surface-inverse/50 dark:bg-white/50'
                   : !selected && isToday
                     ? 'bg-primary'
