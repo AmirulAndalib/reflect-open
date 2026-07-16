@@ -21,20 +21,58 @@ export interface GeneratedDate {
   phrase: string
 }
 
-/** A `[[` autocomplete candidate. */
+/** A ranked note/date suggestion used by navigation and autocomplete surfaces. */
 export interface WikiSuggestion {
-  /** What `[[…]]` should contain when chosen (the canonical title, or an ISO date). */
+  /** Canonical resolution target (a note title, or an ISO date). */
   target: string
   /** The note it resolves to — `null` for a daily whose file doesn't exist yet. */
   path: string | null
   /** Display title (for dailies this is the ISO date; hosts format it). */
   title: string
-  /** Set when the match came in via an alias (display as "alias → title"). */
+  /** Set for an alias hit; shown in the menu and preserved as the link's display text. */
   alias: string | null
   /** Set on daily-note suggestions. */
   date: string | null
   /** Set only on rows the date generator synthesised; see {@link GeneratedDate}. */
   generated?: GeneratedDate
+}
+
+/**
+ * A selectable `[[` autocomplete suggestion. `insertText` is present only after
+ * the query layer has verified that clicking its parsed target opens `path`:
+ * the target has exactly one claimant in its winning resolution tier, so the
+ * read resolver and the ambiguity-refusing writable resolver agree on it.
+ * Consequently, a note with no safe, unambiguous textual address is not
+ * selectable.
+ */
+export interface WikiLinkSuggestion extends WikiSuggestion {
+  /** Validated text to place inside `[[…]]`. */
+  insertText: string
+}
+
+const WIKI_LINK_RESERVED_CHARACTERS = /[[\]|\\\r\n]/u
+
+/**
+ * Serialize one textual wiki-link address and optional display label.
+ *
+ * Wiki-link syntax has no way to preserve its delimiters, and Markdown consumes
+ * backslash escapes before extraction, so either makes the original address
+ * unrepresentable and returns `null`. In particular, callers must never clean a
+ * target and pretend it still identifies the same note: changing the target
+ * changes its folded resolution key.
+ */
+export function serializeWikiSuggestionAddress(
+  target: string,
+  display: string | null,
+): string | null {
+  if (
+    target.trim() === '' ||
+    WIKI_LINK_RESERVED_CHARACTERS.test(target) ||
+    (display !== null && WIKI_LINK_RESERVED_CHARACTERS.test(display))
+  ) {
+    return null
+  }
+  return display === null ? target : `${target}|${display}`
 }
 
 /** One `notes` row considered for suggestion (a title match or recency fill). */

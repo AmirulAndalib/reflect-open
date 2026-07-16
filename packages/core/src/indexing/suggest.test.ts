@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { parseNote } from '../markdown'
 import {
   mergeDateSuggestions,
   rankWikiSuggestions,
+  serializeWikiSuggestionAddress,
   type AliasCandidate,
   type TitleCandidate,
   type WikiSuggestion,
@@ -80,7 +82,60 @@ describe('rankWikiSuggestions', () => {
   })
 })
 
-function ranked(title: string, extra?: Partial<WikiSuggestion>): WikiSuggestion {
+describe('wiki suggestion serialization', () => {
+  it('preserves an alias as display text while targeting the canonical note', () => {
+    const suggestion = rankWikiSuggestions(
+      'dad',
+      [],
+      [alias(note('Tim MacCaw // Dad'), 'Dad')],
+      8,
+    )[0]!
+
+    const insertText = serializeWikiSuggestionAddress(
+      suggestion.target,
+      suggestion.alias,
+    )
+    expect(insertText).toBe('Tim MacCaw // Dad|Dad')
+    expect(parseNote({ path: 'notes/source.md', source: `[[${insertText}]]` }).wikiLinks).toEqual([
+      expect.objectContaining({ target: 'Tim MacCaw // Dad', alias: 'Dad' }),
+    ])
+  })
+
+  it('round-trips every accepted target and display value exactly', () => {
+    const accepted = [
+      { target: 'Road.map!', display: null },
+      { target: 'Tim MacCaw // Dad', display: 'D.ad!?' },
+      { target: 'Café — plans', display: '計画' },
+    ]
+    for (const { target, display } of accepted) {
+      const insertText = serializeWikiSuggestionAddress(target, display)
+      expect(insertText).not.toBeNull()
+      const links = parseNote({
+        path: 'notes/source.md',
+        source: `[[${insertText}]]`,
+      }).wikiLinks
+      expect(links).toHaveLength(1)
+      expect(links[0]!.target).toBe(target)
+      expect(links[0]!.alias ?? null).toBe(display)
+    }
+  })
+
+  it('rejects every unescaped wiki-link delimiter in targets and display text', () => {
+    for (const reserved of ['[', ']', '|', '\\', '\r', '\n']) {
+      expect(serializeWikiSuggestionAddress(`Road${reserved}map`, null)).toBeNull()
+      expect(serializeWikiSuggestionAddress('Roadmap', `Plan${reserved}`)).toBeNull()
+    }
+  })
+
+  it('rejects a blank target rather than inserting an empty link', () => {
+    expect(serializeWikiSuggestionAddress('   ', null)).toBeNull()
+  })
+})
+
+function ranked(
+  title: string,
+  extra?: Partial<WikiSuggestion>,
+): WikiSuggestion {
   return {
     target: title,
     path: `notes/${title.toLowerCase().replaceAll(' ', '-')}.md`,
