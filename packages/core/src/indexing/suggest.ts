@@ -38,12 +38,14 @@ export interface WikiSuggestion {
 }
 
 /**
- * A selectable `[[` autocomplete suggestion. `insertText` is present only after
- * the query layer has verified that clicking its parsed target opens `path`:
- * the target has exactly one claimant in its winning resolution tier, so the
- * read resolver and the ambiguity-refusing writable resolver agree on it.
- * Consequently, a note with no safe, unambiguous textual address is not
- * selectable.
+ * A selectable `[[` autocomplete suggestion. For an existing note, the query
+ * layer has verified that clicking the parsed `insertText` opens `path`: the
+ * target has exactly one claimant in its winning resolution tier, so the read
+ * resolver and the ambiguity-refusing writable resolver agree on it. A
+ * generated daily whose file does not exist yet keeps `path: null` instead;
+ * it is offered only while its date key is unclaimed, and clicking it lazily
+ * creates that daily. Consequently, a note with no safe, unambiguous textual
+ * address is not selectable.
  */
 export interface WikiLinkSuggestion extends WikiSuggestion {
   /** Validated text to place inside `[[…]]`. */
