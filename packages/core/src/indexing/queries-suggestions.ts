@@ -213,7 +213,10 @@ function winnerAddressesPath(
 /**
  * The verified suggestion for an existing note using only its ranked
  * spellings (canonical target, then the matched alias), or `null` when
- * neither is a safe winning address for `candidate.path`.
+ * neither is a safe winning address for `candidate.path`. The display half
+ * of `target|display` is cosmetic: when the matched alias cannot ride along
+ * in wiki-link syntax (`Dad|Junior`), the bare canonical address still opens
+ * the same note, which beats hiding the note from the menu.
  */
 function addressableAsRanked(
   candidate: WikiSuggestion,
@@ -223,10 +226,9 @@ function addressableAsRanked(
     return null
   }
   const canonicalWinner = winners.get(normalizeWikiTarget(candidate.target).key)
-  const canonicalInsert = serializeWikiSuggestionAddress(
-    candidate.target,
-    candidate.alias,
-  )
+  const canonicalInsert =
+    serializeWikiSuggestionAddress(candidate.target, candidate.alias) ??
+    serializeWikiSuggestionAddress(candidate.target, null)
   if (
     winnerAddressesPath(candidate.path, canonicalWinner) &&
     canonicalInsert !== null

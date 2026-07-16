@@ -307,6 +307,13 @@ describe('v1 subject alias flow', () => {
         '---\naliases:\n  - Ada Lovelace\n---\n# Ada Project\n',
         115,
       ),
+      // An unserializable alias is only a lost display text: the note stays
+      // selectable through its safe, uniquely claimed canonical title.
+      project(
+        'notes/zeta-project.md',
+        "---\naliases:\n  - 'Zeta|Prime'\n---\n# Zeta Project\n",
+        118,
+      ),
       // Unsafe syntax is never silently cleaned into a different key.
       project('notes/unsafe.md', '# Unsafe | Title\n', 120),
       project(
@@ -441,6 +448,20 @@ describe('v1 subject alias flow', () => {
           ...adaResult.suggestions,
         ].map(expectSuggestionOpensItsPath),
       )
+      // The matched alias cannot be serialized, so insertion falls back to
+      // the bare canonical title instead of dropping the note.
+      const { suggestions: unsafeAliasSuggestions } =
+        await suggestWikiLinkTargets('Zeta|Prime')
+      expect(unsafeAliasSuggestions).toMatchObject([
+        {
+          path: 'notes/zeta-project.md',
+          target: 'Zeta Project',
+          alias: 'Zeta|Prime',
+          insertText: 'Zeta Project',
+        },
+      ])
+      await Promise.all(unsafeAliasSuggestions.map(expectSuggestionOpensItsPath))
+
       await expect(suggestWikiLinkTargets('Unsafe | Title')).resolves.toMatchObject({
         suggestions: [],
       })
