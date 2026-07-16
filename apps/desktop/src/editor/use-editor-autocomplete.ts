@@ -12,7 +12,7 @@ import {
   isContactsReadable,
   resolveOrCreateNoteWithTitle,
   suggestTags,
-  suggestWikiTargets,
+  suggestWikiLinkTargets,
 } from '@reflect/core'
 import { reportAmbiguousNoteTitle } from '@/editor/ambiguous-note-feedback'
 import { buildAutocompleteEntries } from '@/editor/wiki-autocomplete-entries'
@@ -77,12 +77,13 @@ export function useEditorAutocomplete(): EditorAutocomplete {
       if (!hasBridge() || graph === null) {
         return []
       }
-      const [suggestions, contacts] = await Promise.all([
-        suggestWikiTargets(query, 8, {
-          today: todayIso(),
-          dateFormat: settings.dateFormat,
-          weekStartDay: settings.weekStartDay,
-        }),
+      const dateContext = {
+        today: todayIso(),
+        dateFormat: settings.dateFormat,
+        weekStartDay: settings.weekStartDay,
+      }
+      const [wikiLinks, contacts] = await Promise.all([
+        suggestWikiLinkTargets(query, 8, dateContext),
         // A contacts hiccup (permission revoked mid-session, store error)
         // must cost only its own rows, never the note suggestions.
         contactsInMenu
@@ -92,9 +93,12 @@ export function useEditorAutocomplete(): EditorAutocomplete {
             })
           : Promise.resolve([]),
       ])
-      return buildAutocompleteEntries(query, suggestions, {
+      return buildAutocompleteEntries(query, wikiLinks.suggestions, {
         offerCreate: true,
         contacts,
+        requireSerializableWikiText: true,
+        queryReadsAsDate: wikiLinks.queryReadsAsDate,
+        claimedTargetKeys: wikiLinks.claimedTargetKeys,
       }).map((entry) => {
         if (entry.kind === 'create') {
           return {
@@ -129,7 +133,7 @@ export function useEditorAutocomplete(): EditorAutocomplete {
             },
           }
         }
-        const { target, title, alias, date, path, generated } = entry.suggestion
+        const { title, alias, date, path, generated, insertText: target } = entry.suggestion
         // A generated date leads with its phrase ("Next Friday"), resolved day
         // as the detail; everything else keeps the title/alias/daily form.
         if (generated !== undefined && date !== null) {
