@@ -8,8 +8,8 @@ import {
   getNoteIdsByPath,
   getOpenTasks,
   getPinnedNotes,
+  getWikiAddressForPath,
   listDailyNotes,
-  noteTitleOwningEmail,
   resolveWikiTarget,
   suggestWikiTargets,
 } from './queries'
@@ -52,31 +52,71 @@ describe('dailyDatesInRange', () => {
   })
 })
 
-describe('noteTitleOwningEmail', () => {
-  it('joins note_emails to #person-tagged regular notes by folded key, first path wins', async () => {
-    mockInvoke.mockResolvedValue([{ title: 'Jane Doe' }])
+describe('getWikiAddressForPath', () => {
+  it('uses the note_keys winner for the canonical title address', async () => {
+    mockInvoke
+      .mockResolvedValueOnce([
+        {
+          path: 'notes/ada.md',
+          title: 'Ada Lovelace',
+          title_key: 'ada lovelace',
+          daily_date: null,
+          mtime: 1,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          key: 'ada lovelace',
+          note_path: 'notes/ada.md',
+          daily_date: null,
+          claim_count: 1,
+        },
+      ])
 
-    await expect(noteTitleOwningEmail('  Jane@Corp.com ')).resolves.toBe('Jane Doe')
-
-    const [command, args] = mockInvoke.mock.calls[0]!
-    expect(command).toBe('db_query')
-    const sql = String(args['sql'])
-    expect(sql).toContain('note_emails')
-    expect(sql).toContain('email_key')
-    expect(sql).toContain('tag_key')
-    expect(sql).toContain('kind')
-    expect(sql).toContain('order by')
-    expect(args['params']).toEqual(['jane@corp.com', 'person', 'note'])
+    await expect(getWikiAddressForPath('notes/ada.md')).resolves.toMatchObject({
+      path: 'notes/ada.md',
+      title: 'Ada Lovelace',
+      insertText: 'Ada Lovelace',
+    })
   })
 
-  it('answers null for an unowned address without guessing', async () => {
+  it('rescues an ambiguous title with a unique alias', async () => {
+    mockInvoke
+      .mockResolvedValueOnce([
+        {
+          path: 'notes/ada.md',
+          title: 'Ada Lovelace',
+          title_key: 'ada lovelace',
+          daily_date: null,
+          mtime: 1,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          key: 'ada lovelace',
+          note_path: 'notes/ada.md',
+          daily_date: null,
+          claim_count: 2,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          note_path: 'notes/ada.md',
+          alias: 'Augusta Ada King',
+          claim_count: 1,
+        },
+      ])
+
+    await expect(getWikiAddressForPath('notes/ada.md')).resolves.toMatchObject({
+      path: 'notes/ada.md',
+      alias: 'Augusta Ada King',
+      insertText: 'Augusta Ada King',
+    })
+  })
+
+  it('returns null when the path is absent', async () => {
     mockInvoke.mockResolvedValue([])
-    await expect(noteTitleOwningEmail('nobody@corp.com')).resolves.toBeNull()
-  })
-
-  it('short-circuits a blank address before touching the bridge', async () => {
-    await expect(noteTitleOwningEmail('   ')).resolves.toBeNull()
-    expect(mockInvoke).not.toHaveBeenCalled()
+    await expect(getWikiAddressForPath('notes/missing.md')).resolves.toBeNull()
   })
 })
 
