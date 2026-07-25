@@ -18,7 +18,7 @@ import {
 } from '../ai/transcribe'
 import { listDir, listFiles, readAsset, readNote, writeAsset, writeNote } from '../graph/commands'
 import { AUDIO_MEMOS_DIR, audioMemoPath, dailyPath, notePath } from '../graph/paths'
-import { appendUnderBacklinkedHeading, wikiLinkSafe } from '../markdown/edit'
+import { appendListItemUnderBacklinkedHeading, wikiLinkSafe } from '../markdown/edit'
 import { getSecret } from '../secrets/keychain'
 import { ensureBacklinkTarget } from './backlink-target'
 
@@ -274,8 +274,10 @@ async function ensureDailyBacklink(
     return
   }
   const displayTitle = wikiLinkSafe(title) || memo.title
-  const link = `- [[${memo.base}|${displayTitle}]]`
-  const updated = appendUnderBacklinkedHeading(source, memosNoteTitle, link, [MEMOS_NOTE_TITLE])
+  const entry = `[[${memo.base}|${displayTitle}]]`
+  const updated = appendListItemUnderBacklinkedHeading(source, memosNoteTitle, entry, [
+    MEMOS_NOTE_TITLE,
+  ])
   await writeNote(dailyPath(memo.date), updated, generation)
 }
 

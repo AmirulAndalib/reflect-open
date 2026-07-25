@@ -75,6 +75,8 @@ beforeEach(() => {
 })
 
 describe('meetingLine', () => {
+  // The bullet marker belongs to the list the entry lands in, so it is not
+  // part of the rendered text here.
   it('renders linked and plain attendees', () => {
     expect(
       meetingLine({
@@ -86,7 +88,7 @@ describe('meetingLine', () => {
         backlinkMeeting: true,
         startTime: '9:00am',
       }),
-    ).toBe('- 9:00am met with [[Ada Lovelace]], Shared inbox for [[Standup]]')
+    ).toBe('9:00am met with [[Ada Lovelace]], Shared inbox for [[Standup]]')
   })
 
   it('shortens attendee-less events and supports a plain meeting title', () => {
@@ -97,14 +99,14 @@ describe('meetingLine', () => {
         backlinkMeeting: true,
         startTime: '9:00am',
       }),
-    ).toBe('- 9:00am [[Standup]]')
+    ).toBe('9:00am [[Standup]]')
     expect(
       meetingLine({
         title: 'Standup',
         attendees: [{ kind: 'linked', insertText: 'Ada Lovelace' }],
         backlinkMeeting: false,
       }),
-    ).toBe('- Met with [[Ada Lovelace]] for Standup')
+    ).toBe('Met with [[Ada Lovelace]] for Standup')
   })
 })
 
@@ -148,6 +150,28 @@ describe('addMeetingToDaily', () => {
     })
   })
 
+  it('appends to an existing Meetings section of a non-empty daily', async () => {
+    readNoteMock.mockResolvedValue('Some notes\n\n## Meetings\n\n- [[Kickoff]]\n\n## Later\n\nx\n')
+    await addMeetingToDaily(input())
+    const written = writeNoteMock.mock.calls[0]?.[1]
+    expect(written).toContain('## Meetings\n\n- [[Kickoff]]\n- [[Standup]]')
+    expect(written).toContain('## Later')
+  })
+
+  it('extends only the leading Meetings list, before later daily-note prose', async () => {
+    readNoteMock.mockResolvedValue(
+      '## Meetings\n\n- [[Kickoff]]\n- [[Planning]]\n\nScratchpad for later.\n',
+    )
+
+    await addMeetingToDaily(input())
+
+    expect(writeNoteMock).toHaveBeenCalledWith(
+      DAILY,
+      '## Meetings\n\n- [[Kickoff]]\n- [[Planning]]\n- [[Standup]]\n\nScratchpad for later.\n',
+      GENERATION,
+    )
+  })
+
   it('is a full no-op when the meeting is already linked that day', async () => {
     readNoteMock.mockResolvedValue(
       '## Meetings\n\n- 9:00am met with [[Ada Lovelace]] for [[Standup]]\n',
@@ -161,6 +185,19 @@ describe('addMeetingToDaily', () => {
     expect(ensurePersonMock).not.toHaveBeenCalled()
   })
 
+  it('does not treat a nested Meetings heading as the daily meeting section', async () => {
+    readNoteMock.mockResolvedValue('> ## Meetings\n> - [[Standup]]\n')
+
+    const outcome = await addMeetingToDaily(input())
+
+    expect(outcome.appended).toBe(true)
+    expect(writeNoteMock).toHaveBeenCalledWith(
+      DAILY,
+      '> ## Meetings\n> - [[Standup]]\n\n## Meetings\n\n- [[Standup]]\n',
+      GENERATION,
+    )
+  })
+
   it('recognizes an aliased meeting link in the Meetings section', async () => {
     readNoteMock.mockResolvedValue('## Meetings\n\n- [[STANDUP|Daily sync]]\n')
 
@@ -170,7 +207,33 @@ describe('addMeetingToDaily', () => {
     })
   })
 
+  it('matches a link whose alias (not target) carries the meeting name', async () => {
+    readNoteMock.mockResolvedValue('## Meetings\n\n- [[Standup|Daily sync]]\n')
+    const outcome = await addMeetingToDaily(input({ title: 'Daily sync' }))
+    expect(outcome.appended).toBe(false)
+    expect(writeNoteMock).not.toHaveBeenCalled()
+  })
+
+  it('still appends when the title is only linked outside the Meetings section', async () => {
+    readNoteMock.mockResolvedValue('Prep notes for [[Standup]] tomorrow.\n')
+    const outcome = await addMeetingToDaily(input())
+    expect(outcome.appended).toBe(true)
+    const written = writeNoteMock.mock.calls[0]?.[1]
+    expect(written).toContain('## Meetings\n\n- [[Standup]]')
+  })
+
+  it('an un-backlinked meeting always appends, like v1 (plain text has no link to match)', async () => {
+    readNoteMock.mockResolvedValue('## Meetings\n\n- [[Standup]]\n')
+    const outcome = await addMeetingToDaily(input({ backlinkMeeting: false }))
+    expect(outcome.appended).toBe(true)
+    const written = writeNoteMock.mock.calls[0]?.[1]
+    expect(written).toContain('- [[Standup]]\n- Standup')
+  })
+
   it('creates a missing backlinked meeting note only', async () => {
+    await addMeetingToDaily(input({ backlinkMeeting: false }))
+    expect(createNoteMock).not.toHaveBeenCalled()
+
     await addMeetingToDaily(input())
     expect(createNoteMock).toHaveBeenCalledWith(
       'Standup',
