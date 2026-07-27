@@ -41,6 +41,7 @@ export {
 export { listTemplates, type TemplateEntry } from './template-list'
 export {
   buildIndexedNote,
+  CLAIM_TIER,
   decodeTaskBreadcrumbs,
   encodeTaskBreadcrumbs,
   indexedNoteSchema,
@@ -70,6 +71,7 @@ export {
   getDuplicateNoteIds,
   getIndexMeta,
   getLinkSources,
+  getPathLinkSources,
   getNote,
   getNotesByTag,
   getOpenTasks,
@@ -156,6 +158,7 @@ export {
 } from './filtered-search'
 export {
   rewriteLinksForTitleChange,
+  rewritePathLinksForMove,
   nextAliases,
   type RenameBacklink,
   type RenameIo,
