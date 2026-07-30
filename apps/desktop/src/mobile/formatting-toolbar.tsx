@@ -52,9 +52,9 @@ export function MobileFormattingToolbar(): ReactElement | null {
           onPress={() => commands.insertTrigger('/')}
         />
         <ToolbarButton
-          label="Bullet list"
+          label="Cycle list style"
           icon={<List className="size-5" />}
-          onPress={commands.toggleBulletList}
+          onPress={commands.cycleBulletOrderedList}
         />
         <ToolbarButton
           label="Cycle checklist and task"
