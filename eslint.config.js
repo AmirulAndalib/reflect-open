@@ -8,6 +8,7 @@ export default defineESLintConfig(
       files: ['**/*.tsx', './apps/desktop/src/**/*.ts'],
     },
     markdown: false,
+    packageJson: false,
   },
   {
     ignores: ['./design-system/', '**/.wxt/'],
@@ -102,13 +103,6 @@ export default defineESLintConfig(
       'unicorn/prefer-unicode-code-point-escapes': 'off',
       'unicorn/prefer-url-href': 'off',
       'unicorn/require-css-escape': 'off',
-    },
-  },
-  {
-    files: ['package.json', '**/package.json'],
-    // Disable some rules temporarily
-    rules: {
-      'package-json/order-properties': 'off',
     },
   },
 )
