@@ -1,7 +1,7 @@
 import {
   createContext,
   useCallback,
-  useContext,
+  use,
   useEffect,
   useMemo,
   useRef,
@@ -325,12 +325,12 @@ export function AudioMemoProvider({ graph, children }: AudioMemoProviderProps): 
     ],
   )
 
-  return <AudioMemoContext.Provider value={value}>{children}</AudioMemoContext.Provider>
+  return <AudioMemoContext value={value}>{children}</AudioMemoContext>
 }
 
 /** Access the audio-memo surface. Use within an AudioMemoProvider. */
 export function useAudioMemo(): AudioMemoContextValue {
-  const context = useContext(AudioMemoContext)
+  const context = use(AudioMemoContext)
   if (!context) {
     throw new Error('useAudioMemo must be used within an AudioMemoProvider')
   }
