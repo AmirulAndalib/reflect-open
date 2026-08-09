@@ -520,9 +520,12 @@ pub async fn capture_link_preview(app: tauri::AppHandle, url: String) -> AppResu
 
 // ---- meta fetch -----------------------------------------------------------------
 
-/// How much HTML the meta scrape reads: `<head>` metadata lives well inside
-/// the first half-megabyte of any real page.
-const META_FETCH_MAX_BYTES: usize = 512 * 1024;
+/// How much HTML the meta scrape reads. Sized for the worst page measured:
+/// a YouTube watch page is ~1.2 MiB of identity-encoded HTML with every
+/// meta tag at ~690 KiB, near the end of a ~697 KiB `<head>` (2026-08).
+/// 2 MiB keeps whole pages of that shape, with margin for head growth,
+/// while still bounding what this command buffers and ships over IPC.
+const META_FETCH_MAX_BYTES: usize = 2 * 1024 * 1024;
 const META_FETCH_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// The meta fetch presents as a mainstream browser navigation: sites that
