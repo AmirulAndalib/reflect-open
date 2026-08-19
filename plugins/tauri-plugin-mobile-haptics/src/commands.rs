@@ -1,6 +1,6 @@
 use tauri::{command, AppHandle, Runtime};
 
-use crate::KeyboardExt;
+use crate::HapticsExt;
 use crate::Result;
 
 /// Fire a light impact haptic — the app's single haptic strength (date
@@ -8,5 +8,5 @@ use crate::Result;
 /// engine.
 #[command]
 pub(crate) async fn impact_light<R: Runtime>(app: AppHandle<R>) -> Result<()> {
-    app.keyboard().impact_light()
+    app.haptics().impact_light()
 }

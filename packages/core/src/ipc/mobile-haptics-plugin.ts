@@ -1,14 +1,12 @@
 import { definePluginCommand, ignoredResult } from './plugin'
 
 /**
- * Typed bindings for `plugins/tauri-plugin-keyboard`. Only haptics has a JS
- * surface: the keyboard height is derived from `visualViewport` on the web
- * side (decision 0003), and the plugin's remaining keyboard work is native
- * webview tuning with no IPC.
+ * Typed bindings for `plugins/tauri-plugin-mobile-haptics`, the app's
+ * single haptic.
  */
 
 const impactLightCommand = definePluginCommand<Record<string, never>, unknown>(
-  'keyboard',
+  'mobile-haptics',
   'impact_light',
   ignoredResult,
 )

@@ -1,6 +1,6 @@
 use serde::de::DeserializeOwned;
 use tauri::{
-    plugin::{PluginApi, PluginHandle},
+    plugin::{mobile::PluginInvokeError, PluginApi},
     AppHandle, Runtime,
 };
 
@@ -13,22 +13,10 @@ tauri::ios_plugin_binding!(init_plugin_keyboard);
 pub fn init<R: Runtime, C: DeserializeOwned>(
     _app: &AppHandle<R>,
     api: PluginApi<R, C>,
-) -> crate::Result<Keyboard<R>> {
+) -> Result<(), PluginInvokeError> {
     #[cfg(target_os = "android")]
     compile_error!("tauri-plugin-keyboard has no Android implementation yet (Plan 19 step 12)");
     #[cfg(target_os = "ios")]
-    let handle = api.register_ios_plugin(init_plugin_keyboard)?;
-    Ok(Keyboard(handle))
-}
-
-/// Access to the keyboard APIs.
-pub struct Keyboard<R: Runtime>(PluginHandle<R>);
-
-impl<R: Runtime> Keyboard<R> {
-    /// Fire a light impact haptic (`UIImpactFeedbackGenerator` on iOS).
-    pub fn impact_light(&self) -> crate::Result<()> {
-        self.0
-            .run_mobile_plugin("impactLight", ())
-            .map_err(Into::into)
-    }
+    api.register_ios_plugin(init_plugin_keyboard)?;
+    Ok(())
 }

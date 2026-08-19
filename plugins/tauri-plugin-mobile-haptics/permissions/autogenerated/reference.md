@@ -18,7 +18,7 @@ Fire light impact haptics
 <tr>
 <td>
 
-`keyboard:allow-impact-light`
+`mobile-haptics:allow-impact-light`
 
 </td>
 <td>
@@ -31,7 +31,7 @@ Enables the impact_light command without any pre-configured scope.
 <tr>
 <td>
 
-`keyboard:deny-impact-light`
+`mobile-haptics:deny-impact-light`
 
 </td>
 <td>
