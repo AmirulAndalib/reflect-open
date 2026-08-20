@@ -1,7 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 
 type GraphRoot = string | undefined
-type EntitlementProduct = 'yearly' | 'monthly'
 type PaletteSearchMode = 'hybrid' | 'lexical'
 
 /** The single source of truth for every TanStack Query cache identity. */
@@ -148,19 +147,19 @@ export const queryKeys = {
       return [...this.all, root, 'status'] as const
     },
   },
-  iap: {
-    all: ['iap'] as const,
+  appStore: {
+    all: ['app-store'] as const,
     get environment() {
       return [...this.all, 'environment'] as const
     },
+  },
+  iap: {
+    all: ['iap'] as const,
     get products() {
       return [...this.all, 'products'] as const
     },
     get entitlements() {
       return [...this.all, 'entitlement'] as const
-    },
-    entitlement(product: EntitlementProduct) {
-      return [...this.entitlements, product] as const
     },
   },
   mobile: {
