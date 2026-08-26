@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -106,8 +107,10 @@ export function AiPromptDialog({ prompt, onSave, onClose }: AiPromptDialogProps)
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="replace">Replaces the selection</SelectItem>
-                <SelectItem value="append">Inserted below the selection</SelectItem>
+                <SelectGroup>
+                  <SelectItem value="replace">Replaces the selection</SelectItem>
+                  <SelectItem value="append">Inserted below the selection</SelectItem>
+                </SelectGroup>
               </SelectContent>
             </Select>
           </label>
