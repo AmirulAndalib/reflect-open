@@ -1,7 +1,14 @@
 import { useRef, useState, type ReactElement } from 'react'
 import type { GraphInfo } from '@reflect/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { Check, FolderOpen, LocateFixed, PanelsTopLeft, Settings } from 'lucide-react'
+import {
+  Check,
+  FolderOpen,
+  GraduationCap,
+  LocateFixed,
+  PanelsTopLeft,
+  Settings,
+} from 'lucide-react'
 import { GraphSwatch } from '@/components/graph-swatch'
 import { ReflectAppsDialog } from '@/components/reflect-apps-dialog'
 import { ShortcutKeys } from '@/components/shortcut-keys'
@@ -22,6 +29,7 @@ import { keybindingFor } from '@/lib/commands/app-commands'
 import { runCommand } from '@/lib/commands/registry'
 import type { CommandContext } from '@/lib/commands/types'
 import { DEFAULT_GRAPH_COLOR, GRAPH_COLOR_OPTIONS } from '@/lib/graph-colors'
+import { openUrlSync } from '@/lib/open-url'
 import { cn } from '@/lib/utils'
 import { isMainWindow } from '@/lib/windows/window-role'
 import { useGraph } from '@/providers/graph-provider'
@@ -63,7 +71,7 @@ interface GraphFooterProps {
 
 /**
  * The sidebar footer: the graph's color swatch and name open a dropdown for
- * switching and recoloring graphs, settings, and companion app installs.
+ * switching and recoloring graphs, settings, companion app installs, and Reflect Academy.
  * The swatch pulses while the graph indexes; a small dot reports backup state.
  * Menu content matches the trigger width to stay inset from the sidebar edges.
  */
@@ -208,6 +216,13 @@ export function GraphFooter({ graph, context }: GraphFooterProps): ReactElement 
           >
             <PanelsTopLeft aria-hidden strokeWidth={1.75} className="size-3.5 shrink-0" />
             <span className="min-w-0 flex-1 truncate">Get Reflect apps…</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => openUrlSync('https://reflect.academy')}
+            className={cn(MENU_ITEM_CLASS, 'min-h-10')}
+          >
+            <GraduationCap aria-hidden strokeWidth={1.75} className="size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">Reflect Academy</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
