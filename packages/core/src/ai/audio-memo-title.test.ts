@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MockLanguageModelV3 } from 'ai/test'
+import { MockLanguageModelV3 } from '@reflect/modules/ai/test'
 import type { LanguageModelV3Usage } from '@ai-sdk/provider'
 import type { AiProviderConfig } from '../settings/schema'
 import { generateAudioMemoTitle, pickAudioMemoEnrichmentConfig } from './audio-memo-title'
@@ -49,7 +49,7 @@ beforeEach(() => {
 })
 
 function modelAnswering(text: string): void {
-  languageModelMock.mockReturnValue(
+  languageModelMock.mockResolvedValue(
     new MockLanguageModelV3({
       doGenerate: async () => ({
         content: [{ type: 'text', text: JSON.stringify({ title: text }) }],
@@ -62,7 +62,7 @@ function modelAnswering(text: string): void {
 }
 
 function modelThrowing(error: unknown): void {
-  languageModelMock.mockReturnValue(
+  languageModelMock.mockResolvedValue(
     new MockLanguageModelV3({
       doGenerate: async () => {
         throw error

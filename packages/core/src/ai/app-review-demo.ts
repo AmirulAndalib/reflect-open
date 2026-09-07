@@ -1,4 +1,3 @@
-import { simulateReadableStream } from 'ai'
 import type {
   LanguageModelV3,
   LanguageModelV3StreamPart,
@@ -53,8 +52,9 @@ export function createDemoModel(): LanguageModelV3 {
         usage: DEMO_USAGE,
         warnings: [],
       }),
-    doStream: () =>
-      Promise.resolve({
+    doStream: async () => {
+      const { simulateReadableStream } = await import('@reflect/modules/ai')
+      return {
         stream: simulateReadableStream<LanguageModelV3StreamPart>({
           chunkDelayInMs: 10,
           chunks: [
@@ -73,6 +73,7 @@ export function createDemoModel(): LanguageModelV3 {
             },
           ],
         }),
-      }),
+      }
+    },
   }
 }

@@ -1,5 +1,5 @@
-import { APICallError } from 'ai'
-import { MockLanguageModelV3 } from 'ai/test'
+import { APICallError } from '@reflect/modules/ai'
+import { MockLanguageModelV3 } from '@reflect/modules/ai/test'
 import type { LanguageModelV3CallOptions, LanguageModelV3Usage } from '@ai-sdk/provider'
 import { describe, expect, it, vi } from 'vitest'
 import type { AiProviderConfig } from '../settings/schema'
@@ -30,7 +30,7 @@ const CONFIG: AiProviderConfig = {
 
 function modelAnswering(text: string): LanguageModelV3CallOptions[] {
   const calls: LanguageModelV3CallOptions[] = []
-  languageModelMock.mockReturnValue(
+  languageModelMock.mockResolvedValue(
     new MockLanguageModelV3({
       doGenerate: async (options) => {
         calls.push(options)
@@ -47,7 +47,7 @@ function modelAnswering(text: string): LanguageModelV3CallOptions[] {
 }
 
 function modelThrowing(error: unknown): void {
-  languageModelMock.mockReturnValue(
+  languageModelMock.mockResolvedValue(
     new MockLanguageModelV3({
       doGenerate: async () => {
         throw error

@@ -1,4 +1,4 @@
-import { APICallError, generateObject, NoObjectGeneratedError, type UserContent } from 'ai'
+import type { UserContent } from '@reflect/modules/ai'
 import { z } from 'zod'
 import { ReflectError } from '../errors'
 import { wikiLinkSafe } from '../markdown/edit'
@@ -81,8 +81,11 @@ export function isDescriptionRejected(value: unknown): value is DescriptionRejec
   return value instanceof DescriptionRejectedError
 }
 
-function classify(cause: unknown): Error {
-  if (APICallError.isInstance(cause)) {
+function classify(
+  cause: unknown,
+  sdk: Pick<typeof import('@reflect/modules/ai'), 'APICallError' | 'NoObjectGeneratedError'>,
+): Error {
+  if (sdk.APICallError.isInstance(cause)) {
     const status = cause.statusCode ?? 0
     if (status === 401 || status === 403) {
       return new ReflectError('auth', `the provider rejected the API key (${status})`)
@@ -94,7 +97,7 @@ function classify(cause: unknown): Error {
       return new DescriptionRejectedError(cause.message)
     }
   }
-  if (NoObjectGeneratedError.isInstance(cause)) {
+  if (sdk.NoObjectGeneratedError.isInstance(cause)) {
     return new DescriptionRejectedError(cause.message)
   }
   if (cause instanceof DOMException && cause.name === 'TimeoutError') {
@@ -149,6 +152,7 @@ export function normalizedPageTitle(candidate: string): string | null {
  * itself.
  */
 export async function describePage(request: DescribePageRequest): Promise<PageEnrichment> {
+  const sdk = await import('@reflect/modules/ai')
   const content: UserContent = [{ type: 'text', text: describePrompt(request) }]
   if (request.screenshotBase64) {
     content.push({
@@ -158,8 +162,8 @@ export async function describePage(request: DescribePageRequest): Promise<PageEn
     })
   }
   try {
-    const result = await generateObject({
-      model: languageModel(request.config, request.apiKey, request.fetchFn ?? fetch),
+    const result = await sdk.generateObject({
+      model: await languageModel(request.config, request.apiKey, request.fetchFn ?? fetch),
       schema: pageDescriptionSchema,
       messages: [{ role: 'user', content }],
       abortSignal: AbortSignal.timeout(DESCRIBE_TIMEOUT_MS),
@@ -172,6 +176,6 @@ export async function describePage(request: DescribePageRequest): Promise<PageEn
       description: result.object.description.trim(),
     }
   } catch (cause) {
-    throw classify(cause)
+    throw classify(cause, sdk)
   }
 }
