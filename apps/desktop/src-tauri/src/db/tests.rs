@@ -57,6 +57,7 @@ fn note(path: &str, title: &str, links: Vec<IndexedLink>) -> IndexedNote {
         is_pinned: false,
         pinned_order: None,
         has_conflict: false,
+        has_content: true,
         gist_url: None,
         gist_stale: false,
         file_hash: "h".to_string(),
@@ -684,6 +685,30 @@ fn reapplying_a_note_replaces_its_rows() {
     let rows = run_query(&conn, "SELECT target_key FROM links", &[]).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["target_key"], Value::from("z"));
+}
+
+#[test]
+fn has_content_lands_on_the_notes_row_and_is_queryable() {
+    let conn = migrated();
+    let mut blank = note("daily/2026-06-02.md", "2026-06-02", vec![]);
+    blank.kind = "daily".to_string();
+    blank.daily_date = Some("2026-06-02".to_string());
+    blank.has_content = false;
+    apply_note(&conn, &blank).unwrap();
+    let mut written = note("daily/2026-06-01.md", "2026-06-01", vec![]);
+    written.kind = "daily".to_string();
+    written.daily_date = Some("2026-06-01".to_string());
+    apply_note(&conn, &written).unwrap();
+
+    let dotted = run_query(
+        &conn,
+        "SELECT daily_date FROM notes WHERE daily_date IS NOT NULL AND has_content = 1
+         ORDER BY daily_date",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(dotted.len(), 1);
+    assert_eq!(dotted[0]["daily_date"], Value::from("2026-06-01"));
 }
 
 #[test]
