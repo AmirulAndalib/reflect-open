@@ -1,14 +1,31 @@
-import type { ReactElement } from 'react'
+import { lazy, Suspense, type ReactElement } from 'react'
+import { LoadingScreen } from '@/components/loading-screen'
 import { useToday } from '@/lib/use-today'
-import { MobileAllNotes } from '@/mobile/screens/all-notes'
-import { MobileChat } from '@/mobile/screens/chat'
 import { MobileDaily } from '@/mobile/screens/daily'
-import { MobileGraphs } from '@/mobile/screens/graphs'
 import { MobileNote } from '@/mobile/screens/note'
-import { MobileSettings } from '@/mobile/screens/settings'
-import { MobileTasks } from '@/mobile/screens/tasks'
 import type { AllNotesFilters } from '@/mobile/search-filters/filter-state'
 import type { Route } from '@/routing/route'
+
+const MobileAllNotes = lazy(async () => {
+  const { MobileAllNotes } = await import('@/mobile/screens/all-notes')
+  return { default: MobileAllNotes }
+})
+const MobileChat = lazy(async () => {
+  const { MobileChat } = await import('@/mobile/screens/chat')
+  return { default: MobileChat }
+})
+const MobileGraphs = lazy(async () => {
+  const { MobileGraphs } = await import('@/mobile/screens/graphs')
+  return { default: MobileGraphs }
+})
+const MobileSettings = lazy(async () => {
+  const { MobileSettings } = await import('@/mobile/screens/settings')
+  return { default: MobileSettings }
+})
+const MobileTasks = lazy(async () => {
+  const { MobileTasks } = await import('@/mobile/screens/tasks')
+  return { default: MobileTasks }
+})
 
 interface MobileScreenProps {
   /**
@@ -33,7 +50,7 @@ interface MobileScreenProps {
  * an app left open overnight rolls to the new day's note at midnight instead
  * of editing yesterday's.
  */
-export function MobileScreen({
+function MobileScreenBody({
   route,
   allQuery,
   onAllQueryChange,
@@ -83,4 +100,12 @@ export function MobileScreen({
     default:
       return <MobileDaily key="daily" date={today} />
   }
+}
+
+export function MobileScreen(props: MobileScreenProps): ReactElement {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <MobileScreenBody {...props} />
+    </Suspense>
+  )
 }
