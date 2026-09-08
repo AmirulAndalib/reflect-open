@@ -5,9 +5,9 @@ import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { useNoteRowState } from '@/hooks/use-note-row'
 import { usePinnedNotes } from '@/hooks/use-pinned-notes'
+import { useQueryClient } from '@tanstack/react-query'
 import { toggleNotePinned } from '@/lib/note-pin'
 import { toggleNotePrivate } from '@/lib/note-private'
-import { useBridgedNoteToggle } from '@/lib/notes/use-bridged-note-toggle'
 import { NoteDeleteDrawer } from '@/mobile/note-delete-drawer'
 import { shareNote } from '@/mobile/share'
 import { useGraph } from '@/providers/graph-provider'
@@ -23,28 +23,19 @@ interface NoteActionsMenuProps {
  * The note screen's "⋯" action sheet (Plan 19): pin/unpin, lock/unlock from
  * external services, share, and delete-to-trash. Pin reflects the index's
  * pinned set; privacy reflects the note's indexed `private: true` flag,
- * bridged by the last toggle result while the mobile write echo and index
- * catch up. {@link shareNote} hands the note's body to the OS share sheet via
+ * both updated in the shared query cache while the index catches up. {@link shareNote} hands the note's body to the OS share sheet via
  * the Web Share API (`navigator.share`); delete confirms first (it's
  * destructive, even if recoverable from `.reflect/trash/`) and routes through
  * {@link deleteOpenNote} so the open session is discarded rather than flushed.
  */
 export function NoteActionsMenu({ path, onDeleted }: NoteActionsMenuProps): ReactElement {
   const { graph } = useGraph()
+  const queryClient = useQueryClient()
   const isPinned = usePinnedNotes().some((note) => note.path === path)
   const { row: noteRow, settled: privacyReady } = useNoteRowState(path)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const {
-    isActive: isPrivate,
-    isToggling: isTogglingPrivate,
-    toggleActive: togglePrivate,
-  } = useBridgedNoteToggle({
-    path,
-    indexActive: noteRow?.isPrivate ?? false,
-    toggle: toggleNotePrivate,
-    failureLabel: (active) => (active ? 'Unlocking note' : 'Locking note'),
-  })
+  const isPrivate = noteRow?.isPrivate ?? false
   const privacyActionLabel = !privacyReady
     ? 'Loading privacy…'
     : isPrivate
@@ -53,7 +44,18 @@ export function NoteActionsMenu({ path, onDeleted }: NoteActionsMenuProps): Reac
 
   const pin = (): void => {
     if (graph !== null) {
-      void toggleNotePinned(path, graph.generation).catch(() => {})
+      void toggleNotePinned({
+        queryClient,
+        root: graph.root,
+        generation: graph.generation,
+        path,
+      })
+    }
+  }
+
+  const togglePrivate = async (): Promise<void> => {
+    if (graph !== null) {
+      await toggleNotePrivate({ queryClient, root: graph.root, generation: graph.generation, path })
     }
   }
 
@@ -90,7 +92,7 @@ export function NoteActionsMenu({ path, onDeleted }: NoteActionsMenuProps): Reac
               variant="ghost"
               size="lg"
               className="h-12 justify-start gap-3 text-base"
-              disabled={!privacyReady || isTogglingPrivate}
+              disabled={!privacyReady}
               onClick={() => {
                 void togglePrivate()
                 setActionsOpen(false)

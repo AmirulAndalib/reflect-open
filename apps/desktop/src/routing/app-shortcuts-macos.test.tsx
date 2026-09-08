@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { renderHook } from 'vitest-browser-react'
@@ -61,7 +62,7 @@ beforeEach(() => {
   nativeMenu.installed = false
 })
 
-function shortcutsHook() {
+function shortcutsHook(client = new QueryClient()) {
   return renderHook(
     () => {
       useAppShortcuts()
@@ -69,15 +70,17 @@ function shortcutsHook() {
     },
     {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <RouterProvider>
-          <PaletteProvider>
-            <ShortcutsProvider>
-              <NoteTemplatesProvider>
-                <SidebarProvider>{children}</SidebarProvider>
-              </NoteTemplatesProvider>
-            </ShortcutsProvider>
-          </PaletteProvider>
-        </RouterProvider>
+        <QueryClientProvider client={client}>
+          <RouterProvider>
+            <PaletteProvider>
+              <ShortcutsProvider>
+                <NoteTemplatesProvider>
+                  <SidebarProvider>{children}</SidebarProvider>
+                </NoteTemplatesProvider>
+              </ShortcutsProvider>
+            </PaletteProvider>
+          </RouterProvider>
+        </QueryClientProvider>
       ),
     },
   )

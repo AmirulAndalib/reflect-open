@@ -18,6 +18,8 @@ function contextFor(notePath: string | null, generation: number | null): Command
     notePath: () => notePath,
     back: vi.fn(),
     forward: vi.fn(),
+    togglePin: vi.fn(async () => {}),
+    togglePrivate: vi.fn(async () => {}),
     toggleTheme: vi.fn(),
     toggleSidebar: vi.fn(),
     newChat: vi.fn(),

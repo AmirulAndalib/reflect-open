@@ -1,13 +1,19 @@
+import { upsertFrontmatter, type GraphInfo, type PinnedNote } from '@reflect/core'
+import { frontmatterPatchToYaml, type FrontmatterPatch } from '@/editor/note-session'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { queryKeys } from '@/lib/query-client'
 import { act, type ReactElement, type ReactNode } from 'react'
 import { cleanup, render } from 'vitest-browser-react'
 import { page } from 'vitest/browser'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { GraphInfo } from '@reflect/core'
 
-const useNoteRowState = vi.hoisted(() => vi.fn())
-const usePinnedNotes = vi.hoisted(() => vi.fn())
-const toggleNotePinned = vi.hoisted(() => vi.fn(async () => true))
-const toggleNotePrivate = vi.hoisted(() => vi.fn(async () => true))
+const getNote = vi.hoisted(() => vi.fn())
+const noteSource = vi.hoisted(() => ({ value: '# A\n' }))
+const readNoteSource = vi.hoisted(() => vi.fn(async () => noteSource.value))
+const commitNoteFrontmatter = vi.hoisted(() =>
+  vi.fn<(path: string, patch: FrontmatterPatch, generation: number) => Promise<void>>(),
+)
+vi.mock('@/lib/note-frontmatter', () => ({ readNoteSource, commitNoteFrontmatter }))
 const deleteOpenNote = vi.hoisted(() => vi.fn(async () => {}))
 const shareNote = vi.hoisted(() => vi.fn(async () => {}))
 const operationFail = vi.hoisted(() => vi.fn())
@@ -115,10 +121,12 @@ vi.mock('@/providers/graph-provider', async () => {
     }),
   }
 })
-vi.mock('@/hooks/use-note-row', () => ({ useNoteRowState }))
-vi.mock('@/hooks/use-pinned-notes', () => ({ usePinnedNotes }))
-vi.mock('@/lib/note-pin', () => ({ toggleNotePinned }))
-vi.mock('@/lib/note-private', () => ({ toggleNotePrivate }))
+vi.mock('@reflect/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@reflect/core')>()),
+  hasBridge: () => true,
+  getPinnedNotes: async () => [],
+  getNote,
+}))
 vi.mock('@/lib/note-delete', () => ({ deleteOpenNote }))
 vi.mock('@/mobile/share', () => ({ shareNote }))
 vi.mock('@/lib/operations', () => ({ startOperation }))
@@ -132,7 +140,6 @@ let currentNoteRow: {
   isPrivate: boolean
 } | null
 let currentNoteRowSettled: boolean
-let currentPinnedNotes: Array<{ path: string; title: string; dailyDate: string | null }>
 
 function noteRow(path: string, isPrivate: boolean, title = 'Meeting') {
   return { path, title, dailyDate: null, isPrivate }
@@ -142,14 +149,16 @@ beforeEach(() => {
   graphStore.set({ root: '/g', name: 'g', generation: 7 })
   currentNoteRow = noteRow('notes/meeting.md', false)
   currentNoteRowSettled = true
-  currentPinnedNotes = []
-  useNoteRowState.mockImplementation(() => ({
-    row: currentNoteRow,
-    settled: currentNoteRowSettled,
-  }))
-  usePinnedNotes.mockImplementation(() => currentPinnedNotes)
-  toggleNotePinned.mockReset().mockResolvedValue(true)
-  toggleNotePrivate.mockReset().mockResolvedValue(true)
+  getNote
+    .mockReset()
+    .mockImplementation(() =>
+      currentNoteRowSettled ? Promise.resolve(currentNoteRow) : new Promise(() => {}),
+    )
+  noteSource.value = '# A\n'
+  readNoteSource.mockReset().mockImplementation(async () => noteSource.value)
+  commitNoteFrontmatter.mockReset().mockImplementation(async (_path, patch) => {
+    noteSource.value = upsertFrontmatter(noteSource.value, frontmatterPatchToYaml(patch))
+  })
   deleteOpenNote.mockReset().mockResolvedValue(undefined)
   shareNote.mockReset().mockResolvedValue(undefined)
   startOperation.mockClear()
@@ -161,8 +170,19 @@ afterEach(async () => {
 })
 
 async function mount(path = 'notes/meeting.md', onDeleted = vi.fn()) {
-  const view = await render(<NoteActionsMenu path={path} onDeleted={onDeleted} />)
-  return { view, onDeleted }
+  const client = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+  })
+  client.setQueryData(queryKeys.index.pinnedNotes('/g'), [])
+  if (currentNoteRowSettled) {
+    client.setQueryData(queryKeys.index.note('/g', path), currentNoteRow)
+  }
+  const view = await render(
+    <QueryClientProvider client={client}>
+      <NoteActionsMenu path={path} onDeleted={onDeleted} />
+    </QueryClientProvider>,
+  )
+  return { view, onDeleted, client }
 }
 
 async function openActions(): Promise<void> {
@@ -178,12 +198,15 @@ describe('NoteActionsMenu', () => {
 
     await view.getByRole('button', { name: 'Lock note' }).click()
 
-    await vi.waitFor(() => expect(toggleNotePrivate).toHaveBeenCalledWith('notes/meeting.md', 7))
+    await vi.waitFor(() =>
+      expect(commitNoteFrontmatter).toHaveBeenCalledWith('notes/meeting.md', { private: true }, 7),
+    )
     await expect.element(view.getByRole('button', { name: 'Lock note' })).not.toBeInTheDocument()
   })
 
   it('offers Unlock note for a private daily note and toggles canonically', async () => {
     currentNoteRow = noteRow('daily/2026-06-10.md', true, 'June 10th, 2026')
+    noteSource.value = '---\nprivate: true\n---\n# A\n'
     const { view } = await mount('daily/2026-06-10.md')
 
     await openActions()
@@ -191,7 +214,13 @@ describe('NoteActionsMenu', () => {
 
     await view.getByRole('button', { name: 'Unlock note' }).click()
 
-    await vi.waitFor(() => expect(toggleNotePrivate).toHaveBeenCalledWith('daily/2026-06-10.md', 7))
+    await vi.waitFor(() =>
+      expect(commitNoteFrontmatter).toHaveBeenCalledWith(
+        'daily/2026-06-10.md',
+        { private: false },
+        7,
+      ),
+    )
   })
 
   it('bridges the privacy label from the toggle result while the index is stale', async () => {
@@ -199,27 +228,39 @@ describe('NoteActionsMenu', () => {
 
     await openActions()
     await view.getByRole('button', { name: 'Lock note' }).click()
-    await vi.waitFor(() => expect(toggleNotePrivate).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(commitNoteFrontmatter).toHaveBeenCalledTimes(1))
 
     await openActions()
     await expect.element(view.getByRole('button', { name: 'Unlock note' })).toBeInTheDocument()
 
-    toggleNotePrivate.mockResolvedValueOnce(false)
+    noteSource.value = '---\nprivate: true\n---\n# A\n'
     await view.getByRole('button', { name: 'Unlock note' }).click()
-    await vi.waitFor(() => expect(toggleNotePrivate).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(commitNoteFrontmatter).toHaveBeenCalledTimes(2))
 
     await openActions()
     await expect.element(view.getByRole('button', { name: 'Lock note' })).toBeInTheDocument()
   })
 
+  it('shows shared privacy on reopening while a menu write is still pending', async () => {
+    const write = Promise.withResolvers<void>()
+    commitNoteFrontmatter.mockReturnValueOnce(write.promise)
+    const { view } = await mount()
+    await openActions()
+    await view.getByRole('button', { name: 'Lock note' }).click()
+    await openActions()
+    await expect.element(view.getByRole('button', { name: 'Unlock note' })).toBeInTheDocument()
+    write.resolve()
+    await write.promise
+  })
+
   it('rolls back stale optimistic privacy state and surfaces failures for retry', async () => {
-    toggleNotePrivate.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
+    commitNoteFrontmatter.mockRejectedValueOnce({ kind: 'io', message: 'disk on fire' })
     const { view } = await mount()
 
     await openActions()
     await view.getByRole('button', { name: 'Lock note' }).click()
 
-    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledWith('Locking note'))
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledWith('Updating privacy'))
     await vi.waitFor(() => expect(operationFail).toHaveBeenCalledWith('disk on fire'))
     await expect.element(view.getByRole('button', { name: 'Lock note' })).not.toBeInTheDocument()
 
@@ -234,7 +275,7 @@ describe('NoteActionsMenu', () => {
 
     await openActions()
     await expect.element(view.getByRole('button', { name: 'Loading privacy…' })).toBeDisabled()
-    expect(toggleNotePrivate).not.toHaveBeenCalled()
+    expect(commitNoteFrontmatter).not.toHaveBeenCalled()
   })
 
   it('offers Lock note for a visible note with no indexed row yet', async () => {
@@ -244,7 +285,26 @@ describe('NoteActionsMenu', () => {
     await openActions()
     await view.getByRole('button', { name: 'Lock note' }).click()
 
-    await vi.waitFor(() => expect(toggleNotePrivate).toHaveBeenCalledWith('notes/meeting.md', 7))
+    await vi.waitFor(() =>
+      expect(commitNoteFrontmatter).toHaveBeenCalledWith('notes/meeting.md', { private: true }, 7),
+    )
+  })
+
+  it('shows Unpin on reopening while the pin write is still pending', async () => {
+    const write = Promise.withResolvers<void>()
+    commitNoteFrontmatter.mockReturnValueOnce(write.promise)
+    const { view, client } = await mount()
+    await openActions()
+    await view.getByRole('button', { name: 'Pin', exact: true }).click()
+    expect(client.getQueryData<PinnedNote[]>(queryKeys.index.pinnedNotes('/g'))?.[0]?.path).toBe(
+      'notes/meeting.md',
+    )
+    await openActions()
+    await expect
+      .element(view.getByRole('button', { name: 'Unpin', exact: true }))
+      .toBeInTheDocument()
+    write.resolve()
+    await write.promise
   })
 
   it('keeps the pin action intact and closes the drawer', async () => {
@@ -253,7 +313,9 @@ describe('NoteActionsMenu', () => {
     await openActions()
     await view.getByRole('button', { name: 'Pin' }).click()
 
-    await vi.waitFor(() => expect(toggleNotePinned).toHaveBeenCalledWith('notes/meeting.md', 7))
+    await vi.waitFor(() =>
+      expect(commitNoteFrontmatter).toHaveBeenCalledWith('notes/meeting.md', { pinned: true }, 7),
+    )
     await expect.element(view.getByRole('button', { name: 'Pin' })).not.toBeInTheDocument()
   })
 

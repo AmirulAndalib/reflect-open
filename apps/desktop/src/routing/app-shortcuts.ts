@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { toggleNotePinned } from '@/lib/note-pin'
+import { toggleNotePrivate } from '@/lib/note-private'
 import { getIsComposing } from '@meowdown/core'
 import { usePalette } from '@/components/command-palette/palette-provider'
 import { registerKeymap } from '@/editor/keymap'
@@ -160,6 +163,7 @@ function isNativeMacosMenuCommand(commandId: string): boolean {
  */
 export function useAppShortcuts(): CommandContext {
   const { route, navigate, back, forward, clearScrollState } = useRouter()
+  const queryClient = useQueryClient()
   const focusedDailyDate = useFocusedDailyDate()
   const { resolvedTheme, setTheme } = useTheme()
   const { graph, recents, openRecent } = useGraph()
@@ -221,6 +225,30 @@ export function useAppShortcuts(): CommandContext {
       // the daily views it falls back to the routed note.
       notePath: () =>
         focusedNotePathForRoute(routeRef.current, todayIso(), focusedDailyDateRef.current),
+      togglePin: async () => {
+        const root = graphRootRef.current
+        const generation = generationRef.current
+        const path = focusedNotePathForRoute(
+          routeRef.current,
+          todayIso(),
+          focusedDailyDateRef.current,
+        )
+        if (root !== null && generation !== null && path !== null) {
+          await toggleNotePinned({ queryClient, root, generation, path })
+        }
+      },
+      togglePrivate: async () => {
+        const root = graphRootRef.current
+        const generation = generationRef.current
+        const path = focusedNotePathForRoute(
+          routeRef.current,
+          todayIso(),
+          focusedDailyDateRef.current,
+        )
+        if (root !== null && generation !== null && path !== null) {
+          await toggleNotePrivate({ queryClient, root, generation, path })
+        }
+      },
       back,
       forward,
       clearScrollState,
@@ -256,6 +284,7 @@ export function useAppShortcuts(): CommandContext {
       },
     }),
     [
+      queryClient,
       navigate,
       back,
       forward,
