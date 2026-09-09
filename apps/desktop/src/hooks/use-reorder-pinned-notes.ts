@@ -1,16 +1,17 @@
-import { useCallback } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { reorderPinnedNotes } from '@/lib/note-pin'
+import { updatePinOrder } from '@/lib/notes/pin-order'
+import { invalidatePinnedNotesCache, updatePinnedNotesCache } from '@/lib/notes/pinned-notes-cache'
+import { mutationKeys, mutationScopeIds, queryKeys } from '@/lib/query-client'
+import { useGraph } from '@/providers/graph-provider'
 import { arrayMove } from '@dnd-kit/sortable'
 import type { PinnedNote } from '@reflect/core'
-import { reorderPinnedNotes } from '@/lib/note-pin'
-import { mutationKeys, mutationScopeIds } from '@/lib/query-client'
-import { useGraph } from '@/providers/graph-provider'
-import { invalidatePinnedNotesCache, updatePinnedNotesCache } from '@/lib/notes/pinned-notes-cache'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useCallback } from 'react'
 
 interface ReorderPinnedNotesVariables {
   generation: number
-  notes: readonly PinnedNote[]
   root: string
+  notes: readonly PinnedNote[]
 }
 
 export function useReorderPinnedNotes(
@@ -46,9 +47,22 @@ export function useReorderPinnedNotes(
       if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) {
         return
       }
-      const reordered = arrayMove([...pinned], activeIndex, overIndex)
-      updatePinnedNotesCache(queryClient, graph.root, () => reordered)
-      mutate({ generation: graph.generation, notes: reordered, root: graph.root })
+
+      // Move the note in the array.
+      const moved: PinnedNote[] = arrayMove([...pinned], activeIndex, overIndex)
+
+      // Update `note.pinnedOrder` in the moved note to maintain the correct order.
+      const renumbered: PinnedNote[] = updatePinOrder(moved, activePath)
+
+      // All notes that changed `note.pinnedOrder`
+      const updated = renumbered.filter((a, index) => {
+        const b = moved[index]
+        return a && b && a.pinnedOrder !== b.pinnedOrder
+      })
+
+      void queryClient.cancelQueries({ queryKey: queryKeys.index.pinnedNotes(graph.root) })
+      updatePinnedNotesCache(queryClient, graph.root, () => renumbered)
+      mutate({ generation: graph.generation, root: graph.root, notes: updated })
     },
     [graph, mutate, pinned, queryClient],
   )
