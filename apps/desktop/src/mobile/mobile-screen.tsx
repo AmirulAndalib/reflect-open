@@ -1,5 +1,4 @@
-import { lazy, Suspense, type ReactElement } from 'react'
-import { LoadingScreen } from '@/components/loading-screen'
+import { lazy, type ReactElement } from 'react'
 import { useToday } from '@/lib/use-today'
 import { MobileDaily } from '@/mobile/screens/daily'
 import { MobileNote } from '@/mobile/screens/note'
@@ -50,7 +49,7 @@ interface MobileScreenProps {
  * an app left open overnight rolls to the new day's note at midnight instead
  * of editing yesterday's.
  */
-function MobileScreenBody({
+export function MobileScreen({
   route,
   allQuery,
   onAllQueryChange,
@@ -100,12 +99,4 @@ function MobileScreenBody({
     default:
       return <MobileDaily key="daily" date={today} />
   }
-}
-
-export function MobileScreen(props: MobileScreenProps): ReactElement {
-  return (
-    <Suspense fallback={<LoadingScreen />}>
-      <MobileScreenBody {...props} />
-    </Suspense>
-  )
 }
